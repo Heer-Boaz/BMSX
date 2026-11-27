@@ -803,6 +803,7 @@ void testMappedRamFunctionExecution() {
 		0u
 	);
 	memory.writeBytes(RAM_CODE_ADDRESS, ramCode.data(), ramCode.size());
+	bmsx::test::seedTestMappedClosure(cpu, RAM_FUNCTION_ADDRESS);
 
 	require(
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,

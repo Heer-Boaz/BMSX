@@ -11,6 +11,7 @@
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 
 #include <algorithm>
@@ -509,13 +510,11 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 
 test::Blua32TestImage externalCallImage() {
 	test::Blua32TestImage image;
-	image.text.resize(4 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 3}, {.firstWord = 3, .wordCount = 1, .numParams = 1, .maxStack = 512, .staticClosure = false}};
-	image.closureRelocations = {{1, DYNAMIC_RAM_BASE}};
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1},
+		{.firstWord = 1, .wordCount = 1, .numParams = 1, .maxStack = 512, .staticClosure = false}};
 	return image;
 }
 
@@ -527,7 +526,9 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 		CPU cpu(memory, irq, addresses);
 		cpu.reset();
 		memory.writeBytes(DYNAMIC_RAM_BASE, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
-		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the real image returns a dynamic callee");
+		const auto binding = test::seedTestMappedClosure(cpu, DYNAMIC_RAM_BASE, false);
+		cpu.activeThread()->currentFrame->registers.set(0, valueClosure(binding));
+		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the image returns its prebound dynamic callee");
 		const auto completion = cpu.readCompletionValues();
 		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");
 		auto closure = asClosure(completion.get(0), cpu.gcHeap());

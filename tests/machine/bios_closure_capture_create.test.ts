@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, type FunctionPrototype, initializeRecord } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes, type FunctionPrototype, initializeRecord } from '../../machine/ts/machine/cpu/closure';
 import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -11,11 +11,11 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_UPVALUE_IN_STACK_MASK, BLUA32_UPVALUE_INDEX_MASK } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_STATIC, BLUA32_UPVALUE_IN_STACK_MASK, BLUA32_UPVALUE_INDEX_MASK } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionBx, instructionLowB, instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -89,7 +89,7 @@ for (const level of [0, 3] as const) {
 		const resolved = workspace, cells = workspace + 4 * 1024;
 		const frame = actual.activeThread.currentFrame!, owner = frame.thread.address;
 		function bind(latched: boolean) {
-			[target.address, -1, +latched, target.codeAddress, target.numParams, target.maxStack, target.flags,
+			[target.address, -1, latched ? CLOSURE_LATCHED_PROTOTYPE : 0, target.codeAddress, target.numParams, target.maxStack, target.flags,
 				target.upvalueTableAddress, target.upvalues.length].forEach((word, i) => memory.writeRamRecordWord(binding + 4 * i, word));
 			for (let i = 0; i < target.upvalues.length; ++i) memory.writeRamRecordWord(descriptors + i * 4,
 				memory.readMappedU32LE(target.upvalueTableAddress + 4 * i));
@@ -229,6 +229,37 @@ for (const level of [0, 3] as const) {
 		for (let word = 0; word < 6; ++word)
 			assert.equal(memory.readRamRecordWord(tail + word * 4), oracle.memory.readRamRecordWord(tail + word * 4));
 	});
+	for (const canonical of [false, true]) test(`mapped captureless ${canonical ? 'canonical' : 'dynamic'} Closure matches native reservation at O${level}`, () => {
+		const f = fixture(), { actual, oracle, memory } = f;
+		f.bind(true);
+		const prototypeFlags = (f.target.flags & ~BLUA32_FUNCTION_STATIC) | (canonical ? BLUA32_FUNCTION_STATIC : 0);
+		memory.writeRamRecordWord(f.binding + HeapServiceCaptureBindingField.Flags, prototypeFlags);
+		const flags = CLOSURE_LATCHED_PROTOTYPE | (canonical ? CLOSURE_CANONICAL : 0);
+		memory.writeRamRecordWord(f.binding + HeapServiceCaptureBindingField.BindingFlags, flags);
+		memory.writeRamRecordWord(f.binding + HeapServiceCaptureBindingField.Count, 0);
+		// A zero-capture prototype never consumes its descriptor pointer.
+		memory.writeRamRecordWord(f.binding + HeapServiceCaptureBindingField.Descriptor, 0xffffffff);
+		assert.equal(f.plan(), 0);
+		const proto: FunctionPrototype = {
+			functionAddress: f.target.address, executionDomainId: -1, codeAddress: f.target.codeAddress,
+			numParams: f.target.numParams, maxStack: f.target.maxStack, flags: prototypeFlags,
+			upvalueTableAddress: 0xffffffff, recordUpvalueCount: 0,
+		};
+		// The allocation and layout operations of the old mapped zero-capture CPU branch.
+		const expected = oracle.luaHeap.allocateClosureRecord(0, true);
+		initializeRecord(oracle.memory, expected, proto, canonical, oracle.gc.white(), 0, true);
+		oracle.gc.publishObject(expected);
+		f.startWhole();
+		f.finish();
+		assert.equal(RAM_BASE + actual.heapServiceResult(), expected);
+		assert.equal(actual.luaHeap.usedBytes(), oracle.luaHeap.usedBytes());
+		assert.equal(actual.heapAllocator.occupiedBytes(), oracle.heapAllocator.occupiedBytes());
+		assert.equal(memory.readRamRecordByte(expected + CLOSURE_BINDING_FLAGS), flags);
+		assert.deepEqual(actual.captureClosureBinding(expected), proto);
+		for (let byte = 0; byte < closureRecordBytes(0, true); ++byte)
+			assert.equal(memory.readRamRecordByte(expected + byte), oracle.memory.readRamRecordByte(expected + byte));
+	});
+
 	test(`captured Closure BIOS owns true physical refusal and retries the same prepared edges at O${level}`, () => {
 		const f = fixture(), { actual, oracle, frame, arena, memory } = f;
 		f.bind(false);

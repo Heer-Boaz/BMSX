@@ -206,7 +206,8 @@ test::Blua32TestImage program(Workload workload) {
 
 void measure(Workload workload, const char* name, int grant, int round, bool fullyBacked, int fieldNodes = 0) {
 	const auto image = program(workload);
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image,
+		workload == Workload::CallsRamRecord ? RAM_RECORD_ADDRESS - DYNAMIC_RAM_BASE + BLUA32_FUNCTION_RECORD_SIZE : 0u);
 	if (fullyBacked || workload == Workload::CallsBacked || workload == Workload::CallsRamRecord) {
 		// The same program with a fully backed final page complements the ROM-tail case.
 		rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
@@ -309,6 +310,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	} else if (workload == Workload::CallsRamRecord) {
 		memory.writeBytes(RAM_RECORD_ADDRESS, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE,
 			BLUA32_FUNCTION_RECORD_SIZE);
+		test::seedTestMappedClosure(cpu, RAM_RECORD_ADDRESS);
 	} else if (workload == Workload::CodeWrites) {
 		const u32 codeAddress = DYNAMIC_RAM_BASE + 0x1000;
 		for (u32 offset = 0; offset < image.text.size(); offset += INSTRUCTION_BYTES) {

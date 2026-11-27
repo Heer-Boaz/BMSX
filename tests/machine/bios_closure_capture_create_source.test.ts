@@ -16,11 +16,11 @@ import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project
 const file = 'machine/bios/kernel/closure_capture_create.lua';
 const basis = '08c4a76d41e49d689c13a47fed3de37cece84072';
 const reference = [
-	['T', 'machine/ts/machine/cpu/cpu.ts', 'da10e03c2b011c0762b1fef02aca59c80701c11284c6d91ed893e942a22f5e42', [[567, 592], [4075, 4079], [4084, 4086], [4100, 4110], [4112, 4125], [4127, 4127]]],
-	['C', 'machine/cpp/machine/cpu/cpu.cpp', '6ebe53fa29d516e9144facdf08f639d19ac562354eca3fad0c63941ae0316340', [[158, 163], [2975, 3000], [3039, 3048], [3050, 3061], [3065, 3065]]],
+	['T', 'machine/ts/machine/cpu/cpu.ts', 'da10e03c2b011c0762b1fef02aca59c80701c11284c6d91ed893e942a22f5e42', [[567, 592], [1228, 1228], [2985, 2985], [4075, 4079], [4084, 4086], [4100, 4110], [4112, 4125], [4127, 4127]]],
+	['C', 'machine/cpp/machine/cpu/cpu.cpp', '6ebe53fa29d516e9144facdf08f639d19ac562354eca3fad0c63941ae0316340', [[158, 163], [590, 590], [2975, 3000], [3005, 3005], [3039, 3048], [3050, 3061], [3065, 3065]]],
 	['L', 'machine/ts/machine/cpu/lua_heap.ts', '90fd01485f0319193f4ca29196ea75cc00391741948d18ca7443a2ddbb7b38cf', [[243, 245], [248, 270], [283, 285]]],
 	['R', 'machine/cpp/machine/cpu/lua_heap.cpp', '0d892040e7d5e379c31545c5676060602c932ce82c521d69364290eea284079e', [[250, 252], [255, 276], [286, 288]]],
-	['S', 'machine/ts/machine/cpu/closure.ts', 'dccda2a02992d7ad7a04ae4ee78b46ae7d310b6cf19d787252d73af3cf40d024', [[36, 43], [50, 65], [72, 81]]],
+	['S', 'machine/ts/machine/cpu/closure.ts', 'dccda2a02992d7ad7a04ae4ee78b46ae7d310b6cf19d787252d73af3cf40d024', [[35, 43], [50, 65], [72, 81]]],
 	['N', 'machine/cpp/machine/cpu/closure.cpp', '989524624c0955ea61dde1cfe19a2e5bc6476902194c7117d95c1dc12c7a86c6', [[18, 32]]],
 	['U', 'machine/ts/machine/cpu/upvalue.ts', '0b41b1f352162642d61ac6f050169ec41056909a15af40da584e6f5896f1b130', [[9, 13], [15, 18], [20, 35]]],
 	['V', 'machine/cpp/machine/cpu/upvalue.cpp', 'b16e89ab4093c50af6e7e33485a2170f81359fda63b43401cd48fdb2a37c3635', [[23, 38]]],
@@ -44,7 +44,7 @@ test('captured Closure storage layout and source mapping cover both native mirro
 	const span = parsed.chunk.body.get(parsed.chunk.body.length - 1).span;
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	const layouts = [
-		['closure_binding', HeapServiceCaptureBindingField.Count + 4, [['prototype', HeapServiceCaptureBindingField.Prototype], ['domain', HeapServiceCaptureBindingField.Domain], ['latched', HeapServiceCaptureBindingField.Latched],
+		['closure_binding', HeapServiceCaptureBindingField.Count + 4, [['prototype', HeapServiceCaptureBindingField.Prototype], ['domain', HeapServiceCaptureBindingField.Domain], ['binding_flags', HeapServiceCaptureBindingField.BindingFlags],
 			['code', HeapServiceCaptureBindingField.Code], ['params', HeapServiceCaptureBindingField.Params], ['stack', HeapServiceCaptureBindingField.Stack], ['flags', HeapServiceCaptureBindingField.Flags],
 			['descriptors', HeapServiceCaptureBindingField.Descriptor], ['count', HeapServiceCaptureBindingField.Count]]],
 		['closure_record', CLOSURE_CAPTURE_WORDS, [['kind', 0], ['gray', GC_RECORD_LINK], ['prototype', CLOSURE_PROTOTYPE_ADDRESS]]],

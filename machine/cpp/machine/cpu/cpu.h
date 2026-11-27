@@ -524,7 +524,7 @@ private:
 	void finishAllocationRecovery();
 	void beginClosureReservation(CallFrame&, int destination, HeapServiceRecordKind, u32 prototype, u32 domain, u32 nextPc);
 	void finishClosureReservation();
-	void beginCapturedClosure(CallFrame&, int destination);
+	void beginCapturedClosure(CallFrame&, int destination, bool canonical);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);

@@ -32,7 +32,7 @@ import {
 import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -561,6 +561,7 @@ for (const ramRecord of [false, true]) {
 			memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
 			memory.writeBytes(code, systemText.subarray(9 * INSTRUCTION_BYTES));
+			if (ramRecord) seedTestMappedStaticClosure(cpu, record);
 			assert.equal(cpu.runUntilDepth(0, 7), RunResult.Yielded);
 			assert.equal(cpu.readFrameExecutionDomain(0), 0, 'EXEC establishes socket 0 before SELECT changes');
 			memory.writeMappedWord(IO_CART_SELECT, 1);

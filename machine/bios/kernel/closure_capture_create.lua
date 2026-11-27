@@ -18,7 +18,7 @@ local record_mask<const> = ram_size - 8 -- J:5-7 U:10
 local object_prefix<const> = 8 -- J:6,9 L:247,250,254,256,267,269 R:254,257,260,262,273,275
 local gray_bits<const> = 19 -- J:12 S:38,64 N:22-23
 local closure_kind<const> = 7 -- S:63 N:21
-local latched_flag<const> = 8 -- S:36,62 N:19-20
+local latched_shift<const> = 3 -- S:36,62 N:19-20; bit position of the latched-prototype field
 local cell_kind<const> = 11 -- U:11 V:24
 local cell_open<const> = 1 -- U:13,26,32 V:29,35
 local cell_bytes<const> = 16 -- U:9,18 L:254 R:260
@@ -32,7 +32,7 @@ local out_of_memory<const> = 9 -- E:43 T:4079 C:3021
 struct closure_binding
 	prototype: addr -- S:73 N:24 T:4076 C:3003,3051
 	domain: i32 -- S:62 N:19
-	latched: u32 -- T:4078 C:159,3021
+	binding_flags: u32 -- T:1228,2985,4078 C:159,590,3005,3021 S:35-36,62 N:19-20
 	code: addr -- S:76 N:27
 	params: u32 -- S:77 N:28
 	stack: u32 -- S:78 N:29
@@ -118,7 +118,8 @@ end
 local prepare_closure<const> = function(state, frame, binding, descriptor_address, workspace) -- T:4075-4111 C:3021-3050
 	local proto<const>: *closure_binding = binding -- T:4076 C:3003
 	local count<const> = proto.count -- T:4077 C:3021
-	if (count ~ in_stack) > (((ram_size - non_capture_bytes - proto.latched * latched_bytes) >> 2) ~ in_stack) then -- T:4079 C:3021 K:61-62; compare before signed multiplication
+	local latched<const> = (proto.binding_flags >> latched_shift) & 1 -- T:4078 S:36,62 C:159,3021 N:19-20
+	if (count ~ in_stack) > (((ram_size - non_capture_bytes - latched * latched_bytes) >> 2) ~ in_stack) then -- T:4079 C:3021 K:61-62; compare before signed multiplication
 		return -(out_of_memory + 1) -- T:4079 C:3021 E:43; private result, no allocation
 	end
 	local frame_view<const>: *closure_frame = frame -- T:4102,4108-4109 C:3041,3046-3047
@@ -189,7 +190,8 @@ end
 
 local create_prepared_closure<const> = function(state, control, occupied, frame_address, owner, binding, workspace, missing) -- T:4112-4127 C:158-163,3051-3065 L:243,249-270 R:250,255-276
 	local proto<const>: *closure_binding = binding -- T:4114 C:161,3051
-	local count<const>, latched<const> = proto.count, proto.latched -- T:4077-4078 C:159,3051
+	local count<const>, binding_flags<const> = proto.count, proto.binding_flags -- T:1228,2985,4077-4078 C:159,590,3005,3051 S:35-36,62 N:19-20
+	local latched<const> = (binding_flags >> latched_shift) & 1 -- T:4078 S:36,62 C:159,3021 N:19-20
 	local bytes<const> = capture_bytes(count, latched) -- L:244 R:251
 	local charged<const> = bytes + missing * cell_bytes -- L:245 R:252; original single logical charge
 	local base<const> = allocator.bmsx_dlmalloc_allocate(state, bytes + object_prefix, 1) -- L:250-251 R:257
@@ -229,7 +231,7 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 	local offset<const> = base + object_prefix -- L:267 R:273
 	local address<const> = layout.ram_base + offset -- T:4112-4114 C:160-161
 	local closure<const>: *closure_record = address -- T:4114 S:61,63-65 C:161 N:18,21-24
-	local flags<const> = (proto.domain + 1) | (latched * latched_flag) -- S:62 N:19-20
+	local flags<const> = (proto.domain + 1) | binding_flags -- T:1228,2985 S:35-36,62 C:590,3005 N:19-20
 	closure.kind = closure_kind | ((*white & 1) << 8) | (flags << 16) | ((count >> (32 - gray_bits)) << 24) -- T:4114 S:63 C:161 N:21-22
 	closure.gray = count << gray_bits -- S:64 N:23
 	closure.prototype = proto.prototype -- S:39,65,72-73 N:24
@@ -269,7 +271,8 @@ end
 
 local capture_charge<const> = function(binding, missing) -- L:244-245 R:251-252
 	local proto<const>: *closure_binding = binding -- T:4076 C:3003
-	return capture_bytes(proto.count, proto.latched) + missing * cell_bytes -- L:244-245 R:251-252
+	local latched<const> = (proto.binding_flags >> latched_shift) & 1 -- T:4078 S:36,62 C:159,3021 N:19-20
+	return capture_bytes(proto.count, latched) + missing * cell_bytes -- L:244-245 R:251-252
 end
 
 return {

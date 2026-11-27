@@ -1132,9 +1132,9 @@ wait for it to finish.
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. A non-STATIC prototype constructs a distinct closure on
-each execution. For a captured prototype or a captureless ROM prototype,
-one BIOS activation handles capture sampling when needed, admission,
-collection and retry, and initialization. The activation uses ordinary CPU
+each execution. When a closure needs construction, one BIOS activation
+handles capture sampling when needed, admission, collection and retry, and
+initialization. The activation uses ordinary CPU
 cycles while devices continue to advance. The new function becomes visible
 only when its record is ready. If the reservation still cannot be made,
 `CLOSURE` reports `OUT_OF_MEMORY` at the issuing instruction. Interrupt
@@ -1579,8 +1579,7 @@ caller receives a Table only when its storage is ready. Root scanning,
 tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
-same admission and recovery procedure for a new captured Closure or a
-Closure from a captureless ROM prototype.
+same admission and recovery procedure for a new Closure.
 It reserves the Closure and new cells together. If a reservation fails, it
 releases its partial reservation before retrying without publishing any new
 capture links. Collection during a suspended table insertion

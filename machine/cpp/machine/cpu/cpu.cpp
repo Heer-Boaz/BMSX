@@ -2932,18 +2932,14 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		requestYield();
 		return 0u;
 	}
-	if (!captureless) {
-		if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
-		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return 0u;
-		}
-		beginCapturedClosure(frame, destination);
-		requestYield();
+	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
+	if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		return 0u;
 	}
-	if (canonical) return allocateStaticClosure(decodePrototype(functionRecord));
-	return allocateClosure(decodePrototype(functionRecord), 0u, false);
+	beginCapturedClosure(frame, destination, canonical);
+	requestYield();
+	return 0u;
 }
 
 int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {

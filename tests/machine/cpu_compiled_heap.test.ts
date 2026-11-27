@@ -18,7 +18,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_execution';
@@ -273,7 +273,10 @@ test('hot immediate CLOSURE retains the full Bx operand and canonical STATIC ide
 		closureRelocations: [{ wordIndex: 2, functionAddress: target }, { wordIndex: 5, functionAddress: target }] }, BLUA32_FUNCTION_RECORD_SIZE);
 	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const record = image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE;
-	for (const { memory } of [left, right]) memory.writeBytes(target, image.romBytes.subarray(record, record + BLUA32_FUNCTION_RECORD_SIZE));
+	for (const { cpu, memory } of [left, right]) {
+		memory.writeBytes(target, image.romBytes.subarray(record, record + BLUA32_FUNCTION_RECORD_SIZE));
+		seedTestMappedStaticClosure(cpu, target);
+	}
 	const js = left.cpu, ref = right.cpu;
 	js.runUntilDepth(0, 500); ref.runUntilDepth(0, 500); assertParity(js, ref);
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -321,12 +324,13 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: source + 1 },
-		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1, staticClosure: false }], globalNames: ['target'] }, BLUA32_FUNCTION_RECORD_SIZE);
+		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1 }], globalNames: ['target'] }, BLUA32_FUNCTION_RECORD_SIZE);
 	const template = image.symbols.functionAddresses[2] - SYSTEM_ROM_BASE;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
+		seedTestMappedStaticClosure(cpu, DYNAMIC_RAM_BASE);
 		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 400);
 	}

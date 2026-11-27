@@ -10,7 +10,7 @@ void CPU::beginClosureReservation(CallFrame& frame, int destination, HeapService
 	beginHeapService(m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::AllocateRecord)], args);
 }
 
-void CPU::beginCapturedClosure(CallFrame& frame, int destination) {
+void CPU::beginCapturedClosure(CallFrame& frame, int destination, bool canonical) {
 	using Field = HeapServiceCaptureBindingField;
 	const auto& record = m_functionRecordLatch;
 	const u32 management = m_heapAllocator.managementOffset(), base = management + HEAP_SERVICE_CLOSURE_OFFSET;
@@ -19,7 +19,8 @@ void CPU::beginCapturedClosure(CallFrame& frame, int destination) {
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceClosureField::LastPc), lastPc, frame.readControl(FrameField::Pc));
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Prototype), record.address, static_cast<u32>(record.image->executionDomainId));
-	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Latched), !record.romBacked, record.codeAddress);
+	const u32 flags = (canonical ? CLOSURE_CANONICAL : 0u) | (record.romBacked ? 0u : CLOSURE_LATCHED_PROTOTYPE);
+	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::BindingFlags), flags, record.codeAddress);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Params), record.numParams, record.maxStack);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Flags), record.flags, record.upvalueTableAddress);
 	m_memory.writeRamRecordWord(binding + static_cast<u32>(Field::Count), record.upvalueCount);

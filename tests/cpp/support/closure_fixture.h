@@ -55,4 +55,30 @@ inline u32 seedTestCapturedClosure(CPU& cpu, u32 address, std::span<u32> newCell
 	return record;
 }
 
+// Seed a valid sampled value for mapped-record tests that precede the CALL,
+// mutation, or cache-hit boundary they actually measure.
+inline u32 seedTestMappedClosure(CPU& cpu, u32 address, bool canonical = true, ExecutionDomainId domain = SYSTEM_EXECUTION_DOMAIN_ID) {
+	auto& memory = cpu.memory();
+	const auto bus = domain == SYSTEM_EXECUTION_DOMAIN_ID ? MAPPED_BUS_MASTER_CPU : mappedBusSignalsForCartridgeSlot(domain);
+	const auto sequence = memory.readBusFaultSequence();
+	const FunctionPrototype prototype{
+		.functionAddress = address,
+		.entry = {memory.readMappedBusU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, bus),
+			memory.readMappedBusU32LE(address + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, bus),
+			memory.readMappedBusU32LE(address + BLUA32_FUNCTION_MAX_STACK_OFFSET, bus),
+			memory.readMappedBusU32LE(address + BLUA32_FUNCTION_FLAGS_OFFSET, bus)},
+		.upvalueTableAddress = memory.readMappedBusU32LE(address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, bus),
+		.recordUpvalueCount = memory.readMappedBusU32LE(address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, bus),
+		.executionDomainId = domain,
+	};
+	if (sequence != memory.readBusFaultSequence() || prototype.recordUpvalueCount != 0u
+		|| ((prototype.entry.flags & BLUA32_FUNCTION_STATIC) != 0u) != canonical)
+		throw std::logic_error("fixture storage must provide the selected mapped captureless binding");
+	const u32 record = cpu.luaHeap().allocateClosureRecord(0u, true);
+	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, canonical, true);
+	cpu.gcHeap().publishObject(record);
+	if (canonical) cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	return record;
+}
+
 } // namespace bmsx::test

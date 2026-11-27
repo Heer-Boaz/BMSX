@@ -550,22 +550,16 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	using namespace bmsx;
 	test::Blua32TestImage image;
-	image.text.resize(5u * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::SETT), 0, 1, 2);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4},
-		{.firstWord = 4, .wordCount = 1, .staticClosure = false}};
-	image.closureRelocations = {{1, DYNAMIC_RAM_BASE}};
+	image.text.resize(2u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
 	auto& cpu = runtime.machine.cpu;
-	cpu.memory().writeBytes(DYNAMIC_RAM_BASE, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 	auto& heap = cpu.gcHeap();
 	auto& arena = cpu.heapAllocator();
 	auto& budget = cpu.luaHeap();
@@ -590,7 +584,7 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	frame.setTop(3);
 	cpu.createTable(1024, 0); // Release a sufficiently large body during the stopped collection.
 	const u32 spare = arena.allocate(4088u, true);
-	require(spare != 0u, "reserve a small chunk for CLOSURE");
+	require(spare != 0u, "leave a small chunk that cannot hold the replacement");
 	while (arena.allocate(4088u, true)) {}
 	arena.free(spare);
 	require(!arena.allocate(5120u, true), "the replacement cannot allocate before collection");
@@ -600,10 +594,20 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	require(heap.phase() == GcPhase::MarkAgain && !heap.isAlive(owner.address()) && !heap.isAlive(child.address()),
 		"the weak __newindex receiver and its only child remain white");
 	budget.setCollectionTarget(0);
-	const u32 writePc = cpu.readFramePc(0) + 2 * INSTRUCTION_BYTES;
-	require(!scheduler.runCyclesToNextLogicalTick(runtime, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + 3 * GC_STEP_WORDS + 16) && cpu.allocationParked()
+	const u32 writePc = cpu.readFramePc(0);
+	// Set up the stopped collector edge at the admitted SETT instruction.
+	// This fixture measures parked root publication, not the previous allocator.
+	InstructionObserverBinding enterAtomic;
+	enterAtomic.points[0].insert(writePc);
+	enterAtomic.context = &heap;
+	enterAtomic.observe = [](void* context, ExecutionDomainId, u32, ConstValueSpan) {
+		static_cast<GcHeap*>(context)->step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS);
+	};
+	cpu.setInstructionObserver(std::move(enterAtomic));
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 16) && cpu.allocationParked()
 		&& heap.finalMarkPending() && cpu.readFramePc(0) == writePc,
-		"CLOSURE enters pending Atomic, then the same accepted grant parks SETT before the first final slice");
+		"SETT parks before the first final slice at the observed Atomic transition");
+	cpu.setInstructionObserver({});
 	const auto parked = captureRuntimeSaveState(runtime);
 	const auto finish = [&] {
 		for (int step = 0; !cpu.allocationReady() && step < 80; ++step)

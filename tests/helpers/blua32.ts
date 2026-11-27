@@ -23,6 +23,7 @@ import type {
 import {
 	BLUA32_IMAGE_FLAGS_OFFSET,
 	BLUA32_IMAGE_MAPPED_CODE_FLAG,
+	BLUA32_FUNCTION_STATIC,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	type Blua32SymbolsImage,
@@ -519,6 +520,21 @@ export function seedTestRomClosure(cpu: CPU, address: number, domain: ExecutionD
 	const prototype = cpu['functionRecordLatch'];
 	assert.equal(prototype.romBacked, true);
 	assert.equal(prototype.recordUpvalueCount, 0);
+	return cpu['staticClosureFromLatch']();
+}
+
+/**
+ * A bare CPU fixture can supply a completed sampled-prototype value when it
+ * measures CALL or a canonical hit, not resident allocation.
+ */
+export function seedTestMappedStaticClosure(cpu: CPU, address: number,
+	domain: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID): number {
+	const image = cpu['executionImageForDomain'](domain);
+	assert.ok(image && cpu['readFunctionRecordOnBus'](image, address, CPU['executionBusSignalsForDomain'](domain)));
+	const prototype = cpu['functionRecordLatch'];
+	assert.equal(prototype.romBacked, false);
+	assert.equal(prototype.recordUpvalueCount, 0);
+	assert.ok(prototype.flags & BLUA32_FUNCTION_STATIC);
 	return cpu['staticClosureFromLatch']();
 }
 

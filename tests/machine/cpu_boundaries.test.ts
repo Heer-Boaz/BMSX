@@ -27,7 +27,7 @@ import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS
 import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runCpuParity } from '../helpers/cpu_execution';
 
@@ -595,6 +595,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 					return readLE32(image.romBytes, record + offset);
 				});
 			}
+			seedTestMappedStaticClosure(cpu, mappedRecord);
 		}
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 99);

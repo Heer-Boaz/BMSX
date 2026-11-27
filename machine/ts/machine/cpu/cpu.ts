@@ -134,7 +134,7 @@ import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from
 import { TableRecords, TableRebuild, TableCensus, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, HASH_STORE_PENDING,
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_LATCHED_PROTOTYPE, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { StaticClosureIndex } from './static_closure_index';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
 import * as Upvalue from './upvalue';
@@ -689,14 +689,15 @@ export class CPU implements MappedPageInvalidator {
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
-	private beginCapturedClosure(frame: CallFrame, destination: number): void {
+	private beginCapturedClosure(frame: CallFrame, destination: number, canonical: boolean): void {
 		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
 		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
 		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
 		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
 		frame.pc = this.currentInstructionPc;
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Prototype, record.functionAddress, record.executionDomainId);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Latched, +!record.romBacked, record.codeAddress);
+		const flags = (canonical ? CLOSURE_CANONICAL : 0) | (record.romBacked ? 0 : CLOSURE_LATCHED_PROTOTYPE);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.BindingFlags, flags, record.codeAddress);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
 		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
@@ -2950,25 +2951,14 @@ export class CPU implements MappedPageInvalidator {
 			this.requestYield();
 			return;
 		}
-		if (!captureless) {
-			const bytes = Closure.closureRecordBytes(record.recordUpvalueCount, !record.romBacked);
-			if (bytes > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
-			if (this.systemImage.heapServiceFunctions === null) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return;
-			}
-			this.beginCapturedClosure(frame, a);
-			this.requestYield();
+		if (Closure.closureRecordBytes(record.recordUpvalueCount, !record.romBacked) > MAIN_RAM_SIZE)
+			throw LUA_OUT_OF_MEMORY_SIGNAL;
+		if (this.systemImage.heapServiceFunctions === null) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return;
 		}
-		if (canonical) {
-			this.setRegisterClosureFast(frame, registers, a, this.allocateStaticClosureFromLatch());
-			return;
-		}
-		const closure = this.luaHeap.allocateClosureRecord(0, true);
-		Closure.initializeRecord(this.memory, closure, record, false, this.gc.white(), 0, true);
-		this.gc.publishObject(closure);
-		this.setRegisterClosureFast(frame, registers, a, closure);
+		this.beginCapturedClosure(frame, a, canonical);
+		this.requestYield();
 	}
 
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {

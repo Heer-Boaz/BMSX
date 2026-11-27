@@ -454,12 +454,15 @@ void exactGrant(bool store) {
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
 		image.functions = {{.firstWord = 0, .wordCount = jump + 1u, .maxStack = 6},
 			{.firstWord = 6, .wordCount = 1, .maxStack = 1},
-			{.firstWord = 7, .wordCount = 1, .staticClosure = false}};
+			{.firstWord = 7, .wordCount = 1}};
 		if (!store) image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
 		image.irqFunctionIndex = 1;
 		Machine native(image, false, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
-			if (!store) machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
+			if (!store) {
+				machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
+				test::seedTestMappedClosure(machine->cpu, DYNAMIC_RAM_BASE);
+			}
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
 			frame->registers.set(4, valueInteger(address));
 			frame->registers.set(5, valueInteger(0x12345678));
@@ -490,13 +493,13 @@ void exactGrant(bool store) {
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
 		}
 		std::printf("%s grant=%d cycles=%d/%d pc=%08x/%08x EPC=%08x/%08x allocations=%u/%u RAM=%08x/%08x\n",
-			store ? "store" : "allocate", grant, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
+			store ? "store" : "closure", grant, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
 			nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), nativeAllocations, scalarAllocations,
 			native.memory.readU32(address), scalar.memory.readU32(address));
 		require(nativeResult == scalarResult, "both CPUs return the same status for the requested grant");
 		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining, "same grant has the same remaining cycles");
 		require(nativePc == scalarPc && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(), "IRQ is accepted at the same guest instruction boundary");
-		require(nativeAllocations == scalarAllocations, "no premature allocation before the IRQ");
+		require(nativeAllocations == 0 && scalarAllocations == 0, "no allocation on cache hit before the IRQ");
 		require(native.memory.readU32(address) == scalar.memory.readU32(address), "no premature native RAM store before the IRQ");
 	}
 }
@@ -601,7 +604,7 @@ void exactGrantSweep(bool scalarControl) {
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6},
 		{.firstWord = 7, .wordCount = 1, .maxStack = 1},
-		{.firstWord = 8, .wordCount = 1, .staticClosure = false}};
+		{.firstWord = 8, .wordCount = 1}};
 	image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
 	image.irqFunctionIndex = 1;
 	unsigned mismatchCount = 0;
@@ -609,10 +612,11 @@ void exactGrantSweep(bool scalarControl) {
 		Machine native(image, scalarControl, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
+			test::seedTestMappedClosure(machine->cpu, DYNAMIC_RAM_BASE);
 			auto& frame = *machine->cpu.rootThread()->frameAtDepth(0);
 			frame.registers.set(4, valueInteger(address));
 			frame.registers.set(5, valueInteger(0x12345678));
-			// These inputs are live across CLOSURE and its GC work, not just within the register capacity.
+			// These inputs are live across CLOSURE and its successor, not just within the register capacity.
 			frame.setTop(6);
 		}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -640,7 +644,7 @@ void exactGrantSweep(bool scalarControl) {
 			const auto* thread = machine->cpu.activeThread();
 			require(thread->frameDepth() == 1u && machine->cpu.readFrameRegister(0, 4) == valueInteger(address)
 				&& machine->cpu.readFrameRegister(0, 5) == valueInteger(0x12345678),
-				"the warm allocation loop preserves live store operands without faulting");
+				"the warm CLOSURE loop preserves live store operands without faulting");
 			auto& frame = *thread->frameAtDepth(0);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
@@ -667,7 +671,7 @@ void exactGrantSweep(bool scalarControl) {
 		const bool cyclesEqual = native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining;
 		const bool pcEqual = nativePc == scalarPc;
 		const bool epcEqual = native.cpu.readEpcWord() == scalar.cpu.readEpcWord();
-		const bool allocationsEqual = nativeAllocations == scalarAllocations;
+		const bool allocationsEqual = nativeAllocations == 0 && scalarAllocations == 0;
 		const bool ramEqual = native.memory.readU32(address) == scalar.memory.readU32(address);
 		const bool equal = statusEqual && cyclesEqual && pcEqual && epcEqual && registersEqual && allocationsEqual && ramEqual;
 		if (!equal) {
@@ -898,7 +902,7 @@ int main(int argc, char** argv) {
 	try {
 		if (argc != 2) throw std::runtime_error("expected allocate or store");
 		const std::string_view scenario(argv[1]);
-		if (scenario == "allocate") exactGrant(false);
+		if (scenario == "closure") exactGrant(false);
 		else if (scenario == "store") exactGrant(true);
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);

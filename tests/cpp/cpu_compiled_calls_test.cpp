@@ -423,6 +423,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	if (ramRecord) {
 		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+		test::seedTestMappedClosure(machine.cpu, record);
 	}
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
 	// The immutable caller suffix, callee, and marker have real ROM entry
@@ -1238,6 +1239,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		test::seedTestMappedClosure(machine->cpu, record);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 12000);
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
@@ -1245,6 +1247,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* thread = machine->cpu.activeThread();
 		auto* caller = thread->currentFrame;
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, static_cast<u32>(maxStack));
+		if (maxStack != 32) test::seedTestMappedClosure(machine->cpu, record);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		machine->cpu.runUntilDepth(0, 1);
 		require(thread->stackCapacity >= 40, "an actual earlier call retained backing beyond the smaller raw frame reservation");
@@ -1559,6 +1562,7 @@ void weakCanonicalClosuresAndStaticEntry() {
 		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 		for (u32 version = 1; version <= 64; ++version) {
 			machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, version);
+			test::seedTestMappedClosure(machine.cpu, record);
 			machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 			machine.cpu.runUntilDepth(0, 1);
 		}
@@ -1720,6 +1724,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		test::seedTestMappedClosure(machine->cpu, record);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 20000);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -1768,11 +1773,12 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	requireParity(native, scalar);
 	for (auto* machine : {&native, &scalar}) {
 		const auto capacity = machine->cpu.activeThread()->stackCapacity;
+		machine->memory.writeBytes(largeRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		machine->memory.writeMappedU32LE(largeRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
+		test::seedTestMappedClosure(machine->cpu, largeRecord);
 		const auto* caller = machine->cpu.activeThread()->currentFrame;
 		const auto* spare = caller->next;
 		require(spare != nullptr, "warm calls have a reusable callee node");
-		machine->memory.writeBytes(largeRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
-		machine->memory.writeMappedU32LE(largeRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 16u * INSTRUCTION_BYTES);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
@@ -1792,6 +1798,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const u32 entry = machine->rom.textAddress + 2u * INSTRUCTION_BYTES;
 		machine->cpu.activeThread()->currentFrame->registers.set(1, machine->cpu.activeThread()->currentFrame->registers.get(0));
 		machine->memory.writeBytes(secondRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[2], BLUA32_FUNCTION_RECORD_SIZE);
+		test::seedTestMappedClosure(machine->cpu, secondRecord);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		machine->cpu.runUntilDepth(0, callPrefix); machine->cpu.runUntilDepth(1, 100);
 		require(machine->cpu.readFrameRegister(0, 4) == valueInteger(7), "publishing a separate prototype leaves the original callable");
@@ -1844,6 +1851,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.restoreRuntimeState(snapshot);
 		machine->memory.writeBytes(unalignedEntryRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(unalignedEntryRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress + DECODED_PAGE_WORDS * INSTRUCTION_BYTES + 1u);
+		test::seedTestMappedClosure(machine->cpu, unalignedEntryRecord);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 20u * INSTRUCTION_BYTES);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
@@ -1894,12 +1902,17 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 	CpuMachine generated(image, false), scalar(image, true);
 	for (auto* machine : {&generated, &scalar}) {
 		if (!ramRecord) test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
-		if (ramRecord) machine->memory.writeBytes(sourceRecord,
-			machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		if (ramRecord) {
+			machine->memory.writeBytes(sourceRecord, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+			auto& cpu = machine->cpu;
+			const u32 closure = test::seedTestMappedClosure(cpu, sourceRecord, false);
+			cpu.activeThread()->currentFrame->registers.set(0, valueClosure(closure));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
+		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		if (machine == &generated) machine->cpu.prepareSystemNativeCode();
 #endif
-		machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]);
+		if (!ramRecord) machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]);
 		require(machine->cpu.readFramePc(0) == machine->rom.textAddress + 2 * INSTRUCTION_BYTES,
 			"CLOSURE construction finishes before the first CALL");
 		machine->cpu.runUntilDepth(0, 100);

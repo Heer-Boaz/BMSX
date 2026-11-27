@@ -815,6 +815,7 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 				return readLE32(source.record + offset);
 			});
 		}
+		test::seedTestMappedClosure(cpu, recordAddress);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -1740,6 +1741,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 				});
 			}
 		}
+		if (edgeKind == 1) test::seedTestMappedClosure(cpu, mappedRecord);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(99));
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");

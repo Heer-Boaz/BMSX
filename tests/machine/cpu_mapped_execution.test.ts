@@ -30,7 +30,7 @@ import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spe
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
@@ -162,6 +162,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 	writeInstruction(ramCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
 	writeInstruction(ramCode, 3, OpCode.RET, 0, 2, 0, 0);
 	writeRamFunction(memory, ramCode, 1);
+	seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
 
 	runGuestToHalt(cpu, 100);
 	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, cpu.gc));
@@ -210,18 +211,19 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RET, 0, 2, 0);
 	writeRamFunction(memory, code, 4);
-	const instantiate = (maxStack: number) => {
+	const instantiate = (maxStack: number, issueFixture = false) => {
 		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, maxStack);
+		if (issueFixture) seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setInteger(1, RAM_FUNCTION_ADDRESS);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		cpu.runUntilDepth(0, 2);
 		return frame.registers.get(0);
 	};
-	const retained = instantiate(4);
+	const retained = instantiate(4, true);
 	cpu.rootThread.frameAtDepth(0).registers.set(2, retained);
-	for (let maxStack = 5; maxStack < 35; ++maxStack) instantiate(maxStack);
-	const latest = instantiate(35);
+	for (let maxStack = 5; maxStack < 35; ++maxStack) instantiate(maxStack, true);
+	const latest = instantiate(35, true);
 	cpu.rootThread.frameAtDepth(0).top = 3;
 	const countVersions = (): number => {
 		let count = 0;
