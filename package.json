@@ -110,6 +110,7 @@
 		"test:bios-gc-pressure-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_pressure_service.ts",
 		"test:bios-pinned-native-aperture": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_lane_aperture.ts",
 		"test:bios-pinned-native-transfers": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_lane_transfers.ts",
+		"test:bios-pinned-floor-divide": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_floor_divide.ts",
 		"test:bios-gc-capture-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_capture_trace.ts",
 		"test:bios-gc-thread-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_thread_trace.ts",
 		"test:bios-gc-object-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_object_service.ts",

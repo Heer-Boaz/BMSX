@@ -148,7 +148,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 			case OpCode::KSMI: case OpCode::K0: case OpCode::K1:
 			case OpCode::KNIL: case OpCode::KTRUE: case OpCode::KFALSE: case OpCode::LOADNIL:
 			case OpCode::LOADK: case OpCode::LOADKR:
-			case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::UNM:
+			case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::UNM: case OpCode::FLOORDIV:
 			case OpCode::NOT: case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR:
 			case OpCode::SHL: case OpCode::SHR: case OpCode::BNOT:
 			case OpCode::JMPIF: case OpCode::JMPIFNOT: case OpCode::EQ: case OpCode::LT: case OpCode::LE:
