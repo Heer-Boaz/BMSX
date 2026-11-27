@@ -15,6 +15,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
+#include "support/string_slice_reference.h"
 
 namespace {
 using namespace bmsx;
@@ -62,7 +63,7 @@ int main(int argc, char** argv) {
 					u32 source, first, bytes;
 					trace >> source >> first >> bytes;
 					try {
-						const u32 id = cpu.stringPool().internSlice(source, first, bytes);
+						const u32 id = bmsx::test::StringSliceReference::intern(cpu.stringPool(), source, first, bytes);
 						std::cout << id << '\n';
 					} catch (const LuaOutOfMemorySignal&) {
 						std::cout << "0\n";

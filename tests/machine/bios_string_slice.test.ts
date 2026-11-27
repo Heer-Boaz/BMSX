@@ -10,6 +10,7 @@ import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 const SLICE = 'kernel/string_slice', PROBE = 'test/slice_publication';
 const entrySource = 'halt_until_irq';
@@ -150,7 +151,7 @@ for (const optLevel of [0, 3] as const) {
 		const occupiedBefore = cpu.heapAllocator.occupiedBytes();
 		cpu.stringPool.beginReachabilityEpoch();
 		oracle.stringPool.beginReachabilityEpoch();
-		assert.equal(oracle.stringPool.internSlice(source, 2, text.length), match);
+		assert.equal(internStringSliceReference(oracle.stringPool, source, 2, text.length), match);
 		assert.equal(invoke('retain', metadata, source, 2, text.length, hash), match, 'shrink frontier probes upper after lower');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupiedBefore);
 		// The wrapped probe deliberately overwrote diagnostic backing bytes; synchronize this
@@ -171,7 +172,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(metadata + capacity), count);
 		const hash = hashText(text);
 		assert.equal(invoke('lookup_ram_slice', metadata, source, 2, text.length, hash), 0);
-		const expectedId = oracle.stringPool.internSlice(source, 2, text.length);
+		const expectedId = internStringSliceReference(oracle.stringPool, source, 2, text.length);
 		assert.equal(invoke('prepare_existing_directory', metadata, arena, source), 0);
 		const destination = memory.readRamRecordWord(metadata + rehashBase);
 		assert.notEqual(destination, 0, 'directory growth has reserved and published the next directory');
@@ -208,7 +209,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(oracle.heapAllocator.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
 		const before = oracle.stringPool.bytes(source);
 		const white = oracle.gc.white();
-		const result = oracle.stringPool.internSlice(source, 2, text.length);
+		const result = internStringSliceReference(oracle.stringPool, source, 2, text.length);
 		assert.equal(oracle.stringPool.find(victimText), undefined);
 		assert.equal(oracle.gc.white(), white ^ 1, 'exactly one fresh recovery epoch suffices');
 		assert.equal(oracle.stringPool.bytes(result), text);
@@ -224,7 +225,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
 			while (oracle.heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
 		const before = oracle.stringPool.bytes(source);
-		assert.throws(() => oracle.stringPool.internSlice(source, 2, text.length), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+		assert.throws(() => internStringSliceReference(oracle.stringPool, source, 2, text.length), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 		assert.equal(oracle.stringPool.bytes(source), before);
 		assert.equal(oracle.stringPool.find(text), undefined);
 	});

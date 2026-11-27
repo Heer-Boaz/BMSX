@@ -23,6 +23,7 @@ import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 function createCpu(): CPU {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
@@ -72,10 +73,10 @@ test('a ROM String requires a complete payload before publication and preserves 
 	assert.equal(pool.bytes(id), payload);
 	for (const [first, length] of [[1, 4], [4, 2]]) {
 		const expected = payload.slice(first, first + length);
-		const result = pool.internSlice(id, first, length);
+		const result = internStringSliceReference(pool, id, first, length);
 		assert.equal(pool.bytes(result), expected);
 		assert.equal(pool.find(expected), result);
-		assert.equal(pool.internSlice(id, first, length), result);
+		assert.equal(internStringSliceReference(pool, id, first, length), result);
 	}
 });
 
@@ -89,7 +90,7 @@ test('a borrowed String stays live through emergency admission of its slice', ()
 	const first = 13, length = garbage.length, remaining = heap.capacity() - heap.usedBytes();
 	assert.ok(remaining >= 0 && remaining < BLUA32_STRING_RECORD_HEADER_SIZE + length,
 		'the slice needs the quota occupied by the disposable String');
-	const result = pool.internSlice(source, first, length);
+	const result = internStringSliceReference(pool, source, first, length);
 	assert.equal(pool.find(garbage), undefined, 'admission actually collected unreachable Strings');
 	assert.equal(pool.find(input), source, 'the only root for the source was the borrowed slice');
 	assert.equal(pool.bytes(result), input.slice(first, first + length));

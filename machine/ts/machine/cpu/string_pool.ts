@@ -348,14 +348,6 @@ export class StringPool {
 		return this.internSource(hashBytes(bytes, byteOffset, byteLength), bytes, byteOffset, byteLength);
 	}
 
-	public internSlice(id: StringId, first: number, count: number): StringId {
-		const source = this.storage(id), inRam = isRamStringId(id);
-		const at = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + first;
-		const start = inRam ? at & RAM_BYTE_MASK : at;
-		const wrapped = inRam ? Math.max(0, start + count - MAIN_RAM_SIZE) : 0;
-		return this.internSource(hashBytes(source, start, count, wrapped), source, start, count, id, wrapped);
-	}
-
 	private internSource(hash: number, source: InternSource, start: number, length: number, sourceId: StringId = 0,
 		wrapped = 0): StringId {
 		const existing = this.lookup(hash, source, start, length, wrapped);

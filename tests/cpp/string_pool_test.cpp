@@ -14,6 +14,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/string_slice_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -99,7 +100,7 @@ void borrowedSliceSurvivesEmergencyAllocation() {
 	constexpr size_t start = 4, count = 92u * 1024u;
 	require(heap.usedBytes() + BLUA32_STRING_RECORD_HEADER_SIZE + count > heap.capacity(),
 		"the actual occupied quota requires an emergency collection for this slice");
-	const auto result = pool.internSlice(source, start, count);
+	const auto result = bmsx::test::StringSliceReference::intern(pool, source, start, count);
 	const std::string_view expected(input.data() + start, count);
 	require(!pool.find(garbage) && pool.find(input) == source
 		&& pool.toString(result) == expected && pool.find(expected) == result,

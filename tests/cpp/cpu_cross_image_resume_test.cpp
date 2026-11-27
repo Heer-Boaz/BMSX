@@ -12,6 +12,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/string_slice_reference.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
@@ -110,7 +111,7 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	require(restoredString == valueString(local | 0x80000000u),
 		"the restored slot-one constant still carries its published String ID");
 	const StringId slotOneId = asStringId(restoredString);
-	const auto slice = cpu.stringPool().internSlice(slotOneId, 5u, 4u);
+	const auto slice = bmsx::test::StringSliceReference::intern(cpu.stringPool(), slotOneId, 5u, 4u);
 	require(cpu.stringPool().toString(slice) == "one!" && cpu.stringPool().find("one!") == slice
 		&& cpu.stringPool().byteAt(slotOneId, 8u) == '!',
 		"same-media restore preserves the exact published String and its physically backed final byte");

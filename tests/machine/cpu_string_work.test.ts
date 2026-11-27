@@ -29,6 +29,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const op of [OpCode.CONCAT, OpCode.CONCATN, OpCode.LT, OpCode.LE, OpCode.EQ]) {
@@ -385,10 +386,10 @@ test('RAM String reads and intern probes wrap at the physical seam', () => {
 	assert.equal(pool.compareBytes(mirror, straight, 0, 13), 0);
 	assert.ok(pool.compareBytes(mirror, after, 6, 4) < 0);
 	for (const start of [6, 9]) {
-		const slice = pool.internSlice(mirror, start, 4), expected = bytes.slice(start, start + 4);
+		const slice = internStringSliceReference(pool, mirror, start, 4), expected = bytes.slice(start, start + 4);
 		assert.equal(pool.bytes(slice), expected);
 		assert.equal(pool.find(expected), slice, 'ordinary interning and slicing hash the same bytes');
-		assert.equal(pool.internSlice(mirror, start, 4), slice, 'slice lookup compares the same physical span');
+		assert.equal(internStringSliceReference(pool, mirror, start, 4), slice, 'slice lookup compares the same physical span');
 	}
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const count = memory.readRamRecordWord(metadata + 4);

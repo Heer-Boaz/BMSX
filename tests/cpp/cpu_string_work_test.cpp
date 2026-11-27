@@ -11,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/string_slice_reference.h"
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -284,7 +285,7 @@ void ramStringPorts() {
 		require(pool.byteAt(mirror, 8) == 0 && pool.byteAt(mirror, 9) == 0xf7, "byte reads cross the physical seam");
 		require(pool.compareBytes(mirror, after, 6, 3) == 0 && pool.compareBytes(mirror, after, 10, 3) == 0, "comparison only visits the supplied byte interval");
 		require(pool.compareBytes(mirror, straight, 0, 13) == 0 && pool.compareBytes(mirror, after, 6, 4) < 0, "String comparison visits mirrored bytes in order");
-		const auto slice = pool.internSlice(mirror, 6, 6);
+		const auto slice = bmsx::test::StringSliceReference::intern(pool, mirror, 6, 6);
 		require(pool.toString(slice) == bytes.substr(6, 6) && pool.intern(bytes.substr(6, 6)) == slice,
 			"a byte slice crossing the physical seam interns the same result as ordinary bytes");
 		const auto doubled = pool.internConcat(mirror, bytes.size(), mirror, bytes.size());

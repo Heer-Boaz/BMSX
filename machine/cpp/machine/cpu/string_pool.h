@@ -19,6 +19,7 @@ inline constexpr u8 STRING_GC_EPOCH_MASK = 1u;
 class HeapAllocator;
 class LuaHeap;
 class Memory;
+namespace test { struct StringSliceReference; }
 
 // A String payload is the record's machine address. Cartridge ROM payloads
 // carry their socket in bit 31, independently of the current bus selection.
@@ -29,8 +30,6 @@ public:
 	StringId intern(std::string_view value, u32 hash);
 	// Concatenation supplies the two lengths it admitted against the result limit.
 	StringId internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes);
-	// Intern the admitted byte range while rooting its source during allocation.
-	StringId internSlice(StringId id, size_t offset, size_t count);
 	std::optional<StringId> find(std::string_view value) const;
 	int byteLength(StringId id) const;
 	u32 byteAt(StringId id, size_t index) const;
@@ -56,6 +55,7 @@ public:
 	bool sweeping() const;
 
 private:
+	friend struct test::StringSliceReference;
 	struct ByteSpan {
 		std::string_view first;
 		std::string_view wrapped;

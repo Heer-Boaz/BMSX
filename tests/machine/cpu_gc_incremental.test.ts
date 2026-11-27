@@ -24,6 +24,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 // Exercise the independent native oracle from an already admitted RAM state.
 function machine() {
@@ -830,7 +831,7 @@ test('physical allocations advance reclamation and replay from a checkpoint with
 	const tryReservations = () => {
 		const before = allocatedObjectRecords(cpu).length;
 		let seen = diagnostics.steps;
-		const borrowed = stringPool.internSlice(source, 9, 21);
+		const borrowed = internStringSliceReference(stringPool, source, 9, 21);
 		for (let requests = 1; requests <= 256; ++requests) {
 			const allocated = cpu.createTable(1024, 0);
 			if (diagnostics.steps === seen) continue;

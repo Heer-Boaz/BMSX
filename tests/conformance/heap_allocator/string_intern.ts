@@ -25,6 +25,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { internStringSliceReference } from '../../helpers/string_slice_reference';
 
 const probe = { path: 'test/intern_probe', source: `module<const>
 local intern<const> = require('kernel/allocate_string_slice')
@@ -164,7 +165,7 @@ try {
 			// Native reference calls StringPool in Idle (no host quantum clamp).
 			// Both assist fixtures explicitly fit within the supplied BLua policy allowance.
 			let reference = 0;
-			try { reference = oracle.machine.cpu.stringPool.internSlice(source, 2, text.length); }
+			try { reference = internStringSliceReference(oracle.machine.cpu.stringPool, source, 2, text.length); }
 			catch (error) {
 				if (knownFault) {
 					assert.match((error as Error).message, knownFault === 1 ? /String chain is invalid/ : knownFault === 2 ? /String header is invalid/ : /String is truncated/);

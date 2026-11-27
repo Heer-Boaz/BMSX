@@ -344,13 +344,6 @@ StringId StringPool::internConcat(StringId left, u32 leftBytes, StringId right, 
 	return insert({text, {}}, hash, 0u);
 }
 
-StringId StringPool::internSlice(StringId id, size_t offset, size_t count) {
-	const auto bytes = readBytes(id, offset, count);
-	const u32 hash = fnv1a32(bytes.wrapped, fnv1a32(bytes.first));
-	if (const auto match = lookup(hash, {bytes.first, {&bytes.wrapped, 1}, count})) return retain(match);
-	return insert(bytes, hash, id);
-}
-
 StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 	Value root = valueNil();
 	if (source != 0u) {
