@@ -111,7 +111,8 @@ import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
 	type ExecutionDomainMask,
-	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
+	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
+	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
@@ -933,7 +934,10 @@ export class CPU implements MappedPageInvalidator {
 			if (image === null) continue;
 			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), image.executionDomainId);
 			const base = this.memory.readRamRecordWord(binding);
-			if (base !== 0) this.memory.writeRamRecordWord(binding, 0);
+			if (base !== 0) {
+				this.memory.writeRamRecordWord(binding, 0);
+				this.memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0, 0);
+			}
 			this.releaseImageData(base, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
 		}
 		this.executionImagesByDomain.fill(null);
@@ -1144,23 +1148,24 @@ export class CPU implements MappedPageInvalidator {
 			this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 				this.systemGlobalBank, imageBindingBase + 4 * globalNameCount);
 		}
-		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, constantStringRootCount = 0;
-		const stringBinding = imageBindingBase + nameBytes;
+		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, ramStringCount = 0;
+		const stringBinding = restoring ? this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET)
+			: imageBindingBase + nameBytes;
 		if (reused === null) {
 			const buffer = new ArrayBuffer(constantCount * 5);
 			constWords = new Uint32Array(buffer, 0, constantCount);
 			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 			constantStringSlots = new Uint32Array(stringCount);
-			constantStringRootCount = this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
+			ramStringCount = this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
 				stringBinding, restoring, constantStringSlots);
 		} else {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.
 			({ constWords, constTags, constantStringSlots } = reused);
 			for (let i = 0; i < constantStringSlots.length; ++i) {
-				const id = loadImageStringBinding(this.memory, stringBinding, stringCount, i, constantStringRootCount);
+				const id = loadImageStringBinding(this.memory, stringBinding, stringCount, i, ramStringCount);
 				constWords[constantStringSlots[i]] = id;
-				constantStringRootCount += +isRamStringId(id);
+				ramStringCount += +isRamStringId(id);
 			}
 		}
 		const image: Blua32ExecutionImage = {
@@ -1173,15 +1178,16 @@ export class CPU implements MappedPageInvalidator {
 			constantRecordBytes: constantBytes,
 			constantRecordOffset: constantOffset,
 			constantStringSlots,
-			constantStringBase: stringBinding,
-			constantStringRootCount,
 			globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
 			romCallBindings: new RomCallBindings(),
 			decodedPages: new Map(),
 			compiledCodeLookup: null,
 		};
-		if (!restoring) this.memory.writeRamRecordPair(binding, imageBindingBase, imageBindingBytes);
+		if (!restoring) {
+			this.memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBinding, ramStringCount);
+			this.memory.writeRamRecordPair(binding, imageBindingBase, imageBindingBytes);
+		}
 		return image;
 	}
 
@@ -5362,11 +5368,6 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordPair(descriptor, this.rootThread.address, this.activeThread.address);
 		memory.writeRamRecordPair(descriptor + 8, this.completionThread, this.haltedUntilIrqThread);
 		let destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
-		for (let plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
-			const image = this.executionImagesByDomain[plane];
-			memory.writeRamRecordPair(destination, image === null ? 0 : image.constantStringRootCount,
-				image === null ? 0 : image.constantStringBase);
-		}
 		memory.writeRamRecordPair(destination, this.completionValueCount,
 			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE);
 		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
@@ -5409,8 +5410,8 @@ export class CPU implements MappedPageInvalidator {
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
 		if (bank === GcRootBank.ConcatOperands) return this.concat.active ? this.concat.values.length - this.concat.source : 0;
-		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
-		return image === null ? 0 : image.constantStringRootCount;
+		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
+		return this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
 	}
 
 	public markRootBank(heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
@@ -5434,9 +5435,10 @@ export class CPU implements MappedPageInvalidator {
 			}
 			return;
 		}
-		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;
+		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
+		const strings = this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 		for (let slot = first; slot < end; ++slot)
-			heap.markString(this.memory.readRamRecordWord(image.constantStringBase + 4 * slot) & ~IMAGE_STRING_RAM_ORDINAL);
+			heap.markString(this.memory.readRamRecordWord(strings + 4 * slot) & ~IMAGE_STRING_RAM_ORDINAL);
 	}
 
 	public markRootThreads(heap: GcHeap): void {

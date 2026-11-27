@@ -421,7 +421,7 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
-	void bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
+	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
 	enum class ExecutionImageUpdate { Install, Replace, Restore };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,

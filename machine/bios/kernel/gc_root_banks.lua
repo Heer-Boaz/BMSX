@@ -24,8 +24,8 @@ local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
 -- GlobalBank owns the physical Base/Capacity/Count and its b, b+12*c,
 -- b+16*c backing planes. No global root descriptor is published.
--- Constant planes borrow the resolved RAM String prefix of the physical
--- binding backing, in pool ordinal order, not all constant slots. Completion counts its live RET Values;
+-- Installed operand records own the compact RAM-String prefix, in pool
+-- ordinal order, not all constant slots. Completion counts its live RET Values;
 -- Concat counts every unread captured slot (but traces only Strings).
 -- The last two planes begin at the start of the live span. The descriptors
 -- are a private read contract; this module does not materialize those spans.
@@ -41,7 +41,7 @@ struct root_descriptors
 	active: addr -- U:5108 P:3179
 	completion_thread: addr -- U:5108 P:3180
 	halted: addr -- U:5109 P:3181
-	banks: root_bank[5] -- T:69 H:20
+	banks: root_bank[2] -- T:69 H:20
 end
 
 local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_base, names_base, kind, first, stop, replace_color_byte) -- U:5082 P:3152
@@ -99,10 +99,13 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			names = ram_base + (base & ram_word_mask) -- U:5087 P:3157 G:31 B:34
 			payloads = ram_base + ((base + 12 * capacity) & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
 			tags = ram_base + ((base + 16 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
-		else -- U:5076-5079 P:3146-3149
-			local bank<const>: *root_bank = &roots.banks[kind - system_constants] -- T:593 C:624-625
-			bank_end, payloads = bank.count, bank.payloads -- T:593 C:625 U:5076-5079,5092,5096,5104 P:3146-3149,3163,3168,3174
-			if kind >= completion then tags = bank.tags end -- U:5091-5092,5095-5099 P:3162-3163,3166-3169
+		elseif kind < completion then -- U:5078-5079,5103-5104 P:3148-3149,3173-3174
+			local installed<const>: *installed_image_binding = ram_base + control - layout.control_offset + layout.installed_image_bindings_offset -- T:593 C:625 U:5078-5079 P:3148-3149
+			local image<const>: *installed_image_binding = &installed[kind - system_constants] -- U:5078-5079,5103 P:3148-3149,3173
+			bank_end, payloads = image.ram_strings, image.strings -- U:5078-5079,5104 P:3148-3149,3174
+		else -- U:5076-5077 P:3146-3147
+			local bank<const>: *root_bank = &roots.banks[kind - completion] -- T:593 C:624-625
+			bank_end, payloads, tags = bank.count, bank.payloads, bank.tags -- T:593 C:625 U:5076-5077,5091-5092,5095-5099 P:3146-3147,3162-3163,3166-3169
 		end
 		local words<const> = globals and 3 or 1 -- T:595 C:627
 		local worst<const> = words + (globals and 2 or 1) -- T:595 C:627

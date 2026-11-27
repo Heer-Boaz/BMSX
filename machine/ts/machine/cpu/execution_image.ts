@@ -372,8 +372,6 @@ export type Blua32ExecutionImage = {
 	constantRecordOffset: number;
 	readonly constantStringSlots: Uint32Array;
 	// Borrow the RAM prefix of the String binding backing.
-	readonly constantStringBase: number;
-	readonly constantStringRootCount: number;
 	globalNameCount: number;
 	systemNameCount: number;
 	romFunctions: Blua32RomFunctionDirectory;

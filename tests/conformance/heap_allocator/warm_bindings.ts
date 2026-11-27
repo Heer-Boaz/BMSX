@@ -12,6 +12,7 @@ import {
 	applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin,
 } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
@@ -70,6 +71,7 @@ try {
 		const metadata = RAM_BASE + management + HEAP_STRING_METADATA_OFFSET;
 		const systemDesc = RAM_BASE + management + 0x1c80, globalDesc = systemDesc + 12;
 		const imageDesc = globalDesc + 12;
+		const binding = (lane: number) => imageDesc + EXECUTION_IMAGE_BINDING_SIZE * lane;
 		const write = (address: number, value: number) => memory.writeRamRecordWord(address, value);
 		const read = (address: number) => memory.readRamRecordWord(address);
 		const readWords = (base: number, count: number) => Array.from({ length: count }, (_, i) => read(base + 4 * i));
@@ -86,15 +88,17 @@ try {
 		const imageBases = spans.map((span, lane) => {
 			const base = span === 0 ? 0 : heap.allocateRecord(span, false, 0, 0);
 			assert.equal(base !== 0, span !== 0);
-			write(imageDesc + 8 * lane, base);
-			write(imageDesc + 8 * lane + 4, span);
+			write(binding(lane), base);
+			write(binding(lane) + EXECUTION_IMAGE_BINDING_SPAN_OFFSET, span);
+			write(binding(lane) + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, base);
+			write(binding(lane) + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, span >>> 2);
 			for (let word = 0; word < span / 4; ++word) write(base + word * 4, 0x7a510000 + 256 * lane + word);
 			return base;
 		});
 		const surviving = heap.allocateRecord(32, false, 0, 0);
 		assert.ok(surviving !== 0);
 		for (let i = 0; i < 8; ++i) write(surviving + 4 * i, 0x122f0000 + i);
-		const lowCanary = systemDesc - 4, highCanary = imageDesc + 24;
+		const lowCanary = systemDesc - 4, highCanary = binding(3);
 		write(lowCanary, 0x49faa398); write(highCanary, 0xccda2e34);
 		for (const slot of [1, 0] as const) {
 			const { stringBucketAddress, stringBucketCount } = fixtures[slot].cartImage.header;
@@ -192,8 +196,8 @@ try {
 			expectedUsed -= span;
 			until(() => heap.usedBytes() === expectedUsed, 1);
 			assert.ok(cpu.heapServiceActive());
-			assert.equal(read(imageDesc + 8 * lane), 0);
-			assert.deepEqual([0, 1, 2].slice(lane + 1).map(i => read(imageDesc + 8 * i)), imageBases.slice(lane + 1));
+			assert.equal(read(binding(lane)), 0);
+			assert.deepEqual([0, 1, 2].slice(lane + 1).map(i => read(binding(i))), imageBases.slice(lane + 1));
 			assert.deepEqual(readWords(metadata + directory, directoryWords), oldDirectory);
 		}
 		until(() => read(metadata + firstCart) === 0, 1);
@@ -205,14 +209,16 @@ try {
 			assert.deepEqual(readWords(metadata + directory, directoryWords), oldDirectory.map((word, lane) => lane <= i ? 0 : word));
 		}
 		finish();
-		assert.deepEqual(readWords(imageDesc, 6), spans.flatMap(span => [0, span]));
+		assert.deepEqual(readWords(imageDesc, 12), spans.flatMap(span => [0, span, 0, 0]));
 		assert.deepEqual(readWords(metadata + firstCart, 7), Array(7).fill(0));
 		assert.equal(heap.usedBytes(), expectedUsed);
 		const historyEnd = history.capture(memory, historyBaseline);
 		for (const [lane, base] of imageBases.entries()) {
 			if (base === 0) continue;
 			old.luaHeap.releaseRecord(base, spans[lane]); // The TS native owner clears the old host record after free.
-			oldMemory.writeRamRecordWord(imageDesc + 8 * lane, 0);
+			oldMemory.writeRamRecordWord(binding(lane), 0);
+			oldMemory.writeRamRecordWord(binding(lane) + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0);
+			oldMemory.writeRamRecordWord(binding(lane) + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, 0);
 		}
 		old.stringPool.clearRomTables();
 		match();

@@ -13,9 +13,7 @@ import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GcRootBank } from '../../../machine
 import { GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueString } from '../../../machine/ts/machine/cpu/value';
-import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
-import { HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HeapServiceRootBankField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -55,7 +53,8 @@ try {
 		for (const id of [name, value, ...constants]) assert.ok(id >= RAM_BASE);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 0);
 		const image = cpu['executionImageForDomain'](0)!;
-		assert.deepEqual(constants.map((_, i) => memory.readRamRecordWord(image.constantStringBase + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL), constants);
+		const installed = executionImageBindingOffset(management, 0), strings = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+		assert.deepEqual(constants.map((_, i) => memory.readRamRecordWord(strings + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL), constants);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), constants.length);
 
 		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress({ image: system.systemImage, symbols: system.systemSymbols }, 'kernel/gc_full', 'collect_full'), cartRom);
@@ -69,11 +68,8 @@ try {
 		assert.equal(memory.readRamRecordWord(globalBase + 4 * globalSlot), name);
 		assert.equal(memory.readRamRecordWord(globalBase + 12 * capacity + 4 * globalSlot), value);
 		assert.equal(memory.readRamRecordByte(globalBase + 16 * capacity + globalSlot), ValueTag.String);
-		const constantBank = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE
-			+ (GcRootBank.Cart0Constants - GcRootBank.SystemConstants) * HEAP_SERVICE_ROOT_BANK_SIZE;
-		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Count), constants.length);
-		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Payloads),
-			image.constantStringBase);
+		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), constants.length);
+		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), strings);
 
 		let cursor = rootCursor(), before = epochWork();
 		driver.reach(() => {
@@ -90,7 +86,7 @@ try {
 
 		driver.reach(() => marked(constants[0]), 'first compact Constant mark');
 		assert.equal(marked(constants[1]), false, 'RAM String roots retain their original constant-ordinal order');
-		const binding = image.constantStringBase - RAM_BASE;
+		const binding = strings - RAM_BASE;
 		driver.checkpoint('marked-first-constant', [[binding, binding + 4 * image.constantStringSlots.length],
 			[constants[0] - RAM_BASE, constants[0] - RAM_BASE + 4]]);
 

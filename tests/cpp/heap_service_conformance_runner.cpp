@@ -86,11 +86,13 @@ int main(int argc, char** argv) {
 						for (const u32 bankAddress : {address, globals})
 							GlobalBank(memory, cpu.gcHeap(), bankAddress).clear();
 					} else if (operation == 'i') {
-						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
+						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += EXECUTION_IMAGE_BINDING_SIZE) {
 							const u32 base = memory.readRamRecordWord(address);
 							if (base == 0) continue;
-							memory.writeRamRecordWord(address, 0); // Native releaseImageData exchanges this before the free.
-							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + 4));
+							memory.writeRamRecordWord(address, 0); // The installed record detaches before free.
+							memory.writeRamRecordWord(address + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0);
+							memory.writeRamRecordWord(address + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, 0);
+							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
 						}
 						cpu.stringPool().clearRomTables();
 					} else throw std::runtime_error("Expected native namespace or image retirement");

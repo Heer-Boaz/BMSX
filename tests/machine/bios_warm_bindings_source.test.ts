@@ -7,6 +7,7 @@ import { verifyPinnedBluaSource } from '../helpers/blua_source_proof';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 
 const port = 'machine/bios/kernel/warm_bindings.lua';
+const bindings = 'machine/bios/kernel/image_string_bindings.lua';
 const basis = '91ce105cf4d9649c20b9e04205dede1df9f8b297';
 const sources = {
 	T: ['machine/ts/machine/cpu/cpu.ts', '17b0726f2ad115e6a2e399ce94c64a7dbe7b7e5aa499174a5da4b7c4dfba29ee'],
@@ -29,11 +30,13 @@ test('warm retirement pins both native boundaries and maps every guest backing r
 		['L', 288, 291], ['N', 291, 294], ['T', 931, 931], ['C', 223, 224],
 		['T', 1016, 1018], ['C', 303, 304], ['T', 934, 934], ['C', 228, 228], ['S', 127, 128], ['R', 137, 138],
 	]);
-	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([port]));
-	const { chunk } = workspace.updateFile(port, readFileSync(port, 'utf8'));
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([port, bindings]));
+	const { chunk } = workspace.updateFile(bindings, readFileSync(bindings, 'utf8'));
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
-	const pair = types.resolve(port, { name: 'installed_image_binding', arrayLengths: [], span: chunk.body.get(0).span }).struct!;
-	assert.equal(pair.size, 8);
+	const pair = types.resolve(bindings, { name: 'installed_image_binding', arrayLengths: [], span: chunk.body.get(0).span }).struct!;
+	assert.equal(pair.size, 16);
 	assert.equal(pair.fields.get('base')?.offset, 0);
 	assert.equal(pair.fields.get('bytes')?.offset, 4);
+	assert.equal(pair.fields.get('strings')?.offset, 8);
+	assert.equal(pair.fields.get('ram_strings')?.offset, 12);
 });

@@ -8,10 +8,7 @@ local layout<const> = require('kernel/gc_runtime_layout') -- L:26-29 N:22-25 M:6
 local records<const> = require('kernel/dlmalloc_record') -- L:288-292 N:291-295
 local names<const> = require('kernel/global_bank') -- G:9-10,50-53 H:9,32-35
 
-struct installed_image_binding
-	base: addr -- I:348 J:192
-	bytes: u32 -- I:349 J:192
-end
+local _bindings<const> = require('kernel/image_string_bindings') -- I:348-349 J:192; installed record owns its String prefix
 
 local retire_namespace<const> = function(management, address) -- G:50 H:32
 	local bank<const>: *namespace_bank = address -- G:9,50 H:32
@@ -39,6 +36,8 @@ local retire_images<const> = function(management, installed) -- T:930-935 C:219,
 			-- C++ exchanges the host base before free; TS detaches it after.
 			-- Choose the existing C++ order for this now-pausable RAM record.
 			bindings[lane].base = 0 -- T:1018 C:303; no backing in an empty lane
+			bindings[lane].strings = 0 -- T:1018 C:303; detach the prefix with its backing
+			bindings[lane].ram_strings = 0 -- T:1018 C:303
 			records.bmsx_dlmalloc_release_record(arena, base - layout.ram_base, bindings[lane].bytes, occupied) -- T:1017 C:304 L:289-291 N:292-294
 		end
 	end

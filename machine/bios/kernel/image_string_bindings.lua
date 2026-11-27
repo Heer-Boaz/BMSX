@@ -7,6 +7,13 @@ module<const>
 local strings<const> = require('kernel/string_record')
 local ordinal_ram_bit<const> = 1 -- image_format.{h,ts}: String records align to 8 bytes
 
+struct installed_image_binding
+	base: addr
+	bytes: u32
+	strings: addr
+	ram_strings: u32
+end
+
 local store_binding<const> = function(base, count, slot, ram_count, id)
 	local words<const>: *u32 = base
 	local ram<const> = strings.is_ram_string_id(id) and ordinal_ram_bit or 0

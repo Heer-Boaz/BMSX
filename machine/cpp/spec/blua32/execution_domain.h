@@ -8,15 +8,17 @@ using ExecutionDomainId = i32;
 constexpr ExecutionDomainId SYSTEM_EXECUTION_DOMAIN_ID = -1;
 constexpr u32 EXECUTION_DOMAIN_COUNT = 3u;
 
-// Installed operand backing: one [base, byte span] pair per physical domain.
+// Installed operand backing and its compact RAM-String prefix per physical domain.
 // RAM (not the host image/cache) owns these words through replacement and rewind.
 constexpr u32 EXECUTION_IMAGE_BINDINGS_OFFSET = 0x200u;
-constexpr u32 EXECUTION_IMAGE_BINDING_SIZE = 8u;
+constexpr u32 EXECUTION_IMAGE_BINDING_SIZE = 16u;
 constexpr u32 EXECUTION_IMAGE_BINDING_SPAN_OFFSET = 4u;
+constexpr u32 EXECUTION_IMAGE_BINDING_STRINGS_OFFSET = 8u;
+constexpr u32 EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET = 12u;
 
 // Physical namespace descriptors, shared with the firmware's namespace_bank.
-constexpr u32 SYSTEM_GLOBAL_BANK_OFFSET = 0x218u;
-constexpr u32 GLOBAL_BANK_OFFSET = 0x224u;
+constexpr u32 SYSTEM_GLOBAL_BANK_OFFSET = 0x230u;
+constexpr u32 GLOBAL_BANK_OFFSET = 0x23cu;
 enum class GlobalBankField : u32 { Base = 0, Capacity = 4, Count = 8 };
 
 constexpr u32 executionImageBindingOffset(u32 management, ExecutionDomainId domain) {

@@ -23,7 +23,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
@@ -577,15 +577,17 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
 		cpu.reset();
 		const beforeCartridge = captureCpuCheckpoint(cpu);
+		const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
+		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+		const count = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
 		const activate = () => {
 			// There are no cartridge names or other references to this RAM
 			// String. The ROM literal is its only root after activation.
 			const id = cpu.stringPool.intern(literal);
 			assert.ok(id >= RAM_BASE);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
-			const image = cpu['executionImageForDomain'](0)!;
-			assert.equal(image.constantStringRootCount, 1);
-			assert.equal(memory.readRamRecordWord(image.constantStringBase) & ~IMAGE_STRING_RAM_ORDINAL, id);
+			assert.equal(count(), 1);
+			assert.equal(memory.readRamRecordWord(strings()) & ~IMAGE_STRING_RAM_ORDINAL, id);
 			return id;
 		};
 		const first = activate();
@@ -607,13 +609,44 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		assert.deepEqual(memory.ramData(), original.memory.ram);
 		const restored = cpu['executionImageForDomain'](0)!;
 		assert.equal(restored.constWords, words, 'same mounted literals reuse their decoded backing');
-		assert.equal(restored.constantStringRootCount, 1);
-		assert.equal(memory.readRamRecordWord(restored.constantStringBase) & ~IMAGE_STRING_RAM_ORDINAL, first);
+		assert.equal(count(), 1);
+		assert.equal(memory.readRamRecordWord(strings()) & ~IMAGE_STRING_RAM_ORDINAL, first);
 		cpu.collectTrackedHeapBytes();
 		assert.equal(cpu.stringPool.find(literal), first);
 		cpu.runUntilDepth(0, 4096);
 		assert.equal(cpu.readFrameRegister(0, 0), valueString(first));
 	}
+});
+
+test('an image backing OOM does not detach the only installed RAM literal root', () => {
+	const literal = 'old literal retained through refused replacement';
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+	const pair = linkRawTestBlua32Pair(source(), {
+		text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [literal],
+	});
+	const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+	const space = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, new IrqController(memory), space);
+	cpu.reset();
+	const id = cpu.stringPool.intern(literal);
+	assert.ok(id >= RAM_BASE);
+	cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
+	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
+	const record = () => memory.ramData().slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
+	const before = record();
+	const strings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), 1);
+	assert.equal(memory.readRamRecordWord(strings) & ~IMAGE_STRING_RAM_ORDINAL, id);
+
+	// Caller-owned extents leave even the minimum allocator chunk unavailable.
+	for (const bytes of [4088, 32, 8]) while (cpu.heapAllocator.allocate(bytes, false)) {}
+	assert.throws(() => cpu.replaceExecutionImages([space.resolveDomain(0)!]), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.deepEqual(record(), before);
+	assert.equal(cpu.stringPool.find(literal), id, 'native recovery sees the old compact root span during replacement admission');
+	cpu.runUntilDepth(0, 32);
+	assert.equal(cpu.readFrameRegister(0, 0), valueString(id));
 });
 
 test('remount invalidates a literal table in another image even when the backing array is reused', () => {
@@ -659,6 +692,7 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	const before = memory.readRamRecordWord(binding);
 	assert.notEqual(before, 0);
 	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), before + 4);
 	const key = cpu.stringPool.intern('__index');
 	cpu.setGlobalByKey(key, valueInteger(73));
 	const used = cpu.luaHeap.usedBytes();
@@ -669,6 +703,7 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	assert.notEqual(memory.readRamRecordWord(binding), before, 'new storage was allocated before freeing the old block');
 	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 16);
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), memory.readRamRecordWord(binding) + 4);
 	assert.equal(cpu.luaHeap.usedBytes(), used + 16 - 8);
 	const replacement = captureCpuCheckpoint(cpu);
 	for (let repeat = 0; repeat < 2; ++repeat) {

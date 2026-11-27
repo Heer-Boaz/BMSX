@@ -12,7 +12,7 @@ import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../.
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, Blua32ConstantTag, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
@@ -71,23 +71,27 @@ try {
 		const operands = [globals, systemGlobals].flatMap(({ base, capacity, count }) => [base, capacity, count]);
 		const installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 		const expectedBase = memory.readRamRecordWord(installed);
-		operands.push(expectedBase);
 		assert.notEqual(expectedBase, 0);
 		const { address: header } = linked.image;
 		const readHeader = (field: number) => readLE32(linked.romBytes, header + field);
 		const nameCount = readHeader(BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET) + readHeader(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
+		const strings = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+		assert.equal(strings, expectedBase + 4 * nameCount);
 		const constant = readHeader(BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET), count = readHeader(BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
-		const stringCount = (memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) >>> 2) - nameCount;
+		const spanBytes = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+		const stringCount = (spanBytes >>> 2) - nameCount;
 		let slot = 0, aliasCount = 0;
 		for (let record = constant; record < constant + count * BLUA32_CONSTANT_RECORD_SIZE; record += BLUA32_CONSTANT_RECORD_SIZE) {
 			if (readLE32(linked.romBytes, record) !== Blua32ConstantTag.String) continue;
-			const canonical = loadImageStringBinding(memory, expectedBase + 4 * nameCount, stringCount, slot++, aliasCount);
+			const canonical = loadImageStringBinding(memory, strings, stringCount, slot++, aliasCount);
 			const original = readLE32(linked.romBytes, record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
 			if (canonical !== original) {
 				assert.ok(canonical >= RAM_BASE);
 				++aliasCount;
 			}
 		}
+		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), aliasCount);
+		operands.push(expectedBase, spanBytes, strings, aliasCount);
 		assert.equal(slot, stringCount, 'every original String ordinal has exactly one binding word');
 		assert.ok(aliasCount >= 2, 'literal relocation must retain the original RAM diagnostic aliases');
 
@@ -107,8 +111,8 @@ try {
 		cpu.stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID,
 			readHeader(BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET), readHeader(BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 
-		const output = management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
-		ram.fill(0x5a, output, output + 28);
+		const output = management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET, outputBytes = 4 * operands.length;
+		ram.fill(0x5a, output, output + outputBytes);
 		writeFileSync(initial, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		const commands: string[] = [], observations: string[] = [];
 		const observed = (command: string, value?: string | number) => {
@@ -117,7 +121,7 @@ try {
 		};
 		const span = (basis: Uint8Array, base: number, length: number) => observed(`H ${base} ${base + length}`, hashBytes(basis, base, length));
 		const compareSpans = [
-			[installed, EXECUTION_IMAGE_BINDING_SPAN_OFFSET + 4],
+			[installed, EXECUTION_IMAGE_BINDING_SIZE],
 			[metadata, state + allocatorStateBytes - metadata],
 			[globals.base & RAM_RECORD_WORD_MASK, 17 * globals.capacity],
 			[systemGlobals.base & RAM_RECORD_WORD_MASK, 17 * systemGlobals.capacity],
@@ -140,8 +144,9 @@ try {
 		for (let slices = 0; slices < 16384 && memory.readRamRecordWord(output + 8) !== 9; ++slices) grant(1);
 		assert.ok(cpu.heapServiceActive());
 		assert.equal(memory.readRamRecordWord(output + 8), 9);
-		assert.equal(memory.readRamRecordWord(output + 24), 0x5a5a5a5a, 'no image view is published mid-growth');
-		span(ram, output, 28);
+		assert.deepEqual(operands.slice(6).map((_, i) => memory.readRamRecordWord(output + 24 + i * 4)), Array(4).fill(0x5a5a5a5a),
+			'neither the image backing nor the literal span is published mid-growth');
+		span(ram, output, outputBytes);
 		const mid = captureRuntimeSaveState(runtime);
 		observed(`x ${middle}`);
 		observed('S');
@@ -156,7 +161,7 @@ try {
 				assert.deepEqual(ram.subarray(base, base + size), reference.subarray(base, base + size));
 				span(ram, base, size);
 			}
-			span(ram, output, 28);
+			span(ram, output, outputBytes);
 		};
 		finish();
 		observed('U');

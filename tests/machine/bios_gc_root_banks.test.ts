@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding, storeImageStringBinding } from '../../machine/ts/machine/cpu/execution_image';
 import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
-import { GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
@@ -95,9 +95,12 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	const constants = ['retained cart0 one', 'retained cart0 two', 'retained cart1'].map(string);
 	for (const slot of [0, 1] as const)
 		assert.deepEqual(equal(target => {
-			const image = target['executionImageForDomain'](slot)!;
-			return Array.from({ length: image.constantStringRootCount }, (_, i) =>
-				target.memory.readRamRecordWord(image.constantStringBase + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL);
+			assert.ok(target['executionImageForDomain'](slot));
+			const binding = executionImageBindingOffset(target.heapAllocator.managementOffset(), slot);
+			const base = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+			const count = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+			return Array.from({ length: count }, (_, i) =>
+				target.memory.readRamRecordWord(base + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL);
 		}), slot === 0 ? constants.slice(0, 2) : constants.slice(2));
 	assert.equal(cpu.rootBankSlots(GcRootBank.SystemConstants), 0);
 	assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 2);
