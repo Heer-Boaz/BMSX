@@ -35,6 +35,7 @@ import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
 	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
+	CPU_CAUSE_CODE_SYSCALL,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
@@ -2305,6 +2306,11 @@ export class CPU implements MappedPageInvalidator {
 		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], causeWord, pc);
 	}
 
+	private executeSupervisorCall(frame: CallFrame, source: number): void {
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, frame.pc,
+			frame.registers.get(source));
+	}
+
 	private enterLuaFaultException(reason: number, error: Value): void {
 		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
 		const interrupted = this.activeThread;
@@ -2357,6 +2363,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		causeWord: number,
 		epcWord: number,
+		argument?: Value,
 	): CallFrame | null {
 		this.latchExceptionEntry(causeWord, epcWord);
 		if (this.fixedInterruptActive()) {
@@ -2369,7 +2376,7 @@ export class CPU implements MappedPageInvalidator {
 			this.activeThread = this.irqThread;
 			this.threadSwitchRequested = this.yieldRequested = true;
 		}
-		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord);
+		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord, argument);
 	}
 
 	private latchExceptionEntry(causeWord: number, epcWord: number): void {
@@ -2381,17 +2388,17 @@ export class CPU implements MappedPageInvalidator {
 		this.clearHaltAfterAcceptedInterrupt();
 	}
 
-	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number): CallFrame | null {
+	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number, argument?: Value): CallFrame | null {
 		if (!this.readFunctionRecordOnBus(vectorImage, functionAddress, CPU.executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 			this.hardHalt();
 			return null;
 		}
-		return this.enterLatchedExceptionFrame(nmi, epcWord);
+		return this.enterLatchedExceptionFrame(nmi, epcWord, argument);
 	}
 
-	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number): CallFrame | null {
+	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number, argument?: Value): CallFrame | null {
 		try {
-			return this.enterDirectFrame(epcWord, nmi);
+			return this.enterDirectFrame(epcWord, nmi, argument);
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
 			this.hardHalt();
@@ -2400,7 +2407,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	// Direct machine entry binds the sampled Function and no capture environment.
-	private enterDirectFrame(epcWord?: number, nmi = false): CallFrame | null {
+	private enterDirectFrame(epcWord?: number, nmi = false, argument?: Value): CallFrame | null {
 		const entry = this.functionRecordLatch;
 		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
 		const thread = this.activeThread, base = thread.stackTop;
@@ -2422,9 +2429,11 @@ export class CPU implements MappedPageInvalidator {
 		const frame = thread.acquireFrame();
 		frame.executionImage = image;
 		frame.decodedPage = null;
+		const argumentCount = argument === undefined ? 0 : 1;
 		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,
-			base + numParams, 0, 0, 0, numParams, 0, base, capacity);
+			base + numParams, argumentCount, 0, 0, Math.max(numParams, argumentCount), 0, base, capacity);
 		frame.registers.clear(exception ? Math.max(1, numParams) : numParams);
+		if (argument !== undefined) frame.registers.set(0, argument);
 		if (epcWord !== undefined) frame.enterException(nmi);
 		thread.stackTop = end;
 		thread.enterFrame(frame);
@@ -3592,6 +3601,8 @@ export class CPU implements MappedPageInvalidator {
 					redispatch = true; break;
 				case CompiledBlockExit.WriteControl:
 					this.executeControlWrite(frame, exit.exitA, exit.exitB); redispatch = true; break;
+				case CompiledBlockExit.SupervisorCall:
+					this.executeSupervisorCall(frame, exit.exitA); redispatch = true; break;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
 					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
@@ -3856,7 +3867,9 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.ARGC:
 					this.setRegisterIntegerFast(frame, registers, a, frame.argumentCount);
 					return;
-				case OpCode.RESERVED_1E:
+				case OpCode.SVC:
+					this.executeSupervisorCall(frame, a);
+					return;
 				case OpCode.RESERVED_10:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;

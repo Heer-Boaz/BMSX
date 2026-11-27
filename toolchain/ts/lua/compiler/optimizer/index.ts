@@ -923,6 +923,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SETGL:
 				case OpCode.SETUP:
 				case OpCode.MTC0:
+				case OpCode.SVC:
 					case OpCode.STORE_MEM: {
 						rewriteCopyInstructionOperand(instruction, 'a', copies);
 						if (instruction.op === OpCode.STORE_MEM) {
@@ -1983,11 +1984,12 @@ const inlineFunctionCalls = (
 				hasReturn = true;
 				continue;
 			}
-			// HALT and ARGC observe the physical frame being executed.
+			// These instructions expose the physical frame or its resumable PC.
 			if (instruction.op === OpCode.CLOSURE
 				|| instruction.op === OpCode.VARARG
 				|| instruction.op === OpCode.ARGC
 				|| instruction.op === OpCode.HALT
+				|| instruction.op === OpCode.SVC
 				|| instruction.op === OpCode.RFE) {
 				calleeCache.set(protoIndex, null);
 				return null;

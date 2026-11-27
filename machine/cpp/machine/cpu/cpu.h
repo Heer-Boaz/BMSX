@@ -571,11 +571,13 @@ private:
 	NativeCompilationProfile m_nativeCompilationProfile;
 #endif
 	void clearHaltAfterAcceptedInterrupt();
+	void executeSupervisorCall(CallFrame& frame, int source);
 	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
-	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
+	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord,
+		std::optional<Value> argument = {});
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
 	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
 	bool supervisorSystemInstruction() const {
@@ -588,11 +590,12 @@ private:
 	void installSystemVector(CallFrame& frame, u32 address, int field);
 	void transferExceptionVector(CallFrame& frame, u32 target);
 	void resumeInterruptedContext();
-	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc);
+	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::optional<Value> argument = {});
 	void initializeResetBank();
 	void bindFixedIrqBank();
-	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {});
-	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
+	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::optional<Value> argument = {});
+	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
+		std::optional<Value> argument);
 	Value luaFaultValue(u32 reason) const;
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void retireNumericLuaFault(u32 reason);

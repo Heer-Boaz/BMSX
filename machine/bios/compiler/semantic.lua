@@ -1,7 +1,7 @@
 local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
-local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1 }
+local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1, svc = 1 }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '
@@ -218,7 +218,7 @@ bind_path = function(state, expression)
 	fail(state.chunk_name, 'paths must start at a visible binding', expression)
 end
 
-bind_value = function(state, expression, terminal)
+bind_value = function(state, expression, context)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
@@ -260,8 +260,11 @@ bind_value = function(state, expression, terminal)
 				local operation<const> = callee.identifier
 				local arity<const> = intrinsic_arity[operation]
 				if arity ~= nil then
-					if operation == 'argument_suffix' and (not terminal or not expression.expands_results) then
+					if operation == 'argument_suffix' and (context ~= 'return' or not expression.expands_results) then
 						fail(state.chunk_name, 'blua32.argument_suffix must be the sole expression of a return statement', expression)
+					end
+					if operation == 'svc' and context ~= 'statement' then
+						fail(state.chunk_name, 'blua32.svc is a statement-only compiler intrinsic', expression)
 					end
 					if #arguments ~= arity then fail(state.chunk_name, 'blua32.' .. operation .. ' expects ' .. arity .. ' arguments', expression) end
 					expression.intrinsic = operation
@@ -328,9 +331,9 @@ end
 
 local bind_return_statement<const> = function(state, statement)
 	local expressions<const> = statement.expressions
-	local terminal<const> = #expressions == 1
+	local context<const> = #expressions == 1 and 'return' or nil
 	for index = 1, #expressions do
-		bind_value(state, expressions[index], terminal)
+		bind_value(state, expressions[index], context)
 	end
 end
 
@@ -374,7 +377,7 @@ bind_statement = function(state, statement)
 	if kind == syntax.assignment_statement then
 		bind_assignment(state, statement)
 	elseif kind == syntax.call_statement then
-		bind_value(state, statement.expression)
+		bind_value(state, statement.expression, 'statement')
 	elseif kind == syntax.local_statement then
 		bind_local_statement(state, statement)
 	elseif kind == syntax.return_statement then

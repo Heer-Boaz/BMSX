@@ -68,6 +68,7 @@ export function visitInstructionUses<T>(
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
 		case OpCode.MTC0:
+		case OpCode.SVC:
 			visitRegister(state, visitor, instruction.a);
 			break;
 		case OpCode.LOADKR:

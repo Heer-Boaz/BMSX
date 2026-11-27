@@ -40,6 +40,7 @@ enum class NativeBlockExit : u8 {
 	IterateTable,
 	PrivateCall,
 	PrivateReturn,
+	SupervisorCall,
 	Count,
 };
 
@@ -84,6 +85,7 @@ union NativeExitOperands {
 		u16 wordCount;
 	} memory;
 	struct Control { u16 slot, field; } control;
+	struct SupervisorCall { u16 source; } supervisorCall;
 	struct Upvalue { u16 slot, capture; } upvalue;
 	struct Global { u32 index; u16 slot; } global;
 	struct Closure { u32 address; u16 result, flags; } closure;

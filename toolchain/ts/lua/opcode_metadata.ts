@@ -29,7 +29,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'SHL',
 	'SHR',
 	'ARGC',
-	'RESERVED_1E',
+	'SVC',
 	'UNM',
 	'NOT',
 	'LEN',

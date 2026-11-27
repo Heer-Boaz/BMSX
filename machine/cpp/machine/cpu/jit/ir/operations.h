@@ -74,6 +74,12 @@ struct NativeInvalidOperand {
 	static constexpr auto terminalExit = NativeBlockExit::InvalidOperand;
 	constexpr NativeSlotAccess slots() const { return {}; }
 };
+struct NativeSupervisorCall : NativeExitOperands::SupervisorCall {
+	static constexpr auto terminalExit = NativeBlockExit::SupervisorCall;
+	constexpr NativeSlotAccess slots() const {
+		return {{static_cast<NativeValueRef>(source), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
+	}
+};
 struct NativeExceptionReturn {
 	static constexpr auto terminalExit = NativeBlockExit::ExceptionReturn;
 	constexpr NativeSlotAccess slots() const { return {}; }
@@ -291,7 +297,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite,
+	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
 	NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

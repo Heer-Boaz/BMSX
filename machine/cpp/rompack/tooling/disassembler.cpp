@@ -342,6 +342,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "VARARG r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
 		case OpCode::ARGC:
 			return "ARGC r" + std::to_string(decoded.a);
+		case OpCode::SVC:
+			return "SVC r" + std::to_string(decoded.a);
 		case OpCode::CALL:
 			return "CALL r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b) + ", " + formatValueCountLiteral(decoded.c);
 		case OpCode::RET:
@@ -368,7 +370,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::HALT:
 			return "HALT";
 		case OpCode::RESERVED_10:
-		case OpCode::RESERVED_1E:
 			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]);
 		case OpCode::WIDE:
 			break;
@@ -479,6 +480,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::ARGC:
 			return {registerOperand("dst", decoded.a)};
+		case OpCode::SVC:
+			return {registerOperand("src", decoded.a)};
 		case OpCode::CALL:
 			return {registerOperand("callee", decoded.a), plainOperand("args", formatValueCountLiteral(decoded.b)), plainOperand("returns", formatValueCountLiteral(decoded.c))};
 		case OpCode::RET:
@@ -506,7 +509,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::HALT:
 			return {};
 		case OpCode::RESERVED_10:
-		case OpCode::RESERVED_1E:
 			return {};
 		case OpCode::WIDE:
 			break;

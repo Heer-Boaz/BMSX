@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
+import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
@@ -67,6 +73,30 @@ return pcall(lua_compiler.compile_syntax(source, '=tuple-syntax'))
 test('firmware O3: generated call syntax retains open results', () => {
 	const cpu = callResultRom.run(generatedCall, firmwareCycleLimit);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueInteger(42), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);
+});
+
+const loadedSvc = callResultRom.add(`
+return assert(load('blua32.svc(37); return 40')),
+ load('return blua32.svc(37)') == nil, load('blua32.svc()') == nil, load('blua32.svc(1, 2)') == nil
+`);
+test('firmware compiler emits SVC and keeps the following return', () => {
+	const cpu = callResultRom.run(loadedSvc, firmwareCycleLimit), memory = cpu.memory;
+	const [fn, ...rejected] = materializeCpuCompletionValues(cpu);
+	assert.deepEqual(rejected, [valueBool(true), valueBool(true), valueBool(true)]);
+	const prototype = memory.readRamRecordWord(asClosure(fn, cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS);
+	const first = memory.readRamRecordWord(prototype + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
+	const end = first + memory.readRamRecordWord(prototype + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
+	const instructions = [];
+	for (let pc = first; pc < end;) {
+		const instruction = decodeBlua32InstructionAtPc(memory.ramData(), RAM_BASE, pc);
+		instructions.push(instruction);
+		pc = instruction.pc + INSTRUCTION_BYTES;
+	}
+	const svc = instructions.findIndex(({ op }) => op === OpCode.SVC);
+	assert.ok(svc > 0);
+	assert.equal(instructions[svc].a, instructions[svc - 1].a);
+	assert.equal(instructions[svc].b | instructions[svc].c, 0);
+	assert.ok(instructions.slice(svc + 1).some(({ op }) => op === OpCode.RET));
 });
 
 const retainedForward = callResultRom.add(`

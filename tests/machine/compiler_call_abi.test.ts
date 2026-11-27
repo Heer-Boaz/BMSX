@@ -70,6 +70,22 @@ test('argument tuple is terminal and cannot become a hidden temporary', () => {
 	assert.throws(() => compileLuaSource('return blua32.argument_count(0)'), /argument_count expects 0 arguments/);
 });
 
+test('SVC reads its operand without defining a result register', () => {
+	const svc: Instruction = { op: OpCode.SVC, a: 27, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null };
+	assert.equal(computeMaxRegister([svc]), 27);
+	assert.deepEqual(collectInstructionUses(svc, 32, () => []), [27]);
+	assert.deepEqual(collectInstructionDefs(svc, 32), []);
+});
+
+for (const optLevel of [0, 3] as const) test(`SVC preserves its operand and successor (O${optLevel})`, () => {
+	const image = linkTestSystemBlua32(compileLuaSource('blua32.svc(37); return 40', 'svc.lua', optLevel));
+	const listing = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
+	assert.match(listing, /KSMI r(\d+), 37[\s\S]*SVC r\1[\s\S]*KSMI r(\d+), 40[\s\S]*RET r\2, 1/);
+	assert.throws(() => compileLuaSource('return blua32.svc(37)'), /svc is a statement-only/);
+	assert.throws(() => compileLuaSource('blua32.svc()'), /svc expects (?:one|1) argument/);
+	assert.throws(() => compileLuaSource('blua32.svc(1, 2)'), /svc expects (?:one|1) argument/);
+});
+
 test('fixed call arguments are produced in adjacent slots, not copied through a second argument range', () => {
 	const compiled = compileLuaSource('local f = function(a, b) return a + b end\nreturn f(7, 11)');
 	const image = linkTestSystemBlua32(compiled);

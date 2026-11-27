@@ -44,6 +44,7 @@ export const enum CompiledBlockExit {
 	Length,
 	ControlFault,
 	WriteControl,
+	SupervisorCall,
 	ExceptionReturn,
 	CreateClosure,
 	WriteWords,
@@ -150,6 +151,7 @@ emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
 emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
+emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
@@ -165,7 +167,7 @@ export function compiledBlockSupports(op: number, a: number, c: number): boolean
 
 const blockBoundaryOps = new Uint8Array(256);
 for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
-	OpCode.CALL, OpCode.RET, OpCode.CLOSURE,
+	OpCode.CALL, OpCode.RET, OpCode.CLOSURE, OpCode.SVC,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.ITERN]) {
 	blockBoundaryOps[op] = 1;
 }
@@ -179,7 +181,7 @@ const continuationOps = new Uint8Array(256);
 for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI,
 	OpCode.SETUP, OpCode.VARARG, OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D,
-	OpCode.CLOSURE, OpCode.CALL, OpCode.LEN]) continuationOps[op] = 1;
+	OpCode.CLOSURE, OpCode.CALL, OpCode.SVC, OpCode.LEN]) continuationOps[op] = 1;
 
 /** Returning semantic operations have a statically known continuation PC. */
 export function compiledBlockHasContinuation(op: number, field: number): boolean {
@@ -332,6 +334,7 @@ export function emitJavaScriptBlock(
 		case OpCode.CLOSURE: terminalExit = CompiledBlockExit.CreateClosure; break;
 		case OpCode.MTC0: terminalExit = cop0WriteRetiresControl(page.b[finalWord])
 			? CompiledBlockExit.WriteControl : CompiledBlockExit.Continue; break;
+		case OpCode.SVC: terminalExit = CompiledBlockExit.SupervisorCall; break;
 		case OpCode.RFE: terminalExit = CompiledBlockExit.ExceptionReturn; break;
 	}
 	const terminal: CompiledBlockExitSite = {

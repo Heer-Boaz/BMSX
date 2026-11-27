@@ -33,7 +33,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"SHL",
 	"SHR",
 	"ARGC",
-	"RESERVED_1E",
+	"SVC",
 	"UNM",
 	"NOT",
 	"LEN",

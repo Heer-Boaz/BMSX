@@ -22,6 +22,7 @@ struct OperationName {
 	const char* operator()(const NativeJump&) const { return "jump"; }
 	const char* operator()(const NativeHalt&) const { return "halt"; }
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
+	const char* operator()(const NativeSupervisorCall&) const { return "supervisor-call"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
 	const char* operator()(const NativeClosure&) const { return "create-closure"; }

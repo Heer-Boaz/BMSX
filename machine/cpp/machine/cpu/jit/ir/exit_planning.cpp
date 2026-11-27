@@ -94,6 +94,9 @@ struct NativeTerminalExit {
 	bool privateFirmware;
 	NativeExitPlan operator()(const auto&) const { return {}; }
 	NativeExitPlan operator()(const NativeHalt&) const { return {NativeHalt::terminalExit}; }
+	NativeExitPlan operator()(const NativeSupervisorCall& call) const {
+		return {call.terminalExit, {.supervisorCall = call}};
+	}
 	NativeExitPlan operator()(const NativeExceptionReturn&) const { return {NativeExceptionReturn::terminalExit}; }
 	NativeExitPlan operator()(const NativeCallSite& call) const {
 		return {privateFirmware ? NativeBlockExit::PrivateCall : call.terminalExit, {.call = call}};

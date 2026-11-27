@@ -96,6 +96,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_jmpifnot = ${OpCode.JMPIFNOT},`,
 	`\top_call = ${OpCode.CALL},`,
 	`\top_argc = ${OpCode.ARGC},`,
+	`\top_svc = ${OpCode.SVC},`,
 	`\top_vararg = ${OpCode.VARARG},`,
 	`\top_closure = ${OpCode.CLOSURE},`,
 	`\top_getup = ${OpCode.GETUP},`,

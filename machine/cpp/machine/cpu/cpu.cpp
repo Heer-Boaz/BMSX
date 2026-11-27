@@ -1853,11 +1853,17 @@ void CPU::returnFromException(CallFrame& frame) {
 	}
 }
 
+void CPU::executeSupervisorCall(CallFrame& frame, int source) {
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL,
+		frame.readControl(FrameField::Pc), frame.registers.get(source));
+}
+
 CallFrame* CPU::enterException(
 	Blua32ExecutionImage& vectorImage,
 	u32 functionAddress,
 	u32 causeWord,
-	u32 epcWord
+	u32 epcWord,
+	std::optional<Value> argument
 ) {
 	latchExceptionEntry(causeWord, epcWord);
 	if (fixedInterruptActive()) {
@@ -1870,7 +1876,7 @@ CallFrame* CPU::enterException(
 		m_activeThread = &m_irqView;
 		m_runSignals |= RunThreadSwitch | RunYield;
 	}
-	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord);
+	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord, argument);
 }
 
 void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
@@ -1882,17 +1888,18 @@ void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
 	clearHaltAfterAcceptedInterrupt();
 }
 
-CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord) {
+CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
+	std::optional<Value> argument) {
 	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 		hardHalt();
 		return nullptr;
 	}
-	return enterLatchedExceptionFrame(nmi, epcWord);
+	return enterLatchedExceptionFrame(nmi, epcWord, argument);
 }
 
-CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord) {
+CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord, std::optional<Value> argument) {
 	try {
-		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
+		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord, argument);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
@@ -1900,7 +1907,7 @@ CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord) {
 	}
 }
 
-CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
+CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord, std::optional<Value> argument) {
 	// Direct machine entry binds the sampled Function and no capture environment.
 	const auto& record = m_functionRecordLatch;
 	const FunctionEntry entry{record.codeAddress, record.numParams, record.maxStack, record.flags};
@@ -1922,11 +1929,13 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
 	} else if (exception && !m_activeThread->frameSpaceFits(placement.stackEnd(), 1u)) throw LuaOutOfMemorySignal{};
 	auto* frame = m_activeThread->acquireFrame();
 	frame->executionImage = image;
+	const int argc = argument.has_value();
 	frame->initializeControl({
 		address, entry.codeAddress, epcWord.value_or(entry.codeAddress), frameBankWord(domain) | flags,
-		placement.varargBase, 0, {}, placement.top(), 0u, placement.stackBase, static_cast<int>(placement.capacity),
+		placement.varargBase, argc, {}, std::max(placement.top(), argc), 0u, placement.stackBase, static_cast<int>(placement.capacity),
 	});
 	frame->registers.clear(0, exception ? std::max(1, placement.top()) : placement.top());
+	if (argument) frame->registers.set(0, *argument);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(domain, image);

@@ -608,6 +608,12 @@ local emit_call_expression<const> = function(
 		end
 		return target
 	end
+	if intrinsic == 'svc' then
+		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
+		bytecode.emit_abc(instruction_words, isa.op_svc, source, 0, 0)
+		state.free_register = temporary_base
+		return target
+	end
 	if intrinsic ~= nil then
 		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
 		local mode<const> = intrinsic == 'float_bits' and isa.move_float_bits or isa.move_float_from_bits

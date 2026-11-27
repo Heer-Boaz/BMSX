@@ -1075,29 +1075,28 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 	}
 }
 
-void reservedEncodingsTrapBeforeEffects() {
-	for (const auto op : {OpCode::RESERVED_10, OpCode::RESERVED_1E}) {
-		auto image = returnImage();
-		image.text.resize(3 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(op), 63, 63, 63);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-		image.functions[0].wordCount = 3;
-		for (const bool scalar : {false, true}) {
-			CpuMachine machine(image);
-			auto& cpu = machine.cpu;
-			if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+void reservedEncodingTrapsBeforeEffects() {
+	constexpr auto op = OpCode::RESERVED_10;
+	auto image = returnImage();
+	image.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(op), 63, 63, 63);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions[0].wordCount = 3;
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			if (!scalar) cpu.prepareSystemNativeCode();
+		if (!scalar) cpu.prepareSystemNativeCode();
 #endif
-			const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 1;
-			require(cpu.runUntilDepth(0, grant) == RunResult::Yielded, "the reserved word consumes the grant after the prefix");
-			require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
-				&& cpu.readEpcWord() == machine.rom.textAddress + INSTRUCTION_BYTES,
-				"reserved encodings trap generically at their own PC without interpreting the operand bits");
-			require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RESERVED_10)]
-				&& cpu.readFrameRegister(0, 0) == valueInteger(1), "the trap preserves the retired prefix");
-		}
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 1;
+		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded, "the reserved word consumes the grant after the prefix");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
+			&& cpu.readEpcWord() == machine.rom.textAddress + INSTRUCTION_BYTES,
+			"reserved encodings trap generically at their own PC without interpreting the operand bits");
+		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RESERVED_10)]
+			&& cpu.readFrameRegister(0, 0) == valueInteger(1), "the trap preserves the retired prefix");
 	}
 }
 
@@ -2076,7 +2075,7 @@ int main() {
 #endif
 		stringBytePositions(); loadKrIndices(); invalidImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
 		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); capturedClosureRequiresFirmware();
-		reservedEncodingsTrapBeforeEffects(); functionReservationIsAdmittedBeforeActivation();
+		reservedEncodingTrapsBeforeEffects(); functionReservationIsAdmittedBeforeActivation();
 		zeroLoadNil(); successorFetchOrdering(); reservedMoveKindIgnoresUnusedRegisterOperands(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();

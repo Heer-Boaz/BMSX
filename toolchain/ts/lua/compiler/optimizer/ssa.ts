@@ -741,6 +741,7 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.SETGL:
 		case OpCode.SETUP:
 		case OpCode.MTC0:
+		case OpCode.SVC:
 			add('a', instruction.a, null, false);
 			break;
 		case OpCode.RET:

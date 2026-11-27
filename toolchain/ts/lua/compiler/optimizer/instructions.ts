@@ -98,6 +98,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.SETGL:
 			case OpCode.SETUP:
 			case OpCode.MTC0:
+			case OpCode.SVC:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
 			case OpCode.LOAD_MEM:
