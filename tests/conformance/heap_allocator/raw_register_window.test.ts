@@ -30,6 +30,9 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const word = INSTRUCTION_BYTES, owner = CPU_FIXED_STACK_BASE - 0x4000;
 const control = owner + 0x100, oldBlock = owner + 0x200, newBlock = owner + 0x300, report = owner + 0x400;
 const callerCapacity = 8, newCapacity = 32;
+// Raw hardware record padding, not a semantic frame field.
+const childPadding = control + FRAME_CONTROL_BYTES + 12;
+const paddingPattern = 0x6b87650d;
 const returnWords = [17, 19, 21, 23, 25, 27, 29];
 const returnValues = returnWords.map(valueInteger);
 type OpcodeCase = 'CALL' | 'VARARG' | 'RET';
@@ -64,9 +67,10 @@ function assemble(operation: OpcodeCase) {
 			[ThreadField.FrameDepth, 1], [ThreadField.FrameCapacity, returning ? 4 : 2], [ThreadField.FrameBlock, control],
 		] as const) store(owner + field, value);
 		for (const [field, value] of [
-			[FrameField.Protected, -1], [FrameField.Top, 0], [FrameField.StackBase, vararg ? 2 : 0],
+			[FrameField.Top, 0], [FrameField.StackBase, vararg ? 2 : 0],
 			[FrameField.StackCapacity, vararg ? 2 : callerCapacity], [FrameField.ArgumentCount, vararg ? 2 : 0],
 		] as const) store(control + field, value);
+		if (operation === 'CALL') store(childPadding, paddingPattern);
 		functionSlot = constants.length; store(control + FrameField.Function, -1);
 		pcSlot = constants.length; store(control + FrameField.Pc, -2);
 		if (vararg) for (const [index, argument] of args.entries()) {
@@ -252,8 +256,12 @@ for (const operation of ['CALL', 'VARARG', 'RET'] as const) test(`bare System RO
 			assert.equal(cpu.getFrameDepth(), 2);
 			assert.equal(cpu.readFramePc(1), child.codeAddress);
 			assert.equal(cpu.readFrameRegister(1, 0), valueInteger(41));
+			assert.equal(memory.readRamRecordWord(childPadding), paddingPattern, 'CALL does not write reserved frame padding');
+			snapshot(rt, childPadding, word);
 			step(rt); step(rt, 1);
 			assert.equal(cpu.readFramePc(0), issuePc + 2 * word);
+			assert.equal(memory.readRamRecordWord(childPadding), paddingPattern, 'RET does not clear reserved frame padding');
+			snapshot(rt, childPadding, word);
 		}
 		step(rt, result.length, RunResult.Halted);
 		assert.deepEqual(rt.readCompletionValues(), result);

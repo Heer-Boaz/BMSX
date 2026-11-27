@@ -40,12 +40,14 @@ test('Thread trace maps both native stage machines and the payload-before-tag cl
 			}
 		}
 	}
+	// The native protected phase and the unpublished CONCATN operand top
+	// have no counterpart: both were replaced by ordinary stack slots.
 	const spans = [
-		['T', [[410, 504]]], ['C', [[410, 514]]],
-		['I', [[118, 122], [125, 126], [128, 134], [143, 147], [150, 154]]],
-		['J', [[37, 37], [41, 46], [59, 60], [63, 64]]],
+		['T', [[410, 447], [458, 465], [467, 504]]], ['C', [[410, 448], [462, 470], [474, 514]]],
+		['I', [[118, 122], [125, 125], [128, 129], [132, 134], [143, 147], [150, 154]]],
+		['J', [[37, 37], [41, 41], [43, 46], [59, 60], [63, 63]]],
 		['S', [[75, 80], [83, 84]]], ['N', [[38, 44], [75, 83], [86, 87], [168, 175], [183, 187]]],
-		['Q', [[5055, 5056]]], ['A', [[66, 67]]], ['B', [[69, 70]]],
+		['A', [[66, 67]]], ['B', [[69, 70]]],
 	] as const;
 	for (const [key, ranges] of spans) {
 		const source = sources.get(key)!;
@@ -58,7 +60,7 @@ test('Thread trace maps both native stage machines and the payload-before-tag cl
 		}
 	}
 	const thread = sources.get('I')!;
-	for (const [line, unused] of [[123, 'frames'], [124, 'continuations'], [127, 'top']] as const) {
+	for (const [line, unused] of [[123, 'frames'], [127, 'top']] as const) {
 		assert.ok(thread.lines[line - 1].trimStart().startsWith(`target.${unused} =`));
 		assert.equal(thread.covered.has(line), false, 'layout scratch not used by Thread trace');
 	}

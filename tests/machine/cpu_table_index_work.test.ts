@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 
 import { hashCanonicalTableKey, ValueTag, valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
@@ -89,6 +88,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const image = compileCoroutineTest(`
 local receiver = setmetatable({}, {})
 lookup_target = receiver
+halt_until_irq
 local task = coroutine.create(function(a, b)
   local result = receiver.name
   return result, a, b
@@ -98,6 +98,7 @@ assert(ok, actual_receiver)
 assert(actual_receiver == receiver, 'wrong receiver')
 assert(key == 'name', 'wrong key')
 waiting_to_resume = true
+halt_until_irq
 local completed, result, a, b = coroutine.resume(task, 73, 99)
 assert(completed and result == 73 and a == 41 and b == 42)
 local nested = setmetatable({}, { __index = xpcall })
@@ -110,28 +111,22 @@ local v, held = read(nested, 91)
 assert(v == false and held == 91)
 return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
-		const targetKey = cpu.stringPool.intern('lookup_target');
-		for (let attempts = 0; attempts < 65_536 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		}
-		const target = cpu.getGlobalByKey(targetKey);
+		runGuestToHalt(cpu, 1_000_000);
+		assert.ok(cpu.isHaltedUntilIrq());
+		const target = cpu.getGlobalByKey(cpu.stringPool.find('lookup_target')!);
 		assert.notEqual(target, valueNil());
 		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(valuePayload(target)), cpu.stringPool.intern('__index'),
 			valueBuiltinFunction(BuiltinFunctionId.CoroutineYield));
-		const waitKey = cpu.stringPool.intern('waiting_to_resume');
-		for (let attempts = 0; attempts < 65_536 && cpu.getGlobalByKey(waitKey) !== valueBool(true); ++attempts) {
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		}
-		assert.equal(cpu.getGlobalByKey(waitKey), valueBool(true));
+		cpu.clearHaltUntilIrq();
+		runGuestToHalt(cpu, 100_000);
+		assert.ok(cpu.isHaltedUntilIrq());
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('waiting_to_resume')!), valueBool(true));
 		const saved = captureCpuCheckpoint(cpu);
 		let expected: ReturnType<typeof captureCpuCheckpoint>;
 		for (let replay = 0; replay < 2; ++replay) {
+			cpu.clearHaltUntilIrq();
 			runGuestToHalt(cpu, 100_000);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-			assert.notEqual(cpu.rootThread.protectedWord(0, ProtectedField.Base), 0, 'the outer read returns into a nonzero slot');
-			assert.equal(cpu.rootThread.protectedWord(1, ProtectedField.Base), 0, 'the discard-only handler continuation has no receiving slot');
 			const completed = captureCpuCheckpoint(cpu);
 			if (replay === 0) {
 				expected = completed;

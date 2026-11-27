@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
@@ -64,7 +65,6 @@ function assemble(user: boolean) {
 		linkStore(base + FrameField.Function, fn);
 		linkStore(base + FrameField.CallSite, fn, 0);
 		linkStore(base + FrameField.Pc, fn, at);
-		store(base + FrameField.Protected, -1);
 		store(base + FrameField.VarargBase, slot);
 		store(base + FrameField.StackBase, slot);
 		store(base + FrameField.StackCapacity, window);
@@ -172,7 +172,7 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 		return runtime;
 	};
 	const runtime = makeRuntime();
-	const dir = mkdtempSync(join('tmp', 'raw-current-bank-'));
+	const dir = mkdtempSync(join(tmpdir(), 'raw-current-bank-'));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	const path = join(dir, 'sys.rom'), trace = join(dir, 'trace');
 	const fromTs = join(dir, 'ts.state'), fromNative = join(dir, 'native.state');

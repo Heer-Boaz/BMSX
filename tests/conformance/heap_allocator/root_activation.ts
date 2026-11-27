@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -69,12 +70,12 @@ const startupModules = [
 	['kernel/heap_bootstrap', readFileSync('machine/bios/kernel/heap_bootstrap.lua', 'utf8')],
 	['kernel/root_activation', readFileSync('machine/bios/kernel/root_activation.lua', 'utf8')],
 	[exceptionPath, readFileSync('machine/bios/' + exceptionPath + '.lua', 'utf8')],
+	['kernel/exception_report', readFileSync('machine/bios/kernel/exception_report.lua', 'utf8')],
 ].map(([path, source]) => ({ path, source, displayPath: path + '.lua', chunk: parseLuaChunk(source, path) }));
 const library = loadHeapServiceTestModules().map(module => ({ ...module, displayPath: module.path + '.lua' }));
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
-mkdirSync('tmp', { recursive: true });
-const dir = mkdtempSync(join('tmp', 'authored-root-'));
+const dir = mkdtempSync(join(tmpdir(), 'authored-root-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
@@ -95,9 +96,10 @@ try {
 		assert.equal(target.numParams, 5);
 		assert.ok(target.maxStack > target.numParams && target.maxStack < window);
 		const expectedFrame = new Uint8Array(FRAME_CONTROL_BYTES);
+		writeLE32(expectedFrame, 12, 0x5a5a5a5a); // The frame publisher leaves the prefilled padding alone.
 		for (const [field, value] of [
 			[FrameField.Function, target.address], [FrameField.CallSite, target.codeAddress],
-			[FrameField.Protected, 0xffffffff], [FrameField.Pc, target.codeAddress],
+			[FrameField.Pc, target.codeAddress],
 			[FrameField.VarargBase, target.numParams], [FrameField.Top, target.numParams],
 			[FrameField.StackCapacity, target.maxStack],
 		]) {

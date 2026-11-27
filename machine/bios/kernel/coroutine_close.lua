@@ -32,7 +32,7 @@ struct closed_thread
 	after_error: u8[3] -- R:23 J:22
 	return_range: u32[2] -- R:23 J:22
 	frame_depth: u32 -- R:24 J:23
-	protected_depth: u32 -- R:24 J:23
+	_before_frames: u32 -- R:24 J:23
 end
 
 local close_thread<const> = function(target) -- T:4532-4545,4682-4696 C:1276-1291,1424-1435
@@ -67,7 +67,6 @@ local close_thread<const> = function(target) -- T:4532-4545,4682-4696 C:1276-129
 		error = *value -- T:4543 C:1288
 	end
 	retire.retire_thread_frames(management + layout.control_offset, arena, thread, 0) -- T:4687-4690 C:1427-1430; guest instructions now pay for closing captures
-	thread.protected_depth = 0 -- T:4692 C:1431
 	local capacity<const> = thread.stack_capacity -- T:4693 C:1432
 	values.internal.clear_stack_range(thread.stack_block & word_mask, capacity, 0, capacity) -- T:4693 C:1432
 	thread.top = 0 -- T:4694 C:1433

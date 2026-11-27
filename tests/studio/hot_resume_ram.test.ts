@@ -108,7 +108,6 @@ return pcall(run, 17)
 	const bodyIndex = image.symbols.metadata.functionIds.indexOf('module:kernel/protected_body/module');
 	assert.notEqual(bodyIndex, -1);
 	assert.equal(body.functionAddress, image.symbols.functionAddresses[bodyIndex]);
-	assert.equal(thread.protectedDepth, 0);
 	assert.equal(wrapper.varargCount, 1);
 	const argument = wrapper.varargBase;
 	const handler = asClosure(thread.stackRegisters.get(argument), cpu.gc);

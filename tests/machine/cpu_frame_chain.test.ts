@@ -49,14 +49,12 @@ test('thread growth resizes only the required storage lane', () => {
 	const stack = location(ThreadField.StackBlock);
 	assert.equal(location(ThreadField.StackCapacity), 64);
 	assert.equal(location(ThreadField.FrameBlock), oldFrames);
-	assert.equal(location(ThreadField.ProtectedBlock), 0);
 	assert.equal(frame.registers.get(0), valueInteger(73));
 
 	thread.reserveFrame(64);
 	const frames = location(ThreadField.FrameBlock);
 	assert.equal(location(ThreadField.FrameCapacity), 2 * oldFrameCapacity);
 	assert.equal(location(ThreadField.StackBlock), stack);
-	assert.equal(location(ThreadField.ProtectedBlock), 0);
 	assert.equal(frame.pc, pc);
 
 });
@@ -350,7 +348,6 @@ return pcall(target)
 		const thread = cpu.rootThread;
 		const leaf = thread.currentFrame!, wrapper = leaf.previous!.previous!;
 		assert.equal(wrapper.functionAddress, prototype);
-		assert.equal(thread.protectedDepth, 0, 'only the ordinary RAM frame owns protection');
 		const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 		const finish = () => {
 			cpu.clearHaltUntilIrq();

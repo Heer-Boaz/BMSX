@@ -46,7 +46,7 @@ test('Thread backing firmware preserves the source and shared raw descriptors', 
 	assert.equal(layout.size, ThreadField.FrameBlock + 4);
 	for (const [field, offset] of [
 		['stack_block', ThreadField.StackBlock], ['stack_capacity', ThreadField.StackCapacity], ['frame_block', ThreadField.FrameBlock],
-		['frame_capacity', ThreadField.FrameCapacity], ['frame_depth', ThreadField.FrameDepth], ['protected_depth', ThreadField.ProtectedDepth],
+		['frame_capacity', ThreadField.FrameCapacity], ['frame_depth', ThreadField.FrameDepth],
 		['stack_top', ThreadField.StackTop], ['error_word', ThreadField.ErrorWord], ['error_tag', ThreadField.ErrorKind],
 	] as const) {
 		const member = layout.struct!.fields.get(field);

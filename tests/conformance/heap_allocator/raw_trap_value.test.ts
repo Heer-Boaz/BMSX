@@ -53,7 +53,6 @@ for (const explicit of [true, false]) test(explicit
 	] as const) store(context + field, data);
 	store(frame + FrameField.StackCapacity, capacity);
 	store(frame + FrameField.Top, 2);
-	store(frame + FrameField.Protected, -1);
 	const functionConstant = store(frame + FrameField.Function, 0);
 	const pcConstant = store(frame + FrameField.Pc, 0);
 	store(backing, valuePayload(callee));

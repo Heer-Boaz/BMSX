@@ -91,44 +91,25 @@ bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	return true;
 }
 
-u32 growControls(GcHeap& heap, u32 address, ThreadField field, u32 capacity, u32 staged) {
+u32 growFrames(GcHeap& heap, u32 address, u32 capacity, u32 staged) {
 	auto& memory = heap.memory;
-	const bool frames = field == ThreadField::FrameBlock;
-	const u32 stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
-	const auto capacityField = frames ? ThreadField::FrameCapacity : ThreadField::ProtectedCapacity;
-	const auto depthField = frames ? ThreadField::FrameDepth : ThreadField::ProtectedDepth;
-	const u32 previous = count(memory, address, capacityField);
-	const u32 oldBlock = read(memory, address, field);
-	const u32 bytes = capacity * stride;
+	const u32 previous = count(memory, address, ThreadField::FrameCapacity);
+	const u32 oldBlock = read(memory, address, ThreadField::FrameBlock);
+	const u32 bytes = capacity * FRAME_CONTROL_BYTES;
 	const u32 block = staged ? staged : (oldBlock ? heap.arena.resizeBacking(oldBlock, bytes) : heap.arena.allocate(bytes, true));
 	if (!block) return 0;
 	const u32 offset = block & RAM_RECORD_WORD_MASK;
 	auto* destination = memory.ramData() + offset;
-	const u32 occupied = count(memory, address, depthField) * stride;
+	const u32 occupied = count(memory, address, ThreadField::FrameDepth) * FRAME_CONTROL_BYTES;
 	if (staged) std::memcpy(destination, memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK), occupied);
-	std::memset(destination + occupied, 0, capacity * stride - occupied);
+	std::memset(destination + occupied, 0, bytes - occupied);
 	const u32 dirty = staged ? 0u : occupied;
 	memory.invalidateRamWrite(offset + dirty, bytes - dirty);
-	memory.writeRamRecordWord(address + static_cast<u32>(field), block);
-	memory.writeRamRecordWord(address + static_cast<u32>(capacityField), capacity);
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameBlock), block);
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameCapacity), capacity);
 	if (staged) heap.arena.free(oldBlock);
-	heap.budget.resizeRecordCharge(previous * stride, bytes);
+	heap.budget.resizeRecordCharge(previous * FRAME_CONTROL_BYTES, bytes);
 	return block;
-}
-
-// The occupied control prefix has no capacity-relative fields. Keep it in
-// place, clearing the retained spare records just as on fresh reservation.
-static u32 shrinkControls(GcHeap& heap, u32 address, ThreadField capacityField, u32 block,
-	u32 capacity, u32 depth, u32 stride) {
-	if (capacity <= 4 || depth * 3 >= capacity) return 0;
-	const u32 next = capacity / 2, bytes = next * stride;
-	const u32 spare = (block & RAM_RECORD_WORD_MASK) + depth * stride;
-	std::memset(heap.memory.ramData() + spare, 0, bytes - depth * stride);
-	heap.memory.invalidateRamWrite(spare, bytes - depth * stride);
-	heap.arena.shrinkBacking(block, bytes);
-	heap.memory.writeRamRecordWord(address + static_cast<u32>(capacityField), next);
-	heap.budget.resizeRecordCharge(capacity * stride, bytes);
-	return bytes;
 }
 
 u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
@@ -149,9 +130,19 @@ u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 			retained = bytes;
 		}
 	}
-	retained += shrinkControls(heap, address, ThreadField::FrameCapacity, layout.frameBlock, layout.frameCapacity, depth, FRAME_CONTROL_BYTES);
-	retained += shrinkControls(heap, address, ThreadField::ProtectedCapacity, layout.protectedBlock, layout.protectedCapacity,
-		count(memory, address, ThreadField::ProtectedDepth), PROTECTED_CALL_BYTES);
+	// The occupied frame prefix has no capacity-relative fields. Keep it in
+	// place, clearing the retained spare records just as on fresh reservation.
+	if (layout.frameCapacity > 4 && depth * 3 < layout.frameCapacity) {
+		const u32 next = layout.frameCapacity / 2, bytes = next * FRAME_CONTROL_BYTES;
+		const u32 occupied = depth * FRAME_CONTROL_BYTES;
+		const u32 spare = (layout.frameBlock & RAM_RECORD_WORD_MASK) + occupied;
+		std::memset(memory.ramData() + spare, 0, bytes - occupied);
+		memory.invalidateRamWrite(spare, bytes - occupied);
+		heap.arena.shrinkBacking(layout.frameBlock, bytes);
+		memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameCapacity), next);
+		heap.budget.resizeRecordCharge(layout.frameBytes(), bytes);
+		retained += bytes;
+	}
 	return retained;
 }
 

@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueBool, valueFloatBits, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -123,11 +122,10 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 	assert.ok(cut !== 0);
 	assert.equal(next, expectedEntries.length);
 	function completed(machine: Runtime, state: RunResult) {
-		const { cpu, memory } = machine.machine;
+		const { cpu } = machine.machine;
 		assert.equal(state, RunResult.Halted);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
-		assert.equal(memory.readRamRecordWord(root + ThreadField.ProtectedDepth), 0);
 		const values = [
 			valueBool(false), valueNil(),
 			valueBool(false), valueString(cpu.stringPool.find('Attempted to call a non-function value.')!),

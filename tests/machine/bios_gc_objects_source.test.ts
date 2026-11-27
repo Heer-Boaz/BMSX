@@ -72,11 +72,11 @@ test('the object sweep maps executable collector work and separates derived host
 		}
 	}
 	const mapped = [
-		['T', [[738, 776], [779, 779], [781, 782], [784, 786], [789, 792], [794, 797], [799, 802], [804, 805]]],
-		['C', [[801, 837], [839, 839], [841, 845], [849, 853], [857, 857], [859, 864]]],
+		['T', [[738, 776], [779, 779], [781, 782], [784, 786], [789, 792], [794, 797], [799, 800], [802, 802], [804, 805]]],
+		['C', [[801, 837], [839, 839], [841, 845], [849, 853], [857, 857], [859, 860], [862, 864]]],
 		['A', [[165, 173]]], ['B', [[73, 75], [508, 517]]],
 		['L', [[42, 44], [50, 54]]], ['K', [[64, 66]]], ['E', [[68, 72]]],
-		['I', [[118, 120], [122, 124], [128, 128], [130, 130]]], ['J', [[59, 64]]],
+		['I', [[118, 120], [122, 123], [128, 128]]], ['J', [[59, 61], [63, 63]]],
 		['Q', [[66, 68]]], ['R', [[69, 71]]],
 	] as const;
 	// Old inspector and index dispatch belongs to the physical writer and
@@ -95,8 +95,8 @@ test('the object sweep maps executable collector work and separates derived host
 	// The common TS Thread view also samples scratch-only metadata. Dead
 	// release consumes none of these values, and C++ never reads them here.
 	const thread = sources.get('I')!;
-	for (const [line, field] of [[121, 'offset'], [125, 'depth'], [126, 'protectedDepth'], [127, 'top'],
-		[129, 'frameOffset'], [131, 'protectedOffset']] as const) {
+	for (const [line, field] of [[121, 'offset'], [125, 'depth'], [127, 'top'],
+		[129, 'frameOffset']] as const) {
 		assert.ok(thread.lines[line - 1].trimStart().startsWith(`target.${field} = `));
 		assert.equal(thread.mapped.has(line), false);
 	}

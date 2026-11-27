@@ -4,7 +4,7 @@ module<const>
 -- T/C/H refer to the two GcHeap owners and the C++ header. A/B/D are
 -- the Table record owners, O/P are GC object constants, V/W are Value tags,
 -- I/J are Thread record kinds, U/Z are Upvalue records, and M is RAM decode.
--- L/K/E are the Closure owners, F/G frame and protected-call sizes,
+-- L/K/E are the Closure owners, F/G frame sizing,
 -- and Q/R define stack compaction's retained-word charge.
 local control_layout<const> = require('kernel/gc_control') -- T:740,744,762 C:802,806,824
 local allocator<const> = require('kernel/dlmalloc_record') -- T:789,792,799-802 C:849,852,859-862 A:167-168,172 B:510-511,516
@@ -32,7 +32,6 @@ local closure_latched_bytes<const> = 24 -- L:41 K:60
 local thread_bytes<const> = 80 -- I:28 J:13
 local value_slot_bytes<const> = 5 -- I:29 J:14
 local frame_bytes<const> = 56 -- F:21 G:34
-local protected_bytes<const> = 20 -- F:152 G:28
 local thread_control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
 struct table_record
 	kind_header: u32 -- A:33-35 D:26-28
@@ -51,10 +50,9 @@ struct thread_record
 	value_block: addr -- I:22,120 J:21,59
 	value_capacity: u32 -- I:22,122 J:21,60
 	frame_capacity: u32 -- I:23,123 J:22,61
-	protected_capacity: u32 -- I:23,124 J:22,62
+	_before_error: u32 -- I:23,124 J:22,62
 	before_control_blocks: u32[6] -- I:23-24 J:22-23
 	frame_block: addr -- I:24,128 J:23,63
-	protected_block: addr -- I:24,130 J:23,64
 end
 
 local free_table<const> = function(arena, occupied, address, hash_first) -- T:782 C:842 A:165,170 B:508,514
@@ -83,21 +81,17 @@ local free_closure<const> = function(arena, occupied, address, header) -- T:789-
 	allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, bytes, occupied) -- T:792 C:852
 end
 
-local free_thread<const> = function(arena, occupied, address) -- T:796-797,799-802 C:857,859-862
+local free_thread<const> = function(arena, occupied, address) -- T:796-797,799-800,802 C:857,859-860,862
 	-- Capture the original descriptors before releasing any backing. No
 	-- cache or view is part of the firmware-owned record lifetime.
 	local thread<const>: *thread_record = ram_base + (address & ram_word_mask) -- T:796-797 C:857 I:118-119 J:57
 	local value_block<const> = thread.value_block -- I:120 J:59
 	local value_capacity<const> = thread.value_capacity -- I:122 J:60
 	local frame_capacity<const> = thread.frame_capacity -- I:123 J:61
-	local protected_capacity<const> = thread.protected_capacity -- I:124 J:62
 	local frame_block<const> = thread.frame_block -- I:128 J:63
-	local protected<const> = thread.protected_block -- I:130 J:64
 	allocator.bmsx_dlmalloc_release_record(arena, value_block - ram_base, value_capacity * value_slot_bytes, occupied) -- T:799 C:859 J:38
 	allocator.bmsx_dlmalloc_release_record(arena, frame_block - ram_base, (frame_capacity & thread_control_count_mask) * frame_bytes, occupied) -- T:800 I:123 C:860 J:39,61
-	if protected ~= 0 then -- T:801 C:861
-		allocator.bmsx_dlmalloc_release_record(arena, protected - ram_base, (protected_capacity & thread_control_count_mask) * protected_bytes, occupied) -- T:801 I:124 C:861 J:40,62
-	end
+
 	allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, thread_bytes, occupied) -- T:802 C:862
 end
 
@@ -127,7 +121,7 @@ local sweep_objects<const> = function(control, arena, occupied, growing_thread, 
 			if kind == table_kind then -- T:781 C:841
 				free_table(arena, occupied, address, hash_first) -- T:782 C:842
 			elseif kind == thread_kind then -- T:786,796 C:845,857
-				free_thread(arena, occupied, address) -- T:796-797,799-802 C:857,859-862
+				free_thread(arena, occupied, address) -- T:796-797,799-800,802 C:857,859-860,862
 			elseif kind == upvalue_kind then -- T:789 C:849
 				allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, upvalue_bytes, occupied) -- T:789,792 C:849,852
 			else -- T:786,789 C:845,849

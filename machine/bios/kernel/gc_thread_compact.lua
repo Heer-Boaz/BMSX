@@ -10,7 +10,6 @@ local ram_base<const> = 0x08000000 -- A:71 B:69 M:6
 local ram_word_mask<const> = 0x003ffffc -- T:121,129,163,203 H:37,41 C:101,149 M:9
 local value_slot_bytes<const> = 5 -- T:29,160,173,221 H:14,38 C:95,114,171
 local frame_bytes<const> = 56 -- F:21 G:34 T:134,226 C:176 H:41
-local protected_bytes<const> = 20 -- F:152 G:28 T:228 C:178 H:40
 local control_count_mask<const> = (1 << 18) - 1 -- T:34,123-126 H:27,54-64 C:160,178
 local frame_window_mask<const> = 0x000fffff -- F:22 G:36 T:127,217-218 C:161,166-167
 local sign_bit<const> = 0x80000000 -- T:213,215,220 C:163-164,170; unsigned capacity comparisons
@@ -21,12 +20,11 @@ struct thread_compact_record
 	stack_block: addr -- T:22,120,158 H:21,59 C:93
 	stack_capacity: u32 -- T:22,122,159 H:21,60 C:94
 	frame_capacity: u32 -- T:23,123 H:22,61 C:176
-	protected_capacity: u32 -- T:23,124 H:22,62 C:177
+	_before_error: u32 -- T:23,124 H:22,62 C:177
 	before_depth: u32[4] -- T:23 H:22
 	frame_depth: u32 -- T:24,125 H:23 C:160
-	protected_depth: u32 -- T:24,126 H:23 C:178
+	_before_frames: u32 -- T:24,126 H:23 C:178
 	frame_block: addr -- T:24,128 H:23,63 C:176
-	protected_block: addr -- T:24,130 H:23,64 C:177
 end
 
 struct thread_compact_frame
@@ -67,20 +65,20 @@ local shrink_stack_backing<const> = function(state, occupied, address, capacity)
 	resize_record_charge(occupied, previous * value_slot_bytes, bytes) -- T:173-174 C:114-115 L:293-294 N:304-308; the caller ignores the always-successful resize result
 end
 
-local shrink_controls<const> = function(state, occupied, address, field, block, capacity, depth, stride) -- T:199-200 C:145-146
+local shrink_frame_backing<const> = function(state, occupied, address, block, capacity, depth) -- T:199-200 C:145-146
 	if capacity <= 4 or depth * 3 >= capacity then return 0 end -- T:201 C:147
 	local next_capacity<const> = capacity >> 1 -- T:202 C:148
-	local bytes<const> = next_capacity * stride -- T:202 C:148
+	local bytes<const> = next_capacity * frame_bytes -- T:202 C:148
 	local start<const> = block & ram_word_mask -- T:203 C:149
-	local spare<const> = start + depth * stride -- T:203 C:149
+	local spare<const> = start + depth * frame_bytes -- T:203 C:149
 	for word = spare, start + bytes - 4, 4 do -- T:204-205 C:150-151; control strides are word multiples
 		local slot<const>: *u32 = ram_base + word -- T:204-205 C:150-151
 		*slot = 0 -- T:204-205 C:150-151
 	end
 	allocator.bmsx_dlmalloc_shrink(state, block - ram_base, bytes) -- T:206 C:152 A:70-72 B:68-70
-	local capacity_word<const>: *u32 = ram_base + ((address + field) & ram_word_mask) -- T:207 C:153
+	local capacity_word<const>: *u32 = ram_base + ((address + offsetof(thread_compact_record.frame_capacity)) & ram_word_mask) -- T:207 C:153
 	*capacity_word = next_capacity -- T:207 C:153
-	resize_record_charge(occupied, capacity * stride, bytes) -- T:208 C:154 L:293-294 N:304-308
+	resize_record_charge(occupied, capacity * frame_bytes, bytes) -- T:208 C:154 L:293-294 N:304-308
 	return bytes -- T:209 C:155
 end
 
@@ -88,10 +86,8 @@ local shrink_stack<const> = function(state, occupied, address) -- T:211 C:158
 	local thread<const>: *thread_compact_record = ram_base + (address & ram_word_mask) -- T:118-119 C:159 H:54-67
 	local capacity<const> = thread.stack_capacity -- T:122 C:163 H:60
 	local frame_capacity<const> = thread.frame_capacity & control_count_mask -- T:123 C:176 H:61
-	local protected_capacity<const> = thread.protected_capacity & control_count_mask -- T:124 C:177 H:62
 	local depth<const> = thread.frame_depth & control_count_mask -- T:125 C:160 H:56-58
-	local protected_depth<const> = thread.protected_depth & control_count_mask -- T:126 C:178 H:56-58
-	local frame_block<const>, protected_block<const> = thread.frame_block, thread.protected_block -- T:128-131 C:176-177 H:63-64
+	local frame_block<const> = thread.frame_block -- T:128-129 C:176 H:63
 	local used = thread.stack_top & frame_window_mask -- T:127,214 C:161
 	local retained = 0 -- T:212 C:162
 	if (capacity ~ sign_bit) > (16 ~ sign_bit) then -- T:213 C:163
@@ -111,12 +107,11 @@ local shrink_stack<const> = function(state, occupied, address) -- T:211 C:158
 			retained = bytes -- T:223 C:173
 		end
 	end
-	retained = retained + shrink_controls(state, occupied, address, offsetof(thread_compact_record.frame_capacity), frame_block, frame_capacity, depth, frame_bytes) -- T:226 C:176
-	retained = retained + shrink_controls(state, occupied, address, offsetof(thread_compact_record.protected_capacity), protected_block, protected_capacity, protected_depth, protected_bytes) -- T:227-228 C:177-178
+	retained = retained + shrink_frame_backing(state, occupied, address, frame_block, frame_capacity, depth) -- T:226 C:176
 	return retained -- T:229 C:179
 end
 
 return {
-	internal = { resize_record_charge = resize_record_charge, shrink_stack_backing = shrink_stack_backing, shrink_controls = shrink_controls },
+	internal = { resize_record_charge = resize_record_charge, shrink_stack_backing = shrink_stack_backing, shrink_frame_backing = shrink_frame_backing },
 	shrink_stack = shrink_stack,
 }

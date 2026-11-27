@@ -1,6 +1,6 @@
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
-import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
+import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
@@ -19,8 +19,8 @@ import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 // Main-RAM Thread header lanes also consumed by the raw capture datapath.
 export const enum ThreadField {
 	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
-	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	FrameDepth = 56, ProtectedDepth = 60, FrameBlock = 64, ProtectedBlock = 68,
+	FrameCapacity = 32, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	FrameDepth = 56, FrameBlock = 64,
 }
 
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
@@ -36,14 +36,10 @@ export class ThreadLayout {
 	public offset = 0;
 	public capacity = 0;
 	public frames = 0;
-	public continuations = 0;
 	public depth = 0;
-	public protectedDepth = 0;
 	public top = 0;
 	public frameBlock = 0;
 	public frameOffset = 0;
-	public protectedBlock = 0;
-	public protectedOffset = 0;
 }
 /** Physical Thread stack/control datapaths. Host execution views do not own these words. */
 export class ThreadRecords {
@@ -101,14 +97,10 @@ export class ThreadRecords {
 		target.offset = target.block & RAM_RECORD_WORD_MASK;
 		target.capacity = memory.readRamRecordWord(address + ThreadField.StackCapacity);
 		target.frames = memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK;
-		target.continuations = memory.readRamRecordWord(address + ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK;
 		target.depth = memory.readRamRecordWord(address + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
-		target.protectedDepth = memory.readRamRecordWord(address + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK;
 		target.top = memory.readRamRecordWord(address + ThreadField.StackTop) & FRAME_WINDOW_MASK;
 		target.frameBlock = memory.readRamRecordWord(address + ThreadField.FrameBlock);
 		target.frameOffset = target.frameBlock & RAM_RECORD_WORD_MASK;
-		target.protectedBlock = memory.readRamRecordWord(address + ThreadField.ProtectedBlock);
-		target.protectedOffset = target.protectedBlock & RAM_RECORD_WORD_MASK;
 	}
 	public frameAddress(layout: ThreadLayout, index: number): number {
 		return layout.frameOffset + index * FRAME_CONTROL_BYTES;
@@ -117,8 +109,7 @@ export class ThreadRecords {
 		const layout = this.layout;
 		this.readLayout(address, layout);
 		return this.arena.allocationBytes(address - GC_OBJECT_PREFIX)
-			+ this.arena.allocationBytes(layout.block) + this.arena.allocationBytes(layout.frameBlock)
-			+ (layout.protectedBlock !== 0 ? this.arena.allocationBytes(layout.protectedBlock) : 0);
+			+ this.arena.allocationBytes(layout.block) + this.arena.allocationBytes(layout.frameBlock);
 	}
 	public clearStackRange(layout: ThreadLayout, first: number, end: number): void {
 		const count = end - first;
@@ -153,40 +144,24 @@ export class ThreadRecords {
 		this.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
 		return true;
 	}
-	public growControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, capacity: number, staged = 0): number {
+	public growFrameBacking(address: number, capacity: number, staged = 0): number {
 		const memory = this.memory, ram = memory.ramData();
-		const frames = field === ThreadField.FrameBlock;
-		const stride = frames ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
-		const capacityField = frames ? ThreadField.FrameCapacity : ThreadField.ProtectedCapacity;
-		const depthField = frames ? ThreadField.FrameDepth : ThreadField.ProtectedDepth;
-		const oldBlock = memory.readRamRecordWord(address + field);
-		const bytes = capacity * stride;
+		const oldBlock = memory.readRamRecordWord(address + ThreadField.FrameBlock);
+		const bytes = capacity * FRAME_CONTROL_BYTES;
 		const block = staged || (oldBlock !== 0 ? this.arena.resizeBacking(oldBlock, bytes) : this.arena.allocate(bytes, true));
 		if (block === 0) return 0;
 		const offset = block & RAM_RECORD_WORD_MASK, old = oldBlock & RAM_RECORD_WORD_MASK;
-		const oldCapacity = memory.readRamRecordWord(address + capacityField) & THREAD_CONTROL_COUNT_MASK;
-		const occupied = (memory.readRamRecordWord(address + depthField) & THREAD_CONTROL_COUNT_MASK) * stride;
+		const oldCapacity = memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK;
+		const occupied = (memory.readRamRecordWord(address + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES;
 		if (staged !== 0) ram.copyWithin(offset, old, old + occupied);
-		ram.fill(0, offset + occupied, offset + capacity * stride);
+		ram.fill(0, offset + occupied, offset + bytes);
 		const dirty = staged !== 0 ? 0 : occupied;
 		memory.invalidateRamWrite(offset + dirty, bytes - dirty);
-		memory.writeRamRecordWord(address + field, block);
-		memory.writeRamRecordWord(address + capacityField, capacity);
+		memory.writeRamRecordWord(address + ThreadField.FrameBlock, block);
+		memory.writeRamRecordWord(address + ThreadField.FrameCapacity, capacity);
 		if (staged !== 0) this.arena.free(oldBlock);
-		this.budget.resizeRecordCharge(oldCapacity * stride, bytes);
+		this.budget.resizeRecordCharge(oldCapacity * FRAME_CONTROL_BYTES, bytes);
 		return block;
-	}
-	private shrinkControls(address: number, field: ThreadField.FrameCapacity | ThreadField.ProtectedCapacity,
-		block: number, capacity: number, depth: number, stride: number): number {
-		if (capacity <= 4 || depth * 3 >= capacity) return 0;
-		const next = capacity >>> 1, bytes = next * stride;
-		const start = block & RAM_RECORD_WORD_MASK, spare = start + depth * stride;
-		this.memory.ramData().fill(0, spare, start + bytes);
-		this.memory.invalidateRamWrite(spare, bytes - depth * stride);
-		this.arena.shrinkBacking(block, bytes);
-		this.memory.writeRamRecordWord(address + field, next);
-		this.budget.resizeRecordCharge(capacity * stride, bytes);
-		return bytes;
 	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {
 		let retained = 0;
@@ -203,9 +178,17 @@ export class ThreadRecords {
 				retained = bytes;
 			}
 		}
-		retained += this.shrinkControls(address, ThreadField.FrameCapacity, layout.frameBlock, layout.frames, layout.depth, FRAME_CONTROL_BYTES);
-		retained += this.shrinkControls(address, ThreadField.ProtectedCapacity, layout.protectedBlock, layout.continuations,
-			layout.protectedDepth, PROTECTED_CALL_BYTES);
+		if (layout.frames > 4 && layout.depth * 3 < layout.frames) {
+			const next = layout.frames >>> 1, bytes = next * FRAME_CONTROL_BYTES;
+			const used = layout.depth * FRAME_CONTROL_BYTES;
+			const spare = layout.frameOffset + used;
+			this.memory.ramData().fill(0, spare, layout.frameOffset + bytes);
+			this.memory.invalidateRamWrite(spare, bytes - used);
+			this.arena.shrinkBacking(layout.frameBlock, bytes);
+			this.memory.writeRamRecordWord(address + ThreadField.FrameCapacity, next);
+			this.budget.resizeRecordCharge(layout.frames * FRAME_CONTROL_BYTES, bytes);
+			retained += bytes;
+		}
 		return retained;
 	}
 }

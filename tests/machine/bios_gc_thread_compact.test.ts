@@ -1,45 +1,32 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { FRAME_CONTROL_BYTES, FrameField, PROTECTED_CALL_BYTES } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const PATH = 'kernel/gc_thread_compact';
-const entrySource = 'halt_until_irq';
-const modules = ['kernel/dlmalloc', PATH].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
+const threadPadding = [[36, 0x91020001], [60, 0x91020002], [68, 0x91020003]] as const;
 
 interface Shape {
 	readonly values: number;
 	readonly frames: number;
-	readonly protectedFrames: number;
 	readonly top: number;
 	readonly windows: readonly (readonly [base: number, extent: number])[];
-	readonly protectedDepth: number;
 }
 
 function installThread(cpu: CPU, shape: Shape) {
 	const { memory } = cpu, threads = cpu.gc.threads;
 	const thread = allocateThreadRecordReference(cpu, 0);
 	assert.ok(threads.resizeStackBacking(thread, shape.values));
-	const frames = threads.growControls(thread, ThreadField.FrameBlock, shape.frames);
-	const protectedBlock = shape.protectedFrames === 0 ? 0
-		: threads.growControls(thread, ThreadField.ProtectedBlock, shape.protectedFrames);
+	const frames = threads.growFrameBacking(thread, shape.frames);
 	assert.ok(frames);
-	if (shape.protectedFrames !== 0) assert.ok(protectedBlock);
 	const values = memory.readRamRecordWord(thread + ThreadField.StackBlock);
 	for (let index = 0; index < shape.values; ++index) {
 		memory.writeRamRecordWord(values + index * 4, 0x13570000 | index);
@@ -47,31 +34,29 @@ function installThread(cpu: CPU, shape: Shape) {
 	}
 	for (let offset = 0; offset < shape.frames * FRAME_CONTROL_BYTES; offset += 4)
 		memory.writeRamRecordWord(frames + offset, 0x54a80000 | offset);
-	for (let offset = 0; offset < shape.protectedFrames * PROTECTED_CALL_BYTES; offset += 4)
-		memory.writeRamRecordWord(protectedBlock + offset, 0x62b90000 | offset);
 	for (const [index, [base, extent]] of shape.windows.entries()) {
 		memory.writeRamRecordWord(frames + index * FRAME_CONTROL_BYTES + FrameField.StackBase, base | 0x80000000);
 		memory.writeRamRecordWord(frames + index * FRAME_CONTROL_BYTES + FrameField.StackCapacity, extent | 0x40000000);
 	}
 	memory.writeRamRecordWord(thread + ThreadField.StackTop, shape.top | 0xe0000000);
 	memory.writeRamRecordWord(thread + ThreadField.FrameDepth, shape.windows.length | 0x80000000);
-	memory.writeRamRecordWord(thread + ThreadField.ProtectedDepth, shape.protectedDepth | 0x40000000);
-	return { thread, values, frames, protectedBlock };
+	for (const [offset, word] of threadPadding) memory.writeRamRecordWord(thread + offset, word);
+	return { thread, values, frames };
 }
 
 for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physical RAM and resumes in both planes at O${optLevel}`, () => {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
+	const linked = linkManagedTestSystem('halt_until_irq', optLevel);
+	const { object } = linked;
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === PATH && entry.exportPathKey === 'shrink_stack');
 	assert.ok(exported);
 	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(entry >= 0);
-	const { valueSlots, frames: stackFrames } = deriveBlua32FixedStack(linked.image, [entry]);
+	const { valueSlots, frames: stackFrames } = deriveBlua32FixedStack(linked.layout, [entry]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && stackFrames <= HEAP_SERVICE_FRAME_COUNT);
-	const { cpu, memory } = createTestHeapServiceCpu(linked);
-	const oracle = createTestHeapServiceCpu(linked).cpu;
-	runGuestToHalt(cpu, 10_000);
-	runGuestToHalt(oracle, 10_000);
+	const { cpu, memory } = bootManagedTestSystem(linked);
+	const oracle = bootManagedTestSystem(linked).cpu;
+	runGuestToHalt(cpu, 1_000_000);
+	runGuestToHalt(oracle, 1_000_000);
 	const first = memory.ramBusEnd() - RAM_BASE;
 	const last = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
 	const actual = () => memory.ramData().subarray(first, last);
@@ -104,14 +89,14 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		return captureCpuCheckpoint(cpu);
 	};
 	const cases = [
-		{ shape: { values: 66, frames: 10, protectedFrames: 8, top: 3, windows: [[0, 4], [3, 6]], protectedDepth: 1 },
-			retained: 33 * 5 + 5 * FRAME_CONTROL_BYTES + 4 * PROTECTED_CALL_BYTES,
-			debit: 33 * 5 + 5 * FRAME_CONTROL_BYTES + 4 * PROTECTED_CALL_BYTES },
+		{ shape: { values: 66, frames: 10, top: 3, windows: [[0, 4], [3, 6]] },
+			retained: 33 * 5 + 5 * FRAME_CONTROL_BYTES,
+			debit: 33 * 5 + 5 * FRAME_CONTROL_BYTES },
 		// The second window, not StackTop, reaches exactly one third of the Value plane.
-		{ shape: { values: 66, frames: 6, protectedFrames: 6, top: 1, windows: [[0, 1], [17, 5]], protectedDepth: 2 }, retained: 0, debit: 0 },
-		{ shape: { values: 16, frames: 4, protectedFrames: 0, top: 0, windows: [], protectedDepth: 0 }, retained: 0, debit: 0 },
-		{ shape: { values: 16, frames: 7, protectedFrames: 5, top: 9, windows: [[0, 9]], protectedDepth: 1 },
-			retained: 3 * FRAME_CONTROL_BYTES + 2 * PROTECTED_CALL_BYTES, debit: 4 * FRAME_CONTROL_BYTES + 3 * PROTECTED_CALL_BYTES },
+		{ shape: { values: 66, frames: 6, top: 1, windows: [[0, 1], [17, 5]] }, retained: 0, debit: 0 },
+		{ shape: { values: 16, frames: 4, top: 0, windows: [] }, retained: 0, debit: 0 },
+		{ shape: { values: 16, frames: 7, top: 9, windows: [[0, 9]] },
+			retained: 3 * FRAME_CONTROL_BYTES, debit: 4 * FRAME_CONTROL_BYTES },
 	] as const;
 	for (const [index, { shape, retained, debit }] of cases.entries()) {
 		const target = installThread(cpu, shape);
@@ -121,7 +106,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		const layout = new ThreadLayout();
 		oracle.gc.threads.readLayout(target.thread, layout);
 		assert.equal(oracle.gc.threads.shrinkStack(target.thread, layout), retained);
-		assert.ok(cpu.beginHeapService(linked.image.functions[entry].address,
+		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
 			[cpu.heapAllocator.allocatorStateOffset(), cpu.luaHeap.occupiedOffset, target.thread]));
 		if (index === 0) {
 			const history = new RamHistory();
@@ -151,6 +136,11 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		} else finish();
 		assert.equal(cpu.heapServiceResult(), retained);
 		assert.equal(cpu.luaHeap.usedBytes(), before - debit);
+		for (const [offset, word] of threadPadding) assert.equal(memory.readRamRecordWord(target.thread + offset), word);
+		for (let frame = 0; frame < shape.windows.length; ++frame) {
+			const offset = frame * FRAME_CONTROL_BYTES + 12;
+			assert.equal(memory.readRamRecordWord(target.frames + offset), 0x54a80000 | offset);
+		}
 		compare();
 	}
 });

@@ -64,7 +64,7 @@ struct Thread {
 		recordedWriteEpoch = epoch;
 		if ((epoch & 1u) == 0u) return;
 		// Native transitions write only Values, frame controls and this
-		// Thread's depth/top words. Protected handling uses the record owner.
+		// Thread's depth/top words.
 		watches.consumeHistoryWrites(stackOffset(), stackByteLength());
 		watches.consumeHistoryWrites(boundFrameOffset, boundFrameCapacity * FRAME_CONTROL_BYTES);
 		watches.consumeHistoryWrites(address & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES);

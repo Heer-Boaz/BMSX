@@ -10,7 +10,7 @@ import {
 } from '../../../machine/ts/machine/cpu/call_state';
 import { captureAddress, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
+import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, load, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueBool, valueClosure, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -167,7 +167,6 @@ return ok, result, trailing
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 		assert.equal(cpu.readEpcWord(), trampoline.codeAddress);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
-		assert.equal(memory.readRamRecordWord(owner + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK, 0);
 		assert.equal(memory.readRamRecordWord(counter), 1);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('observed_error')!), diagnostic);
 		const results = parent ? [valueBool(true), valueBool(false), sentinel] : [valueBool(false), sentinel, valueNil()];

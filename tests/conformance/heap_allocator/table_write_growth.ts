@@ -95,7 +95,6 @@ try {
 			assert.equal(cpu.heapServiceActive(), true);
 			assert.equal(read(HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Discard);
 			assert.equal(read(HeapServiceBiosCallField.ResultWord), 0);
-			assert.equal(cpu.rootThread.protectedDepth, 0);
 			assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_VALUE_OFFSET + 3 * 4), HeapServiceTableGrowthMode.General);
 			assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment), 0);
 			const operandWords = [target, valueTag(key), valuePayload(key), ValueTag.Integer, 183];
@@ -110,7 +109,6 @@ try {
 			assert.equal(grant(17), RunResult.Yielded);
 			assert.equal(cpu.heapServiceActive(), true);
 			assert.equal(pc(), next);
-			assert.equal(cpu.rootThread.protectedDepth, 0);
 			const checkpoint = captureRuntimeSaveState(runtime);
 			const checkpointRam = history.capture(memory, baseline);
 			const prefix = trace.length;
@@ -128,7 +126,6 @@ try {
 				assert.equal(read(HeapServiceBiosCallField.Tag), ValueTag.Table);
 				assert.equal(read(HeapServiceBiosCallField.Word), target);
 				for (let i = 0; i < 8 && grant(65536) !== RunResult.Halted; ++i) { /* retire through the ordinary protected owner */ }
-				assert.equal(cpu.rootThread.protectedDepth, 0);
 				const results = runtime.readCompletionValues();
 				assert.deepEqual(results, visible, spec.name);
 				observe('c', [results.length, ...results.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));

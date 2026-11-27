@@ -393,7 +393,6 @@ test('warm ordinary Value accesses inline both lanes and retire watched, aliased
 	store(frame + FrameField.Function, -2);
 	marks.push(constants.length);
 	store(frame + FrameField.Pc, -3);
-	store(frame + FrameField.Protected, -1);
 	store(frame + FrameField.StackCapacity, 4);
 	store(source, 0x7fc0f123);
 	store(source + 4, ValueTag.Float);

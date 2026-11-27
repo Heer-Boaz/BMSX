@@ -34,7 +34,7 @@ export const HEAP_SERVICE_MODULES = [
 	'kernel/gc_weak_table', HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
-	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, TABLE_GROW_MODULE, 'kernel/table_plan', 'kernel/table_insert_existing',
+	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'kernel/table_plan', 'kernel/table_insert_existing',
 	STOPPED_FINAL_MARK_MODULE,
 	CAPTURED_CLOSURE_MODULE, 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',

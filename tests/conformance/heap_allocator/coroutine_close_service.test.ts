@@ -128,7 +128,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(runtime.readCompletionValues(), want);
 		assert.equal(status(), ThreadStatus.Dead);
 		assert.equal(Upvalue.load(memory, capture), valueInteger(209));
-		for (const field of [ThreadField.FrameDepth, ThreadField.ProtectedDepth, ThreadField.StackTop, ThreadField.Entry,
+		for (const field of [ThreadField.FrameDepth, ThreadField.StackTop, ThreadField.Entry,
 			ThreadField.ErrorWord, ThreadField.ErrorKind]) assert.equal(read(field), 0);
 		assert.ok(memory.ramData().subarray(bank, bank + slotBytes).every(byte => byte === 0));
 

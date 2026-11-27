@@ -776,7 +776,6 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_inner')), valueBool(true));
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_a')), valueInteger(3));
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_b')), valueInteger(4));
-	assert.equal(cpu.rootThread.protectedDepth, 0);
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {

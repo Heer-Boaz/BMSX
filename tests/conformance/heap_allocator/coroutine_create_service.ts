@@ -134,7 +134,6 @@ try {
 			const next = read(HeapServiceResidentField.LastPc) + INSTRUCTION_BYTES;
 			assert.equal(instructionOpcode(memory.readMappedU32LE(next - INSTRUCTION_BYTES)), OpCode.CALL);
 			assert.equal(pc(), next);
-			assert.equal(cpu.rootThread.protectedDepth, 0);
 			if (fixed) {
 				// First physical reservation is written before the inventory,
 				// logical charge and caller result. Checkpoint between them.
@@ -183,7 +182,6 @@ try {
 				let result = grant(65536);
 				for (let i = 0; i < 8 && result === RunResult.Yielded; ++i) result = grant(65536);
 				assert.equal(result, RunResult.Halted);
-				assert.equal(cpu.rootThread.protectedDepth, 0);
 				const values = runtime.readCompletionValues();
 				const thread = valueThread(word);
 				assert.deepEqual(values, failure ? [valueBool(false), valueString(faultId)] : fixed ? [thread, valueInteger(183)] : [thread]);

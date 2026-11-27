@@ -127,9 +127,8 @@ void reusableFrameChain() {
 		&& prepared->controlOffset == root->controlOffset + FRAME_CONTROL_BYTES,
 		"the next physical frame is not active before entry");
 	thread.enterFrame(prepared);
-	prepared->writeControl(FrameField::Protected, 3);
 	thread.leaveFrame();
-	require(thread.currentFrame == root && thread.frameDepth() == 1, "the retired protected slot is not active");
+	require(thread.currentFrame == root && thread.frameDepth() == 1, "the retired frame is not active");
 	thread.leaveFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth() == 0, "retirement leaves an empty activation chain");
 	require(thread.acquireFrame() == root, "an empty view can reuse its first frame");
@@ -206,8 +205,8 @@ void inactiveFrameMetadata() {
 			&& reused->executionImage == reused->previous->executionImage,
 			"a real activation reuses the node and rebinds all pointers after Value-stack growth");
 		require(reused->decodedPage == nullptr && reused->compilationEntry
-			&& reused->readControl(FrameField::Protected) == static_cast<u32>(-1) && !reused->hasControlFlag(FRAME_EXCEPTION) && !reused->hasControlFlag(FRAME_NMI),
-			"reuse retains the required decode, protected-return and exception admission state");
+			&& !reused->hasControlFlag(FRAME_EXCEPTION) && !reused->hasControlFlag(FRAME_NMI),
+			"reuse retains the required decode and exception admission state");
 		cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	}
 	test::runCpuParity(generated.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1, 1);

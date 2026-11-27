@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { closureRecordBytes, initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
@@ -15,34 +14,30 @@ import {
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const OBJECTS = 'kernel/gc_objects';
-const entrySource = 'halt_until_irq';
-const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_thread_compact', OBJECTS].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
+const entrySource = `collector_probe = function() end
+halt_until_irq`;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
+	const linked = linkManagedTestSystem(entrySource, optLevel);
+	const { object } = linked;
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === OBJECTS && entry.exportPathKey === 'sweep_objects');
 	assert.ok(exported);
 	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(entry >= 0);
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [entry]);
+	const { valueSlots, frames } = deriveBlua32FixedStack(linked.layout, [entry]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
-	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	runGuestToHalt(cpu, 10_000);
-	runGuestToHalt(oracle, 10_000);
+	const rom = { romBytes: writeTestBlua32Rom(linked) };
+	const { cpu, memory } = createTestSystemCpu(rom), oracle = createTestSystemCpu(rom).cpu;
+	runGuestToHalt(cpu, 1_000_000);
+	runGuestToHalt(oracle, 1_000_000);
 	const management = cpu.heapAllocator.managementOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = cpu.heapAllocator.allocatorStateOffset();
@@ -74,7 +69,7 @@ function fixture(optLevel: 0 | 3) {
 		for (const mem of [memory, oracle.memory]) mem.writeRamRecordWord(control + SWEEP_LINK, link);
 	}
 	function begin(allowance: number, growing = 0, compact = 0, hashFirst = 0) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entry].address,
+		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
 			[control, arena, occupied, growing, compact, hashFirst, allowance]));
 	}
 	function grant(cycles: number) {
@@ -172,10 +167,8 @@ for (const optLevel of [0, 3] as const) {
 			begin, grant, finish } = fixture(optLevel);
 		const deadThread = allocate(target => {
 			const address = allocateThreadRecordReference(target, 0);
-			target.luaHeap.reserveThreadControls(address, ThreadField.ProtectedBlock, 4, 0, valueThread(address));
 			const mem = target.memory;
 			mem.writeRamRecordWord(address + ThreadField.FrameCapacity, mem.readRamRecordWord(address + ThreadField.FrameCapacity) | 0xa0000000);
-			mem.writeRamRecordWord(address + ThreadField.ProtectedCapacity, mem.readRamRecordWord(address + ThreadField.ProtectedCapacity) | 0x80000000);
 			return address;
 		});
 		function closure(captures: number, canonical: boolean, latched: boolean, kind = ValueTag.Closure) {
@@ -231,11 +224,10 @@ for (const optLevel of [0, 3] as const) {
 		}
 		const valueCapacity = memory.readRamRecordWord(deadThread + ThreadField.StackCapacity);
 		const frameCapacity = memory.readRamRecordWord(deadThread + ThreadField.FrameCapacity);
-		const protectedCapacity = memory.readRamRecordWord(deadThread + ThreadField.ProtectedCapacity);
 		const liveValueCapacity = memory.readRamRecordWord(liveThread + ThreadField.StackCapacity);
 		const liveFrameCapacity = memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity);
 		const threadDebits = [valueCapacity * THREAD_STACK_SLOT_BYTES, (frameCapacity & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES,
-			(protectedCapacity & THREAD_CONTROL_COUNT_MASK) * PROTECTED_CALL_BYTES, THREAD_HEAP_BYTES];
+			THREAD_HEAP_BYTES];
 		const prototype = cpu.captureClosureBinding(canonical).functionAddress;
 		assert.ok(cpu['staticClosures'].find(prototype)?.includes(canonical));
 		const expectedWork = oracle.gc['sweepObjects'](allowance, growing, true);

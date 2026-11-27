@@ -33,7 +33,7 @@ test('authored System root covers the published writes of the pinned direct-entr
 	// Admission, image latching, and host-view invalidation have different
 	// owners. The producer consumes a fresh, already admitted zero-arg bank.
 	verifyPinnedBluaSource(port, basis, sources, [
-		['F', 31, 38], ['S', 118, 131], ['Q', 64, 79], ['E', 24, 24],
+		['F', 31, 38], ['S', 118, 120], ['S', 122, 131], ['Q', 64, 66], ['Q', 68, 79], ['E', 24, 24],
 		['C', 1904, 1906], ['C', 1908, 1910], ['T', 2234, 2236], ['T', 2238, 2239],
 		['N', 21, 21], ['N', 29, 29],
 	]);
@@ -51,13 +51,13 @@ test('authored System root uses the physical Function, Frame and Thread fields',
 			capture_count: BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, reserved: BLUA32_FUNCTION_RESERVED_OFFSET,
 		}],
 		['initial_frame', FRAME_CONTROL_BYTES, {
-			fn: FrameField.Function, call_site: FrameField.CallSite, open_head: FrameField.OpenHead, protected: FrameField.Protected, flags: FrameField.Flags, pc: FrameField.Pc,
+			fn: FrameField.Function, call_site: FrameField.CallSite, open_head: FrameField.OpenHead, flags: FrameField.Flags, pc: FrameField.Pc,
 			vararg_base: FrameField.VarargBase, argument_count: FrameField.ArgumentCount, return_base: FrameField.ReturnBase, return_count: FrameField.ReturnCount, top: FrameField.Top,
 			closure: FrameField.Closure, stack_base: FrameField.StackBase, stack_capacity: FrameField.StackCapacity,
 		}],
-		['activation_thread', ThreadField.ProtectedBlock, {
+		['activation_thread', ThreadField.FrameBlock + 4, {
 			status: ThreadField.Status, stack_top: ThreadField.StackTop, stack_block: ThreadField.StackBlock, stack_capacity: ThreadField.StackCapacity,
-			frame_depth: ThreadField.FrameDepth, protected_depth: ThreadField.ProtectedDepth, frame_block: ThreadField.FrameBlock,
+			frame_depth: ThreadField.FrameDepth, frame_block: ThreadField.FrameBlock,
 		}],
 	] as const;
 	for (const [name, size, fields] of layouts) {

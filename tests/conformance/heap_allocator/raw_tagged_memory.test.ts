@@ -274,7 +274,6 @@ test('ordinary tagged Value requires System ROM authority even in cartridge supe
 		system.seed(root + ThreadField.FrameDepth, 1);
 		system.seed(root + ThreadField.FrameCapacity, 2);
 		system.seed(root + ThreadField.FrameBlock, frame);
-		system.seed(frame + FrameField.Protected, -1);
 		system.seed(frame + FrameField.StackCapacity, 8);
 		functionSlot = system.constants.length; system.seed(frame + FrameField.Function, -1);
 		codeSlot = system.constants.length; system.seed(frame + FrameField.Pc, -2);

@@ -1,6 +1,6 @@
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
@@ -11,7 +11,7 @@ export function logicalThreadBytes(cpu: CPU, address = cpu.rootThread.address): 
 	const layout = new ThreadLayout();
 	cpu.gc.threads.readLayout(address, layout);
 	return THREAD_HEAP_BYTES + layout.capacity * THREAD_STACK_SLOT_BYTES
-		+ layout.frames * FRAME_CONTROL_BYTES + layout.continuations * PROTECTED_CALL_BYTES;
+		+ layout.frames * FRAME_CONTROL_BYTES;
 }
 
 /** Count positive guest heap charges, including allocations collected within the measurement. */

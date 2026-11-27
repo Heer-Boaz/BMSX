@@ -35,22 +35,21 @@ struct stopped_thread
 	stack_block: addr -- R:22 S:21
 	stack_capacity: u32 -- R:22 S:21
 	frame_capacity: u32 -- R:23 S:22
-	protected_capacity: u32 -- R:23 S:22
+	_before_error: u32 -- R:23 S:22
 	error_word: u32 -- R:23 S:22 I:60-61 J:48-49
 	error_kind: u32 -- R:23 S:22 I:60-61 J:48-49
 	call_base: u32 -- R:23 S:22
 	return_count: u32 -- R:23 S:22
 	frame_depth: u32 -- R:24 S:23
-	protected_depth: u32 -- R:24 S:23
+	_before_frames: u32 -- R:24 S:23
 	frame_block: addr -- R:24 S:23
-	protected_block: addr -- R:24 S:23
 end
 
 struct stopped_frame
 	fn: addr -- F:19 G:41
 	call_site: addr -- F:19 G:41
 	head: addr -- F:19 G:41
-	protected: u32 -- F:19 G:41
+	_padding: u32 -- F:19 G:41
 	flags: u32 -- F:19 G:41
 	pc: u32 -- F:19 G:41
 	vararg_base: u32 -- F:19 G:41
@@ -122,7 +121,6 @@ local retire_threads<const> = function(management, root, active) -- T:860-862 C:
 	local arena<const> = management + layout.arena_offset -- H:140-143 K:253-256
 	while true do -- T:862 C:3197
 		local thread<const>: *stopped_thread = active -- T:863,871 I:42-43 C:3198,3206 J:31
-		thread.protected_depth = 0 -- T:863 I:67-68 C:3198 S:23
 		retire_thread_frames(control, arena, active, 0) -- T:864-867 C:3199-3202
 		local capacity<const> = thread.stack_capacity -- T:869 I:141 C:3204 J:141 S:63-64
 		values.internal.clear_stack_range(thread.stack_block & word_mask, capacity, 0, capacity) -- T:869 I:141 C:3204 J:135-150 S:37,43-46

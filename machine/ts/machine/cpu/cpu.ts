@@ -169,7 +169,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FrameField, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -5044,12 +5044,6 @@ export class CPU implements MappedPageInvalidator {
 					const layout = this.inspectionThreadLayout;
 					this.gc.threads.readLayout(address, layout);
 					visitThread?.(address, layout.depth);
-					for (let index = 0; index < layout.protectedDepth; ++index) {
-						const continuation = layout.protectedOffset + index * PROTECTED_CALL_BYTES;
-						const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
-						if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) === 0)
-							objects.push(this.memory.readRamRecordWord(continuation + ProtectedField.Handler));
-					}
 					this.inspectionThreadValues.bindRam(this.memory, layout.offset, layout.capacity, false, true);
 					addSlots(this.inspectionThreadValues, layout.top);
 					for (let index = layout.depth - 1; index >= 0; --index) {

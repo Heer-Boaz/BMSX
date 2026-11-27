@@ -25,14 +25,22 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 		throw std::runtime_error("completion fixture did not HALT");
 	const bmsx::u32 thread = cpu.activeThread()->address;
 	const int depth = cpu.getFrameDepth();
-	const auto protectedDepth = bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth);
+	const auto interruptedFrame = [&] {
+		const auto layout = bmsx::ThreadRecord::storageLayout(cpu.memory(), thread);
+		const auto address = layout.frameAddress(depth - 1);
+		return std::tuple{
+			cpu.memory().readRamRecordWord(address + static_cast<bmsx::u32>(bmsx::FrameField::Function)),
+			cpu.memory().readRamRecordWord(address + static_cast<bmsx::u32>(bmsx::FrameField::Pc)),
+		};
+	};
+	const auto interrupted = interruptedFrame();
 	cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending(); ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 		if (fault && cpu.fixedInterruptActive() && cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_TRAP) break;
 	}
 	if (bmsx::ThreadRecord::read(cpu.memory(), thread, bmsx::ThreadField::Status) != static_cast<bmsx::u32>(bmsx::ThreadStatus::Running)
-		|| bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth) != protectedDepth) throw std::runtime_error("completion changed interrupted coroutine/protected caller");
+		|| interruptedFrame() != interrupted) throw std::runtime_error("completion changed interrupted coroutine frame");
 	if (fault) {
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() != bmsx::CPU_CAUSE_CODE_TRAP || !cpu.completionCallPending()
 			|| cpu.memory().readRamRecordWord(bmsx::CPU_INTERRUPTED_CONTEXT_ADDRESS) != thread)

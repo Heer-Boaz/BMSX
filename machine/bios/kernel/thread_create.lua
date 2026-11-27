@@ -38,16 +38,15 @@ struct new_thread_record
 	stack_block: addr -- I:22,106 J:79 H:21
 	stack_capacity: u32 -- I:22,108 J:81 H:21
 	frame_capacity: u32 -- I:23,109 J:82 H:22
-	protected_capacity: u32 -- I:23,103 J:76 H:22
+	_before_error: u32 -- I:23,103 J:76 H:22
 	error_word: u32 -- I:23,103 J:76 H:22
 	error_kind: u32 -- I:23,103 J:76 H:22
 	call_base: u32 -- I:23,103 J:76 H:22
 	return_count: u32 -- I:23,103 J:76 H:22
 	frame_depth: u32 -- I:24,103 J:76 H:23
-	protected_depth: u32 -- I:24,103 J:76 H:23
+	_before_frames: u32 -- I:24,103 J:76 H:23
 	frame_block: addr -- I:24,107 J:80 H:23
-	protected_block: addr -- I:24,103 J:76 H:23
-	reserved: u32[2] -- I:24,28,103 J:76 H:13,23
+	reserved: u32[3] -- I:24,28,103 J:76 H:13,23
 end
 
 local record_bytes<const> = sizeof(new_thread_record) -- T:173,179 C:185,191 I:28 H:13

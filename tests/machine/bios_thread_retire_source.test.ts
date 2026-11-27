@@ -23,8 +23,8 @@ test('warm Thread retirement maps the original resumer order, frame release, upv
 	}, [
 		// Stalled bus, completion pointer and thread-switch latches are CPU
 		// effects. Cleared host views are not part of the guest record.
-		['T', 860, 860], ['T', 862, 867], ['T', 869, 878], ['T', 880, 880],
-		['C', 3195, 3195], ['C', 3197, 3202], ['C', 3204, 3213], ['C', 3215, 3215],
+		['T', 860, 860], ['T', 862, 862], ['T', 864, 867], ['T', 869, 878], ['T', 880, 880],
+		['C', 3195, 3195], ['C', 3197, 3197], ['C', 3199, 3202], ['C', 3204, 3213], ['C', 3215, 3215],
 		['T', 4298, 4308], ['T', 4310, 4312], ['C', 2977, 2987], ['C', 2989, 2991],
 		['I', 263, 265], ['J', 285, 287],
 		['U', 39, 50], ['V', 42, 53], ['U', 53, 60], ['V', 56, 62],

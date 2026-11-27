@@ -178,16 +178,6 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	}
 }
 
-u32 LuaHeap::reserveThreadControls(u32 address, ThreadField field, u32 capacity, u32 previous, Value root) {
-	const u32 stride = field == ThreadField::FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
-	auto recovery = admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);
-	assistBeforeReservation(capacity * stride, root, valueNil(), valueNil(), address);
-	for (;;) {
-		if (const u32 block = ThreadRecord::growControls(m_cpu.gcHeap(), address, field, capacity)) return block;
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
-	}
-}
-
 void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
 	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
@@ -195,8 +185,12 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
 	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
 	if (!valueBytes && frameBytes) {
-		reserveThreadControls(address, ThreadField::FrameBlock, frameCapacity, previousFrames / FRAME_CONTROL_BYTES, root);
-		return;
+		auto recovery = admit(frameBytes - previousFrames, root, valueNil(), valueNil(), address);
+		assistBeforeReservation(frameBytes, root, valueNil(), valueNil(), address);
+		for (;;) {
+			if (ThreadRecord::growFrames(m_cpu.gcHeap(), address, frameCapacity)) return;
+			recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
+		}
 	}
 	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
 	auto recovery = requested > previous
@@ -210,7 +204,7 @@ void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 fram
 		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
 		if (!frameBytes || frames) {
 			if (!valueBytes || ThreadRecord::resizeStackBacking(m_cpu.gcHeap(), address, valueCapacity)) {
-				if (frames) ThreadRecord::growControls(m_cpu.gcHeap(), address, ThreadField::FrameBlock, frameCapacity, frames);
+				if (frames) ThreadRecord::growFrames(m_cpu.gcHeap(), address, frameCapacity, frames);
 				return;
 			}
 			if (frames) arena.free(frames);

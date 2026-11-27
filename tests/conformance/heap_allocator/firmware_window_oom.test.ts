@@ -98,7 +98,6 @@ return protect(descend)
 	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'firmware, not the native Lua fault handler, delivered this result');
 	assert.equal(cpu.fixedInterruptActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
-	assert.equal(memory.readRamRecordWord(cpu.rootThread.address + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK, 0);
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const head = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;

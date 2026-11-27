@@ -347,6 +347,6 @@ test('Thread creation maps and pins the original mutations and raw layout', () =
 	assert.equal(layout.size, THREAD_HEAP_BYTES);
 	for (const [field, offset] of [
 		['header', ThreadField.Header], ['entry', ThreadField.Entry], ['stack_block', ThreadField.StackBlock], ['stack_capacity', ThreadField.StackCapacity],
-		['frame_block', ThreadField.FrameBlock], ['frame_capacity', ThreadField.FrameCapacity], ['protected_block', ThreadField.ProtectedBlock],
+		['frame_block', ThreadField.FrameBlock], ['frame_capacity', ThreadField.FrameCapacity],
 	] as const) assert.equal(layout.fields.get(field)!.offset, offset);
 });

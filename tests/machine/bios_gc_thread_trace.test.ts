@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { FRAME_CONTROL_BYTES, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, ProtectedCallKind, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
@@ -9,21 +8,22 @@ import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cp
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { bindOpen, close, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag, valueThread } from '../../machine/ts/machine/cpu/value';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const TRACE = 'kernel/gc_thread_trace', PROBE = 'test/gc_thread_trace';
-const entrySource = 'halt_until_irq';
+const entrySource = `local probe<const> = require('${PROBE}')
+halt_until_irq
+return function(control, arena, metadata, address, atomic, limit, resumed, pending_strings, replace, output)
+	return probe.trace(control, arena, metadata, address, atomic, limit, resumed, pending_strings, replace, output)
+end`;
 const cursorBits = GC_GRAY_INDEX_BITS + 1;
-const enum Stage { Frames, Protected, Values, Clear }
+const enum Stage { Frames, Values, Clear }
 const openHead = 1;
 const probeSource = `module<const>
 local thread<const> = require('${TRACE}')
@@ -35,24 +35,18 @@ local trace<const> = function(control, arena, metadata, address, atomic, limit, 
 end
 return { trace = trace }
 `;
-const modules = [
-	...['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', 'kernel/gc_capture_trace', TRACE].map(path =>
-		({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
-	{ path: PROBE, source: probeSource },
-].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
-
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
+	const linked = linkManagedTestSystem(entrySource, optLevel, [{ path: PROBE, source: probeSource }]);
+	const { object } = linked;
 	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === PROBE && entry.exportPathKey === 'trace');
 	assert.ok(exported);
 	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(entry >= 0);
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [entry]);
+	const { valueSlots, frames } = deriveBlua32FixedStack(linked.layout, [entry]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
-	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	runGuestToHalt(cpu, 10_000);
-	runGuestToHalt(oracle, 10_000);
+	const { cpu, memory } = bootManagedTestSystem(linked), oracle = bootManagedTestSystem(linked).cpu;
+	runGuestToHalt(cpu, 1_000_000);
+	runGuestToHalt(oracle, 1_000_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, output = management + HEAP_SERVICE_THREAD_OFFSET - 4;
@@ -96,7 +90,7 @@ function fixture(optLevel: 0 | 3) {
 		}
 	}
 	function begin(address: number, atomic: boolean, limit: number, resumed: boolean, pendingStrings = 0) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entry].address,
+		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
 			[control, arena, metadata, address, +atomic, limit, +resumed, pendingStrings, 0, output]));
 	}
 	function grant(cycles: number) {
@@ -127,7 +121,7 @@ function fixture(optLevel: 0 | 3) {
 }
 
 for (const optLevel of [0, 3] as const) {
-	test(`BLua Thread trace matches native frame, open-chain, protected, and value continuations at O${optLevel}`, () => {
+	test(`BLua Thread trace matches native frame, open-chain, and tagged argument continuations at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, add, word, cell, closure, value, step } = fixture(optLevel);
 		const thread = add(target => allocateThreadRecordReference(target, 0)), resumer = add(target => allocateThreadRecordReference(target, 0));
 		const entry = closure(), framed = closure(), handler = closure(), ignored = closure();
@@ -135,14 +129,12 @@ for (const optLevel of [0, 3] as const) {
 		const string = add(target => target.stringPool.intern('thread-open-value'));
 		const err = add(target => target.stringPool.intern('thread-error-value'));
 		const prior = add(target => target.stringPool.intern('thread-pending-value'));
-		const protectedBlock = add(target => target.luaHeap.reserveThreadControls(thread, ThreadField.ProtectedBlock, 4, 0, valueThread(thread)));
 		const frames = memory.readRamRecordWord(thread + ThreadField.FrameBlock);
 		word(thread + ThreadField.Resumer, resumer);
 		word(thread + ThreadField.Entry, entry);
 		word(thread + ThreadField.ErrorWord, err);
 		word(thread + ThreadField.ErrorKind, ValueTag.String);
 		word(thread + ThreadField.FrameDepth, 2);
-		word(thread + ThreadField.ProtectedDepth, 3);
 		word(frames + FrameField.Closure, framed);
 		word(frames + FrameField.OpenHead, open);
 		const last = frames + FRAME_CONTROL_BYTES;
@@ -154,13 +146,12 @@ for (const optLevel of [0, 3] as const) {
 		word(last + FrameField.StackBase, 2);
 		word(last + FrameField.Top, 3);
 		word(last + FrameField.StackCapacity, 6);
-		for (const [index, flags] of [ProtectedCallKind.PCall, ProtectedCallKind.XPCallBody | PROTECTED_CALL_HANDLER_BUILTIN,
-			ProtectedCallKind.XPCallHandler].entries()) {
-			word(protectedBlock + index * PROTECTED_CALL_BYTES + ProtectedField.Flags, flags);
-			word(protectedBlock + index * PROTECTED_CALL_BYTES + ProtectedField.Handler, index === 2 ? handler : ignored);
-		}
+		// Only the handler in the live argument area is a root; an
+		// address-shaped word in Thread padding is not a Value.
+		word(thread + 68, ignored);
+		word(last + FrameField.VarargBase, 1);
 		value(thread, 6, ValueTag.String, string);
-		value(thread, 1, ValueTag.Closure, entry);
+		value(thread, 1, ValueTag.Closure, handler);
 		for (const target of [cpu, oracle]) {
 			bindOpen(target.memory, open, thread, 6, stale);
 			bindOpen(target.memory, stale, thread, 7, 0);
@@ -183,18 +174,15 @@ for (const optLevel of [0, 3] as const) {
 		for (const target of [cpu, oracle]) close(target.gc, stale);
 		const newFrames = add(target => {
 			const staged = target.heapAllocator.allocate(4 * FRAME_CONTROL_BYTES, true);
-			return target.gc.threads.growControls(thread, ThreadField.FrameBlock, 4, staged);
+			return target.gc.threads.growFrameBacking(thread, 4, staged);
 		});
 		assert.notEqual(newFrames, frames);
 		assert.equal(step(thread, false, 1, true), 14, 'closed saved cell clocks no Next lane and the relocated second frame is read');
-		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), Stage.Protected << cursorBits);
-		for (const index of [1, 2, 3]) {
-			assert.equal(step(thread, false, 1, true), 5);
-			assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), index === 3 ? Stage.Values << cursorBits : (Stage.Protected << cursorBits) | index);
-		}
-		assert.equal(memory.readRamRecordByte(ignored + GC_COLOR_OFFSET), cpu.gc.white(), 'PCALL and builtin handlers are not closures to mark');
-		assert.equal(memory.readRamRecordByte(handler + GC_COLOR_OFFSET), 2);
+		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), Stage.Values << cursorBits);
 		for (let i = 0; i < 16 && memory.readRamRecordWord(control + GC_TRACE_RECORD) !== 0; ++i) step(thread, false, 3, true);
+		assert.equal(memory.readRamRecordByte(ignored + GC_COLOR_OFFSET), cpu.gc.white(), 'Thread padding is not a root');
+		assert.equal(memory.readRamRecordWord(thread + 68), ignored, 'trace leaves padding intact');
+		assert.equal(memory.readRamRecordByte(handler + GC_COLOR_OFFSET), 2, 'the tagged handler slot is traced');
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_TRACE_OPEN + 4), 0);
 	});

@@ -1,3 +1,4 @@
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import assert from 'node:assert/strict';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
@@ -44,7 +45,8 @@ return true`,
 export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 	runGuestToHalt(cpu, 500_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth(), protectedDepth = cpu.activeThread.protectedDepth;
+	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
+	const pc = cpu.readFramePc(depth - 1);
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
 	const fault = name.startsWith('completion_fault');
 	for (let grant = 0; grant < 10000 && cpu.completionCallPending(); grant++) {
@@ -52,7 +54,7 @@ export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 		if (fault && cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_TRAP) break;
 	}
 	assert.equal(cpu.readThreadStatus(thread), ThreadStatus.Running);
-	assert.equal(cpu.bindThread(thread).protectedDepth, protectedDepth, 'interrupted protected call remains untouched');
+	assert.equal(cpu.readThreadFrameWord(thread, depth - 1, FrameField.Pc), pc, 'completion does not advance the interrupted activation');
 	if (fault) {
 		assert.ok(cpu.fixedInterruptActive(), 'unhandled completion error enters the fixed System vector');
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);

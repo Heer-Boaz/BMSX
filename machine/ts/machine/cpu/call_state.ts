@@ -10,13 +10,7 @@ import type { GcHeap } from './gc_heap';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { decodeValueCount, encodeFixedValueCount } from '../../spec/blua32/opcode';
 
-export const enum ProtectedCallKind {
-	PCall,
-	XPCallBody,
-	XPCallHandler,
-}
-
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number };
 export const FRAME_CONTROL_BYTES = 56;
 // Entry: canonical frame control followed by its physical stack source.
@@ -63,7 +57,6 @@ export function writeFrameEntryControl(memory: Memory, offset: number, fn: numbe
 	writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 	writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
 	writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
-	writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
 	const bank = frameBankWord(domain);
 	const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
 	writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
@@ -179,11 +172,3 @@ export class CallFrame {
 		memory.writeRamRecordWord(address, memory.readRamRecordWord(address) | (FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0)));
 	}
 }
-
-export const enum ProtectedField { Flags = 0, Caller = 4, Base = 8, Wanted = 12, Handler = 16 }
-export const PROTECTED_CALL_BYTES = 20;
-export const PROTECTED_CALL_KIND_MASK = 0xff;
-export const PROTECTED_CALL_PARENT = 1 << 8;
-export const PROTECTED_CALL_HANDLER_BUILTIN = 1 << 9;
-export const PROTECTED_CALL_HANDLER_RESIDENT = 1 << 10;
-export const PROTECTED_CALL_HANDLER_IMMUTABLE = PROTECTED_CALL_HANDLER_BUILTIN | PROTECTED_CALL_HANDLER_RESIDENT;

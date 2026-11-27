@@ -28,7 +28,7 @@ struct diagnostic_thread
 	stack_capacity: u32
 	before_frame_depth: u32[6]
 	frame_depth: u32
-	protected_depth: u32
+	_before_frames: u32
 	frame_block: addr
 end
 

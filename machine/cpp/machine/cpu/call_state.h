@@ -24,21 +24,7 @@ inline u32 frameCaptureCount(const Memory& memory, u32 closure) {
 	return closure == 0u ? 0u : ClosureRecord::captureCount(memory, closure);
 }
 
-enum class ProtectedCallKind : uint8_t {
-	PCall,
-	XPCallBody,
-	XPCallHandler,
-};
-
-enum class ProtectedField : u32 { Flags = 0, Caller = 4, Base = 8, Wanted = 12, Handler = 16 };
-constexpr u32 PROTECTED_CALL_BYTES = 20;
-constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
-constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
-constexpr u32 PROTECTED_CALL_HANDLER_BUILTIN = 1u << 9;
-constexpr u32 PROTECTED_CALL_HANDLER_RESIDENT = 1u << 10;
-constexpr u32 PROTECTED_CALL_HANDLER_IMMUTABLE = PROTECTED_CALL_HANDLER_BUILTIN | PROTECTED_CALL_HANDLER_RESIDENT;
-
-enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
 // Entry: canonical frame control followed by its physical stack source.
 // A first resume borrows the resumer's stack, otherwise the active stack.
@@ -116,7 +102,6 @@ struct FrameEntryControl {
 		write(FrameField::Function, function);
 		write(FrameField::CallSite, callSite);
 		write(FrameField::OpenHead, 0u);
-		write(FrameField::Protected, static_cast<u32>(-1));
 		write(FrameField::Flags, flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u));
 		write(FrameField::Pc, pc);
 		write(FrameField::VarargBase, static_cast<u32>(varargBase));

@@ -19,8 +19,8 @@ constexpr u32 THREAD_RECORD_KIND = 4;
 
 enum class ThreadField : u32 {
 	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
-	FrameCapacity = 32, ProtectedCapacity = 36, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
-	FrameDepth = 56, ProtectedDepth = 60, FrameBlock = 64, ProtectedBlock = 68,
+	FrameCapacity = 32, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
+	FrameDepth = 56, FrameBlock = 64,
 };
 
 // Eighteen count bits span the largest control reservation in the RAM bank.
@@ -30,16 +30,12 @@ struct ThreadStorageLayout {
 	u32 block;
 	u32 valueCapacity;
 	u32 frameCapacity;
-	u32 protectedCapacity;
 	u32 frameBlock;
-	u32 protectedBlock;
 
 	u32 offset() const { return block & RAM_RECORD_WORD_MASK; }
 	u32 valueBytes() const { return valueCapacity * THREAD_STACK_SLOT_BYTES; }
 	u32 frameBytes() const { return frameCapacity * FRAME_CONTROL_BYTES; }
-	u32 protectedBytes() const { return protectedCapacity * PROTECTED_CALL_BYTES; }
 	u32 frameAddress(u32 index) const { return (frameBlock & RAM_RECORD_WORD_MASK) + index * FRAME_CONTROL_BYTES; }
-	u32 protectedAddress(u32 index) const { return (protectedBlock & RAM_RECORD_WORD_MASK) + index * PROTECTED_CALL_BYTES; }
 	ValueSpan slots(Memory& memory, bool wideWindow = false) const {
 		const u32 start = offset();
 		return {memory, start, start + valueCapacity * static_cast<u32>(sizeof(u32)), valueCapacity,
@@ -63,9 +59,7 @@ inline ThreadStorageLayout storageLayout(const Memory& memory, u32 address) {
 		read(memory, address, ThreadField::StackBlock),
 		read(memory, address, ThreadField::StackCapacity),
 		count(memory, address, ThreadField::FrameCapacity),
-		count(memory, address, ThreadField::ProtectedCapacity),
 		read(memory, address, ThreadField::FrameBlock),
-		read(memory, address, ThreadField::ProtectedBlock),
 	};
 }
 inline Value error(const Memory& memory, u32 address) {
@@ -74,7 +68,7 @@ inline Value error(const Memory& memory, u32 address) {
 }
 void invokeDiagnostic(GcHeap&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
 bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
-u32 growControls(GcHeap&, u32 address, ThreadField field, u32 capacity, u32 staged = 0u);
+u32 growFrames(GcHeap&, u32 address, u32 capacity, u32 staged = 0u);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);
 }
 

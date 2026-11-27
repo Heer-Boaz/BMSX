@@ -18,7 +18,7 @@ inline void initializeReferenceThread(GcHeap& heap, u32 address, u32 valueBlock,
 	writeLE32(record + static_cast<u32>(ThreadField::FrameBlock), frameBlock);
 	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), THREAD_INITIAL_VALUES);
 	writeLE32(record + static_cast<u32>(ThreadField::FrameCapacity), THREAD_INITIAL_FRAMES);
-	const ThreadStorageLayout layout{valueBlock, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, 0u, frameBlock, 0u};
+	const ThreadStorageLayout layout{valueBlock, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, frameBlock};
 	const u32 control = layout.frameAddress(0);
 	std::fill_n(memory.ramData() + control, layout.frameBytes(), u8{0});
 	memory.invalidateRamWrite(control, layout.frameBytes());

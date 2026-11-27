@@ -70,7 +70,6 @@ function assemble(status: number, payload: Value, source: number, edit: ReturnEd
 		for (const [field, data] of [
 			[ThreadField.StackTop, width], [ThreadField.StackBlock, backing], [ThreadField.StackCapacity, count],
 			[ThreadField.FrameCapacity, frameCapacity], [ThreadField.FrameDepth, 1], [ThreadField.FrameBlock, frame],
-			[frame - context + FrameField.Protected, -1],
 			[frame - context + FrameField.StackCapacity, width],
 			[frame - context + FrameField.Top, top],
 		] as const) store(context + field, data);

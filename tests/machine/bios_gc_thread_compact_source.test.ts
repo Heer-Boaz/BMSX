@@ -26,13 +26,13 @@ test('Thread/Frame views use the physical stack field offsets', () => {
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	const thread = types.resolve(path, { name: 'thread_compact_record', arrayLengths: [], span });
 	const frame = types.resolve(path, { name: 'thread_compact_frame', arrayLengths: [], span });
-	assert.equal(thread.size, ThreadField.ProtectedBlock + 4);
+	assert.equal(thread.size, ThreadField.FrameBlock + 4);
 	assert.equal(frame.size, FRAME_CONTROL_BYTES);
 	for (const [name, offset] of [
 		['stack_top', ThreadField.StackTop], ['stack_block', ThreadField.StackBlock], ['stack_capacity', ThreadField.StackCapacity],
-		['frame_capacity', ThreadField.FrameCapacity], ['protected_capacity', ThreadField.ProtectedCapacity],
-		['frame_depth', ThreadField.FrameDepth], ['protected_depth', ThreadField.ProtectedDepth],
-		['frame_block', ThreadField.FrameBlock], ['protected_block', ThreadField.ProtectedBlock],
+		['frame_capacity', ThreadField.FrameCapacity],
+		['frame_depth', ThreadField.FrameDepth],
+		['frame_block', ThreadField.FrameBlock],
 	] as const) {
 		const field = thread.struct!.fields.get(name);
 		assert.ok(field, name);
@@ -73,8 +73,8 @@ test('Thread compaction maps each live shrink operation, not the growth path', (
 		}
 	}
 	for (const [key, intervals] of [
-		['T', [[118, 135], [156, 161], [163, 165], [170, 174], [199, 230]]],
-		['C', [[91, 96], [101, 106], [111, 115], [145, 179]]],
+		['T', [[118, 123], [125, 125], [127, 129], [132, 135], [156, 161], [163, 165], [170, 174], [199, 226], [229, 230]]],
+		['C', [[91, 96], [101, 106], [111, 115], [145, 176], [179, 179]]],
 		['L', [[272, 274], [293, 294]]], ['N', [[304, 308]]],
 		['A', [[70, 72]]], ['B', [[68, 70]]],
 	] as const) {

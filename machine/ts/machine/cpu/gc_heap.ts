@@ -9,7 +9,7 @@ import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, U
 import * as Upvalue from './upvalue';
 import { TableRecords, type TableStringProbe } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import type { ValueSlots } from './value_slots';
 import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
@@ -54,7 +54,7 @@ const GC_FULL_EPOCHS = GC_PACE_PAY_AT + 4;
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
 const TABLE_MODE_PENDING = 4 << TRACE_CURSOR_BITS;
-const enum ThreadTraceStage { Frames, Protected, Values, Clear }
+const enum ThreadTraceStage { Frames, Values, Clear }
 const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }
 const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
@@ -423,17 +423,7 @@ export class GcHeap {
 				}
 				if (open === 0) { ++next; open = THREAD_TRACE_OPEN_HEAD; }
 			}
-			if (next >= layout.depth) { stage = ThreadTraceStage.Protected; next = 0; open = 0; }
-		}
-		if (stage === ThreadTraceStage.Protected) {
-			while (next < layout.protectedDepth && work < limit) {
-				const continuation = layout.protectedOffset + next++ * PROTECTED_CALL_BYTES;
-				const flags = memory.readRamRecordWord(continuation + ProtectedField.Flags);
-				if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) === 0)
-					this.markClosure(memory.readRamRecordWord(continuation + ProtectedField.Handler));
-				work += PROTECTED_CALL_BYTES >>> 2;
-			}
-			if (next >= layout.protectedDepth) { stage = ThreadTraceStage.Values; next = 0; }
+			if (next >= layout.depth) { stage = ThreadTraceStage.Values; next = 0; open = 0; }
 		}
 		if (stage === ThreadTraceStage.Values) {
 			let liveTop = captureTop;
@@ -793,7 +783,6 @@ export class GcHeap {
 		this.cpu.retireThreadView(address);
 		this.budget.releaseRecord(layout.block, layout.capacity * THREAD_STACK_SLOT_BYTES);
 		this.budget.releaseRecord(layout.frameBlock, layout.frames * FRAME_CONTROL_BYTES);
-		if (layout.protectedBlock !== 0) this.budget.releaseRecord(layout.protectedBlock, layout.continuations * PROTECTED_CALL_BYTES);
 		this.budget.releaseObject(address, THREAD_HEAP_BYTES);
 		return 1;
 	}

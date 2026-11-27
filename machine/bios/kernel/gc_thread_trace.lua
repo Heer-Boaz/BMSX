@@ -2,11 +2,11 @@ module<const>
 
 -- Source basis: 9b002adf22c0a496d45fac0bca5cab2030cda3b9.
 -- T/C/H GcHeap; I/J Thread records; F/G controls; U/V Upvalues;
--- S/N Value storage; M RAM decode; O/P object layout; Q CPU;
+-- S/N Value storage; M RAM decode; O/P object layout;
 -- A/B word arithmetic.
 -- The caller admits and pops a Thread gray head, or resumes its saved
--- frontier. pending_operand_top is the original CPU CONCATN sample (zero
--- for another Thread).
+-- frontier. The former native CONCATN and protected-call roots now live
+-- in ordinary argument windows, with the rest of the tagged stack.
 local control_layout<const> = require('kernel/gc_control') -- T:416 C:413
 local captures<const> = require('kernel/gc_capture_trace') -- T:436,442 C:435,442
 local mark<const> = require('kernel/gc_mark') -- T:413,417-419,431,453,474 C:414-416,430,456,482
@@ -22,19 +22,14 @@ local trace_record_offset<const> = 0x34 -- T:33 H:32
 local cursor_bits<const> = 20 -- T:58 O:12 C:71 P:17
 local cursor_mask<const> = (1 << cursor_bits) - 1 -- T:59 C:72
 local stage_frames<const> = 0 -- T:61 C:74
-local stage_protected<const> = 1 -- T:61 C:74
-local stage_values<const> = 2 -- T:61 C:74
-local stage_clear<const> = 3 -- T:61 C:74
+local stage_values<const> = 1 -- T:61 C:74
+local stage_clear<const> = 2 -- T:61 C:74
 local open_head<const> = 1 -- T:63 C:75
 local thread_kind<const> = 4 -- I:33 J:18
 local closure_kind<const> = 7 -- T:328-329 C:280-281
 local thread_bytes<const> = 80 -- I:28 J:13
 local slot_bytes<const> = 5 -- I:29 J:14
 local frame_bytes<const> = 56 -- F:21 G:34
-local protected_bytes<const> = 20 -- F:152 G:28
-local pcall_kind<const> = 0 -- F:13-17 G:21-25
-local protected_kind_mask<const> = 0xff -- F:153 G:29
-local protected_handler_immutable<const> = (1 << 9) | (1 << 10) -- F:155 G:31; built-in and resident code are not managed
 local frame_window_mask<const> = word_count - 1 -- F:22 G:36
 local control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
 local upvalue_flags<const> = 2 -- U:12 V:14
@@ -50,22 +45,21 @@ struct thread_record
 	stack_block: addr -- I:22 J:21
 	stack_capacity: u32 -- I:22 J:21
 	frame_capacity: u32 -- I:23 J:22
-	protected_capacity: u32 -- I:23 J:22
+	_before_error: u32 -- I:23 J:22
 	error_word: u32 -- I:23 J:22
 	error_tag: u8 -- I:23 J:22
 	after_error: u8[3] -- I:23 J:22
 	base_return: u32[2] -- I:23 J:22
 	frame_depth: u32 -- I:24 J:23
-	protected_depth: u32 -- I:24 J:23
+	_before_frames: u32 -- I:24 J:23
 	frame_block: addr -- I:24 J:23
-	protected_block: addr -- I:24 J:23
 end
 
 struct frame_record
 	function_call_site: u32[2] -- F:19 G:33
 	open_head: addr -- F:19 G:33
-	before_vararg: u32[3]
-	vararg_base: u32
+	before_vararg: u32[3] -- F:19 G:33
+	vararg_base: u32 -- F:19 G:33
 	argument_count: u32 -- F:19 G:33
 	return_base: u32 -- F:19 G:33
 	return_count: u32 -- F:19 G:33
@@ -73,12 +67,6 @@ struct frame_record
 	closure: addr -- F:19 G:33
 	stack_base: u32 -- F:19 G:33
 	stack_capacity: u32 -- F:19 G:33
-end
-
-struct protected_record
-	flags: u32 -- F:151 G:27
-	call_lanes: u32[3] -- F:151 G:27
-	handler: addr -- F:151 G:27
 end
 
 struct thread_frontier
@@ -130,13 +118,11 @@ local trace_thread<const> = function(control, arena, metadata, address, atomic, 
 		capture_top = frontier.capture_top -- T:524 C:540
 	end
 	-- Rebind the physical backings on each entry. The unused host scratch
-	-- capacities/top are not part of any of the four scan stages.
+	-- capacities/top are not part of any scan stage.
 	local offset<const> = thread.stack_block & word_mask -- T:422 I:120-121 C:419 J:37,59
 	local capacity<const> = thread.stack_capacity -- T:422 I:122 C:419 J:60
 	local depth<const> = thread.frame_depth & control_count_mask -- T:422 I:125 C:420 J:54-55
-	local protected_depth<const> = thread.protected_depth & control_count_mask -- T:422 I:126 C:450 J:54-55
 	local frames<const> = thread.frame_block & word_mask -- T:422 I:128-129 C:419 J:41,63
-	local protected_block<const> = thread.protected_block & word_mask -- T:422 I:130-131 C:419 J:42,64
 	local stage, next_index = cursor >> cursor_bits, cursor & cursor_mask -- T:423 C:421-422
 	local complete = false -- T:424 C:423
 	if stage == stage_frames then -- T:427 C:426
@@ -165,19 +151,7 @@ local trace_thread<const> = function(control, arena, metadata, address, atomic, 
 			end
 			if open == 0 then next_index = next_index + 1; open = open_head end -- T:444 C:445
 		end
-		if next_index >= depth then stage = stage_protected; next_index = 0; open = 0 end -- T:446 C:447
-	end
-	if stage == stage_protected then -- T:448 C:449
-		while next_index < protected_depth and work < limit do -- T:449 C:450-451
-			local continuation<const>: *protected_record = ram_base + ((protected_block + next_index * protected_bytes) & word_mask) -- T:450 C:452 J:42
-			next_index = next_index + 1 -- T:450 C:452
-			local flags<const> = continuation.flags -- T:451 C:453
-			if (flags & protected_kind_mask) ~= pcall_kind and (flags & protected_handler_immutable) == 0 then -- T:452 C:454-455
-				mark.mark_record(control, arena, continuation.handler, closure_kind, trace_head, replace_color_byte) -- T:453 C:456
-			end
-			work = work + (protected_bytes >> 2) -- T:454 C:458
-		end
-		if next_index >= protected_depth then stage = stage_values; next_index = 0 end -- T:456 C:460
+		if next_index >= depth then stage = stage_values; next_index = 0; open = 0 end -- T:446 C:447
 	end
 	if stage == stage_values then -- T:458 C:462
 		local live_top = capture_top -- T:459 C:463

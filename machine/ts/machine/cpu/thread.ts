@@ -1,6 +1,6 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, ProtectedField } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK } from './call_state';
 import type { GcHeap } from './gc_heap';
 import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
@@ -64,13 +64,8 @@ export class Thread {
 	public get frameBackingOffset(): number { return this.boundFrameOffset; }
 	public get frameBackingBytes(): number { return this.boundFrameCapacity * FRAME_CONTROL_BYTES; }
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
-	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
 	private frameControlAddress(index: number): number {
 		return this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
-	}
-	public protectedWord(index: number, field: ProtectedField): number {
-		const base = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
-		return this.heap.memory.readRamRecordWord(base + index * PROTECTED_CALL_BYTES + field);
 	}
 	public stackRequiresScalar(): boolean {
 		// The language heap is outside the instruction bus; only the

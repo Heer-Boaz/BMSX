@@ -26,12 +26,12 @@ struct thread_storage_record
 	stack_block: addr -- I:22,158 H:21 J:93
 	stack_capacity: u32 -- I:22,159 H:21 J:94
 	frame_capacity: u32 -- I:23,187 H:22 J:122-124
-	protected_capacity: u32 -- I:23 H:22
+	_before_error: u32 -- I:23 H:22
 	error_word: u32 -- I:23 H:22
 	error_tag: u32 -- I:23 H:22
 	return_window: u32[2] -- I:23 H:22
 	frame_depth: u32 -- I:24,188 H:23 J:123,131
-	protected_depth: u32 -- I:24 H:23
+	_before_frames: u32 -- I:24 H:23
 	frame_block: addr -- I:24,182 H:23 J:125
 end
 
@@ -118,7 +118,7 @@ local resize_value_stack<const> = function(arena, occupied, address, capacity) -
 	return true -- I:174 J:115
 end
 
-local grow_frame_controls<const> = function(arena, occupied, address, capacity, staged) -- I:176-197 J:118-140; frames member of native growControls
+local grow_frame_controls<const> = function(arena, occupied, address, capacity, staged) -- I:176-197 J:118-140; original frame backing path
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- I:177,182 J:119,125
 	-- C++ samples capacity before resize, TS after (I:187, J:124).
 	-- The admitted owner record does not overlap its raw control backing.

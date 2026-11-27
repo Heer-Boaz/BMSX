@@ -71,7 +71,7 @@ constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
 constexpr u32 TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1u;
 constexpr u32 TRACE_CURSOR_MASK = (1u << TRACE_CURSOR_BITS) - 1u;
 constexpr u32 TABLE_MODE_PENDING = 4u << TRACE_CURSOR_BITS;
-enum class ThreadTraceStage : u32 { Frames, Protected, Values, Clear };
+enum class ThreadTraceStage : u32 { Frames, Values, Clear };
 constexpr u32 THREAD_TRACE_OPEN_HEAD = 1u; // An open cell's address is aligned.
 }
 bool GcHeap::markValue(Value v, u32 queue) {
@@ -300,8 +300,7 @@ size_t GcHeap::markCell(u32 cell) {
 size_t GcHeap::allocationBytes(u32 threadAddress) const {
 	const auto layout = ThreadRecord::storageLayout(memory, threadAddress);
 	return arena.allocationBytes(threadAddress - GC_OBJECT_PREFIX)
-		+ arena.allocationBytes(layout.block) + arena.allocationBytes(layout.frameBlock)
-		+ (layout.protectedBlock != 0u ? arena.allocationBytes(layout.protectedBlock) : 0u);
+		+ arena.allocationBytes(layout.block) + arena.allocationBytes(layout.frameBlock);
 }
 u8 GcHeap::weakModeBits(Value modeValue) {
 	if (!valueIsString(modeValue)) {
@@ -436,20 +435,7 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			}
 			if (open == 0u) { ++next; open = THREAD_TRACE_OPEN_HEAD; }
 		}
-		if (next >= depth) { stage = ThreadTraceStage::Protected; next = 0u; open = 0u; }
-	}
-	if (stage == ThreadTraceStage::Protected) {
-		const u32 depth = ThreadRecord::count(memory, address, ThreadField::ProtectedDepth);
-		while (next < depth && work < limit) {
-			const u32 continuation = layout.protectedAddress(next++);
-			const u32 flags = memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Flags));
-			if ((flags & PROTECTED_CALL_KIND_MASK) != static_cast<u32>(ProtectedCallKind::PCall)
-				&& (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) == 0u) {
-				markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
-			}
-			work += PROTECTED_CALL_BYTES / sizeof(u32);
-		}
-		if (next >= depth) { stage = ThreadTraceStage::Values; next = 0u; }
+		if (next >= depth) { stage = ThreadTraceStage::Values; next = 0u; open = 0u; }
 	}
 	if (stage == ThreadTraceStage::Values) {
 		u32 liveTop = captureTop;
@@ -856,7 +842,6 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 	m_cpu.retireThreadView(address);
 	budget.releaseRecord(layout.block, layout.valueBytes());
 	budget.releaseRecord(layout.frameBlock, layout.frameBytes());
-	if (layout.protectedBlock != 0u) budget.releaseRecord(layout.protectedBlock, layout.protectedBytes());
 	budget.releaseObject(address, THREAD_HEAP_BYTES);
 	return 1;
 }
