@@ -2358,20 +2358,18 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
 }
 
-int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
-	const u32 head = frame.readControl(FrameField::OpenHead);
-	u32 address = head;
+int CPU::closeUpvalues(CallFrame& frame) {
+	u32 address = frame.readControl(FrameField::OpenHead);
+	if (address == 0u) return 0;
 	int closed = 0;
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
-		const u32 cell = m_heap.openCellAddress(address);
-		if (cell == 0u) break;
-		if (firstSlot != 0u && m_memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD) < firstSlot) break;
+		const u32 cell = address & UPVALUE_ADDRESS_MASK;
+		if (m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(m_memory, cell)) break;
 		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		Upvalue::close(m_heap, cell);
 		++closed;
 	}
-	const u32 remaining = firstSlot == 0u ? 0u : address;
-	if (head != remaining) frame.writeControl(FrameField::OpenHead, remaining);
+	frame.writeControl(FrameField::OpenHead, 0u);
 	return closed;
 }
 

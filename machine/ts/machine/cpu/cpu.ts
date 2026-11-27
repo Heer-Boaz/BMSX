@@ -126,7 +126,7 @@ import { TableRecords, TableHeader, TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
-import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
+import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_OWNER } from './upvalue';
 import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
 import { GlobalBank } from './global_bank';
@@ -3693,20 +3693,18 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(copied + padded + extras);
 	}
 
-	private closeUpvalues(frame: CallFrame, firstSlot = 0): number {
-		const head = frame.openUpvalueHead;
-		let address = head;
+	private closeUpvalues(frame: CallFrame): number {
+		let address = frame.openUpvalueHead;
+		if (address === 0) return 0;
 		let closed = 0;
 		while (address !== 0 && closed < UPVALUE_CHAIN_LIMIT) {
-			const cell = this.gc.openCellAddress(address);
-			if (cell === 0) break;
-			if (firstSlot !== 0 && this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD) < firstSlot) break;
+			const cell = address & Upvalue.UPVALUE_ADDRESS_MASK;
+			if (this.memory.readRamRecordByte(cell) !== Upvalue.UPVALUE_RECORD_KIND || !Upvalue.isOpen(this.memory, cell)) break;
 			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
 			Upvalue.close(this.gc, cell);
 			++closed;
 		}
-		const remaining = firstSlot === 0 ? 0 : address;
-		if (head !== remaining) frame.openUpvalueHead = remaining;
+		frame.openUpvalueHead = 0;
 		return closed;
 	}
 

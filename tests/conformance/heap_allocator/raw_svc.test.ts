@@ -10,6 +10,7 @@ import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
+import { UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { type Value, valueFloatBits, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -21,7 +22,7 @@ import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -32,10 +33,12 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const word = INSTRUCTION_BYTES, a = CPU_FIXED_STACK_BASE - 0x4000, b = CPU_FIXED_STACK_BASE - 0x3000;
 const controls = (context: number) => context + 0x100;
 const values = (context: number) => context + 0x200;
+const captures = [b + 0x300, b + 0x300 + UPVALUE_HEAP_BYTES];
+const captureRegisters = [4, 3];
 const returningValue = valueInteger(0x719b6cad);
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
-type ReturnEdit = 'none' | 'bank' | 'unwind' | 'window';
+type ReturnEdit = 'none' | 'bank' | 'unwind' | 'window' | 'close';
 
 function assemble(status: number, payload: Value, source: number, edit: ReturnEdit) {
 	const constants: number[] = [], relocations: { slot: number; fn: number; at: number }[] = [];
@@ -93,6 +96,16 @@ function assemble(status: number, payload: Value, source: number, edit: ReturnEd
 		if (window) {
 			store(values(a) + 4 * (capacity + source), valuePayload(returningValue));
 			store(values(a) + 4 * count + capacity + source, valueTag(returningValue), MemoryAccessKind.U8);
+		}
+		if (edit === 'close') {
+			// The System ROM owns these records directly. There are no arena
+			// headers or allocator-issued objects behind the physical links.
+			for (const [index, cell] of captures.entries()) {
+				store(cell, UPVALUE_RECORD_KIND | (UPVALUE_OPEN << (UPVALUE_FLAGS * 8)));
+				store(cell + UPVALUE_VALUE_WORD, captureRegisters[index]);
+				store(cell + UPVALUE_OWNER, CPU_RESET_BANK_ADDRESS);
+				store(cell + UPVALUE_NEXT, index === 0 ? captures[1] : 0);
+			}
 		}
 		store(IO_IRQ_MASK, IRQ_VBLANK);
 		reference(0, 3, -1);
@@ -169,13 +182,14 @@ for (const { name, status, source, payload, edit } of [
 	{ name: 'SVC handler can change the physical return bank and EPC', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueFloatBits(0x80000000), edit: 'bank' },
 	{ name: 'SVC handler can unwind a suspended frame before RFE', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), edit: 'unwind' },
 	{ name: 'SVC handler can change the selected register window without relocating its backing', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), edit: 'window' },
+	{ name: 'fixed RFE closes raw captures without an allocator', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueFloatBits(0xff812345), edit: 'close' },
 ] as const) test(name, t => {
 	const { rom, functions } = assemble(status, payload, source, edit);
 	const svc = functions[1].codeAddress + 2 * word, successor = svc + (source >= 256 ? 2 : 1) * word;
 	const handler = functions[2].codeAddress, irq = functions[3].codeAddress;
 	const redirect = edit === 'bank', unwind = edit === 'unwind', redirectedPc = redirect || unwind;
 	const returnContext = redirect ? b : a, returnPc = redirectedPc ? functions[4].codeAddress + (unwind ? 3 : 1) * word : successor;
-	const expectedValue = edit === 'none' ? payload : returningValue;
+	const expectedValue = edit === 'none' || edit === 'close' ? payload : returningValue;
 	const interruptedIndex = +unwind;
 	const interruptedFrame = controls(a) + interruptedIndex * FRAME_CONTROL_BYTES;
 	function boot() {
@@ -211,9 +225,19 @@ for (const { name, status, source, payload, edit } of [
 			assert.equal(op, 0x1e);
 			assert.equal(operand, source);
 		}
+		const closes = edit === 'close' && op === OpCode.RFE && cpu.readFrameFunctionAddress(depth - 1) === functions[2].address;
+		if (closes) {
+			assert.equal(memory.readRamRecordWord(CPU_FIXED_FRAME_ADDRESS + FrameField.OpenHead), captures[0]);
+			for (const [index, cell] of captures.entries()) {
+				assert.equal(memory.readRamRecordByte(cell + UPVALUE_FLAGS), UPVALUE_OPEN);
+				assert.equal(memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD), captureRegisters[index]);
+				assert.equal(memory.readRamRecordWord(cell + UPVALUE_OWNER), CPU_RESET_BANK_ADDRESS);
+			}
+			hash(rt, captures[0] - RAM_BASE, captures.length * UPVALUE_HEAP_BYTES);
+		}
 		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		const paid = 1 - cpu.instructionBudgetRemaining;
-		assert.equal(paid, op === OpCode.SVC ? 2 : BASE_CYCLES[op] + (op === OpCode.RET ? 1 : 0), `pc=0x${pc.toString(16)}`);
+		assert.equal(paid, BASE_CYCLES[op] + (op === OpCode.RET ? 1 : closes ? captures.length : 0), `pc=0x${pc.toString(16)}`);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
 		observe('E 1', `${result} ${paid} ${memory.ramBusEnd()} -1`);
@@ -244,6 +268,13 @@ for (const { name, status, source, payload, edit } of [
 	hash(runtime, entry.controlOffset, FRAME_CONTROL_BYTES);
 	grant(runtime); // MOV copies the passed value, then checkpoint before RFE.
 	assert.equal(entry.registers.get(4), payload);
+	if (edit === 'close') {
+		// The fixed register/frame aperture is not guest writable. This
+		// machine-state fixture attaches the ROM's raw records to the frame.
+		const head = CPU_FIXED_FRAME_ADDRESS + FrameField.OpenHead;
+		memory.writeRamRecordWord(head, captures[0]);
+		observe(`W ${head} ${captures[0]}`);
+	}
 	const backing = entry.thread.stackOffset(), slot = entry.stackBase;
 	hash(runtime, backing + 4 * slot, 5 * 4);
 	hash(runtime, backing + 4 * entry.thread.stackRegisters.capacity() + slot, 5);
@@ -274,6 +305,18 @@ for (const { name, status, source, payload, edit } of [
 		assert.equal(cpu.readFramePc(0), returnPc);
 		assert.equal(cpu.captureRuntimeState().statusWord, status);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
+		if (edit === 'close') {
+			assert.equal(memory.readRamRecordWord(CPU_FIXED_FRAME_ADDRESS + FrameField.OpenHead), 0);
+			for (const [index, value] of [payload, valueInteger(1)].entries()) {
+				const cell = captures[index];
+				assert.equal(memory.readRamRecordByte(cell + UPVALUE_FLAGS), 0);
+				assert.equal(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), valueTag(value));
+				assert.equal(memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD), valuePayload(value));
+				assert.equal(memory.readRamRecordWord(cell + UPVALUE_OWNER), 0);
+				assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0);
+			}
+			hash(rt, captures[0] - RAM_BASE, captures.length * UPVALUE_HEAP_BYTES);
+		}
 		assert.equal(cpu.readFrameRegister(0, redirectedPc ? 0 : source), expectedValue);
 		assert.equal(memory.readRamRecordWord(interruptedFrame + FrameField.Pc), successor);
 		assert.equal(irqController.enabledPendingFlags(), IRQ_VBLANK);

@@ -1033,4 +1033,31 @@ size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread)
 	do { work += step(root0, root1, root2, growingThread, true); } while (active());
 	return work;
 }
+u32 GcHeap::objectRecordAddress(u32 address, u8 kind) const {
+	const u32 offset = address & GC_RECORD_MASK;
+	return memory.readRamRecordByte(offset) == kind
+		&& arena.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0u;
+}
+
+u32 GcHeap::threadRecordAddress(u32 address) const {
+	return objectRecordAddress(address, THREAD_RECORD_KIND);
+}
+
+u32 GcHeap::closureRecordAddress(u32 address) const {
+	return objectRecordAddress(address, static_cast<u8>(ValueTag::Closure));
+}
+
+u32 GcHeap::tableRecordAddress(u32 address) const {
+	return objectRecordAddress(address, tableRecordKind);
+}
+
+u32 GcHeap::cellRecordAddress(u32 address) const {
+	return objectRecordAddress(address, UPVALUE_RECORD_KIND);
+}
+
+u32 GcHeap::openCellAddress(u32 address) const {
+	const u32 cell = cellRecordAddress(address);
+	return cell != 0u && Upvalue::isOpen(memory, cell) ? cell : 0u;
+}
+
 } // namespace bmsx

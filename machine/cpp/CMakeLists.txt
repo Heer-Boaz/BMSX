@@ -295,7 +295,6 @@ add_library(bmsx_core STATIC
 	machine/cpu/gc_heap.cpp
 	machine/cpu/global_bank.cpp
 	machine/cpu/heap_allocator.cpp
-	../common/dlmalloc/dlmalloc.c
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
@@ -744,6 +743,7 @@ endif()
 if(BMSX_BUILD_TESTS)
 	enable_testing()
 	add_library(bmsx_native_heap_reference STATIC
+		../common/dlmalloc/dlmalloc.c
 		../../tests/cpp/support/cpu_heap_reference.cpp
 		../../tests/cpp/support/gc_heap_reference.cpp
 		../../tests/cpp/support/global_bank_reference.cpp

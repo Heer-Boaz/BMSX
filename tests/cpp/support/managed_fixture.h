@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/dlmalloc/dlmalloc.h"
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/opcode.h"

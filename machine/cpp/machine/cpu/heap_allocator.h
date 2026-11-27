@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/dlmalloc/dlmalloc.h"
 #include "common/primitives.h"
 
 namespace bmsx {
@@ -14,14 +13,13 @@ inline constexpr u32 HEAP_GC_CONTROL_OFFSET = 0x344u;
 inline constexpr u32 HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0u;
 inline constexpr u32 HEAP_STRING_MARK_WORK_OFFSET = 0x3f4u;
 
-// Owns the machine's private, non-moving language arena. Allocation state and
-// intrusive links are RAM words; history and save restore them with the payloads.
+// Read-only view of the stock firmware arena. Mutators are test references.
 class HeapAllocator {
 public:
 	explicit HeapAllocator(Memory& memory);
 
 	u32 managementOffset() const { return m_management; }
-	u32 stateOffset() const { return m_arena.state; }
+	u32 stateOffset() const;
 	u32 floorOffset(u32 address) const;
 	bool setFloor(u32 floorAddress);
 	u32 floorAddress() const;
@@ -40,7 +38,6 @@ public:
 private:
 	Memory& m_memory;
 	u32 m_management;
-	bmsx_dlmalloc_arena m_arena;
 };
 
 } // namespace bmsx

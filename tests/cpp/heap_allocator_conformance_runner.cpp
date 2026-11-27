@@ -1,3 +1,4 @@
+#include "common/dlmalloc/dlmalloc.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/memory_map.h"

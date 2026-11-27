@@ -388,7 +388,7 @@ private:
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
 	bool enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots, int position);
-	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
+	int closeUpvalues(CallFrame& frame);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced, bool fromArguments = false);
 	bool executeVararg(CallFrame& frame, int first, int requested);
