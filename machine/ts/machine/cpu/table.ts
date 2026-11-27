@@ -513,7 +513,7 @@ export class TableRecords {
 	private setHash(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
 		directOnly = false, extraHashSlots = 0): number {
 		const tag = valueTag(value), word = valuePayload(value);
-		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
+		if (tag === ValueTag.Nil) return this.removeFromHash(record, key, resolved, directOnly);
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
 		const hash = this.hashSize(record), words = this.hashAddress(record), tags = words + 8 * hash;
 		const memory = this.heap.memory;
@@ -638,10 +638,10 @@ export class TableRecords {
 		const home = hashCanonicalTableKey(key) & (hash - 1);
 		return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, true);
 	}
-	private markHashNodeDead(record: number, index: number): void {
+	private eraseHashNode(record: number, index: number): ValueTag {
 		const words = this.hashAddress(record), hash = this.hashSize(record);
 		this.adjustHashLive(words, hash, -1);
-		const keySlot = index, valueSlot = this.hashValueSlot(record, index), tag = this.tagAt(record, keySlot);
+		const keySlot = index, valueSlot = hash + index, tag = this.tagAt(record, keySlot);
 		if (hash >= TableRecords.HASH_BAND_CAPACITY && tag === ValueTag.Integer)
 			this.adjustIntegerBand(words, hash, tag, this.heap.memory.readRamRecordWord(words + 4 * keySlot), -1);
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
@@ -649,15 +649,25 @@ export class TableRecords {
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
 		} else {
 			this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
-			if (tag === ValueTag.String && this.wordAt(record, keySlot) === this.heap.diagnosticWord(GcDiagnosticField.NewIndex))
-				this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
 		}
+		return tag;
 	}
-	private removeFromHash(record: number, key: Value, resolved: number): void {
+	private markHashNodeDead(record: number, index: number): void {
+		const tag = this.eraseHashNode(record, index);
+		if (tag === ValueTag.String && this.wordAt(record, index) === this.heap.diagnosticWord(GcDiagnosticField.NewIndex))
+			this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
+	}
+	private removeFromHash(record: number, key: Value, resolved: number, directOnly: boolean): number {
 		const index = resolved === TABLE_HASH_UNPROBED ? this.findNodeIndex(record, key) : resolved;
-		if (index < 0) return;
+		if (index < 0) return -1;
 		const tag = this.tagAt(record, this.hashValueSlot(record, index));
-		if (tag !== ValueTag.Nil && tag !== ValueTag.DeadKey) this.markHashNodeDead(record, index);
+		if (tag === ValueTag.Nil || tag === ValueTag.DeadKey) return -1;
+		// Only firmware compares the method key when the owner has no absence proof.
+		if (directOnly && valueTag(key) === ValueTag.String
+			&& this.heap.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent) !== 1) return TABLE_STORE_FIRMWARE - index;
+		if (directOnly) this.eraseHashNode(record, index);
+		else this.markHashNodeDead(record, index);
+		return -1;
 	}
 	private static countIntegerKey(counts: Uint32Array, bins: number, index: number): number {
 		const log = ceilLog2(index);

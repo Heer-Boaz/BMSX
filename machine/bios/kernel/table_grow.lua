@@ -302,6 +302,19 @@ local store_resolved<const> = function(receiver, key, value, extra, cycles, sele
 		elseif vt ~= nil_tag and kw - 1 == hint then header.length = kw end
 		return true
 	end
+	-- Erasure basis: a6026e2c3e6309350ebd4abd0683685601ae86e5
+	-- Table (TS 516,641-660; C++ 30-50,86-88,132-136). A resolved String
+	-- delete keeps its key and chain. The same leaf owns the RAWSET case.
+	if vt == nil_tag then
+		if selected >= 0 then
+			local hash<const> = header.hash
+			local planes<const> = header.hash_storage
+			local tags<const> = planes + 8 * hash
+			local new_index<const>: *u32 = ram_base + management + layout.remark_head_offset + layout.remark_new_index_offset
+			weak_entries.internal.mark_hash_node_dead(record, planes, tags, hash, selected, kt, kw, *new_index)
+		end
+		return true
+	end
 	if store_hash(management, record, header.hash, kt, kw, vt, vw, selected) then return true end
 	local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 	operands.receiver, operands.key_tag, operands.key_word = record, kt, kw

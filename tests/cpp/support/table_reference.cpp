@@ -23,6 +23,23 @@ void TableRecord::setMetatableAddress(u32 address) {
 	writeHeader(TableHeader::Metatable, address);
 }
 
+void TableRecord::removeFromHash(const Value& key, int slot) {
+	const int existingIndex = slot == TABLE_HASH_UNPROBED ? findNodeIndex(key) : slot;
+	if (existingIndex < 0) return;
+	const u32 count = hashSlots();
+	const auto tag = hashBody(count).slots.tag(count + static_cast<u32>(existingIndex));
+	if (tag == ValueTag::Nil || tag == ValueTag::DeadKey) return;
+	markHashNodeDead(static_cast<size_t>(existingIndex));
+}
+
+void TableRecord::markHashNodeDead(size_t index) {
+	const auto body = hashBody(hashSlots());
+	const Value key = body.slots.get(index);
+	eraseHashNode(body, index, key);
+	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex))
+		m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
+}
+
 u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
 	return static_cast<u32>(5u * arraySize + hashStorageBytes(hashSize));
 }

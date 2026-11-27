@@ -27,26 +27,14 @@ int TableRecord::findNodeIndex(const Value& key, bool matchDead) const {
 		: hashBody(count).findNode(key, hashCanonicalTableKey(key) & (count - 1u), matchDead);
 }
 
-void TableRecord::removeFromHash(const Value& key, int slot) {
-	const int existingIndex = slot == TABLE_HASH_UNPROBED ? findNodeIndex(key) : slot;
-	if (existingIndex < 0) return;
-	const u32 count = hashSlots();
-	const auto tag = hashBody(count).slots.tag(count + static_cast<u32>(existingIndex));
-	if (tag == ValueTag::Nil || tag == ValueTag::DeadKey) return;
-	markHashNodeDead(static_cast<size_t>(existingIndex));
-}
-
-void TableRecord::markHashNodeDead(size_t index) {
-	const auto body = hashBody(hashSlots());
-	const Value key = body.slots.get(index);
+void TableRecord::eraseHashNode(const HashBody& body, size_t index, Value key) {
 	if (body.count > HASH_CENSUS_LIMIT) { body.setLive(body.live() - 1u); body.adjustIntegerBand(key, -1); }
 	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
 		const uint32_t hashId = valuePayload(key);
-		hashBody(hashSlots()).slots.set(index, valueFromTag(ValueTag::Nil, valueHeader(key)));
-		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
+		body.slots.set(index, valueFromTag(ValueTag::Nil, valueHeader(key)));
+		body.slots.set(index + body.count, valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
-		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueNil());
-		if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
+		body.slots.set(index + body.count, valueNil());
 	}
 }
 
@@ -84,7 +72,16 @@ bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
 	}
 	const bool present = !isNil(value);
 	if (!present) {
-		removeFromHash(key, position);
+		if (position == TABLE_HASH_UNPROBED) position = findNodeIndex(key);
+		if (position >= 0) {
+			const auto body = hashBody(hashSlots());
+			const auto prior = body.slots.tag(body.count + static_cast<u32>(position));
+			if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
+				// The unresolved method proof belongs to the erased table, not its metatable.
+				if (valueIsString(key) && m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE) != 1u) return false;
+				eraseHashNode(body, position, body.slots.get(position));
+			}
+		}
 		position = -1;
 	} else {
 		if (reference && position != TABLE_HASH_UNPROBED) return false;
@@ -110,6 +107,11 @@ bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
 template <TableRecord::HashStore Policy>
 int TableRecord::assignHash(Value key, Value value, int nodeIndex) noexcept {
 	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
+	if constexpr (Policy == HashStore::ReturningField) {
+		// Leave the own lookup to the ordinary assignment when a String
+		// erase may change the firmware's method proof.
+		if (isNil(value) && m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE) != 1u) return HASH_STORE_DECLINED;
+	}
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
@@ -131,7 +133,7 @@ int TableRecord::assignProbedHash(const HashBody& body, int nodeIndex, Value val
 		const auto prior = body.slots.tag(valueSlot);
 		if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
 			if (erase) {
-				markHashNodeDead(nodeIndex);
+				eraseHashNode(body, nodeIndex, body.slots.get(nodeIndex));
 				return -1;
 			}
 			body.slots.set(valueSlot, value);
@@ -162,6 +164,7 @@ int TableRecord::tryAssignStringField(StringId key, Value value) noexcept {
 
 int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predicted) noexcept {
 	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
+	if (isNil(value) && m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE) != 1u) return HASH_STORE_DECLINED;
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
 	// The site supplies a hint, never an authoritative assignment slot.

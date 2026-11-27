@@ -296,6 +296,7 @@ private:
 	int assignProbedHash(const HashBody& body, int nodeIndex, Value value) noexcept;
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;
+	void eraseHashNode(const HashBody& body, size_t index, Value key);
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 	Value getCanonical(const Value& key) const;
