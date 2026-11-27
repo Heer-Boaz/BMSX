@@ -1,7 +1,7 @@
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
-import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
+import { closeUpvalueReference, storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -405,7 +405,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
 	const upvalue = ClosureRecord.captureAddress(js.memory, frame.closure, 0);
-	Upvalue.close(js.gc, upvalue); storeUpvalueReference(js, upvalue, ValueTag.Integer, 1);
+	closeUpvalueReference(js, upvalue); storeUpvalueReference(js, upvalue, ValueTag.Integer, 1);
 	const r = frame.registers, writes = new Uint32Array(16);
 	observeRegisterStores(r, index => { ++writes[index]; });
 	const block = page.compiledBlocks!.entries[entry]!, run = {

@@ -14,6 +14,19 @@
 
 namespace bmsx {
 
+void GcHeap::writeBarrier(u32 address, u32 link) {
+	if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
+}
+
+void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
+	const u32 previous = indexWord(queue);
+	const u32 otherBits = link == GC_RECORD_LINK ? memory.readRamRecordWord(address + link) & ~GC_GRAY_INDEX_MASK : 0u;
+	const u32 head = (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	memory.writeRamRecordWord(address + link, otherBits | previous);
+	color(address, 2);
+	memory.writeRamRecordWord(m_controlOffset + queue, head);
+}
+
 namespace {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 using GcProfileClock = std::chrono::steady_clock;

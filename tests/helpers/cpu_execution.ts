@@ -3,6 +3,8 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Memory } from '../../machine/ts/machine/memory/memory';
 import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
+import { isOpen, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/upvalue';
+import { closeUpvalueReference } from './upvalue_store_reference';
 
 /** Both routes receive the same grant, including when the final atomic
  * instruction's complete charge crosses that deadline. */
@@ -43,7 +45,15 @@ export function abortFixtureCompletionCall(cpu: CPU, frameIndex: number): void {
 	if (thread.frameDepth > frameIndex) {
 		cpu['abortStalledMemoryWrite']();
 		do {
-			cpu['closeUpvalues'](thread.currentFrame!);
+			const frame = thread.currentFrame!;
+			let address = frame.openUpvalueHead;
+			for (let closed = 0; address !== 0 && closed < UPVALUE_CHAIN_LIMIT; ++closed) {
+				const cell = address & UPVALUE_ADDRESS_MASK;
+				if (cpu.memory.readRamRecordByte(cell) !== UPVALUE_RECORD_KIND || !isOpen(cpu.memory, cell)) break;
+				address = cpu.memory.readRamRecordWord(cell + UPVALUE_NEXT);
+				closeUpvalueReference(cpu, cell);
+			}
+			frame.openUpvalueHead = 0;
 			thread.leaveFrame();
 		} while (thread.frameDepth > frameIndex);
 		cpu['resumeFrameBank']();

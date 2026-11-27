@@ -16,6 +16,7 @@ export const COP0_EVENT_CYCLES = 23;
 export const CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31;
 export const CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffff;
 export const CPU_INTERRUPT_STATE_HALT = 0x80000000;
+export const CPU_INTERRUPT_STATE_WINDOW = 0x40000000;
 
 export function cop0ReadAsZero(field: number): boolean { return field === COP0_EXEC || field === COP0_EXCEPTION_TARGET || field === COP0_IRQ_VECTOR; }
 export function cop0WriteRetiresControl(field: number): boolean {

@@ -2,7 +2,7 @@ import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { tryStoreDirect, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
+import { close, tryStoreDirect, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { type ValueTag, valueFromTag, valueTagHasGcEdge } from '../../machine/ts/machine/cpu/value';
 
 // The former native SETUP/debug closed-cell policy, retained only for differential tests.
@@ -37,4 +37,10 @@ export function storeUpvalueReference(cpu: CPU, address: number, tag: ValueTag, 
 	writeClosedValueReference(cpu, cell, tag, word);
 	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 	memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
+}
+
+export function closeUpvalueReference(cpu: CPU, address: number): void {
+	const cell = address & UPVALUE_ADDRESS_MASK;
+	close(cpu.memory, cell);
+	if (valueTagHasGcEdge(cpu.memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG))) cpu.gc.writeBarrier(cell, UPVALUE_NEXT);
 }

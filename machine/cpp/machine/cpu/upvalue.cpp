@@ -1,7 +1,6 @@
 #include "machine/cpu/upvalue.h"
 
 #include "common/endian.h"
-#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/thread.h"
 #include "machine/memory/memory.h"
 
@@ -39,8 +38,7 @@ void Upvalue::bindOpen(Memory& memory, u32 address, u32 owner, u32 slot, u32 nex
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
 }
 
-void Upvalue::close(GcHeap& heap, u32 address) {
-	auto& memory = heap.memory;
+void Upvalue::close(Memory& memory, u32 address) {
 	const Value captured = load(memory, address);
 	const u32 offset = address & UPVALUE_ADDRESS_MASK;
 	auto* record = memory.ramData() + offset;
@@ -50,7 +48,6 @@ void Upvalue::close(GcHeap& heap, u32 address) {
 	writeLE32(record + UPVALUE_OWNER, 0);
 	writeLE32(record + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	if (valueTagHasGcEdge(valueTag(captured))) heap.writeBarrier(offset, UPVALUE_NEXT);
 }
 
 Value Upvalue::load(const Memory& memory, u32 address) {

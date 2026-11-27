@@ -32,11 +32,15 @@ import {
 	BLUA32_UPVALUE_RECORD_SIZE,
 } from '../../../machine/ts/spec/blua32/image_format';
 import { encodeFixedValueCount, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { CPU_INTERRUPT_STATE_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_INTERRUPT_STATE_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 
 export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	'module<const>',
 	'',
 	'return {',
+	`\tinterrupt_state_address = ${CPU_INTERRUPT_STATE_ADDRESS},`,
+	`\tinterrupt_state_window = ${CPU_INTERRUPT_STATE_WINDOW},`,
 	`\tinstruction_bytes = ${INSTRUCTION_BYTES},`,
 	`\tmax_op_bits = ${MAX_OP_BITS},`,
 	`\tmax_operand_bits = ${MAX_OPERAND_BITS},`,

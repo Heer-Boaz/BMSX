@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/upvalue.h"
 
 #include <algorithm>
 
@@ -38,7 +39,17 @@ void CPU::abortCompletionCall(int frameIndex) {
 	if (static_cast<int>(m_activeThread->frameDepth()) > frameIndex) {
 		abortStalledMemoryWrite();
 		do {
-			closeUpvalues(*m_activeThread->currentFrame);
+			auto& frame = *m_activeThread->currentFrame;
+			u32 address = frame.readControl(FrameField::OpenHead);
+			for (u32 closed = 0u; address != 0u && closed < UPVALUE_CHAIN_LIMIT; ++closed) {
+				const u32 cell = address & UPVALUE_ADDRESS_MASK;
+				if (m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(m_memory, cell)) break;
+				address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
+				Upvalue::close(m_memory, cell);
+				const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG));
+				if (valueTagHasGcEdge(tag)) m_heap.writeBarrier(cell, UPVALUE_NEXT);
+			}
+			frame.writeControl(FrameField::OpenHead, 0u);
 			m_activeThread->leaveFrame();
 		} while (static_cast<int>(m_activeThread->frameDepth()) > frameIndex);
 		resumeFrameBank();

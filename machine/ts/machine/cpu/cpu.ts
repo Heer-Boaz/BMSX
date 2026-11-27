@@ -3,7 +3,7 @@ import { GcDiagnosticField, GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -28,7 +28,7 @@ import {
 	COP0_CAUSE,
 	COP0_EPC,
 	COP0_EXEC, COP0_CONTEXT, COP0_RAM_END, COP0_SYSTEM_VECTOR, COP0_PREVIOUS_ACTIVE, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_CURRENT, COP0_EVENT_CYCLES,
-	CPU_EXCEPTION_TARGET_ADDRESS_MASK, CPU_EXCEPTION_TARGET_SOCKET_SHIFT, CPU_INTERRUPT_STATE_HALT,
+	CPU_EXCEPTION_TARGET_ADDRESS_MASK, CPU_EXCEPTION_TARGET_SOCKET_SHIFT, CPU_INTERRUPT_STATE_HALT, CPU_INTERRUPT_STATE_WINDOW,
 	COP0_LUA_FAULT_REASON,
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
@@ -1912,9 +1912,28 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return;
 		}
+		const fixed = this.fixedInterruptActive();
+		const aliases = frame.openUpvalueHead;
+		if (aliases !== 0) {
+			if (!fixed && !this.resetBankSelected()) {
+				const deadline = this.remainingDeviceCycles();
+				frame.pc = this.currentInstructionPc;
+				// Retire the interrupted window before popping the original
+				// exception. Entry must not push Status or overwrite its latches.
+				this.detachExceptionContext(CPU_INTERRUPT_STATE_WINDOW);
+				this.placeExceptionVector(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], false,
+					this.currentInstructionPc, valueInteger(0), valueInteger(0), valueInteger(OpCode.RFE), valueInteger(deadline));
+				return;
+			}
+			this.charge(this.closeFixedWindow(frame, aliases));
+		}
+		if (fixed && frame.previous === null && this.memory.readRamRecordWord(CPU_INTERRUPT_STATE_ADDRESS) === CPU_INTERRUPT_STATE_WINDOW) {
+			frame.thread.leaveFrame();
+			this.resumeInterruptedContext();
+			frame = this.activeThread.currentFrame!;
+		}
 		const returnFromNmi = frame.isNonMaskableExceptionFrame;
 		const returnPc = this.cop0Words[COP0_EPC];
-		this.charge(this.closeUpvalues(frame));
 		frame.thread.leaveFrame();
 		if (this.fixedInterruptActive() && this.irqThread.frameDepth === 0) this.resumeInterruptedContext();
 		const caller = this.activeThread.currentFrame;
@@ -1960,13 +1979,15 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return null;
 		}
-		if (vectorImage === this.systemImage && !this.resetBankSelected()) {
-			this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, this.activeThread.address, 0);
-			this.activeThread = this.irqThread;
-			this.threadSwitchRequested = this.yieldRequested = true;
-		}
+		if (vectorImage === this.systemImage && !this.resetBankSelected()) this.detachExceptionContext(0);
 		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord,
 			argument, secondArgument, thirdArgument, fourthArgument, supplied, tail, tailSource, tailDestination);
+	}
+
+	private detachExceptionContext(state: number): void {
+		this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, this.activeThread.address, state);
+		this.activeThread = this.irqThread;
+		this.threadSwitchRequested = this.yieldRequested = true;
 	}
 
 	private latchExceptionEntry(causeWord: number, epcWord: number): void {
@@ -3626,15 +3647,13 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(copied + padded + extras);
 	}
 
-	private closeUpvalues(frame: CallFrame): number {
-		let address = frame.openUpvalueHead;
-		if (address === 0) return 0;
+	private closeFixedWindow(frame: CallFrame, address: number): number {
 		let closed = 0;
 		while (address !== 0 && closed < UPVALUE_CHAIN_LIMIT) {
 			const cell = address & Upvalue.UPVALUE_ADDRESS_MASK;
 			if (this.memory.readRamRecordByte(cell) !== Upvalue.UPVALUE_RECORD_KIND || !Upvalue.isOpen(this.memory, cell)) break;
 			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
-			Upvalue.close(this.gc, cell);
+			Upvalue.close(this.memory, cell);
 			++closed;
 		}
 		frame.openUpvalueHead = 0;

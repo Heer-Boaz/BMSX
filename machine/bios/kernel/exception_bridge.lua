@@ -2,6 +2,7 @@ module<const>
 
 local frames<const> = require('kernel/thread_frame_storage')
 local vectors<const> = require('bmsx/startup')
+local isa<const> = require('bmsx/blua32')
 local layout<const> = require('kernel/gc_runtime_layout')
 local operand_roots<const> = require('kernel/gc_operand_roots')
 local exception_report<const> = require('kernel/exception_report')
@@ -132,7 +133,8 @@ end
 -- The direct entry reserves the full architectural call-overflow argument
 -- prefix. Ordinary traps still supply their original shorter argument list.
 local enter<const> = function(values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14)
-	local cause<const> = cop0.cause
+	local state<const>: *u32 = isa.interrupt_state_address
+	local cause<const> = *state == isa.interrupt_state_window and register_window or cop0.cause
 	if cause == reference_store then
 		if blua32.argument_count() == 2 then globals.store_reference(cop0.bad_address, depth, values)
 		else barrier.store_closed_upvalue(cop0.bad_address, values) end

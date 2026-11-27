@@ -1,7 +1,7 @@
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
-import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
+import { closeUpvalueReference, storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
@@ -45,7 +45,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(createReferenceTable(cpu))];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		if (source === 'closed') {
-			if (Upvalue.isOpen(cpu.memory, upvalue)) Upvalue.close(cpu.gc, upvalue);
+			if (Upvalue.isOpen(cpu.memory, upvalue)) closeUpvalueReference(cpu, upvalue);
 		} else {
 			Upvalue.bindOpen(cpu.memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 		}

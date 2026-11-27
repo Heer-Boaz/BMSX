@@ -1260,9 +1260,27 @@ void CPU::returnFromException(CallFrame& frame) {
 		hardHalt();
 		return;
 	}
-	const bool returnFromNmi = frame.hasControlFlag(FRAME_NMI);
+	const bool fixed = fixedInterruptActive();
+	const u32 aliases = frame.readControl(FrameField::OpenHead);
+	if (aliases != 0u) {
+		if (!fixed && !resetBankSelected()) {
+			const std::array arguments{valueInteger(0), valueInteger(0), valueInteger(static_cast<i32>(OpCode::RFE)),
+				valueInteger(remainingDeviceCycles())};
+			frame.writeControl(FrameField::Pc, m_currentInstructionPc);
+			// The original exception is still active: do not push Status or
+			// overwrite its latches before retiring the retained window.
+			detachExceptionContext(CPU_INTERRUPT_STATE_WINDOW);
+			placeExceptionVector(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], false, m_currentInstructionPc, arguments, {});
+			return;
+		}
+		instructionBudgetRemaining -= closeFixedWindow(frame, aliases);
+	}
+	if (fixed && !frame.previous && m_memory.readRamRecordWord(CPU_INTERRUPT_STATE_ADDRESS) == CPU_INTERRUPT_STATE_WINDOW) {
+		m_activeThread->leaveFrame();
+		resumeInterruptedContext();
+	}
+	const bool returnFromNmi = m_activeThread->currentFrame->hasControlFlag(FRAME_NMI);
 	const u32 returnPc = m_cop0Words[COP0_EPC];
-	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
 	if (fixedInterruptActive() && m_irqView.frameDepth() == 0u) resumeInterruptedContext();
 	resumeFrameBank();
@@ -1348,12 +1366,14 @@ CallFrame* CPU::enterException(
 		hardHalt();
 		return nullptr;
 	}
-	if (&vectorImage == m_systemImage && !resetBankSelected()) {
-		m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, m_activeThread->address, 0u);
-		m_activeThread = &m_irqView;
-		m_runSignals |= RunThreadSwitch | RunYield;
-	}
+	if (&vectorImage == m_systemImage && !resetBankSelected()) detachExceptionContext(0u);
 	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord, arguments, suffix);
+}
+
+void CPU::detachExceptionContext(u32 state) {
+	m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, m_activeThread->address, state);
+	m_activeThread = &m_irqView;
+	m_runSignals |= RunThreadSwitch | RunYield;
 }
 
 void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
@@ -2342,15 +2362,13 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
 }
 
-int CPU::closeUpvalues(CallFrame& frame) {
-	u32 address = frame.readControl(FrameField::OpenHead);
-	if (address == 0u) return 0;
+int CPU::closeFixedWindow(CallFrame& frame, u32 address) {
 	int closed = 0;
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
 		const u32 cell = address & UPVALUE_ADDRESS_MASK;
 		if (m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(m_memory, cell)) break;
 		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
-		Upvalue::close(m_heap, cell);
+		Upvalue::close(m_memory, cell);
 		++closed;
 	}
 	frame.writeControl(FrameField::OpenHead, 0u);

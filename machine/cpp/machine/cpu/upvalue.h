@@ -6,7 +6,6 @@
 
 namespace bmsx {
 class Memory;
-class GcHeap;
 
 inline constexpr u32 UPVALUE_HEAP_BYTES = 16;
 inline constexpr u32 UPVALUE_ADDRESS_MASK = GC_RECORD_MASK;
@@ -23,7 +22,7 @@ namespace Upvalue {
 void initialize(Memory& memory, u32 address, u8 white);
 bool isOpen(const Memory& memory, u32 address);
 void bindOpen(Memory& memory, u32 address, u32 owner, u32 slot, u32 next);
-void close(GcHeap& heap, u32 address);
+void close(Memory& memory, u32 address);
 Value load(const Memory& memory, u32 address);
 bool tryStoreDirect(Memory& memory, u32 cell, Value value);
 } // namespace Upvalue

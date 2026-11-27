@@ -388,7 +388,7 @@ private:
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
 	bool enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots, int position);
-	int closeUpvalues(CallFrame& frame);
+	int closeFixedWindow(CallFrame& frame, u32 address);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced, bool fromArguments = false);
 	bool executeVararg(CallFrame& frame, int first, int requested);
@@ -500,6 +500,7 @@ private:
 	void installSystemVector(CallFrame& frame, u32 address, int field);
 	void transferExceptionVector(CallFrame& frame, u32 target);
 	void resumeInterruptedContext();
+	void detachExceptionContext(u32 state);
 	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::span<const Value> arguments = {}, const BuiltinArgsView& suffix = {});
 	void initializeResetBank();
 	void bindFixedIrqBank();

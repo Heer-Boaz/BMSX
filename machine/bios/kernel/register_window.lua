@@ -34,7 +34,7 @@ local recover<const> = function(values, depth, instruction, deadline)
 	local address<const> = layout.ram_base + ((thread.frame_block + (frame_depth - 1) * sizeof(frame_record)) & word_mask)
 	local op<const> = instruction & 0xff
 	local root = 0
-	if op == isa.op_ret or op == isa.op_jmp then
+	if op == isa.op_ret or op == isa.op_jmp or op == isa.op_rfe then
 		local frame<const>: *stopped_frame = address
 		local first<const> = op == isa.op_jmp and (frame.stack_base & frame_window_mask) + (instruction >> 8) - 1 or 0
 		-- The old RET closed cells before assisting. Its per-cell charge

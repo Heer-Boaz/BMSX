@@ -1,6 +1,6 @@
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
-import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
+import { closeUpvalueReference, storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -51,7 +51,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 		}
 		if (scenario === 'upvalue') {
 			if (source === 'closed') {
-				if (Upvalue.isOpen(memory, upvalue)) Upvalue.close(cpu.gc, upvalue);
+				if (Upvalue.isOpen(memory, upvalue)) closeUpvalueReference(cpu, upvalue);
 			} else {
 				Upvalue.bindOpen(memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 			}

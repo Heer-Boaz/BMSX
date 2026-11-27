@@ -1,7 +1,6 @@
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import type { GcHeap } from './gc_heap';
 import { GC_RECORD_MASK } from './gc_object';
 import { ThreadField } from './thread_record';
 import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag, valueTagHasGcEdge } from './value';
@@ -36,18 +35,16 @@ export function bindOpen(memory: Memory, address: number, owner: number, slot: n
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
 }
 
-export function close(heap: GcHeap, address: number): void {
-	const memory = heap.memory;
-	const captured = load(memory, address), tag = valueTag(captured);
+export function close(memory: Memory, address: number): void {
+	const captured = load(memory, address);
 	const offset = address & UPVALUE_ADDRESS_MASK;
 	const ram = memory.ramData();
 	ram[offset + UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
-	ram[offset + UPVALUE_VALUE_TAG] = tag;
+	ram[offset + UPVALUE_VALUE_TAG] = valueTag(captured);
 	writeLE32(ram, offset + UPVALUE_VALUE_WORD, valuePayload(captured));
 	writeLE32(ram, offset + UPVALUE_OWNER, 0);
 	writeLE32(ram, offset + UPVALUE_NEXT, 0);
 	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
-	if (valueTagHasGcEdge(tag)) heap.writeBarrier(offset, UPVALUE_NEXT);
 }
 
 export function load(memory: Memory, address: number): Value {

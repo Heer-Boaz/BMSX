@@ -131,9 +131,7 @@ public:
 	bool markThread(u32 address, u32 queue = GC_TRACE_HEAD);
 	// Strong name/value edges from the permanently rooted global banks.
 	void markGlobalWrite(Value reference);
-	void writeBarrier(u32 address, u32 link) {
-		if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
-	}
+	void writeBarrier(u32 address, u32 link);
 	void writeTableValue(u32 table, Value value) {
 		if (valueTagHasGcEdge(valueTag(value)) && markColor(table) == 3u)
 			writeBlackTableValue(table, value);
