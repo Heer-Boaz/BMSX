@@ -5,7 +5,7 @@ volgen of daarbij worden overwogen. Het is een **voorstel**, geen vervanging
 van de bestaande specificatie. De huidige programmeerbare contracten staan in
 [Book I](book1/console.md), [Book II](book1/cpu.md) en
 [Book III](book3/cartridge.md); de voorgestelde constructie staat in
-[Book IV](book4/index.md). Afwijkingen zijn pas definitieve productregels als
+[Book IV](../hardware/docs/index.md). Afwijkingen zijn pas definitieve productregels als
 ze in de betrokken handleidingen en implementaties zijn uitgewerkt.
 
 **Status:** de gebruiker heeft de richtingen voor meer-cyclus-DMA,
@@ -172,7 +172,7 @@ staan achter de dertien hoofdonderwerpen in de bijlage.
 ## 1. DMA: fysieke voortgang en voltooiing
 
 De vastgestelde programmeerinterface staat in de [DMA-specificatie](book1/dma.md).
-De constructiekandidaat staat bij de [fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing).
+De constructiekandidaat staat bij de [fysieke DMA-volgorde](../hardware/docs/hardware.md#dma).
 De eerdere kandidaat met willekeurige I/O-eindpunten, aparte verzoekselectoren,
 configureerbare bloklengtes en overschrijfbare BUSY-registers is vervallen.
 GPU-pakketten mogen over bursts doorlopen; pakketuitlijning is geen
@@ -218,7 +218,7 @@ GTE-busy-wacht. Of deze fysieke wachttijd daarmee verenigbaar is, moet samen
 met de emulator en gelijktijdige toegang worden vastgesteld. Een mogelijke
 wijziging van zichtbare timing is **nog niet goedgekeurd**; er is geen nieuwe
 limiet of commandolatentie gekozen. De gedeelde paden zijn evenmin bewijs dat
-de huidige tijdseis onmogelijk is. Zie [de GTE-organisatie](book4/hardware.md#sec-physical-gte-command-path).
+de huidige tijdseis onmogelijk is. Zie [de GTE-organisatie](../hardware/docs/hardware.md#gte).
 
 ### GPU: uitvoeringstijd en lokaal geheugen
 
@@ -250,7 +250,7 @@ Een GP0-IRQ-marker is geen displayfence en verplicht op zichzelf niet tot het
 legen van de buffer. Zo'n buffer vangt pieken op, maar lost een structureel
 tekort aan geheugencycli niet op. Een snellere schrijfcyclus, extra parallel
 geheugen of een andere fysieke timing kan nodig blijken; geen daarvan is hier
-gekozen of bewezen. De [geheugenorganisatie](book4/hardware.md#sec-physical-gfx-memory-schedule)
+gekozen of bewezen. De [geheugenorganisatie](../hardware/docs/hardware.md#video-memory-access)
 beschrijft de voorgestelde richting.
 
 Een concrete verbredingsoptie is vier 256K × 16-geheugens parallel te
@@ -318,7 +318,7 @@ bankselectielogica, timing en printintegratie zijn nog niet uitgewerkt.
 Deze partiële aansluiting bewijst geen elektrische of timingkwalificatie en
 wijzigt het oorspronkelijke moederbord niet.
 
-![Functionele organisatie van de voorgestelde 64-bit videobank en de gedeelde 32-bit snapshotbank.](book4/figures/gfx-wide-vram-snapshot-data-proposal.svg)
+![Functionele organisatie van de voorgestelde 64-bit videobank en de gedeelde 32-bit snapshotbank.](../hardware/docs/figures/gfx-wide-vram-snapshot-data-proposal.svg)
 
 Dit is geen geheugenorganisatie die pas bij moderne consoles denkbaar werd:
 Micron beschreef in zijn [SRAM-databoek van 1993](https://device.report/m/78d1e0932ff677fc0bf36080f8a6c2fb131f8db3612f0649add4a79b5e554bf9)
@@ -377,7 +377,7 @@ passingscontrole. De onderzijde ligt bovendien tegenover de voeding; warmte,
 interferentie en de werkelijke montage blijven open. De bestaande print is
 niet gewijzigd.
 
-![Globale boven- en onderzijdeprojectie van de brede videogeheugenoptie.](book4/figures/gfx-64bit-memory-placement-proposal.svg)
+![Globale boven- en onderzijdeprojectie van de brede videogeheugenoptie.](../hardware/docs/figures/gfx-64bit-memory-placement-proposal.svg)
 
 
 De volgende vergelijking plaatst de onderzochte variant naast de bestaande
@@ -392,7 +392,7 @@ vervangt de bestaande print en de bijbehorende afbeeldingen niet.
 | Snapshotgeheugen | Voorgestelde 32-bitbank U152/U153, 2 MiB | Dezelfde bank; deelt de lage datalijnen en krijgt afzonderlijke selectie |
 | Passieve koeling en plaatsing | Bestaande voorgestelde spreidplaat en printindeling | Aansluiting van de koeler en de plaatsing opnieuw te beoordelen; geen ventilator voorgesteld |
 
-![Kwalitatieve samenhang van de brede videogeheugenvariant met de vier chips, kast en aansluitingen.](book4/figures/gfx-wide-four-chip-context-proposal.svg)
+![Kwalitatieve samenhang van de brede videogeheugenvariant met de vier chips, kast en aansluitingen.](../hardware/docs/figures/gfx-wide-four-chip-context-proposal.svg)
 
 Dit is een functionele groepering, geen tekening op schaal. Eén eerder
 onderzochte mogelijkheid plaatst twee videogeheugens boven en twee onder de
@@ -448,7 +448,7 @@ instelling met snellere logische veranderingen kan daardoor meerdere logische
 pixels tussen twee fysieke samples laten vallen. Dat is zichtbare
 onderbemonstering, geen verborgen registerclamp en geen zwarte fallback. De
 **54 MHz** van het lokale videogeheugen is een andere klok dan de DAC-sampleklok.
-[Video-ontwerp](book4/hardware.md#video-signal-generation).
+[Video-ontwerp](../hardware/docs/hardware.md#video-output).
 
 **Voorstel voor de programmeerbare uitvoer.** Gebruik de bestaande 625-lijnen-/
 50-veldenreferentie als een beoogd RGB-uitvoervoorbeeld. Bij
@@ -550,7 +550,7 @@ zijn nog niet gekozen. PCRTC-stores mogen volgens het huidige contract niet op
 PCRTC-ready wachten; blokkeren bij een volle overdrachtsbuffer zou dus een
 afzonderlijke productwijziging zijn, geen reeds goedgekeurde videobegrenzing.
 
-Het [scanoutvoorstel](book4/hardware.md#proposed-scanout-organisation) verbindt
+Het [scanoutvoorstel](../hardware/docs/hardware.md#timing) verbindt
 die toestand aan twee onafhankelijke leeskanalen, de gezamenlijke VRAM-scheduler,
 compositie en de fysieke uitgang. Het maakt onderscheid tussen de direct
 herstartende live beam en de bij VBlank overgenomen displaybank. FIELD komt van
@@ -599,7 +599,7 @@ als onder het huidige gemeenschappelijke-gaincontract; de totale mix kan nog
 steeds verzadigen. Dit beschrijft de voorgestelde niveauregeling, geen nieuw
 reeds beschikbaar register.
 
-![Voorgestelde plaatsing van een mono- of stereostem.](book4/figures/apu-channel-placement-proposal.svg)
+![Voorgestelde plaatsing van een mono- of stereostem.](../hardware/docs/figures/apu-channel-placement-proposal.svg)
 
 Dit is een samenhangend voorstel, geen reeds toegevoegde registerinterface.
 De onderstaande adressering en teruglezing zijn één concrete kandidaat; het
@@ -912,7 +912,7 @@ belasting. De grenzen en aannames blijven bepalend voor de interpretatie.
 **Nog te bepalen:** het garantiedomein, bronopslag, toegestane belasting,
 voorbereiding/PLAY-timing en het effect van loops, reverse, filters en uploads.
 Geen specifieke limiet of latentie wordt nu opgelegd. Zie de
-[APU-geheugenanalyse](book4/hardware.md#sec-physical-apu-memory-envelope).
+[APU-geheugenanalyse](../hardware/docs/hardware.md#memory-load).
 
 **Cartridgeselectie bij directe ROM-weergave.** De passieve vierchipprint
 verbindt U4 met de gedeelde SYS-bus en met U1 voor busaanvraag en -toekenning.
@@ -1085,7 +1085,7 @@ eventuele wijziging dus eveneens de gekozen bussemantiek implementeren.
 Er is geen metadata-EEPROM of cartridgecapaciteitsprotocol
 gekozen. Zie [APU-bronbinding](book1/apu.md),
 [cartridgeleesregels](book3/cartridge.md) en
-[fysieke ROM-toegang](book4/hardware.md#physical-rom-read-profile).
+[fysieke ROM-toegang](../hardware/docs/hardware.md#rom-read).
 
 **Mogelijke behandeling van een echte leesfout.** Een afzonderlijke kandidaat
 laat `SOURCE_RANGE` uitsluitend de mislukte binding melden. Als een later
@@ -1130,7 +1130,7 @@ niveaugestuurde interface met bijpassende software-afhandeling. De laatste zou
 het zichtbare ACK-gedrag veranderen. Ook DREQ is een afzonderlijk
 niveau-signaal en heeft eigen elektrische en timingvoorwaarden nodig. Er is
 nog geen keuze, numerieke pulsduur of emulatorwijziging vastgesteld.
-[Huidige kaartinterface](book4/hardware.md#cartridge-interrupt-and-request-inputs).
+[Huidige kaartinterface](../hardware/docs/hardware.md#interrupt-and-request-inputs).
 
 **Flankgestuurde kandidaat met fysieke ingangstijden.** Behoud het bestaande
 onderscheid tussen de kaartlatch en de centrale pending-bit, inclusief het
@@ -1247,7 +1247,7 @@ ACK opnieuw wordt gezet; de voorgestelde BMSX-regel is een eigen keuze.
 
 **Status: verduidelijking onderzoeken.** Book I beschrijft standaard
 pointercoördinaten binnen de beeldextent, maar specificeert niet uitdrukkelijk
-een extent van nul. De [fysieke pointerformule](book4/pads.md#display-context-and-standard-pointer-mapping)
+een extent van nul. De [fysieke pointerformule](../hardware/docs/pads.md#display-size-and-pointer)
 levert bij extent nul het woord `FFFF0000H` (−1 pixel). Toets die uitbreiding
 tegen de bedoelde software- en accessoirecontracten voordat zij als publieke
 regel wordt vastgelegd. Er is geen besluit om nul automatisch te vervangen door
@@ -1256,7 +1256,7 @@ een positieve extent of de vorige positie vast te houden.
 ## 8. Pad- en accessoireprotocol
 
 **Status: fysieke interface voorgesteld; openbaar contract nog te toetsen.**
-Het [BMSX-PAD-voorstel](book4/pads.md) beschrijft vier parallelle seriële
+Het [BMSX-PAD-voorstel](../hardware/docs/pads.md) beschrijft vier parallelle seriële
 aansluitingen, frames van 64 bytes per richting met CRC en een nominale
 bitsnelheid van 250 kbit/s. Het legt ook vast hoe een pointer uit de
 ontvangen gegevens wordt gekozen en hoe de laatst geldig ontvangen gegevens
@@ -1265,7 +1265,7 @@ nog niet zonder meer een vastgesteld openbaar accessoirecontract.
 
 De vier fysieke aansluitingen leveren vier onafhankelijke accessoirelinks.
 Bij vier losse pads is er daarom geen vrije poort voor een losse pointer. Het
-[pad-en-pointeradaptervoorstel](book4/pads.md#sec-physical-pad-link) zou beide
+[pad-en-pointeradaptervoorstel](../hardware/docs/pads.md) zou beide
 apparaten via één link combineren, zonder de logische inputrecords te wijzigen.
 De functionele opzet geeft padverzoeken rechtstreeks door en verzamelt de
 pointergegevens afzonderlijk. De schakeling, belasting en leveringsgrenzen zijn
@@ -1362,11 +1362,11 @@ Het GPU-eindpunt moet het bestaande onderscheid tussen GP0 en GP1, CPU- en
 DMA-ingress, het DMA-blokeindstrobe en de GPUREAD-eigenaar behouden. Acceptatie
 van een woord is niet gelijk aan voltooide tekening of readback. Dit is de
 bestaande functionele grens, geen nieuwe publieke timing of bandbreedtegarantie;
-de [GFX-bustoegang](book4/hardware.md#sec-physical-gfx-gpu-system-access)
+de [GFX-bustoegang](../hardware/docs/hardware.md#system-bus-interface)
 beschrijft de voorgestelde fysieke organisatie.
-Zie [de integratiekandidaat](book4/hardware.md#sec-gfx-input-integration-candidate).
+Zie [de integratiekandidaat](../hardware/docs/hardware.md#input-in-gfx).
 
-Een [concrete kandidaat voor de U2-pintoewijzing](book4/hardware.md#sec-gfx-input-integration-candidate)
+Een [concrete kandidaat voor de U2-pintoewijzing](../hardware/docs/hardware.md#input-in-gfx)
 combineert de verplaatste INPUT-signalen met de snapshotselectie. Deze
 aansluitingen staan in de afzonderlijke INPUT-en-geheugenkandidaat, niet in
 het oorspronkelijke schema. Fysieke fanout is niet aangetoond; externe
@@ -1409,7 +1409,7 @@ toetsenbordverlies en gedeeltelijk ontvangen frames moeten daarbij afzonderlijk
 worden uitgewerkt. Dit is geen vastgesteld resetcontract en de U2-uitvoering
 is nog niet geïmplementeerd.
 
-![Voorgestelde toetsenbord- en padbronnen naast de bestaande supervisorroute.](book4/figures/supervisor-sources-proposal.svg)
+![Voorgestelde toetsenbord- en padbronnen naast de bestaande supervisorroute.](../hardware/docs/figures/supervisor-sources-proposal.svg)
 
 Een mogelijke protocoluitbreiding gebruikt bit 0 van reply-byte 60, dat in het
 huidige 64-byte versie-1-antwoord gereserveerd en nul is. Een volledige,
@@ -1443,7 +1443,7 @@ stilzwijgend gewijzigd.
 
 **Status: aanvulling op het publieke contract voorgesteld.** Book III
 beschrijft de logische cartridgevensters en toegang, maar niet deze volledige
-fysieke aansluiting. Het [constructievoorstel](book4/connectors.md#sec-physical-cartridges)
+fysieke aansluiting. Het [constructievoorstel](../hardware/docs/connectors.md#cartridges)
 gebruikt 62 contacten, 3,3 V-signalen, een gemultiplexte adres-/databus,
 afzonderlijke READY-signalen en mechanische sleuteling. Dit is niet hetzelfde
 als een reeds vastgestelde openbare cartridgepinout.
@@ -1547,7 +1547,7 @@ wissen. Een console-reset wist die buffer volgens Book I. Een onderbreking
 rond een verzonden bevestiging laat voor de externe ontvanger zonder verdere
 afspraken onduidelijk of de byte al is verbruikt. De scaninstructie, reset- en
 herstartvolgorde, geheugenmacro en de integratie met de bestaande byte-interface
-moeten nog worden uitgewerkt. Zie [diagnostic line storage](book4/hardware.md#diagnostic-line-storage).
+moeten nog worden uitgewerkt. Zie [diagnostic line storage](../hardware/docs/hardware.md#diagnostic-output).
 
 Het ontwerp heeft nog geen volledig aangesloten en gekwalificeerde ASICs,
 geen gefabriceerde en doorgemeten console en de print is niet volledig gerouteerd.
@@ -1807,7 +1807,7 @@ globals, frames en beheer tellen mee in één fysiek budget, en het publiek
 adresseerbare hoofdgeheugen blijft **4 MiB**. Dat budget is nu dat RAM zelf.
 De onderzochte private DRAM-bank is daarmee niet langer de referentiekandidaat
 voor de taaltoestand. Zie [Runtimecapaciteit](#sec-proposal-runtime-capacity)
-en [Book IV, Runtime memory](book4/hardware.md#sec-core-private-memory).
+en [Book IV, Runtime memory](../hardware/docs/hardware.md#runtime-memory).
 
 De BLua32-processor blijft het zichtbare uitvoeringsmodel. Een native
 interpreter, een hybride of gespecialiseerde logica blijven mogelijke
@@ -2393,7 +2393,7 @@ Offsets van runtime-eigen records blijven in dit voorstel.
 | `book1/coroutines.md` | Opslag van threads | Framerecords in het stackblok; de betekenis van `Out of memory.` blijft | Threads en frames |
 | `book1/bios-base.md` | Overzichtstabel; Allocation-pool management | `count`/`capacity` over het heapgebied in hoofd-RAM | Tabellen |
 | `book3/cartridge.md` | Selection and execution | Strings uit cartridge-ROM blijven aan hun socket gebonden | Strings |
-| `book4/hardware.md` | Runtime memory; Native-processor execution candidate | De private DRAM-bank vervalt als referentie; werkgegevens staan in het publieke RAM | Infrastructuur |
+| `../hardware/docs/hardware.md` | Runtime memory; Native-processor execution candidate | De private DRAM-bank vervalt als referentie; werkgegevens staan in het publieke RAM | Infrastructuur |
 | Dit document | §11 (`CALL`/`RET`, `CLOSURE`), overzichtstabel, bijlagen | Bijwerken naar deze richting | Steeds bij de betrokken fase |
 
 `dma.md` en `imgdec.md` hoeven niet te veranderen. Hun RAM-bestemmingen liggen
@@ -2824,7 +2824,7 @@ implementation and any instruction cache are not selected; sharing this
 70 ns flash path does not establish that an interpreter meets the published
 BLua32 instruction costs.
 
-![Proposed shared-bus guest and native program stores.](book4/figures/native-program-store.svg){#fig-core-native-program-store}
+![Proposed shared-bus guest and native program stores.](../hardware/docs/figures/native-program-store.svg){#fig-core-native-program-store}
 
 ### Runtimecapaciteit en onderzochte belasting {#sec-proposal-runtime-capacity}
 
@@ -2862,7 +2862,7 @@ Eén mogelijke fysieke inrichting is een extra private DRAM-bank van 4 MiB
 naast de ongewijzigde 4 MiB publieke RAM. Dit is een constructiekandidaat,
 geen reeds vastgestelde totale capaciteit of bewijs dat alle onderzochte games
 passen. De exacte OOM- en opstartregels moeten nog worden uitgewerkt.
-Deze bank is ook de [werkende referentiekandidaat](book4/hardware.md#sec-core-private-memory)
+Deze bank is ook de [werkende referentiekandidaat](../hardware/docs/hardware.md#runtime-memory)
 voor de native processor, niet een al aangebrachte printwijziging.
 De bestaande CORE-geheugenroute is inmiddels als twee-bankenkandidaat
 uitgebreid: een interne CPU/VM-tag kiest de private bank en publieke CPU-,
@@ -2895,7 +2895,7 @@ onvoldoende ruimte beschikbaar is, vereisen nog een concreet contract. Met name
 zijn het geheugen voor gelijktijdig aanwezige oude en nieuwe beeldtoestand en
 een uitvoerbare opstartfoutmelding nog niet aangetoond.
 
-Bij een [niet-verplaatsende pool](book4/hardware.md#sec-runtime-pool-and-collection)
+Bij een [niet-verplaatsende pool](../hardware/docs/hardware.md#collection)
 kan een grote aanvraag
 falen door versnippering, ook als het totaal aan vrije bytes groter is dan de
 aanvraag. Een productspecificatie moet daarom méér vastleggen dan alleen een
@@ -3004,7 +3004,7 @@ header instead of forcing it along the board at pin height. The nominal
 contact axes are Z14.9 for J61.1 and Z19.1 for J61.2, separated by 4.2 mm.
 The drawing's complete-mated height is a roof dimension, not a wire axis.
 
-![DC free-lead centreline projections, selected wire and R10 service loops.](book4/figures/dc-harness-routing.svg){#fig-dc-harness-routing}
+![DC free-lead centreline projections, selected wire and R10 service loops.](../hardware/docs/figures/dc-harness-routing.svg){#fig-dc-harness-routing}
 
 For the nominal seated mate, X67.475 is the rear plane of the cable housing.
 It is derived from the [Molex header drawing](https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/556/5569/039300020_sd.pdf):

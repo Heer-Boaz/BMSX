@@ -1,8 +1,8 @@
 # BMSX hardware
 
 Editable electrical and mechanical sources for the reference console, with
-physical interface RTL and directed simulations. The manufacturer-facing
-technical and service reference starts at [Book IV](../docs/book4/index.md).
+physical interface RTL and directed simulations. The internal
+construction and service reference starts at [docs/index.md](docs/index.md).
 Books I–III remain the programmer-visible product specification.
 
 ## Source layout
@@ -71,7 +71,7 @@ source extracts, design notes and the two game-title images from the A04 handove
 `BMSX_CARTRIDGES_A04_REFERENCE.step` are the corresponding earlier native
 models, not regenerated assemblies or proof of fit with the current console.
 The A04 notes also describe an older power-supply example; the current console
-power and connector description in Book IV takes precedence. The source extract
+power and connector description in the [construction reference](docs/index.md) takes precedence. The source extract
 is not a complete standalone reconstruction of the A04 package, whose original
 remains in the preserved BMSX work handover.
 
@@ -96,7 +96,7 @@ domains need a handshake. The register, handshake and full chip-to-chip scan
 chain are not integrated, and reset and disconnect behavior remain open. The
 software-visible queue contract is specified in
 [Book I](../docs/book1/system.md#sec-system-diagnostic-text-output); the
-proposed service connection is described in Book IV.
+proposed service connection is described in the [construction reference](docs/hardware.md).
 
 The passive candidate removes the unused fan header. The separate
 `build/exports/BMSX_COMPACT_PASSIVE_SPREADER_KEYBOARD_console.step` combines
@@ -183,31 +183,6 @@ its nominal finished thickness from the KiCad stackup. These commands neither
 run DRC nor qualify the conceptual reservations. With the same intermediates,
 run the CAD script directly with new `--output` and `--report` paths to retain
 the earlier result.
-
-The standard Quarto Book IV profile can also render a browsable HTML reference
-without generating PDF or rerunning hardware checks. From `hardware/`, choose
-a new project-local output directory and a new export directory so that an
-earlier export is not overwritten. Quarto's output directory must remain under
-`docs/`, where it can safely manage its own generated files:
-
-```sh
-test ! -e ../docs/_book-iv-example && \
-  test ! -e build/exports/BMSX_BOOK_IV_HTML_EXAMPLE && \
-  (cd ../docs && quarto render . --profile book-iv --to html \
-    --output-dir _book-iv-example) && \
-  cp -a ../docs/_book-iv-example build/exports/BMSX_BOOK_IV_HTML_EXAMPLE
-```
-
-Keep the relative figure and stylesheet files alongside the HTML. For browser
-search and scripts, serve the directory over loopback HTTP rather than opening
-it through `file://`:
-
-```sh
-python3 -m http.server 8000 --bind 127.0.0.1 --directory build/exports/BMSX_BOOK_IV_HTML_EXAMPLE
-```
-
-Then open `http://127.0.0.1:8000/`. A later render needs a different output
-directory or explicit preservation of the previous export.
 
 If a figure changed, regenerate its specific target in `cad/targets.mk` and
 copy the current source and rendered figure to `build/exports/figures/` before

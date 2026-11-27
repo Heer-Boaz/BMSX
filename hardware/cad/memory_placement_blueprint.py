@@ -152,6 +152,6 @@ else:
     name = 'memory-placement-blueprint'
     coordinates = ''
 svg[-1] = svg[-1].replace('{placement_line_1}', text_lines[0]).replace('{placement_line_2}', text_lines[1]).replace('{placement_line_3}', text_lines[2]).replace('{text_coordinates}', coordinates)
-output=ROOT.parent/f'docs/book4/figures/{name}.svg'
+output=ROOT/f'docs/figures/{name}.svg'
 output.write_text('\n'.join(svg)+'\n')
 print('Checked',len(footprints),'footprints and',len(assembly['physical_parts']),'assembly parts; wrote',output)

@@ -110,128 +110,123 @@ $(PUBLICATION)/cartridge-editions-native.png $(REPORTS)/cartridge-editions-publi
 	EGL_PLATFORM=surfaceless $(CAD) cad/render_cartridge_editions.py
 publication: $(PUBLICATION)/cartridge-editions-native.png
 
-$(PUBLICATION)/cartridge-door-operation.png: ../docs/book4/figures/cartridge-door-operation.svg
+$(PUBLICATION)/cartridge-door-operation.png: docs/figures/cartridge-door-operation.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/cartridge-door-operation.png
 
 # Native raster preview of the authored vector drawing; no CAD regeneration.
-$(PUBLICATION)/core-internal.png: ../docs/book4/figures/core-internal.svg
+$(PUBLICATION)/core-internal.png: docs/figures/core-internal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1520 $< -o $@
 publication: $(PUBLICATION)/core-internal.png
 
-$(PUBLICATION)/gte-datapath.png: ../docs/book4/figures/gte-datapath.svg
+$(PUBLICATION)/gte-datapath.png: docs/figures/gte-datapath.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/gte-datapath.png
 
-$(PUBLICATION)/geo-job-datapath.png: ../docs/book4/figures/geo-job-datapath.svg
+$(PUBLICATION)/geo-job-datapath.png: docs/figures/geo-job-datapath.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/geo-job-datapath.png
 
-$(PUBLICATION)/gpu-raster-datapath.png: ../docs/book4/figures/gpu-raster-datapath.svg
+$(PUBLICATION)/gpu-raster-datapath.png: docs/figures/gpu-raster-datapath.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1700 $< -o $@
 publication: $(PUBLICATION)/gpu-raster-datapath.png
 
-$(PUBLICATION)/imgdec-datapath.png: ../docs/book4/figures/imgdec-datapath.svg
-	@mkdir -p $(@D)
-	rsvg-convert -w 1500 $< -o $@
-publication: $(PUBLICATION)/imgdec-datapath.png
-
-$(PUBLICATION)/apu-signal-path.png: ../docs/book4/figures/apu-signal-path.svg
+$(PUBLICATION)/apu-signal-path.png: docs/figures/apu-signal-path.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1320 $< -o $@
 publication: $(PUBLICATION)/apu-signal-path.png
 
-$(PUBLICATION)/apu-command-path.png: ../docs/book4/figures/apu-command-path.svg
+$(PUBLICATION)/apu-command-path.png: docs/figures/apu-command-path.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/apu-command-path.png
 
-$(PUBLICATION)/video-signal-path.png: ../docs/book4/figures/video-signal-path.svg
+$(PUBLICATION)/video-signal-path.png: docs/figures/video-signal-path.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1320 $< -o $@
 publication: $(PUBLICATION)/video-signal-path.png
 
-$(PUBLICATION)/video-pipeline-proposal.png: ../docs/book4/figures/video-pipeline-proposal.svg
+$(PUBLICATION)/video-pipeline-proposal.png: docs/figures/video-pipeline-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/video-pipeline-proposal.png
 
-$(PUBLICATION)/gfx-drawing-path.png: ../docs/book4/figures/gfx-drawing-path.svg
+$(PUBLICATION)/gfx-drawing-path.png: docs/figures/gfx-drawing-path.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1440 $< -o $@
 publication: $(PUBLICATION)/gfx-drawing-path.png
 
-$(PUBLICATION)/io-rom-datapaths.png: ../docs/book4/figures/io-rom-datapaths.svg
+$(PUBLICATION)/io-rom-datapaths.png: docs/figures/io-rom-datapaths.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1320 $< -o $@
 publication: $(PUBLICATION)/io-rom-datapaths.png
 
-$(PUBLICATION)/supervisor-sources-proposal.png: ../docs/book4/figures/supervisor-sources-proposal.svg
+$(PUBLICATION)/supervisor-sources-proposal.png: docs/figures/supervisor-sources-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/supervisor-sources-proposal.png
 
-$(PUBLICATION)/vblank-publication-proposal.png: ../docs/book4/figures/vblank-publication-proposal.svg
+$(PUBLICATION)/vblank-publication-proposal.png: docs/figures/vblank-publication-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/vblank-publication-proposal.png
 
-$(PUBLICATION)/gfx-input-integration-proposal.png: ../docs/book4/figures/gfx-input-integration-proposal.svg
+$(PUBLICATION)/gfx-input-integration-proposal.png: docs/figures/gfx-input-integration-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/gfx-input-integration-proposal.png
 
-$(PUBLICATION)/memory-datapaths.png: ../docs/book4/figures/memory-datapaths.svg
+$(PUBLICATION)/memory-datapaths.png: docs/figures/memory-datapaths.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1420 $< -o $@
 publication: $(PUBLICATION)/memory-datapaths.png
 
-$(PUBLICATION)/memory-arbitration.png: ../docs/book4/figures/memory-arbitration.svg
+$(PUBLICATION)/memory-arbitration.png: docs/figures/memory-arbitration.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1440 $< -o $@
 publication: $(PUBLICATION)/memory-arbitration.png
 
-$(PUBLICATION)/apu-service-envelope.png: ../docs/book4/figures/apu-service-envelope.svg
+$(PUBLICATION)/apu-service-envelope.png: docs/figures/apu-service-envelope.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1400 $< -o $@
 publication: $(PUBLICATION)/apu-service-envelope.png
 
-$(PUBLICATION)/native-program-store.png: ../docs/book4/figures/native-program-store.svg
+$(PUBLICATION)/native-program-store.png: docs/figures/native-program-store.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1250 $< -o $@
 publication: $(PUBLICATION)/native-program-store.png
 
-$(PUBLICATION)/native-cpu-execution-proposal.png: ../docs/book4/figures/native-cpu-execution-proposal.svg
+$(PUBLICATION)/native-cpu-execution-proposal.png: docs/figures/native-cpu-execution-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/native-cpu-execution-proposal.png
 
-$(PUBLICATION)/runtime-memory-baseline.png: ../docs/book4/figures/runtime-memory-baseline.svg
+$(PUBLICATION)/runtime-memory-baseline.png: docs/figures/runtime-memory-baseline.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/runtime-memory-baseline.png
 
-$(PUBLICATION)/console-connections.png: ../docs/book4/figures/console-connections.svg
+$(PUBLICATION)/console-connections.png: docs/figures/console-connections.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/console-connections.png
 
-$(PUBLICATION)/console-connection-setup.png: ../docs/book4/figures/console-connection-setup.svg
+$(PUBLICATION)/console-connection-setup.png: docs/figures/console-connection-setup.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/console-connection-setup.png
 
-$(PUBLICATION)/console-interior-labeled.png: ../docs/book4/figures/console-interior-labeled.svg ../docs/book4/figures/console-interior-passive-candidate.png
+$(PUBLICATION)/console-interior-labeled.png: docs/figures/console-interior-labeled.svg docs/figures/console-interior-passive-candidate.png
 	@mkdir -p $(@D)
 	rsvg-convert -w 1800 $< -o $@
 publication: $(PUBLICATION)/console-interior-labeled.png
 
-$(PUBLICATION)/console-interior-spreader-labeled.png: ../docs/book4/figures/console-interior-spreader-labeled.svg ../docs/book4/figures/console-interior-passive-spreader.png
+$(PUBLICATION)/console-interior-spreader-labeled.png: docs/figures/console-interior-spreader-labeled.svg docs/figures/console-interior-passive-spreader.png
 	@mkdir -p $(@D)
 	rsvg-convert -w 1800 $< -o $@
 publication: $(PUBLICATION)/console-interior-spreader-labeled.png
@@ -242,52 +237,52 @@ publication: $(PUBLICATION)/console-interior-spreader-labeled.png
 publication-exterior-keyboard-candidate:
 	EGL_PLATFORM=surfaceless $(CAD) cad/render_console.py --view closed-keyboard --publication-dir $(PUBLICATION)
 
-$(PUBLICATION)/mainboard-four-chip-placement.png: ../docs/book4/figures/mainboard-four-chip-placement.svg ../docs/book4/figures/motherboard-passive-candidate-top.png
+$(PUBLICATION)/mainboard-four-chip-placement.png: docs/figures/mainboard-four-chip-placement.svg docs/figures/motherboard-passive-candidate-top.png
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/mainboard-four-chip-placement.png
 
-$(PUBLICATION)/rear-connections-concept.png: ../docs/book4/figures/rear-connections-concept.svg
+$(PUBLICATION)/rear-connections-concept.png: docs/figures/rear-connections-concept.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/rear-connections-concept.png
 
-$(PUBLICATION)/pad-pointer-adapter-proposal.png: ../docs/book4/figures/pad-pointer-adapter-proposal.svg
+$(PUBLICATION)/pad-pointer-adapter-proposal.png: docs/figures/pad-pointer-adapter-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/pad-pointer-adapter-proposal.png
 
-$(PUBLICATION)/cartridge-rom-reference.png: ../docs/book4/figures/cartridge-rom-reference.svg
+$(PUBLICATION)/cartridge-rom-reference.png: docs/figures/cartridge-rom-reference.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/cartridge-rom-reference.png
 
-$(PUBLICATION)/pad-socket-contacts.png: ../docs/book4/figures/pad-socket-contacts.svg
+$(PUBLICATION)/pad-socket-contacts.png: docs/figures/pad-socket-contacts.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1000 $< -o $@
 publication: $(PUBLICATION)/pad-socket-contacts.png
 
-$(PUBLICATION)/keyboard-socket-contacts.png: ../docs/book4/figures/keyboard-socket-contacts.svg
+$(PUBLICATION)/keyboard-socket-contacts.png: docs/figures/keyboard-socket-contacts.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1000 $< -o $@
 publication: $(PUBLICATION)/keyboard-socket-contacts.png
 
-$(PUBLICATION)/reference-gamepad.png: ../docs/book4/figures/reference-gamepad.svg
+$(PUBLICATION)/reference-gamepad.png: docs/figures/reference-gamepad.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/reference-gamepad.png
 
-$(PUBLICATION)/reference-pointer.png: ../docs/book4/figures/reference-pointer.svg
+$(PUBLICATION)/reference-pointer.png: docs/figures/reference-pointer.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1200 $< -o $@
 publication: $(PUBLICATION)/reference-pointer.png
 
-$(PUBLICATION)/apu-channel-placement-proposal.png: ../docs/book4/figures/apu-channel-placement-proposal.svg
+$(PUBLICATION)/apu-channel-placement-proposal.png: docs/figures/apu-channel-placement-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1400 $< -o $@
 publication: $(PUBLICATION)/apu-channel-placement-proposal.png
 
-$(PUBLICATION)/geometry-image-flow.png: ../docs/book4/figures/geometry-image-flow.svg
+$(PUBLICATION)/geometry-image-flow.png: docs/figures/geometry-image-flow.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1500 $< -o $@
 publication: $(PUBLICATION)/geometry-image-flow.png
@@ -320,32 +315,32 @@ $(PUBLICATION)/console-interior-candidate.png $(REPORTS)/console-open-publicatio
 $(PUBLICATION)/console-interior-finned-concept.png $(REPORTS)/console-open-finned-publication.json &: cad/render_console.py cad/rendering.py $(GEOMETRY) design/enclosure_appearance.json design/enclosure_cooling.json design/cooling_presentation.json $(REPORTS)/compact-assembly.json $(REPORTS)/compact-cartridge-flaps.json $(REPORTS)/mainboard.json $(REPORTS)/console-exchange-input-candidate.json
 	EGL_PLATFORM=surfaceless $(CAD) cad/render_console.py --view open-finned --publication-dir $(PUBLICATION)
 
-$(PUBLICATION)/gfx-readback-snapshot.png: ../docs/book4/figures/gfx-readback-snapshot.svg
+$(PUBLICATION)/gfx-readback-snapshot.png: docs/figures/gfx-readback-snapshot.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/gfx-readback-snapshot.png
 
-$(PUBLICATION)/four-chip-system-candidate.png: ../docs/book4/figures/four-chip-system-candidate.svg
+$(PUBLICATION)/four-chip-system-candidate.png: docs/figures/four-chip-system-candidate.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1800 $< -o $@
 publication: $(PUBLICATION)/four-chip-system-candidate.png
 
-$(PUBLICATION)/system-functional-overview.png: ../docs/book4/figures/system-functional-overview.svg
+$(PUBLICATION)/system-functional-overview.png: docs/figures/system-functional-overview.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/system-functional-overview.png
 
-$(PUBLICATION)/core-table-datapath-proposal.png: ../docs/book4/figures/core-table-datapath-proposal.svg
+$(PUBLICATION)/core-table-datapath-proposal.png: docs/figures/core-table-datapath-proposal.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1650 $< -o $@
 publication: $(PUBLICATION)/core-table-datapath-proposal.png
 
-$(PUBLICATION)/memory-placement-blueprint.png: ../docs/book4/figures/memory-placement-blueprint.svg
+$(PUBLICATION)/memory-placement-blueprint.png: docs/figures/memory-placement-blueprint.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/memory-placement-blueprint.png
 
-$(PUBLICATION)/memory-placement-grouped.png: ../docs/book4/figures/memory-placement-grouped.svg
+$(PUBLICATION)/memory-placement-grouped.png: docs/figures/memory-placement-grouped.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1600 $< -o $@
 publication: $(PUBLICATION)/memory-placement-grouped.png
@@ -357,7 +352,7 @@ candidate-console:
 	$(KICAD_PYTHON) tools/mainboard.py --board ecad/mainboard_input_candidate/BMSX.kicad_pcb --output $(REPORTS)/mainboard-input-candidate.json
 	$(CAD) cad/export_console.py --input-candidate
 
-$(PUBLICATION)/pad-plug-concept.png: ../docs/book4/figures/pad-plug-concept.svg
+$(PUBLICATION)/pad-plug-concept.png: docs/figures/pad-plug-concept.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1400 $< -o $@
 publication: $(PUBLICATION)/pad-plug-concept.png
@@ -434,7 +429,7 @@ $(REPORTS)/passive-spreader-candidate.json $(EXPORTS)/BMSX_PASSIVE_SPREADER_CONC
 .PHONY: passive-spreader-candidate
 passive-spreader-candidate: $(REPORTS)/passive-spreader-candidate.json $(EXPORTS)/BMSX_PASSIVE_SPREADER_CONCEPT.step
 
-$(PUBLICATION)/passive-spreader-concept.png: ../docs/book4/figures/passive-spreader-concept.svg
+$(PUBLICATION)/passive-spreader-concept.png: docs/figures/passive-spreader-concept.svg
 	@mkdir -p $(@D)
 	rsvg-convert -w 1400 $< -o $@
 publication: $(PUBLICATION)/passive-spreader-concept.png

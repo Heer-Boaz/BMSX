@@ -41,7 +41,6 @@ def collect(destination, *, delivery=None):
             "build", ".venv", ".ruff_cache", "__pycache__", "*.pyc", "*.kicad_prl"
         ),
     )
-    shutil.copytree(ROOT.parent / "docs/book4", source / "docs/book4")
 
     # These are the actual unchanged runtime owners used by the focused probes,
     # not alternate encodings or stand-in implementations in the hardware tree.

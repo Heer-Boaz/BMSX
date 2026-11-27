@@ -68,7 +68,7 @@ def main():
                 "footprint": str(fp.GetFPID().GetLibItemName()),
                 "contacts": contacts,
             }
-    manual = ROOT.parent / "docs/book4/connectors.md"
+    manual = ROOT / "docs/connectors.md"
     text = manual.read_text()
     table = text[text.index("| SCART contact |") : text.index("{#tbl-scart-contacts}")]
     scart = {}
@@ -569,7 +569,7 @@ Disconnect adapter power before assembly. This schedule does not qualify copper 
             "scope": "J2 inputs and J1 factory tails are assigned by the native board nets. Copper connectivity is not included as physical loom conductors or certified as routed.",
         },
         "counting_scope": "56 board-paired physical conductors plus2 DC inlet leads =58 loom rows. Native SCART J2-to-J1 PCB connectivity adds no phantom loom conductors.",
-        "SCART_contact_owner": "docs/book4/connectors.md#tbl-scart-contacts",
+        "SCART_contact_owner": "hardware/docs/connectors.md#audio-and-video",
         "views": view,
         "continuity_procedure": "With power disconnected and both harness ends isolated, verify each scheduled endpoint and no unintended cross-connections; intentional common returns excepted. Board common grounds cannot establish individual return-wire continuity.",
         "not_proven": [

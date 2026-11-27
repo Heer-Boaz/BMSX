@@ -345,13 +345,13 @@ $(REPORTS)/geo-resources.json: build/tests/geo_resources.cjs
 	$(NODE) $< > $@
 check-resources: $(REPORTS)/geo-resources.json
 
-MANUSCRIPT = ../docs/book4/index.md ../docs/book4/construction.md ../docs/book4/hardware.md ../docs/book4/power.md ../docs/book4/connectors.md ../docs/book4/pads.md ../docs/book4/servicing.md
+MANUSCRIPT = docs/index.md docs/construction.md docs/hardware.md docs/power.md docs/connectors.md docs/pads.md docs/servicing.md
 $(EXPORTS)/BMSX_technical_reference.md: $(MANUSCRIPT)
 	@mkdir -p $(@D)
 	cat $(MANUSCRIPT) > $@
 manuscript: publication $(EXPORTS)/BMSX_technical_reference.md
 	@mkdir -p $(EXPORTS)/figures
-	cp ../docs/book4/figures/* $(EXPORTS)/figures/
+	cp docs/figures/* $(EXPORTS)/figures/
 	cp build/publication/*.png $(EXPORTS)/figures/
 
 format:
@@ -1501,7 +1501,7 @@ check-apu-physical: $(REPORTS)/apu-physical.json $(EXPORTS)/APU_physical_decoder
 
 # High-level service model and native drawing only; no RTL/CAD batch is implied.
 .PHONY: apu-blueprint
-$(EXPORTS)/figures/APU_execution_organization.svg: ../docs/book4/figures/apu-execution-organization.svg
+$(EXPORTS)/figures/APU_execution_organization.svg: docs/figures/apu-execution-organization.svg
 	@mkdir -p $(@D)
 	cp $< $@
 $(EXPORTS)/figures/APU_execution_organization.png: $(EXPORTS)/figures/APU_execution_organization.svg
@@ -1510,20 +1510,20 @@ apu-blueprint: $(REPORTS)/apu-physical.json $(EXPORTS)/APU_system_budget.csv $(E
 
 # Electrical assembly and supply inventory; no ASIC simulation or CAD rebuild.
 .PHONY: board-integration
-$(REPORTS)/interconnect.json $(EXPORTS)/BMSX_wiring_schedule.csv $(EXPORTS)/BMSX_harness_parts.csv $(EXPORTS)/BMSX_JST_pad_nominal_fit.csv $(EXPORTS)/BMSX_internal_harnesses.svg $(EXPORTS)/BMSX_internal_harnesses.png $(EXPORTS)/BMSX_DC_wire_routes.csv $(EXPORTS)/BMSX_SCART_factory_tails.csv &: tools/interconnect.py $(MAINBOARD).kicad_pcb $(FRONT).kicad_pcb $(KEYBOARD).kicad_pcb $(AV).kicad_pcb $(SCART).kicad_pcb ecad/scart/board.json models/scart/K-SCART-021.json design/enclosure_rear_io.json design/enclosure_front_io.json design/enclosure_controls.json models/front/manifest.json models/harness/parts.json models/rear/mating.json ../docs/book4/connectors.md
+$(REPORTS)/interconnect.json $(EXPORTS)/BMSX_wiring_schedule.csv $(EXPORTS)/BMSX_harness_parts.csv $(EXPORTS)/BMSX_JST_pad_nominal_fit.csv $(EXPORTS)/BMSX_internal_harnesses.svg $(EXPORTS)/BMSX_internal_harnesses.png $(EXPORTS)/BMSX_DC_wire_routes.csv $(EXPORTS)/BMSX_SCART_factory_tails.csv &: tools/interconnect.py $(MAINBOARD).kicad_pcb $(FRONT).kicad_pcb $(KEYBOARD).kicad_pcb $(AV).kicad_pcb $(SCART).kicad_pcb ecad/scart/board.json models/scart/K-SCART-021.json design/enclosure_rear_io.json design/enclosure_front_io.json design/enclosure_controls.json models/front/manifest.json models/harness/parts.json models/rear/mating.json docs/connectors.md
 	$(KICAD_PYTHON) tools/interconnect.py
 $(REPORTS)/power-budget.json $(EXPORTS)/Power_rail_capacitance.csv $(EXPORTS)/Power_load_envelope.csv $(EXPORTS)/Power_transient_sensitivity.csv $(EXPORTS)/Power_brownout_sensitivity.csv $(EXPORTS)/Power_protection_thresholds.csv &: tools/power_budget.py $(EXPORTS)/BMSX_netlist.xml $(EXPORTS)/BMSX_components.csv $(MAINBOARD).kicad_pcb
 	$(PYTHON) tools/power_budget.py
 board-integration: $(REPORTS)/interconnect.json $(EXPORTS)/BMSX_wiring_schedule.csv $(EXPORTS)/BMSX_harness_parts.csv $(EXPORTS)/BMSX_JST_pad_nominal_fit.csv $(EXPORTS)/BMSX_internal_harnesses.svg $(EXPORTS)/BMSX_internal_harnesses.png $(REPORTS)/power-budget.json $(EXPORTS)/Power_rail_capacitance.csv $(EXPORTS)/Power_load_envelope.csv $(EXPORTS)/Power_transient_sensitivity.csv $(EXPORTS)/Power_brownout_sensitivity.csv $(EXPORTS)/figures/scart-assembly-datums.svg $(EXPORTS)/figures/scart-assembly-datums.png
 board-integration: $(EXPORTS)/BMSX_DC_wire_routes.csv $(EXPORTS)/BMSX_SCART_factory_tails.csv $(EXPORTS)/Power_protection_thresholds.csv $(EXPORTS)/figures/dc-harness-routing.svg $(EXPORTS)/figures/dc-harness-routing.png
 
-$(EXPORTS)/figures/dc-harness-routing.svg: ../docs/book4/figures/dc-harness-routing.svg
+$(EXPORTS)/figures/dc-harness-routing.svg: docs/figures/dc-harness-routing.svg
 	@mkdir -p $(@D)
 	cp $< $@
 $(EXPORTS)/figures/dc-harness-routing.png: $(EXPORTS)/figures/dc-harness-routing.svg
 	rsvg-convert -o $@ $<
 
-$(EXPORTS)/figures/scart-assembly-datums.svg: ../docs/book4/figures/scart-assembly-datums.svg
+$(EXPORTS)/figures/scart-assembly-datums.svg: docs/figures/scart-assembly-datums.svg
 	@mkdir -p $(@D)
 	cp $< $@
 $(EXPORTS)/figures/scart-assembly-datums.png: $(EXPORTS)/figures/scart-assembly-datums.svg
@@ -2366,12 +2366,12 @@ $(REPORTS)/core-binary64-muldiv-fast-rtl.txt: build/tests/core_binary64_service_
 	$(VVP) $< +VECTORS=build/tests/core-binary64-muldiv-vectors.txt > $@ || { cat $@; exit 1; }
 check-core-binary64: $(REPORTS)/core-binary64-muldiv-cpp.txt $(REPORTS)/core-binary64-muldiv-rtl.txt $(REPORTS)/core-binary64-muldiv-fast-rtl.txt
 
-$(EXPORTS)/figures/core-values-architecture.svg: ../docs/book4/figures/core-values-architecture.svg
+$(EXPORTS)/figures/core-values-architecture.svg: docs/figures/core-values-architecture.svg
 	@mkdir -p $(@D)
 	cp $< $@
 $(EXPORTS)/figures/core-values-architecture.png: $(EXPORTS)/figures/core-values-architecture.svg
 	rsvg-convert -w 1320 -o $@ $<
-$(EXPORTS)/figures/core-private-memory.svg: ../docs/book4/figures/core-private-memory.svg
+$(EXPORTS)/figures/core-private-memory.svg: docs/figures/core-private-memory.svg
 	@mkdir -p $(@D)
 	cp $< $@
 $(EXPORTS)/figures/core-private-memory.png: $(EXPORTS)/figures/core-private-memory.svg
