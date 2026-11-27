@@ -340,8 +340,11 @@ export type Blua32ExecutionImage = {
 	heapServiceFunctions: Uint32Array | null;
 	constTags: Uint8Array;
 	constWords: Uint32Array;
+	constantRecordBytes: Uint8Array | null;
+	constantRecordOffset: number;
+	readonly constantStringSlots: Uint32Array;
 	// Derived from the String identities stored in the image bindings.
-	readonly constantStringRoots: readonly StringId[];
+	readonly constantStringRoots: StringId[];
 	imageBindingBase: number;
 	imageBindingBytes: number;
 	globalNameCount: number;

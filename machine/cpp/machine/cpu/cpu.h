@@ -424,7 +424,8 @@ private:
 	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
-	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
+	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
+	void bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
 	void releaseImageData(Blua32ExecutionImage& image);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
 	enum class ExecutionImageUpdate { Install, Replace };

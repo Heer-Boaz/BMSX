@@ -238,7 +238,7 @@ void CPU::reset() {
 	collectHeap();
 }
 
-void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring) {
+void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records) {
 	auto& storage = image.decodedConstants;
 	ValueSpan constPool(storage.words(), storage.tags(), storage.capacity());
 	const auto executionDomainId = image.executionDomainId;
@@ -269,24 +269,32 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 				constPool.set(index, valueBuiltinFunction(static_cast<BuiltinFunctionId>(id)));
 				break;
 			}
-			case Blua32ConstantTag::String: {
-				StringId id;
-				if (restoring) {
-					id = m_memory.readRamRecordWord(stringBinding);
-				} else {
-					id = m_stringPool.resolveImageRecord(executionDomainId, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-					m_memory.writeRamRecordWord(stringBinding, id);
-				}
-				stringBinding += sizeof(u32);
-				constPool.set(index, valueString(id));
-				if (isRamStringId(id)) image.constantStringRoots.push_back(id);
+			case Blua32ConstantTag::String:
+				storage.tags()[index] = static_cast<u8>(ValueTag::String);
+				image.constantStringSlots.push_back(static_cast<u32>(index));
 				break;
-			}
 			default:
 				throw BMSX_RUNTIME_ERROR("BLua32 constant tag is invalid.");
 		}
 	}
-	image.constPool = constPool;
+}
+
+void CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring) {
+	auto& storage = image.decodedConstants;
+	for (const u32 index : image.constantStringSlots) {
+		StringId id;
+		if (restoring) {
+			id = m_memory.readRamRecordWord(stringBinding);
+		} else {
+			const u8* record = records.data() + index * BLUA32_CONSTANT_RECORD_SIZE;
+			id = m_stringPool.resolveImageRecord(image.executionDomainId, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+			m_memory.writeRamRecordWord(stringBinding, id);
+		}
+		stringBinding += sizeof(u32);
+		storage.words()[index] = id;
+		if (isRamStringId(id)) image.constantStringRoots.push_back(id);
+	}
+	image.constPool = ConstValueSpan(storage.words(), storage.tags(), storage.capacity());
 }
 
 void CPU::releaseImageData(Blua32ExecutionImage& image) {
@@ -346,10 +354,16 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	if (constantCount > CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE)
 		throw BMSX_RUNTIME_ERROR("BLua32 constant table exceeds the ROM address window.");
 	Span<const u8> records;
-	u32 stringCount = 0;
-	if (constantCount != 0u) {
+	if (constantCount != 0u)
 		m_executionAddressSpace.bindReadOnlyView(executionDomainId, constantTableAddress,
 			constantCount * BLUA32_CONSTANT_RECORD_SIZE, records);
+	auto* previous = m_executionImagesByDomain[static_cast<size_t>(executionDomainId + 1)].get();
+	const bool reuseConstants = restoring && constantCount != 0u && previous
+		&& previous->constantSource.data() == records.data() && previous->constantSource.size() == records.size();
+	u32 stringCount = 0;
+	if (reuseConstants) {
+		stringCount = static_cast<u32>(previous->constantStringSlots.size());
+	} else {
 		for (u32 i = 0; i < constantCount; ++i)
 			stringCount += readLE32(records.data() + i * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET)
 				== static_cast<u32>(Blua32ConstantTag::String);
@@ -414,8 +428,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 				m_systemGlobalBank, base + 4u * globalNameCount);
 		}
 	}
-	image->decodedConstants.resize(constantCount);
-	decodeConstantPool(*image, records, image->imageBindingBase + static_cast<u32>(nameCount) * sizeof(u32), restoring);
+	image->constantSource = records;
+	if (reuseConstants) {
+		image->decodedConstants = std::move(previous->decodedConstants);
+		image->constantStringSlots = std::move(previous->constantStringSlots);
+		image->constantStringRoots = std::move(previous->constantStringRoots);
+		image->constantStringRoots.clear();
+	} else {
+		image->decodedConstants.resize(constantCount);
+		image->constantStringSlots.reserve(stringCount);
+		decodeConstantPool(*image, records);
+	}
+	bindConstantStrings(*image, records, image->imageBindingBase + static_cast<u32>(nameCount) * sizeof(u32), restoring);
 	return image;
 }
 
@@ -719,8 +743,9 @@ void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
 void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 	const u32 address = static_cast<u32>(firstKey);
 	const u32 end = static_cast<u32>(endKey);
-	if ((address == SYSTEM_ROM_BASE && end == SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
-		|| (address == CART_ROM_BASE && end == CART_ROM_END)) {
+	const bool romReplaced = (address == SYSTEM_ROM_BASE && end == SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+		|| (address == CART_ROM_BASE && end == CART_ROM_END);
+	if (romReplaced) {
 		const u32 index = mappedPageDomainIndex(firstKey);
 		const auto& resident = m_executionImagesByDomain[index];
 		if (resident && !resident->romFunctions.mappedCode)
@@ -746,6 +771,9 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 			|| (address >= CART_ROM_BASE && address < CART_ROM_END)) {
 			image->romCallBindings.fill({});
 		}
+		// Literal records can come from a different ROM than the image.
+		// Remount invalidates the reuse key, not the latched values.
+		if (romReplaced) image->constantSource = {};
 		const auto rebindPages = [&](DecodedPageDirectory& directory) {
 			for (const auto& entry : directory.entries()) {
 				auto& [key, page] = *entry;
@@ -1090,15 +1118,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 		}
 	});
-	for (auto& image : m_executionImagesByDomain) {
-		image.reset();
-	}
 	m_systemGlobalBank.bind(state.systemGlobals);
 	m_globalBank.bind(state.globals);
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
 			m_executionImagesByDomain[index] = activateExecutionImage(*boot, state.imageBindingBases[index]);
+		} else {
+			m_executionImagesByDomain[index].reset();
 		}
 	}
 	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();

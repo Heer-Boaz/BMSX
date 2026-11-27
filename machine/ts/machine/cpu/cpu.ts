@@ -964,8 +964,9 @@ export class CPU implements MappedPageInvalidator {
 		bytes: Uint8Array, byteOffset: number,
 		constTags: Uint8Array, constWords: Uint32Array,
 		stringBinding: number, restoring: boolean,
-		constantStringRoots: StringId[],
+		constantStringSlots: Uint32Array, constantStringRoots: StringId[],
 	): void {
+		let stringIndex = 0;
 		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
@@ -1006,6 +1007,7 @@ export class CPU implements MappedPageInvalidator {
 						this.memory.writeRamRecordWord(stringBinding, id);
 					}
 					stringBinding += 4;
+					constantStringSlots[stringIndex++] = index;
 					constTags[index] = ValueTag.String;
 					constWords[index] = id;
 					if (isRamStringId(id)) constantStringRoots.push(id);
@@ -1037,7 +1039,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private readExecutionImageHeader(executionBoot: Blua32ExecutionBoot) {
+	private readExecutionImageHeader(executionBoot: Blua32ExecutionBoot, previous: Blua32ExecutionImage | null = null) {
 		this.executionAddressSpace.bindReadOnlyView(
 			executionBoot.executionDomainId,
 			executionBoot.imageAddress,
@@ -1055,12 +1057,19 @@ export class CPU implements MappedPageInvalidator {
 			throw new Error('BLua32 constant table exceeds the ROM address window.');
 		}
 		const constantTableAddress = readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
-		let constantBytes = bytes, constantOffset = 0, stringCount = 0;
+		let constantBytes = bytes, constantOffset = 0;
 		if (constantCount !== 0) {
 			this.executionAddressSpace.bindReadOnlyView(executionBoot.executionDomainId, constantTableAddress,
 				constantCount * BLUA32_CONSTANT_RECORD_SIZE, this.executionTableView);
 			constantBytes = this.executionTableView.bytes;
 			constantOffset = this.executionTableView.byteOffset;
+		}
+		const reused = previous !== null && previous.constantRecordBytes === constantBytes
+			&& previous.constantRecordOffset === constantOffset && previous.constTags.length === constantCount ? previous : null;
+		let stringCount = 0;
+		if (reused !== null) {
+			stringCount = reused.constantStringSlots.length;
+		} else {
 			for (let i = 0; i < constantCount; ++i) {
 				const tag = readLE32(constantBytes, constantOffset + i * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET);
 				stringCount += +(tag === Blua32ConstantTag.String);
@@ -1105,7 +1114,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		return {
-			constantBytes, constantOffset, constantCount, nameBytes, imageBindingBytes,
+			constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused,
 			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
 			globalNameCount,
 			systemGlobalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
@@ -1128,7 +1137,7 @@ export class CPU implements MappedPageInvalidator {
 		restoredBindingBase: number | null = null,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
-		const { constantBytes, constantOffset, constantCount, nameBytes, imageBindingBytes, globalNameTableAddress, globalNameCount,
+		const { constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused, globalNameTableAddress, globalNameCount,
 			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
 		const restoring = restoredBindingBase !== null;
 		const imageBindingBase = restoring ? restoredBindingBase : imageBindingBytes === 0 ? 0
@@ -1138,12 +1147,27 @@ export class CPU implements MappedPageInvalidator {
 			this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 				this.systemGlobalBank, imageBindingBase + 4 * globalNameCount);
 		}
-		const buffer = new ArrayBuffer(constantCount * 5);
-		const constWords = new Uint32Array(buffer, 0, constantCount);
-		const constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
-		const constantStringRoots: StringId[] = [];
-		this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
-			imageBindingBase + nameBytes, restoring, constantStringRoots);
+		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, constantStringRoots: StringId[];
+		const stringBinding = imageBindingBase + nameBytes;
+		if (reused === null) {
+			const buffer = new ArrayBuffer(constantCount * 5);
+			constWords = new Uint32Array(buffer, 0, constantCount);
+			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
+			constantStringSlots = new Uint32Array(stringCount);
+			constantStringRoots = [];
+			this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
+				stringBinding, restoring, constantStringSlots, constantStringRoots);
+		} else {
+			// Only the String bindings belong to the restored guest state.
+			// Literal words and tags still belong to the mounted ROM.
+			({ constWords, constTags, constantStringSlots, constantStringRoots } = reused);
+			constantStringRoots.length = 0;
+			for (let i = 0; i < constantStringSlots.length; ++i) {
+				const id = this.memory.readRamRecordWord(stringBinding + 4 * i);
+				constWords[constantStringSlots[i]] = id;
+				if (isRamStringId(id)) constantStringRoots.push(id);
+			}
+		}
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
@@ -1151,6 +1175,9 @@ export class CPU implements MappedPageInvalidator {
 			heapServiceFunctions: header.heapServiceFunctions,
 			constTags,
 			constWords,
+			constantRecordBytes: constantBytes,
+			constantRecordOffset: constantOffset,
+			constantStringSlots,
 			constantStringRoots,
 			imageBindingBase, imageBindingBytes, globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
@@ -1465,8 +1492,9 @@ export class CPU implements MappedPageInvalidator {
 
 	public invalidateMappedRange(firstKey: number, endKey: number): void {
 		const address = firstKey >>> 0, end = endKey >>> 0;
-		if ((address === SYSTEM_ROM_BASE && end === SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
-			|| (address === CART_ROM_BASE && end === CART_ROM_END)) {
+		const romReplaced = (address === SYSTEM_ROM_BASE && end === SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+			|| (address === CART_ROM_BASE && end === CART_ROM_END);
+		if (romReplaced) {
 			const resident = this.executionImagesByDomain[mappedPageDomainIndex(firstKey)];
 			if (resident !== null && !resident.romFunctions.mappedCode)
 				this.unpublishedRomMask |= executionDomainBit(resident.executionDomainId);
@@ -1479,6 +1507,8 @@ export class CPU implements MappedPageInvalidator {
 			if (image === null) {
 				continue;
 			}
+			// A constant table can be in a different physical ROM from its header.
+			if (romReplaced) image.constantRecordBytes = null;
 			if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE || (address >= CART_ROM_BASE && address < CART_ROM_END))
 				image.romCallBindings.invalidate();
 			this.rebindDecodedRange(image.decodedPages, invalidationStart, endKey);
@@ -5135,14 +5165,14 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.memory.clearMappedPageWriteWatches();
 		this.reindexCanonicalClosures();
-		this.executionImagesByDomain.fill(null);
 		this.systemGlobalBank.bind(state.systemGlobals);
 		this.globalBank.bind(state.globals);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
-				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.imageBindingBases[index]);
-			}
+				const header = this.readExecutionImageHeader(boot, this.executionImagesByDomain[index]);
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, header, state.imageBindingBases[index]);
+			} else this.executionImagesByDomain[index] = null;
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
 		this.bindPhysicalFrames(this.heapService.thread);

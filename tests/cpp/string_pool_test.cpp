@@ -484,6 +484,10 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	const auto bios = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	constexpr std::string_view text = "RAM spelling of a cart constant";
 	image.constants = {std::string(text), std::string("cart only"), i32{42}};
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions[0].wordCount = 2;
 	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, image);
 	Memory memory(MemoryInit{bios.bytes, test::cartridgeSlots(cart.bytes)}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
@@ -492,6 +496,8 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	cpu.reset();
 
 	auto& pool = cpu.stringPool();
+	const auto beforeCartCpu = cpu.captureRuntimeState();
+	const auto beforeCartMemory = memory.captureSaveState();
 	const StringId original = pool.intern(text);
 	cpu.writeFrameExecution(0, 0, cart.functionAddresses[0], cart.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, bios.functionAddresses[0], bios.textAddress);
@@ -501,9 +507,25 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	cpu.collectHeap();
 	require(pool.find(text) == original, "an inactive resident image retains its original RAM String");
 
+	// Activate the same mounted ROM with a different canonical RAM identity.
+	// A restore must not reuse that String payload just because the literal
+	// cache belongs to the same physical bytes.
+	memory.restoreSaveState(beforeCartMemory);
+	cpu.restoreRuntimeState(beforeCartCpu);
+	pool.intern("allocate another String before the branch binds the cart literal");
+	const StringId different = pool.intern(text);
+	require(different != original, "the two branches bind different RAM records");
+	cpu.writeFrameExecution(0, 0, cart.functionAddresses[0], cart.textAddress);
+	require(cpu.activeThread()->currentFrame->executionImage->constPool.get(0) == valueString(different), "second activation binds its live String");
+
 	memory.restoreSaveState(savedMemory);
 	cpu.restoreRuntimeState(savedCpu);
 	require(memory.captureSaveState().ram == savedMemory.ram, "restoring the image does not mark or intern its RAM String");
+	cpu.writeFrameExecution(0, 0, cart.functionAddresses[0], cart.textAddress);
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readFrameRegister(0, 0) == valueString(original), "LOADK uses the restored String binding and not the later activation");
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, bios.functionAddresses[0], bios.textAddress);
+	cpu.rootThread()->currentFrame->registers.set(0, valueNil());
 	cpu.collectHeap();
 	require(pool.find(text) == original, "restored image retains the same RAM String through a fresh epoch");
 }

@@ -180,7 +180,11 @@ struct Blua32ExecutionImage {
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
 	HeapServiceFunctions heapServiceFunctions{};
+	// Borrowed identity of the installed ROM extent. A remount drops the
+	// key without changing the values of the still-active image.
+	Span<const u8> constantSource;
 	ValueStorage decodedConstants;
+	std::vector<u32> constantStringSlots;
 	ConstValueSpan constPool;
 	// Derived from the String identities stored in the image bindings. Only a
 	// String resolved to a RAM record is an edge to the language heap.

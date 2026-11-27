@@ -16,7 +16,7 @@ import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString, valueThread } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -581,6 +581,85 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 		cpu.reset(); cpu.reset();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 	}
+});
+
+test('reused ROM literal views recover the saved RAM String binding rather than the current branch', () => {
+	const literal = 'canonical literal across divergent RAM histories';
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+	const pair = linkRawTestBlua32Pair(source(), {
+		text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [literal],
+	});
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
+		cpu.reset();
+		const beforeCartridge = captureCpuCheckpoint(cpu);
+		const activate = () => {
+			// There are no cartridge names or other references to this RAM
+			// String. The ROM literal is its only root after activation.
+			const id = cpu.stringPool.intern(literal);
+			assert.ok(id >= RAM_BASE);
+			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
+			assert.deepEqual(cpu['executionImageForDomain'](0)!.constantStringRoots, [id]);
+			return id;
+		};
+		const first = activate();
+		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		assert.equal(cpu.gc.phase(), GcPhase.Mark);
+		const original = captureCpuCheckpoint(cpu);
+		restoreCpuCheckpoint(cpu, beforeCartridge);
+		assert.equal(cpu.isExecutionDomainResident(0), false);
+		cpu.stringPool.intern('C' + literal.slice(1)); // Consume the same-sized record on the other branch.
+		const second = activate();
+		assert.notEqual(second, first);
+		cpu.runUntilDepth(0, 4096);
+		assert.equal(cpu.readFrameRegister(0, 0), valueString(second));
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
+		const words = cpu['executionImageForDomain'](0)!.constWords;
+
+		memory.restoreSaveState(original.memory);
+		cpu.restoreRuntimeState(original.cpu);
+		assert.deepEqual(memory.ramData(), original.memory.ram);
+		const restored = cpu['executionImageForDomain'](0)!;
+		assert.equal(restored.constWords, words, 'same mounted literals reuse their decoded backing');
+		assert.deepEqual(restored.constantStringRoots, [first]);
+		cpu.collectTrackedHeapBytes();
+		assert.equal(cpu.stringPool.find(literal), first);
+		cpu.runUntilDepth(0, 4096);
+		assert.equal(cpu.readFrameRegister(0, 0), valueString(first));
+	}
+});
+
+test('remount invalidates a literal table in another image even when the backing array is reused', () => {
+	const system = { ...source(), constants: [integerConstant(21)], globalNames: [], systemGlobalNames: [] };
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.RET, 0, 2, 0);
+	const pair = linkRawTestBlua32Pair(system, {
+		text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [integerConstant(41)],
+	});
+	const table = pair.systemImage.header.constantTableAddress;
+	writeLE32(pair.cartRomBytes, pair.cartImage.address - CART_ROM_BASE + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, table);
+	const boot = () => {
+		const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+		cpu.reset();
+		cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
+		return cpu;
+	};
+	const cpu = boot(), previous = cpu['executionImageForDomain'](0)!.constWords;
+	assert.equal(previous[0], 21);
+	writeLE32(pair.systemRomBytes, table + BLUA32_CONSTANT_PAYLOAD_OFFSET, 73);
+	cpu.memory.installSystemRom(pair.systemRomBytes);
+	assert.equal(previous[0], 21, 'a media install does not rewrite already bound values');
+	const replacement = captureCpuCheckpoint(boot());
+	restoreCpuCheckpoint(cpu, replacement);
+	runGuestToHalt(cpu, 256);
+	const results: Value[] = [];
+	cpu.readCompletionValues(results);
+	assert.deepEqual(results, [valueInteger(73)]);
 });
 
 test('growing a fully traced strong table publishes just the inserted edges during the second pass', () => {

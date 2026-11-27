@@ -553,6 +553,18 @@ void romLiteralsDoNotUseGuestRam() {
 		}
 		cpu.reset(); cpu.reset();
 		require(cpu.heapAllocator().occupiedBytes() == occupied, "reset still reserves no constant storage");
+
+		// Even re-installing the exact same buffer retires its decoded key.
+		auto* media = machine.rom.bytes.data();
+		const u32 recordTable = readLE32(media + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
+		writeLE32(media + recordTable + BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET, 41u);
+		machine.memory.installSystemRom(machine.rom.bytes);
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueInteger(24), "the active image still has its latched values");
+		machine.memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(state);
+		cpu.runUntilDepth(0, 1000);
+		require(cpu.readFrameRegister(0, 1) == valueInteger(82), "restore decodes the newly mounted ROM");
 	}
 }
 
