@@ -1,5 +1,5 @@
 import { readLE32 } from '../../../machine/ts/common/endian';
-import { BIOS_FUNCTION_MODULE_PATHS } from '../../../machine/ts/spec/bmsx/bios';
+import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
@@ -33,9 +33,9 @@ export function readBlua32BiosImports(rom: Uint8Array): Blua32BiosImports {
 	const bssByteCount = readLE32(rom, imageOffset + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET);
 	return {
 		cartridgeStaticRamBase: bssAddress + bssByteCount,
-		functions: BIOS_FUNCTION_MODULE_PATHS.map((path, slot) => ({
+		functions: BIOS_FUNCTION_SLOTS.map(({ path, exportPathKey }, slot) => ({
 			path,
-			exportPathKey: '',
+			exportPathKey,
 			functionAddress: functionTableAddress + slot * BLUA32_FUNCTION_RECORD_SIZE,
 		})),
 	};

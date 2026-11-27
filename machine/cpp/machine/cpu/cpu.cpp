@@ -2468,7 +2468,6 @@ dispatch_native_block: {
 				m_diagnosticExecutionProfile.nativeOriginCycles += static_cast<i64>(nativeStartBudget) - instructionBudgetRemaining;
 				const auto& counts = nativeState.state.diagnosticOpcodes;
 				auto& total = m_diagnosticExecutionProfile.nativeOpcodes;
-				total.biosCall += counts.biosCall;
 				total.call += counts.call;
 				total.setfield += counts.setfield;
 				total.concat += counts.concat;

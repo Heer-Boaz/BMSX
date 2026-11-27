@@ -11,9 +11,11 @@ import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
-import { createTestBlua32PairCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createTestBlua32PairCpu } from '../helpers/blua32';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
+import { buildPublicBiosFixture } from '../helpers/bios_linkage';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { afterTest } from '../helpers/test_cleanup';
 
 for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
@@ -30,15 +32,16 @@ for i = 1, 100 do
 end
 return count`);
 	const inputs = await prepareRomInputs([root], [entry], { kind: 'filesystem' });
-	const system = linkTestSystemBlua32(compileHeapServiceSystem(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel));
+	const { rom: systemRom } = buildPublicBiosFixture(`module<entry>
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel);
 	const builds = [];
 	for (const debug of [false, true]) {
 		await compileCart({ inputs, sourceFiles: [entry], librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [],
 			recipe: { domain: 'cart', debug, optLevel, projectRoot: root, toolchain: 'execution-equivalence' },
-		}, join(root, 'out'), 'fixture', system.romBytes, () => {});
+		}, join(root, 'out'), 'fixture', systemRom, () => {});
 		const rom = new Uint8Array(await readFile(join(root, 'out', `fixture${debug ? '.debug' : ''}.rom`)));
 		const image = decodeBlua32RomImage(rom, CART_ROM_BASE)!;
-		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: system.romBytes, cartRomBytes: rom });
+		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: systemRom, cartRomBytes: rom });
 		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5050)]);
 		assert.ok(!image.constants.includes('erased-payload'));
@@ -56,14 +59,19 @@ local function emit(n)
 end
 for i = 1, 10 do emit(i) end
 return value`;
-	const assets = [{ resid: 'entry', type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: 'entry.lua' }];
-	const biosImports = linkTestSystemBlua32(compileLuaSource('return 0')).biosImports;
+	const entry = { resid: 'entry', type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: 'entry.lua' };
+	const target = domain === 'system'
+		? { domain, assets: [entry, ...loadHeapServiceTestModules().map(({ path, source }) => ({
+			resid: path, type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: `${path}.lua`,
+		}))], biosExports: [], preloadModules: HEAP_SERVICE_MODULES, includeSources: true }
+		: { domain, assets: [entry], biosImports: buildPublicBiosFixture('module<entry>\nreturn 0', optLevel).linked.biosImports, imageOffset: 0x100 };
+	const { assets, ...linkOptions } = target;
 	const images = [];
 	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
 		const options = { generatedLuaModules: [], ramByteCount: 0x00400000, optLevel, includeDiagnostics, includeSymbols };
-		const image = domain === 'system'
-			? buildRomBlua32Tail(assets, { ...options, domain: 'system', biosExports: [], includeSources: true })
-			: buildRomBlua32Tail(assets, { ...options, domain: 'cart', biosImports, imageOffset: 0x100 });
+		const image = linkOptions.domain === 'system'
+			? buildRomBlua32Tail(assets, { ...options, ...linkOptions })
+			: buildRomBlua32Tail(assets, { ...options, ...linkOptions });
 		assert.equal(image.diagnostics !== null, includeDiagnostics);
 		assert.equal(image.layout.entries.some(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID), includeSymbols);
 		images.push(image);

@@ -66,7 +66,7 @@ export async function buildScenarioMediaFixture(
 		`${SYSTEM_PROJECT_ROOT}/entry.lua`)];
 	// The executable fixture uses the real heap firmware. The public utility
 	// slots below are unrelated to the tested runtime scenario.
-	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.map(exported => [exported.path, {
+	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.filter(exported => !exported.fixedStack).map(exported => [exported.path, {
 		path: exported.path,
 		source: 'module<const>\nreturn function(value) return value end',
 	}]));

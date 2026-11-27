@@ -262,12 +262,9 @@ DISPATCH_LABEL(SETT) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(BIOSCALL) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	++m_diagnosticExecutionProfile.interpreterOpcodes.biosCall;
-#endif
+DISPATCH_LABEL(RESERVED_10) {
 	PUBLISH_SCALAR_FRONTIER();
-	enterBiosCall(FRAME, decoded->a, static_cast<u32>(decoded->b), decoded->c);
+	enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 	DISPATCH_CONTINUE();
 }
 

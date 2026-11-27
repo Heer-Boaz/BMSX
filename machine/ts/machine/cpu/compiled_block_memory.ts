@@ -1,6 +1,6 @@
 import { IO_SLOT_COUNT } from '../../spec/bmsx/io';
 import { CART_ROM_BASE, CART_ROM_SIZE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind, type ScalarMemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { OpCode } from '../../spec/blua32/opcode';
 import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 import { ValueTag } from './value';
@@ -34,7 +34,7 @@ function emitRomStorageRead(storage: string, read: string, width: number, exit: 
 export function emitMemoryAccess(page: DecodedInstructionPage, word: number, address: string, exit: string,
 	numericFault: string, memory: Memory, registers: JavaScriptRegisterCache): string {
 	const load = page.ops[word] === OpCode.LOAD_MEM || page.ops[word] === OpCode.LOAD_MEM_D;
-	const kind = page.c[word] as MemoryAccessKind;
+	const kind = page.c[word] as ScalarMemoryAccessKind;
 	const width = widths[kind], a = page.a[word];
 	const endian = width === 1 ? '' : ',true';
 	const alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind];

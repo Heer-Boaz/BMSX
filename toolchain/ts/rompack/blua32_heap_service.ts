@@ -1,5 +1,4 @@
 import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../../machine/ts/spec/blua32/image_format';
-import { BIOS_CALL_ARITY, BIOS_CALL_CONTEXT_WORDS, BiosCall } from '../../../machine/ts/spec/bmsx/bios';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET,
@@ -26,10 +25,9 @@ const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
 const FULL_COLLECTION_MODULE = 'kernel/gc_full';
 const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
 const THREAD_CREATE_MODULE = 'kernel/thread_create';
-const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE, ...SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path),
+	ALLOCATE_RECORD_MODULE, ...SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path),
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -71,10 +69,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.CreateCoroutine]: ['create_coroutine', 3, THREAD_CREATE_MODULE],
 };
 
-const guestCalls: Record<Exclude<BiosCall, BiosCall.Count>, readonly [string, string]> = {
-	[BiosCall.CreateTable]: ['create_table', BIOS_CREATE_TABLE_MODULE],
-};
-
 /** Bind the CPU-only roster by exact module symbols after relocation. */
 export function linkBlua32HeapService(
 	image: Blua32ImageLayout,
@@ -84,14 +78,14 @@ export function linkBlua32HeapService(
 	constValueRelocs: readonly ProgramConstValueReloc[],
 	publicFixedRoots: readonly number[],
 ): void {
-	const residentRoots = [...publicFixedRoots];
+	const residentRoots = new Set(publicFixedRoots);
 	for (const { path, exportPathKey, numParams } of SYSTEM_RESIDENT_EXPORTS) {
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, exportPathKey));
 		if (address === undefined) throw new Error(`Resident export '${path}:${exportPathKey}' is not a linked static function.`);
 		const index = blua32FunctionIndexAtAddress(image, address);
 		if (image.functions[index].numParams !== numParams)
 			throw new Error(`Resident export '${path}:${exportPathKey}' must take ${numParams} arguments.`);
-		residentRoots.push(index);
+		residentRoots.add(index);
 	}
 	const localFunctions = new Set(residentRoots);
 	for (const { path, exportPathKey } of moduleExports) {
@@ -102,9 +96,7 @@ export function linkBlua32HeapService(
 
 	const roots: number[] = [];
 	for (let op = 0; op < HEAP_SERVICE_ENTRY_COUNT; ++op) {
-		const selector = op - HeapServiceOperation.Count;
-		const [symbol, params, path = HEAP_SERVICE_MODULE_PATH] = selector < 0 ? entries[op]
-			: [guestCalls[selector][0], BIOS_CALL_CONTEXT_WORDS + 2 * BIOS_CALL_ARITY[selector], guestCalls[selector][1]];
+		const [symbol, params, path = HEAP_SERVICE_MODULE_PATH] = entries[op];
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, symbol));
 		if (address === undefined) throw new Error(`Heap service entry '${symbol}' is not a linked static function.`);
 		const index = blua32FunctionIndexAtAddress(image, address);

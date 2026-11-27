@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
-import { BiosCall } from '../../../machine/ts/spec/bmsx/bios';
+import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import type { FileSemanticData } from './semantic/model';
@@ -111,7 +111,10 @@ import {
 	type ProgramLinkValueExpression,
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
-import { CLOSURE_ADDRESS_REGISTER_WIDE_C, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_WIDE_C,
+	CLOSURE_DESTINATION_EXT_BITS,
+	CLOSURE_DESTINATION_EXT_SHIFT,
+	MAX_LOW_OPERAND, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
@@ -2037,7 +2040,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				continue;
 			}
 			if (instr.format === 'ABx') {
-				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+				// An unresolved static binding is a CLOSURE with a symbol relocation,
+				// not a constant pool load in the executable.
+				const op = instr.symbolicReloc === undefined ? instr.op : OpCode.CLOSURE;
+				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS,
+					op === OpCode.CLOSURE ? CLOSURE_DESTINATION_EXT_BITS : 0, hasWide);
 				const bxSplit = isSignedBxOp(instr.op)
 					? splitSignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
 					: splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
@@ -2046,14 +2053,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 						code,
 						cursor,
 						OpCode.WIDE,
-						aSplit.wide,
+						(instr.a >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND,
 						bxSplit.wide,
-						instr.closureAddressRegister ? CLOSURE_ADDRESS_REGISTER_WIDE_C : 0,
+						(op === OpCode.CLOSURE ? instr.a >>> CLOSURE_DESTINATION_EXT_SHIFT : 0)
+							| (instr.closureAddressRegister ? CLOSURE_ADDRESS_REGISTER_WIDE_C : 0),
 					);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+				writeInstruction(code, cursor, op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 				finalRanges[cursor] = range;
 				cursor += 1;
 				if (isConstBxOp(instr.op)) {
@@ -4898,9 +4906,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitTableCreation(target: number, base: number, arraySize: number, hashSize: number): void {
+		if (this.staticCallTargetScope) {
+			throw new Error(`Static function export '${this.protoId}' cannot construct a Table.`);
+		}
 		this.emitLoadConst(base + 1, integerConstant(arraySize));
 		this.emitLoadConst(base + 2, integerConstant(hashSize));
-		this.emitABC(OpCode.BIOSCALL, base, BiosCall.CreateTable, 2);
+		this.emitModuleFunctionTargetLoad(this.program.programDomain === 'system'
+			? { kind: 'export_proto', ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable] }
+			: { kind: 'bios_function', importIndex: BiosFunction.CreateTable }, base);
+		this.emitABC(OpCode.CALL, base, encodeFixedValueCount(2), encodeFixedValueCount(1));
+		this.code[this.code.length - 1].tableConstructor = true;
 		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
 	}
 
@@ -4908,10 +4923,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const tempBase = this.tempTop;
 		const useTarget = target >= this.localCount && target === tempBase - 1;
 		const creation = useTarget ? target : tempBase;
-		// Reserve before preparing a fixed record's RHSs, so its live values
-		// cannot overlap the two capacity operands.
-		this.reserveTempRange(creation, 3);
 		if (expression.fields.length === 0) {
+			this.reserveTempRange(creation, 3);
 			const shape = this.program.tableShapes?.fresh.get(expression);
 			this.emitTableCreation(target, creation, shape?.array ?? 0, shape?.hash ?? 0);
 			this.tempTop = tempBase;
@@ -4925,8 +4938,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.compileExpressionInto(expression.fields[i].value, base + i, 1);
 				this.tempTop = afterValues;
 			}
-			this.emitTableCreation(target, creation, 0, keys.length);
-			for (let i = 0; i < keys.length; i += 1) this.emitTableSetConst(target, this.program.constIndex(keys[i]), base + i);
+			// A fixed CALL retires with top at its result. Keep pre-evaluated
+			// RHSs below it so an intervening collection can still trace them.
+			const call = this.allocTempBlock(3);
+			this.emitTableCreation(call, call, 0, keys.length);
+			for (let i = 0; i < keys.length; i += 1) this.emitTableSetConst(call, this.program.constIndex(keys[i]), base + i);
+			this.emitABC(OpCode.MOV, target, call, ValueMoveKind.Copy);
 			this.tempTop = tempBase;
 			return;
 		}
@@ -4942,6 +4959,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (arrayCount > MAX_EXT_REGISTER_BC || hashCount > MAX_EXT_REGISTER_BC)
 			throw new Error(`Table constructor capacity exceeds ${MAX_EXT_REGISTER_BC} slots per storage lane.`);
+		this.reserveTempRange(creation, 3);
 		this.emitTableCreation(target, creation, arrayCount, hashCount);
 		this.tempTop = tempBase;
 		let arrayIndex = 1;

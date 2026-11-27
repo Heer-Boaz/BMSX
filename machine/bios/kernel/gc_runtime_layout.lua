@@ -26,6 +26,9 @@ return {
 	value_cell_tag_offset = 4,
 	remaining_device_cycles_address = 0x02c00000,
 	management_address = 0x02c00004,
+	call_cycles_address = 0x02c00008,
+	call_run_kind_address = 0x02c0000c,
+	call_fault_address = 0x02c00010,
 	publish_roots = 0,
 	release_string_work = 5,
 }

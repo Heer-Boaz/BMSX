@@ -237,14 +237,13 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'B' && opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y')
-						throw std::runtime_error("Expected generated BIOSCALL, CLOSURE, SETFIELD, RAWSET or coroutine.create CALL");
-					const bool biosCall = opcode == 'B';
+					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y')
+						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET or coroutine.create CALL");
 					const bool growField = opcode == 'F';
 					const bool rawSet = opcode == 'R';
 					const bool coroutine = opcode == 'Y';
 					const auto gate = rawSet || coroutine ? NativeBlockExit::Call : growField ? NativeBlockExit::WriteField
-						: biosCall ? NativeBlockExit::BiosCall : NativeBlockExit::CreateClosure;
+						: NativeBlockExit::CreateClosure;
 					if (rawSet) {
 						auto& frame = *cpu.activeThread()->currentFrame;
 						const u32 closure = frame.readControl(FrameField::Closure);
@@ -319,9 +318,7 @@ int main(int argc, char** argv) {
 						if (completion != want || cpu.allocationParked() || activeRoot != root
 							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
 							throw std::runtime_error("The generated instruction did not issue its bound resident continuation");
-					} else if (biosCall
-						? completion != HeapServiceBiosCallKind::Opcode || caller != cpu.lastPc + INSTRUCTION_BYTES
-						: memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
+					} else if (memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
 							+ static_cast<u32>(HeapServiceClosureField::Destination)) == 0u || caller != cpu.readCurrentInstructionPc()) {
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
 					}

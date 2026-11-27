@@ -2,6 +2,7 @@ import { loadHeapServiceTestModules, compileTestSystemWithHeap } from '../helper
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { valueBool, valueInteger, valueFloat, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
+import { TABLE_CONSTRUCTOR_BINDING } from '../helpers/table_constructor';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
@@ -204,7 +205,7 @@ test('explicit const-module functions call sibling exports through link symbols'
 			&& reloc.path === 'foo'
 			&& reloc.exportPathKey === 'twice',
 	), true);
-	assert.doesNotMatch(compiled.disasm, /\bBIOSCALL\b/, 'const-module exports do not materialize a runtime table');
+	assert.doesNotMatch(compiled.disasm, TABLE_CONSTRUCTOR_BINDING, 'const-module exports do not materialize a runtime table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(6)]);
 });
@@ -277,7 +278,7 @@ test('cartlib easing calls through its live runtime table', () => {
 			&& reloc.exportPathKey === 'arc01',
 	), false);
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
-	assert.match(compiled.disasm, /\bBIOSCALL\b/, 'public easing table remains available for Lua API consumers');
+	assert.match(compiled.disasm, TABLE_CONSTRUCTOR_BINDING, 'public easing table remains available for Lua API consumers');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(0.5)]);
 });
@@ -359,7 +360,7 @@ test('nested module export namespace uses the table path', () => {
 		'return { sub = { a = a } }',
 	].join('\n');
 	const { disasm } = compileWithModule('local m<const> = require("bar")\nm.sub.a()', 'bar', moduleSource);
-	assert.match(disasm, /\bBIOSCALL\b/, 'nested export namespace still builds a table');
+	assert.match(disasm, TABLE_CONSTRUCTOR_BINDING, 'nested export namespace still builds a table');
 });
 
 // A computed key `[k] = v` must not be misread as the literal key "k"; computed
@@ -371,7 +372,7 @@ test('computed (non-literal) export key uses the table path', () => {
 		'return { [k] = update }',
 	].join('\n');
 	const { disasm } = compileWithModule('local m<const> = require("baz")\nm.update()', 'baz', moduleSource);
-	assert.match(disasm, /\bBIOSCALL\b/, 'computed export key stays on the table path');
+	assert.match(disasm, TABLE_CONSTRUCTOR_BINDING, 'computed export key stays on the table path');
 });
 
 test('dynamic root-function modules remain runtime values', () => {
@@ -402,7 +403,7 @@ test('const modules inline export constants without runtime module state', () =>
 	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
 	assert.equal(compiled.staticModulePaths.includes('assets'), false, 'const module must not be scheduled for static initialization');
 	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not emit a runtime import call');
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/, 'const module must not build a runtime export table');
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING, 'const module must not build a runtime export table');
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/, 'const module reads must not use module export slots');
 });
 
@@ -436,7 +437,7 @@ test('generated GX register contracts remain compile-time words without runtime 
 		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_DISPLAY_PRESET_MODULE_PATH), false);
 		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_REGISTER_MODULE_PATH), false);
 		assert.doesNotMatch(disasm, /\bCALL\b/, 'generated preset imports do not execute a module initializer');
-		assert.doesNotMatch(disasm, /\bBIOSCALL\b/, 'generated preset exports do not materialize a table');
+		assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING, 'generated preset exports do not materialize a table');
 		assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*gx_(?:display_presets|registers)/, 'generated GX contract reads do not use module export slots');
 		const cpu = runCompiledTestSystem(compiled, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [
@@ -466,7 +467,7 @@ test('const modules inline direct require member reads', () => {
 	);
 	assert.equal(compiled.moduleProtoMap.has('assets'), false, 'const module must not produce a runtime module proto');
 	assert.doesNotMatch(disasm, /\bCALL\b/, 'direct const module member read must not emit a runtime import call');
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/, 'direct const module member read must not build a runtime export table');
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING, 'direct const module member read must not build a runtime export table');
 });
 
 test('const module namespace aliases retain their compile-time export path', () => {
@@ -482,7 +483,7 @@ test('const module namespace aliases retain their compile-time export path', () 
 	);
 	assert.equal(compiled.moduleProtoMap.has('assets'), false);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/);
 	const cpu = runCompiledTestSystem(compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20)]);

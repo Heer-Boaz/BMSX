@@ -57,9 +57,6 @@ export function allocateFrameSlots(
 				if (instruction.closureAddressRegister) return undefined;
 				visitInstructionOpenUpvalueRegisters(instruction, maxStack - 1, resolveClosure, pinned, pinSlot);
 				break;
-			case OpCode.BIOSCALL:
-				fixed.fill(1, a, a + c + 1);
-				break;
 			case OpCode.CALL:
 				bands[a] = 1;
 				if (b === 0 || c === 0) openBase = Math.min(openBase, a);

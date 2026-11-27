@@ -45,9 +45,9 @@ static void RETRO_CALLCONV read_current_profile(BmsxExecutionProfile* output) {
 		.gc_string_reclaim_nanoseconds = frames * 250u,
 		.cpu_native_origin_cycles = (int64_t)frames * 60,
 		.cpu_interpreter_runtime_cycles = (int64_t)frames * 40,
-		.native_bios_call_count = frames * 2u, .native_call_count = frames * 3u,
+		.native_call_count = frames * 3u,
 		.native_setfield_count = frames * 4u, .native_concat_count = frames, .native_concatn_count = frames,
-		.interpreter_bios_call_count = frames, .interpreter_call_count = frames,
+		.interpreter_call_count = frames,
 		.interpreter_setfield_count = frames, .interpreter_concat_count = frames, .interpreter_concatn_count = frames,
 	};
 }

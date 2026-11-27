@@ -51,9 +51,16 @@ async function fixture(t: TestContext, init = '') {
 	// Hot Resume must also replace generated bodies, so this fixture runs the JavaScript backend.
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input, CpuExecutionBackend.JavaScript);
 	const runtime = target.runtime, cpu = runtime.machine.cpu;
-	for (let tick = 0; tick < 100 && !cpu.isCartridgeExecutionActive(); tick++) target.advanceGame(10000);
+	// EXEC selects the cart before its startup calls have retired. Start the
+	// edit at the cart's actual WAIT, not in a startup allocation.
+	for (let grant = 0; grant < 100
+		&& (!cpu.isCartridgeExecutionActive() || !cpu.isHaltedUntilIrq() || !runtime.admitExternalCpuMutation()); ++grant) {
+		target.advanceGame(10_000);
+	}
 	assert.equal(cpu.isCartridgeExecutionActive(), true);
 	assert.equal(cpu.isUserMode(), true);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(runtime.admitExternalCpuMutation(), true);
 	const guest = new SuspendedGuestSession(runtime);
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const audio = { muteRuntimeTask() {}, mutePause() {} } as unknown as HostAudioOutput;
@@ -101,8 +108,6 @@ test('Hot Resume retires warmed generated code and runs the edited function with
 	const f = await fixture(t, `function calculate(x) return x + 3 end
 retained = 0
 for i = 1, 512 do retained = calculate(retained) end`);
-	for (let tick = 0; tick < 100 && !f.cpu.isHaltedUntilIrq(); ++tick) f.target.advanceGame(10_000);
-	assert.equal(f.cpu.isHaltedUntilIrq(), true);
 	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), valueInteger(1536));
 	const depth = f.cpu.getFrameDepth();
 	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
@@ -200,8 +205,6 @@ local function put_weak()
  weak_values[1] = function(x) return x + retained_value + 3 end
 end
 put_weak()`);
-	for (let grant = 0; grant < 100 && !f.cpu.isHaltedUntilIrq(); ++grant) f.target.advanceGame(10000);
-	assert.equal(f.cpu.isHaltedUntilIrq(), true, 'the cartridge has published the weak entry');
 	const weakValues = valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')));
 	f.cpu.gc.tables.setMetatableAddress(weakValues, valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta'))));
 	const reference = f.cpu.gc.tables.getInteger(weakValues, 1);

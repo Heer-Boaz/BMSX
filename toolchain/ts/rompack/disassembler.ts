@@ -267,7 +267,6 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), sourceRkOperand('c', 'key', source, c, decoded.rkBitsC, options)];
 		case OpCode.SETT:
 			return [registerOperand('a', 'table', a), sourceRkOperand('b', 'key', source, b, decoded.rkBitsB, options), sourceRkOperand('c', 'value', source, c, decoded.rkBitsC, options)];
-		case OpCode.BIOSCALL:
 			return [registerOperand('a', 'result', a), plainOperand('b', 'selector', b.toString()), plainOperand('c', 'nargs', c.toString())];
 		case OpCode.ADD:
 		case OpCode.SUB:
@@ -462,8 +461,6 @@ const formatInstruction = (
 			return `GETT r${a}, r${b}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
 		case OpCode.SETT:
 			return `SETT r${a}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
-		case OpCode.BIOSCALL:
-			return `BIOSCALL r${a}, ${b}, ${c}`;
 		case OpCode.ADD:
 			return `ADD r${a}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
 		case OpCode.SUB:

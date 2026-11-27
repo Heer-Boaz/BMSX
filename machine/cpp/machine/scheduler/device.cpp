@@ -51,12 +51,10 @@ RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, u32 tar
 	diagnosticCpuSliceConsumedCycles += consumed;
 	diagnosticNativeOriginCycles += native;
 	diagnosticInterpreterRuntimeCycles += consumed - native;
-	diagnosticNativeOpcodes.biosCall += after.nativeOpcodes.biosCall - before.nativeOpcodes.biosCall;
 	diagnosticNativeOpcodes.call += after.nativeOpcodes.call - before.nativeOpcodes.call;
 	diagnosticNativeOpcodes.setfield += after.nativeOpcodes.setfield - before.nativeOpcodes.setfield;
 	diagnosticNativeOpcodes.concat += after.nativeOpcodes.concat - before.nativeOpcodes.concat;
 	diagnosticNativeOpcodes.concatn += after.nativeOpcodes.concatn - before.nativeOpcodes.concatn;
-	diagnosticInterpreterOpcodes.biosCall += after.interpreterOpcodes.biosCall - before.interpreterOpcodes.biosCall;
 	diagnosticInterpreterOpcodes.call += after.interpreterOpcodes.call - before.interpreterOpcodes.call;
 	diagnosticInterpreterOpcodes.setfield += after.interpreterOpcodes.setfield - before.interpreterOpcodes.setfield;
 	diagnosticInterpreterOpcodes.concat += after.interpreterOpcodes.concat - before.interpreterOpcodes.concat;

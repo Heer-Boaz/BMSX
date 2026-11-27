@@ -24,7 +24,6 @@ struct OperationName {
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
-	const char* operator()(const NativeBiosCall&) const { return "bios-call"; }
 	const char* operator()(const NativeConcat&) const { return "concat"; }
 	const char* operator()(const NativeConcatRange&) const { return "concat-range"; }
 	const char* operator()(const NativeClosure&) const { return "create-closure"; }
@@ -100,7 +99,6 @@ struct OperationPlan {
 		out << " tag=" << unsigned(valueTag(op.value)) << " word=" << valuePayload(op.value);
 	}
 	void operator()(const NativeConstantLoad& op) const { out << " K" << op.index; }
-	void operator()(const NativeBiosCall& op) const { out << " selector=" << op.selector << " argc=" << op.argc; }
 	void operator()(const NativeClosure& op) const {
 		if ((op.flags & CLOSURE_ADDRESS_REGISTER_FLAG) == 0) out << " address=" << op.address;
 		out << " flags=" << op.flags;

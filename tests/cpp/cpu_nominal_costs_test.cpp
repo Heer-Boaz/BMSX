@@ -45,7 +45,7 @@ void exactTable() {
 	constexpr std::array<u8, 64> expected{
 		0, 2, 2, 2, 3, 2, 2, 2,
 		2, 2, 8, 2, 3, 3, 16, 16,
-		32, 2, 2, 2, 32, 34, 33, 128,
+		2, 2, 2, 2, 32, 34, 33, 128,
 		2, 2, 2, 2, 2, 2, 3, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,
 		2, 2, 2, 8, 3, 4, 3, 32,
@@ -124,12 +124,12 @@ void middlePowAdmission() {
 	}
 }
 
-void reservedBiosCallChargesBeforeDispatch() {
+void reservedOpcode10ChargesBeforeDispatch() {
 	for (const bool wide : {false, true}) {
 		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		const u32 body = wide ? 1u : 0u;
 		if (wide) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, body, static_cast<u8>(OpCode::BIOSCALL), 0, 0, 2);
+		writeInstruction(image.text, body, 0x10u, 63, 63, 63, 255);
 		writeInstruction(image.text, body + 1, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord=0, .wordCount=body+2, .maxStack=3}, {.firstWord=32, .wordCount=1}};
@@ -145,10 +145,10 @@ void reservedBiosCallChargesBeforeDispatch() {
 		}
 		const u32 before = generated.cpu.heapAllocator().occupiedBytes();
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-				&& generated.cpu.instructionBudgetRemaining == 1 - 32
+				&& generated.cpu.instructionBudgetRemaining == 1 - 2
 				&& generated.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
 				&& generated.cpu.readEpcWord() == generated.rom.textAddress && !generated.cpu.heapServiceActive(),
-			"unbound BIOSCALL pays one base charge and faults at the narrow or WIDE head");
+			"reserved 10H charges instruction supply and faults at the narrow or WIDE head without reading operands");
 		require(generated.cpu.readFrameRegister(0, 0) == valueInteger(17)
 				&& generated.cpu.readFrameRegister(0, 1) == valueInteger(2)
 				&& generated.cpu.readFrameRegister(0, 2) == valueInteger(3)
@@ -236,7 +236,7 @@ void countedStoreReadinessAndPartialFault() {
 
 int main() {
 	try {
-		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); reservedBiosCallChargesBeforeDispatch(); creationAndCallWorkOnce(); countedStoreReadinessAndPartialFault();
+		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); reservedOpcode10ChargesBeforeDispatch(); creationAndCallWorkOnce(); countedStoreReadinessAndPartialFault();
 		std::cout << "Nominal work-class cycle tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

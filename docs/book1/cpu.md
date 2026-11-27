@@ -209,7 +209,7 @@ The opcode chooses how the remaining bits are interpreted:
 | Format | Unprefixed operands | WIDE operands | EXT use |
 |---|---|---|---|
 | ABC | A: 8 bits; raw B/C: 9 bits each | A: 14 bits; raw B/C: 15 bits each | EXT[7:6] extends A; EXT[5:3] extends B; EXT[2:0] extends C |
-| Bx | A: 6 bits; Bx: 20 bits | A: 12 bits; Bx: 26 bits | EXT is Bx's bits 19:12; low B/C supply bits 11:0 |
+| Bx | A: 6 bits; Bx: 20 bits | A: 12 bits (14 for CLOSURE); Bx: 26 bits | EXT is Bx's bits 19:12; low B/C supply bits 11:0 |
 | Displacement | A/B/C: 6 bits each | A/B/C: 12 bits each | Unsigned 8-bit word displacement, unchanged by WIDE |
 
 
@@ -235,7 +235,8 @@ instruction. If that body is itself WIDE and reaches execution, the CPU
 hard-halts; prefixes do not form an arbitrarily long chain. WIDE adds no separate
 base charge to its body's listed cost.
 
-For `CLOSURE`, prefix C bit 5 sets the register-address flag, decoded as C bit 14.
+For `CLOSURE`, prefix C bits 1:0 supply A bits 13:12; prefix C bit 5 sets the
+register-address flag, decoded as C bit 14.
 With that bit clear, Bx times 16 supplies the function-record address; with it
 set, Bx selects the register supplying that address. This flag does not add
 bits to the Bx index. The closure section supplies capture and fault behavior.
@@ -254,7 +255,7 @@ complete operands into those fields and the six-bit prefix fields `pA`, `pB`,
 | Format | Body fields | Body `E` | WIDE prefix fields |
 |---|---|---|---|
 | ABC | `a=A&63`, `b=B&63`, `c=C&63` | `(((A>>6)&3)<<6) \| (((B>>6)&7)<<3) \| ((C>>6)&7)` | `pA=A>>8`, `pB=B>>9`, `pC=C>>9` |
-| Bx | `a=A&63`, `b=(U>>6)&63`, `c=U&63` | `(U>>12)&255` | `pA=A>>6`, `pB=U>>20`, `pC=0`, except the CLOSURE register-address flag |
+| Bx | `a=A&63`, `b=(U>>6)&63`, `c=U&63` | `(U>>12)&255` | `pA=(A>>6)&63`, `pB=U>>20`, `pC=0` except for CLOSURE: `pC=(A>>12) \| (flag<<5)` |
 | Displacement | `a=A&63`, `b=B&63`, `c=C&63` | `disp` | `pA=A>>6`, `pB=B>>6`, `pC=C>>6` |
 
 For an unsigned Bx operand, `U` is Bx itself. For a signed Bx operand, `U` is its
@@ -284,7 +285,7 @@ A known function target still uses `CLOSURE` followed by `CALL`; `CALL` has no
 function-address immediate. The immediate CLOSURE relocation is the absolute
 **function-record byte address divided by 16**, not a code address, function
 ordinal, image-relative offset or constant index. In its register-address form,
-encode the register index as Bx and set prefix `pC=32`; the register supplies
+encode the register index as Bx and set bit 5 of prefix C; the register supplies
 the full byte address without division by 16. Both forms produce a closure for
 the same `CALL` mechanism. CP0 `EXEC`, by contrast, consumes a full byte address
 and replaces execution, as specified below.
@@ -476,7 +477,7 @@ The narrow and WIDE forms have the following encoding limits. These limits descr
 |---|---:|---:|
 | RK B or C | Signed 9 bits: R0–R255 or K0–K255 | Signed 15 bits: R0–R16383 or K0–K16383 |
 | A in ABC formats | 8 bits | 14 bits |
-| A in Bx formats | 6 bits | 12 bits |
+| A in Bx formats | 6 bits | 12 bits (14 for CLOSURE) |
 | LOADK Bx | Unsigned 20 bits | Unsigned 26 bits |
 | KSMI sBx | −524288 through 524287 | −33554432 through 33554431 |
 
@@ -1630,24 +1631,19 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
 | `CALL` | `2FH` | `A, B, C` | Call the function in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 32 |
-| `BIOSCALL` | `10H` | `A, B, C` | Invoke BIOS service `B` with exactly `C` values starting at `R(A+1)`; put its single result in `R(A)`. | 32 |
 | `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 16 |
 | `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 3 |
 | `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Load a resident function value or construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 3 |
 | `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 4 |
 
-`BIOSCALL` preserves the argument registers. A selector not assigned to a
-service, or a count different from that service's fixed argument count, raises
-a reserved-instruction exception. A service reports any language error at
-the call instruction without publishing a result. The
-[BIOS reference](bios-table.md#sec-bios-table-construction) specifies the
-selector and accepted values for Table construction.
-
-A BIOS call uses a separate reserved execution context. Its code consumes
-ordinary CPU cycles and may continue across grants while devices advance.
-Other program instructions and interrupts wait until the call returns or
-raises its error. The call does not change the caller's access permissions.
+A `CALL` to a resident system function uses the fixed System activation,
+with the same argument and result placement as any other `CALL`. Its
+instructions consume ordinary CPU cycles while the devices advance. Other
+program instructions and interrupts wait until the activation returns or
+raises a language fault. The call does not change the caller's access
+permissions. A language fault raised by the activation is reported at the
+issuing instruction without publishing results.
 
 
 
@@ -1833,7 +1829,8 @@ The fixed System activation also recognizes format 6 for transfers between a
 register and the System's dedicated Value cell. The transfer preserves the
 complete payload word and type tag without numeric conversion and does not
 perform a data-bus access. Executing ordinary code in System ROM does not make
-format 6 available.
+format 6 available. Format 7 and higher are also reserved in the fixed
+activation.
 
 Address conversion and integer-store conversion use an Integer's raw bits.
 For a finite Float, they truncate toward zero and retain the low 32 bits.
@@ -1994,7 +1991,6 @@ are selected instruction base charges, not a complete timing table:
 | `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
 | `GETI`, `SETI` | 8 cycles |
 | `SELF` | 17 cycles |
-| `BIOSCALL` | 32 cycles, plus instructions executed by the service |
 | `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
 | `CALL` | 32 cycles, plus placed values |
 | `RET` | 16 cycles, plus placed values and closed captures |

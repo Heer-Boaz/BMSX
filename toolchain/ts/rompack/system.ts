@@ -1,5 +1,5 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
-import { BIOS_FUNCTION_MODULE_PATHS } from '../../../machine/ts/spec/bmsx/bios';
+import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
 
@@ -10,7 +10,7 @@ export const SYSTEM_BLUA32_IMAGE_LIMIT = 0x00400000;
 export const SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT = 0x00004000;
 
 export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> =
-	BIOS_FUNCTION_MODULE_PATHS.map(path => ({ path, exportPathKey: '' }));
+	BIOS_FUNCTION_SLOTS;
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_BLUA32_IMAGE_LIMIT) {

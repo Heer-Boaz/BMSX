@@ -1,5 +1,3 @@
-import { BiosCall } from './bios';
-
 // System BLua32 image extension. The descriptor lives in immutable RODATA
 // and is not part of the cartridge-callable BIOS slot list.
 export const HEAP_SERVICE_IMAGE_FLAG = 1 << 1;
@@ -15,7 +13,7 @@ export const enum HeapServiceOperation {
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8;
-export const HEAP_SERVICE_ENTRY_COUNT = HeapServiceOperation.Count + BiosCall.Count;
+export const HEAP_SERVICE_ENTRY_COUNT = HeapServiceOperation.Count;
 export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HEAP_SERVICE_ENTRY_COUNT;
 
 // Private CPU runtime stack, inside the management reservation. These
@@ -54,14 +52,14 @@ export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, R
 export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
 // Opcode dispatch commits the ordinary Thread's successor before entering
 // the pinned grant. Completion targets are slot indices or Protected indices.
-export const enum HeapServiceBiosCallKind { Idle, Opcode, Discard, Call, Protected }
+export const enum HeapServiceBiosCallKind { Idle, Discard, Call, Protected }
 export const enum HeapServiceBiosCallField {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 }
 
 export const HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
-export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12 }
+export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
@@ -90,6 +88,10 @@ export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_S
 // A word load samples time to the next device deadline after paying the load.
 export const HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
 export const HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4;
+export const HEAP_SERVICE_CALL_CYCLES_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 4;
+export const HEAP_SERVICE_CALL_RUN_KIND_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 8;
+export const HEAP_SERVICE_CALL_FAULT_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 12;
+export const HEAP_SERVICE_RESULT_FAULT = 0xffffffff;
 
 // CPU-published head roots borrowed by a single remark quantum. Static
 // fault identifiers are a separate pinned word plane, populated at boot.

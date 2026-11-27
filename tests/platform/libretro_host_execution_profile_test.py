@@ -37,9 +37,9 @@ class HostExecutionProfileTest(unittest.TestCase):
         expected = {
             "execution_profile": "1", "cpu_slices": "1", "cpu_consumed_cycles": "100",
             "cpu_native_origin_cycles": "60", "cpu_interpreter_runtime_cycles": "40",
-            "native_bios_call_count": "2", "native_call_count": "3", "native_setfield_count": "4",
+            "native_call_count": "3", "native_setfield_count": "4",
             "native_concat_count": "1", "native_concatn_count": "1",
-            "interpreter_bios_call_count": "1", "interpreter_call_count": "1", "interpreter_setfield_count": "1",
+            "interpreter_call_count": "1", "interpreter_setfield_count": "1",
             "interpreter_concat_count": "1", "interpreter_concatn_count": "1",
             "gc_collections": "1", "gc_total_ns": "1000", "gc_roots_ns": "100", "gc_trace_ns": "200",
             "gc_weak_ns": "50", "gc_sweep_ns": "400", "gc_string_reclaim_ns": "250",

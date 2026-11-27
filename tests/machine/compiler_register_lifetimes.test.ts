@@ -1,7 +1,7 @@
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
-import { tableConstructorHints } from '../helpers/table_constructor';
+import { TABLE_CONSTRUCTOR_BINDING, tableConstructorHints } from '../helpers/table_constructor';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
@@ -79,7 +79,8 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 			for (const name of ['dense', 'forward']) {
 				const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(`:${name}`));
 				const disassembly = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
-				assert.doesNotMatch(disassembly, /\b(?:BIOSCALL|SETFIELD|SETI|GETFIELD|GETI|LEN)\b/);
+				assert.doesNotMatch(disassembly, TABLE_CONSTRUCTOR_BINDING);
+				assert.doesNotMatch(disassembly, /\b(?:SETFIELD|SETI|GETFIELD|GETI|LEN)\b/);
 				assert.match(disassembly, /\bCALL\b/);
 			}
 			const pointIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':point_sum'));
@@ -87,7 +88,7 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 			assert.match(point, /len=8 params=2 vararg=0 stack=3/);
 			assert.match(point, /ADD r\d+, r0, r1/);
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':escaped'));
-			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), /\bBIOSCALL\b/);
+			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), TABLE_CONSTRUCTOR_BINDING);
 		}
 		const expected = [...[3, 7, 4, 3, 8, 9, 13, 2].map(valueInteger), valueBool(false), valueInteger(24)];
 		const budget = 100_000;
@@ -127,8 +128,10 @@ return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id 
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':record'));
 			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
 			const body = listing.split('\n').map(line => line.replace(/^0x[\da-f]+: /i, ''));
-			const allocation = body.findIndex(line => line.startsWith('BIOSCALL '));
-			assert.match(body[allocation], /BIOSCALL r\d+, 0, 2/);
+			const binding = body.findIndex(line => TABLE_CONSTRUCTOR_BINDING.test(line));
+			assert.ok(binding >= 0);
+			const allocation = binding + 1;
+			assert.match(body[allocation], /CALL r\d+, 2, 1/);
 			const proto = compiled.metadata.protoIds.findIndex(id => id.endsWith(':record'));
 			assert.deepEqual(tableConstructorHints(compiled, proto), [[0, 5]]);
 			assert.deepEqual(body.slice(allocation + 1, allocation + 6).map(line => line.split('"')[1]),
@@ -212,7 +215,7 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 			const cost = /^budget (\d+) fault 0\nfull-gc ([1-9]\d*)\n/.exec(output);
 			assert.ok(cost, 'native execution completes without a fault and bills its explicit GC');
 			// Native and TS explicit collection currently preserve their own source mirror order.
-			// The compiler and its BIOSCALLs must still use exactly the same guest cycles.
+			// The compiler and its resident calls must still use exactly the same guest cycles.
 			assert.equal(Number(cost[1]) + Number(cost[2]), remaining + fullGcCycles);
 			assert.equal(output.slice(cost[0].length),
 				[...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));

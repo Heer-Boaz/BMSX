@@ -9,13 +9,32 @@ import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_ser
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 
-let heapServiceTestModules: readonly ProgramModule[] | undefined;
+const testBiosUtilityModules = ['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'];
+const testSystemAssets = {
+	path: 'bmsx/system_assets',
+	source: `module<const>
+rodata texture: word[3] = { 0xa0000000, 0x02d002c0, 0x00fc0140 }
+return { bin_gx_system_texture_addr = texture }`,
+};
 
-export function loadHeapServiceTestModules(): readonly ProgramModule[] {
+type FixtureModule = ProgramModule & { source: string };
+
+let heapServiceTestModules: readonly FixtureModule[] | undefined;
+let biosUtilityTestModules: readonly FixtureModule[] | undefined;
+
+export function loadHeapServiceTestModules(): readonly FixtureModule[] {
 	return heapServiceTestModules ??= HEAP_SERVICE_MODULES.map(path => {
 		const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 		return { path, source, chunk: parseLuaChunk(source, path).chunk };
 	});
+}
+
+/** The other published BIOS slots retain their actual functions in paired ROM fixtures. */
+export function loadTestBiosUtilityModules(): readonly FixtureModule[] {
+	return biosUtilityTestModules ??= testBiosUtilityModules
+		.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }))
+		.concat(testSystemAssets)
+		.map(({ path, source }) => ({ path, source, chunk: parseLuaChunk(source, path).chunk }));
 }
 
 /** Compile an executable fixture with the System BIOS operation roster. */
@@ -31,11 +50,11 @@ export function compileTestSystemWithHeap(chunk: LuaChunk, modules: readonly Pro
 export function compileHeapServiceSystem(entrySource: string, optLevel: OptimizationLevel,
 	bootModules: readonly { path: string; source: string }[] = [], entryPath = 'test.lua') {
 	const modules = [
-		...loadHeapServiceTestModules(),
+		...loadTestBiosUtilityModules().filter(module => !bootModules.some(input => input.path === module.path)),
 		...bootModules.map(({ path, source }) => ({ path, source, chunk: parseLuaChunk(source, path).chunk })),
 	];
-	return compileLuaChunkToProgram(parseLuaChunk(entrySource, entryPath).chunk, modules,
-		{ entrySource, optLevel, programDomain: 'system', preloadModules: modules.map(({ path }) => path) });
+	return compileTestSystemWithHeap(parseLuaChunk(entrySource, entryPath).chunk, modules,
+		{ entrySource, optLevel, programDomain: 'system', preloadModules: bootModules.map(({ path }) => path) });
 }
 
 /** A hand-assembled entry in the same verified ROM as the real firmware. */

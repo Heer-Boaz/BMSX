@@ -20,8 +20,6 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::MFC0: case OpCode::MTC0:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return 0;
-		case OpCode::BIOSCALL:
-			return static_cast<u16>(row.a + row.c + 1);
 		case OpCode::ITERN:
 			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
@@ -115,6 +113,7 @@ void CPU::decodeInstructionWords(
 		decoded.baseCycles = BASE_CYCLES[op];
 		decoded.a = static_cast<uint16_t>(
 			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
+			| (op == static_cast<u8>(OpCode::CLOSURE) ? (wideC & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0)
 		);
 		const u8 rkOperands = OPCODE_RK_OPERANDS[op];
 		decoded.b = static_cast<int16_t>((rkOperands & RK_OPERAND_B) != 0u

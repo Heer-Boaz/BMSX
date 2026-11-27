@@ -31,7 +31,7 @@ inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"Continue", "ScalarBoundary", "Halt", "Call", "CompletedCall", "Return",
 	"ReadField", "WriteField", "ReadMemory", "WriteMemory", "SkipInstruction",
 	"WriteUpvalue", "Vararg", "InvalidConstant", "InvalidOperand", "ReadIndex", "WriteIndex",
-	"ReadInteger", "WriteInteger", "Length", "BiosCall", "ControlFault",
+	"ReadInteger", "WriteInteger", "Length", "ControlFault",
 	"ControlBoundary", "ExceptionReturn", "Concat", "ConcatRange",
 	"CreateClosure", "WriteWords", "WriteControl", "WriteGlobal", "WriteSystemGlobal", "ReadUpvalue", "IterateTable",
 	"PrivateCall", "PrivateReturn",

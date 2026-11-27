@@ -1,4 +1,4 @@
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -229,21 +229,12 @@ function compileActionEffectProgram(
 	traceStatements: TraceStatementSelection,
 	entrySource = TRACE_ENTRY_SOURCE,
 ) {
-	const systemModules = BASE_FIRMWARE_MODULES.map(({ path, source }) => sourceModule(path, source));
-	systemModules.push(sourceModule('tty/console', CONSOLE_STUB_SOURCE));
+	const systemModules = [...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: CONSOLE_STUB_SOURCE }];
 	const cartModules = CART_MODULE_FILES.map(([path, file]) =>
 		sourceModule(path, readFileSync(file, 'utf8')),
 	);
 	cartModules.push(sourceModule('cartlib/event_emitter', EVENT_EMITTER_STUB_SOURCE));
-	const system = compileTestSystemWithHeap(
-		parseLuaChunk(SYSTEM_ENTRY_SOURCE, 'boot.lua'),
-		systemModules,
-		{
-			entrySource: SYSTEM_ENTRY_SOURCE,
-			optLevel: 3,
-			programDomain: 'system',
-		},
-	);
+	const system = compileHeapServiceSystem(SYSTEM_ENTRY_SOURCE, 3, systemModules, 'boot.lua');
 	const cart = compileLuaChunkToProgram(
 		parseLuaChunk(entrySource, 'entry.lua'),
 		cartModules,

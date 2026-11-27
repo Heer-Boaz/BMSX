@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { loadHeapServiceTestModules, loadTestBiosUtilityModules } from './heap_service_system';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
@@ -31,20 +31,15 @@ return sine(0x40000000) == 65536 and decode(0x3fa00000, 0, 4) == 1.25,
 /** Real exported firmware bodies with a small, valid texture upload record. */
 export function buildPublicBiosFixture(source: string, optLevel: 0 | 3) {
 	const sources = [
-		{ path: 'entry', source },
-		...['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'].map(path => ({
-			path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
-		})),
-		...HEAP_SERVICE_MODULES.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
-		{ path: 'bmsx/system_assets', source: `module<const>
-rodata texture: word[3] = { 0xa0000000, 0x02d002c0, 0x00fc0140 }
-return { bin_gx_system_texture_addr = texture }` },
+		{ path: 'entry', source, chunk: parseLuaChunk(source, 'entry') },
+		...loadHeapServiceTestModules(),
+		...loadTestBiosUtilityModules(),
 	];
 	const built = buildBlua32Image({
 		domain: 'system',
 		preloadModules: HEAP_SERVICE_MODULES,
 		luaModules: sources.map(module => ({
-			...module, displayPath: `${module.path}.lua`, chunk: parseLuaChunk(module.source, module.path),
+			...module, displayPath: `${module.path}.lua`,
 		})),
 		generatedLuaModules: [],
 		loadAddress: 0x100,

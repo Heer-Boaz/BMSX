@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdint>
 
-#include "spec/bmsx/bios.h"
 
 namespace bmsx {
 
@@ -18,7 +17,7 @@ enum class HeapServiceOperation : uint32_t {
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
 	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, CreateCoroutine, Count,
 };
-constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
+constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
 
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0u;
@@ -64,14 +63,14 @@ constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
 // Tagged firmware return frontier. The selected ordinary Thread and its
 // successor PC are already committed by opcode dispatch, and remain selected
 // through the pinned grant. Targets are slot indices or Protected indices.
-enum class HeapServiceBiosCallKind : uint32_t { Idle, Opcode, Discard, Call, Protected };
+enum class HeapServiceBiosCallKind : uint32_t { Idle, Discard, Call, Protected };
 enum class HeapServiceBiosCallField : uint32_t {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 };
 
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
-enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12 };
+enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
@@ -100,6 +99,10 @@ constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServ
 // A word load samples time to the next device deadline after paying the load.
 constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
 constexpr uint32_t HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4u;
+constexpr uint32_t HEAP_SERVICE_CALL_CYCLES_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 4u;
+constexpr uint32_t HEAP_SERVICE_CALL_RUN_KIND_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 8u;
+constexpr uint32_t HEAP_SERVICE_CALL_FAULT_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 12u;
+constexpr uint32_t HEAP_SERVICE_RESULT_FAULT = 0xffffffffu;
 
 // CPU-published head roots and the pinned static fault-ID word plane.
 constexpr uint32_t HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;

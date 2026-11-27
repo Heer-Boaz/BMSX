@@ -30,7 +30,7 @@ const serviceModules = HEAP_SERVICE_MODULES.filter(path => path !== HEAP_SERVICE
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
-const publicModules = BIOS_FUNCTION_EXPORTS.map(({ path }) => {
+const publicModules = BIOS_FUNCTION_EXPORTS.filter(({ path }) => !HEAP_SERVICE_MODULES.some(module => module === path)).map(({ path }) => {
 	const source = 'module<const>\nlocal public_entry<const> = function() return 0 end\nreturn public_entry';
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
@@ -63,8 +63,8 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	assert.equal(HEAP_SERVICE_DESCRIPTOR_SIZE, (2 + HEAP_SERVICE_ENTRY_COUNT) * 4);
 	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET) <= HEAP_SERVICE_VALUE_COUNT);
 	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET) <= HEAP_SERVICE_FRAME_COUNT);
-	assert.deepEqual(linked.biosImports.functions, BIOS_FUNCTION_EXPORTS.map((entry, index) => ({
-		...entry, functionAddress: header.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE,
+	assert.deepEqual(linked.biosImports.functions, BIOS_FUNCTION_EXPORTS.map(({ path, exportPathKey }, index) => ({
+		path, exportPathKey, functionAddress: header.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE,
 	})));
 
 	const entryBindings = [
@@ -83,7 +83,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/gc_full', 'collect_full'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/thread_create', 'create_coroutine'],
-		['kernel/bios_create_table', 'create_table'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HEAP_SERVICE_ENTRY_COUNT; ++operation) {
@@ -96,6 +95,11 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		functions.add(index);
 	}
 	assert.equal(functions.size, HEAP_SERVICE_ENTRY_COUNT);
+	const constructor = linked.biosImports.functions[3];
+	assert.equal(constructor.path, 'kernel/bios_create_table');
+	assert.equal(constructor.exportPathKey, 'create_table');
+	assert.equal(layout.functions[3].numParams, 2);
+	assert.ok(readLE32(bytes, constructor.functionAddress - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT);
 	const step = object.sections.rodata.moduleExports.find(entry =>
 		entry.path === 'kernel/gc_collect_step' && entry.exportPathKey === 'collect_step')!;
 	const stepIndex = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[step.slotName]);

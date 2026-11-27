@@ -84,12 +84,6 @@ struct NativeReturnSite : NativeExitOperands::Return {
 		return {.readsRange = {first, static_cast<u16>(std::max<int>(produced, 0)), produced < 0}};
 	}
 };
-struct NativeBiosCall : NativeExitOperands::BiosCall {
-	static constexpr auto terminalExit = NativeBlockExit::BiosCall;
-	constexpr NativeSlotAccess slots() const {
-		return {.writes = {result, 1}, .readsRange = {u32{result} + 1u, argc}};
-	}
-};
 struct NativeConcat : NativeExitOperands::Concat {
 	static constexpr auto terminalExit = NativeBlockExit::Concat;
 	constexpr NativeSlotAccess slots() const {
@@ -309,7 +303,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite, NativeBiosCall,
+	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite,
 	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

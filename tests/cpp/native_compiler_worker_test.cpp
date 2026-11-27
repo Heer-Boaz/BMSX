@@ -5,6 +5,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include <algorithm>
@@ -177,14 +178,14 @@ void rejectedFieldProofIsFrozenForWorker() {
 		"the next job starts with empty profile lanes without changing the prior region's proof");
 }
 
-void biosCallUsesTheCapturedTerminal() {
+void callUsesTheCapturedTerminal() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	constexpr u32 pc = CART_ROM_BASE;
 	std::array decoded{
-		DecodedInstruction{.a = 70, .b = 131, .c = 2, .op = static_cast<u8>(OpCode::BIOSCALL)},
+		DecodedInstruction{.a = 70, .b = 3, .c = 2, .op = static_cast<u8>(OpCode::CALL)},
 		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
 	};
 	decoded[0].width = 2;
@@ -200,13 +201,12 @@ void biosCallUsesTheCapturedTerminal() {
 	worker.wait();
 	auto blocks = worker.take();
 	const auto& exit = blocks.front()->terminal;
-	const auto [dest, selector, argc] = exit.operands.biosCall;
-	require(exit.exit == NativeBlockExit::BiosCall && dest == 70 && selector == 131 && argc == 2
+	const auto [callee, supplied, requested] = exit.operands.call;
+	require(exit.exit == NativeBlockExit::Call && callee == 70 && supplied == 2 && requested == 1
 			&& exit.currentPc == pc && exit.lastPc == pc + INSTRUCTION_BYTES && exit.nextPc == next.front().pc,
 		"the worker retains raw operands and the complete captured WIDE frontier");
-	require(exit.continuationCells[0] == nullptr && exit.continuationCells[1] == nullptr
-			&& blocks[1]->firstPc == next.front().pc,
-		"the CPU alone reenters the caller after BIOS service completion");
+	require(blocks[1]->firstPc == next.front().pc,
+		"the worker publishes the caller successor independently of the call site");
 }
 
 struct CpuMachine {
@@ -390,6 +390,9 @@ void pendingGenericWorkSurvivesFirstCallObservation() {
 
 		CpuMachine machine(image, false);
 		auto& cpu = machine.cpu;
+		// This bare image exercises binding and worker observation, not allocation.
+		test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+		test::seedTestRomClosure(cpu, machine.rom.functionAddresses[2]);
 		const u32 text = machine.rom.textAddress, root = text + 5u * INSTRUCTION_BYTES;
 		for (int step = 0; cpu.readFramePc(0) != root && step < 4; ++step) cpu.runUntilDepth(0, 1);
 		require(cpu.readFramePc(0) == root, "real closure setup reaches the verified loop root");
@@ -617,7 +620,7 @@ int main() {
 		comparisonCapturesSkippedWideBody();
 		rejectedFieldProofIsFrozenForWorker();
 		unpublishedCodeCanBeDiscarded();
-		biosCallUsesTheCapturedTerminal();
+		callUsesTheCapturedTerminal();
 		retainedDemandFollowsPhysicalRoots();
 		hotRootsPublishWithoutAnotherGuestVisit();
 		cpuInvalidationAndLifecycle();

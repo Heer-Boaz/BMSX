@@ -54,6 +54,7 @@ export type Instruction = {
 	rkMask: number;
 	target: number | null;
 	callProtoIndex?: number | null;
+	tableConstructor?: true;
 	closureAddressRegister?: boolean;
 	symbolicReloc?:
 		| { kind: 'module_init'; symbol: string }
@@ -494,7 +495,6 @@ const computeBlockConstantIn = (
 					case OpCode.GETT:
 					case OpCode.GETI:
 					case OpCode.GETFIELD:
-					case OpCode.BIOSCALL:
 					case OpCode.CONCAT:
 					case OpCode.CONCATN:
 					case OpCode.CLOSURE:
@@ -673,7 +673,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.BIOSCALL:
 				case OpCode.CONCAT:
 				case OpCode.CONCATN:
 				case OpCode.CLOSURE:
@@ -1040,7 +1039,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.BIOSCALL:
 				case OpCode.CONCAT:
 				case OpCode.CONCATN:
 				case OpCode.CLOSURE:
@@ -1408,7 +1406,6 @@ const applyClosureTransferForInlining = (
 		case OpCode.GETI:
 		case OpCode.GETFIELD:
 		case OpCode.GETT:
-		case OpCode.BIOSCALL:
 		case OpCode.ADD:
 		case OpCode.SUB:
 		case OpCode.MUL:
@@ -1710,7 +1707,6 @@ const buildInlineExpansion = (
 			case OpCode.GETGL:
 			case OpCode.GETI:
 			case OpCode.GETFIELD:
-			case OpCode.BIOSCALL:
 			case OpCode.MFC0:
 				mapped.a = mapRegister(mapped.a);
 				if (mapped.op === OpCode.GETI || mapped.op === OpCode.GETFIELD) {

@@ -19,7 +19,6 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SETI:
 		case OpCode::SELF:
 		case OpCode::LEN:
-		case OpCode::BIOSCALL:
 		case OpCode::CONCAT:
 		case OpCode::CONCATN:
 		case OpCode::CLOSURE:
@@ -86,7 +85,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
-		case OpCode::BIOSCALL: case OpCode::CONCAT: case OpCode::CONCATN:
+		case OpCode::CONCAT: case OpCode::CONCATN:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return true;
 		case OpCode::MTC0: return field == COP0_STATUS;
@@ -108,7 +107,7 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	// Decoded dispatch opcodes are bytes, including the internal pseudo-ops.
 	std::array<bool, 256> boundaries{};
 	for (const auto op : {OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
-		OpCode::CALL, OpCode::RET, OpCode::BIOSCALL, OpCode::CLOSURE, OpCode::CONCAT, OpCode::CONCATN,
+		OpCode::CALL, OpCode::RET, OpCode::CLOSURE, OpCode::CONCAT, OpCode::CONCATN,
 		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE, OpCode::ITERN}) {
 		boundaries[static_cast<u8>(op)] = true;
 	}

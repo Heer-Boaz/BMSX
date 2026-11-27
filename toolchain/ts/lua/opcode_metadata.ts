@@ -15,7 +15,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'STORE_MEM_WORDS_D',
 	'GETT',
 	'SETT',
-	'BIOSCALL',
+	'RESERVED_10',
 	'ADD',
 	'SUB',
 	'MUL',

@@ -38,14 +38,15 @@ In BLua, use a table constructor such as `{}` or `{12, 34, name = "item"}`.
 The construction service reserves storage first; the ordinary assignment
 instructions supply the entries afterward.
 
-An instruction sequence can reserve a Table directly with
-[`BIOSCALL`](cpu.md#sec-cpu-calls-and-captured-values) selector 0. Supply
-two Integer arguments, each from 0 through 32,767. The first requests array
-slots; the second requests hash slots. For example, set `R(5)` to 8 and
-`R(6)` to 3, then execute `BIOSCALL R(4), 0, 2`. On success `R(4)` holds
-an empty Table with eight array slots and four hash slots. The two input
-registers are unchanged. A nonzero hash request reserves the least power of
-two that can hold it. A zero request reserves no slots of that kind.
+An instruction sequence can reserve a Table with an ordinary
+[`CALL`](cpu.md#sec-cpu-calls-and-captured-values) to the resident Table
+constructor ([System function slot 3](program-images.md#sec-blua-programs-locating-bios-call-targets)). Supply two Integer arguments, each
+from 0 through 32,767. The first requests array slots; the second requests hash
+slots. For example, load the function into `R(4)` with `CLOSURE`, put 8
+in `R(5)` and 3 in `R(6)`, then execute `CALL R(4), 3, 2`. The one result
+in `R(4)` is an empty Table with eight array slots and four hash slots. A
+nonzero hash request reserves the least power of two that can hold it. A zero
+request reserves no slots of that kind.
 
 Capacity does not add entries or determine the Table's length. It does
 reserve storage against the [language allocation budget](cpu.md#sec-cpu-language-allocation-and-lifetime).

@@ -1,3 +1,4 @@
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { runCpuWithinBudget } from './cpu_execution';
 import { runGuestToHalt } from './cpu_execution';
 import type { Blua32DiagnosticSourceMap } from '../../toolchain/ts/rompack/blua32_diagnostics';
@@ -454,7 +455,7 @@ export function linkTestBlua32Pair(
 		systemCompiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
-		[],
+		cartCompiled.biosFunctionConstRelocs.length !== 0 ? BIOS_FUNCTION_EXPORTS : [],
 	);
 	const cart = linkCartBlua32Image(
 		system.biosImports,

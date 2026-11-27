@@ -141,10 +141,10 @@ static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfile* output) 
 		gc.weakNanoseconds, gc.sweepNanoseconds, gc.stringReclaimNanoseconds,
 		gc.fullCollections, gc.steps, gc.maxStepNanoseconds, gc.stepsOver2ms, gc.stepsOver8ms, gc.markAgainNanoseconds, gc.atomicNanoseconds,
 		machine.scheduler.diagnosticNativeOriginCycles, machine.scheduler.diagnosticInterpreterRuntimeCycles,
-		machine.scheduler.diagnosticNativeOpcodes.biosCall, machine.scheduler.diagnosticNativeOpcodes.call,
+		machine.scheduler.diagnosticNativeOpcodes.call,
 		machine.scheduler.diagnosticNativeOpcodes.setfield, machine.scheduler.diagnosticNativeOpcodes.concat,
 		machine.scheduler.diagnosticNativeOpcodes.concatn,
-		machine.scheduler.diagnosticInterpreterOpcodes.biosCall, machine.scheduler.diagnosticInterpreterOpcodes.call,
+		machine.scheduler.diagnosticInterpreterOpcodes.call,
 		machine.scheduler.diagnosticInterpreterOpcodes.setfield, machine.scheduler.diagnosticInterpreterOpcodes.concat,
 		machine.scheduler.diagnosticInterpreterOpcodes.concatn,
 	};

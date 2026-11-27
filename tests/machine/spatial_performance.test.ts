@@ -343,7 +343,6 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 				let f64Accesses = 0;
 				for (let pc = emitted.codeAddress; pc < emitted.codeAddress + emitted.codeByteCount; pc += INSTRUCTION_BYTES) {
 					const instruction = describeBlua32InstructionAtPc(linked.image, null, pc);
-					assert.notEqual(instruction.op, OpCode.BIOSCALL);
 					assert.notEqual(instruction.op, OpCode.CLOSURE);
 					assert.notEqual(instruction.op, OpCode.CALL, 'synthetic kernels contain no per-coefficient accessor calls');
 					if ((instruction.op === OpCode.LOAD_MEM_D || instruction.op === OpCode.STORE_MEM_D)

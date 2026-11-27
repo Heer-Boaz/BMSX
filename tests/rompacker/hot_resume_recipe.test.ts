@@ -24,7 +24,7 @@ for (const [system, first, second] of [[2, 0, 3], [1, 3, 0]] as const) {
 		const options = {
 			systemOptLevel: system,
 			systemSource: 'module<entry>\nreturn 1',
-			systemModules: BIOS_FUNCTION_EXPORTS.map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
+			systemModules: BIOS_FUNCTION_EXPORTS.filter(exported => !exported.fixedStack).map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
 			cartSource: 'module<entry>\nlocal value = 2\nreturn value ^ 0.5',
 		};
 		const a = await buildScenarioMediaFixture(join(root, 'a'), [], { ...options, cartOptLevel: first });

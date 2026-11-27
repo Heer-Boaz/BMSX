@@ -14,8 +14,6 @@ export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 		case OpCode.GETGL:
 		case OpCode.SETGL:
 			return 'runtime global slot';
-		case OpCode.BIOSCALL:
-			return 'BIOS service call';
 		case OpCode.GETT:
 		case OpCode.SETT:
 		case OpCode.GETI:

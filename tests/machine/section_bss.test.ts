@@ -3,6 +3,7 @@ import { numberToHost, type Value, valueBool, valueInteger } from '../../machine
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
+import { TABLE_CONSTRUCTOR_BINDING } from '../helpers/table_constructor';
 import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
@@ -178,7 +179,7 @@ return *counter, state.counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'bss_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
@@ -207,7 +208,7 @@ return state.read()
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.match(compiled.metadata.exportProtoIdBySlot.state__read, /\/static:/);
 	const disasm = disassembleEntryFunction(compiled);
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
 	assert.equal(image.link.constRelocs.some(
 		reloc => reloc.kind === 'export_proto'
@@ -329,7 +330,7 @@ return { make = make }
 `;
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.make()', 'state', moduleSource),
-		/forbidden static opcode BIOSCALL \(BIOS service call\)/,
+		/Static function export.*cannot construct a Table/,
 	);
 });
 
@@ -603,7 +604,7 @@ return before, *counter, state.counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 	assert.deepEqual(runColdCompiled(compiled).values, [12, 88, DYNAMIC_RAM_BASE].map(valueInteger));
 });
 
@@ -701,7 +702,8 @@ ${section} record: floating_record = { tag = 7, single = -1.5, double = 2.25 }
 return *scalar, singles[0], singles[1], singles[2],
 	doubles[0], doubles[1], doubles[2], record.tag, record.single, record.double
 `;
-			const compiled = compileHeapServiceSystem(source, optLevel, [], 'floating_storage.lua');
+			const compiled = compileTestSystemWithHeap(parseSource(source, 'floating_storage.lua'), [],
+				{ entrySource: source, optLevel, programDomain: 'system' });
 			const bytes = encodeCompiledProgramObject(compiled).sections[section].bytes;
 			assert.deepEqual(Array.from({ length: bytes.length / 4 }, (_, index) => readLE32(bytes, index * 4)), [
 				0, 0x80000000,
@@ -793,7 +795,7 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 	]);
 	const disassembly = disassembleEntryFunction(compiled);
 	assert.match(disassembly, /LOADKR/);
-	assert.doesNotMatch(disassembly, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disassembly, TABLE_CONSTRUCTOR_BINDING);
 	assert.deepEqual(runColdCompiled(compileHeapServiceSystem(source, 0, [], 'rodata_records.lua')).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
 });
 
@@ -849,7 +851,7 @@ return values[0], values[1], data.values
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
+	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 	const result = runColdCompiled(compiled);
 	assert.deepEqual(result.values, [5, 6, result.image.header.rodataAddress].map(valueInteger));
 });

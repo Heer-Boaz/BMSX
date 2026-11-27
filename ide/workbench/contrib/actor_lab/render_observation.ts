@@ -8,7 +8,7 @@ import { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 import type { ResourceDomain } from '../../../common/resource';
 import type { Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
 import { blua32InlineCallSitesAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
-import type { DecodedInstruction } from '../../../../toolchain/ts/rompack/disassembler';
+import type { DecodedInstruction } from '../../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { toLuaModulePath } from '../../../../toolchain/ts/lua/module_path';
 import { bindFunctionInstructions } from '../../../runtime/instruction_probe';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';

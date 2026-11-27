@@ -6,7 +6,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import * as D from '../../machine/ts/spec/blua32/diagnostics';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { runtimeLuaFrameScopes } from '../../ide/runtime/lua_inspection';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 
 const source = `local published = 999
@@ -41,8 +41,8 @@ local run = function(seed, published, ...)
 end
 return run(40, 41)`;
 
-for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes agree with installed Studio scopes at every mapped PC`, () => {
-	const linked = linkTestSystemBlua32(compileLuaSource(source, 'scope_probe', optLevel),
+for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes agree with installed Studio scopes at every mapped probe PC`, () => {
+	const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'scope_probe'),
 		new Map([['scope_probe', { displayPath: 'scope_probe.lua', source }]]));
 	const bytes = linked.romBytes;
 	const directory = readLE32(bytes, CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET);
@@ -52,8 +52,11 @@ for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes 
 	const bindings = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_BINDING_TABLE_OFFSET);
 	const intervals = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_INTERVAL_TABLE_OFFSET);
 	const globalCount = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_STATIC_GLOBAL_COUNT_OFFSET);
-	assert.equal(globalCount, linked.symbols.metadata.staticScopes.globals.length);
-	assert.equal(globalCount, 2, 'global declarations are packed once, not once per frame');
+	const statics = linked.symbols.metadata.staticScopes;
+	assert.equal(globalCount, statics.globals.length, 'global declarations are packed once, not once per frame');
+	assert.deepEqual(statics.globals.map(index => statics.declarations[index])
+		.filter(declaration => declaration.definition.path === 'scope_probe').map(declaration => declaration.name).sort(),
+	['published', 'shape']);
 	const decoder = new TextDecoder();
 	const nameAt = (record: number, nameOffset: number, bytesOffset: number) => {
 		const start = directory + field(record, nameOffset);
@@ -67,12 +70,14 @@ for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes 
 		return false;
 	};
 	let compared = 0, inlined = 0;
+	const toolingImage = createBlua32SourceImage(linked.image, linked.symbols, new Map(), TEST_SYSTEM_CONTEXT_ID);
 	assert.equal(field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_FUNCTION_COUNT_OFFSET), linked.image.functions.length);
 	for (let functionIndex = 0; functionIndex < linked.image.functions.length; functionIndex++) {
 		const fn = linked.image.functions[functionIndex];
 		const record = functions + functionIndex * D.BLUA32_DIAGNOSTIC_FUNCTION_RECORD_SIZE;
 		assert.equal(field(record, D.BLUA32_DIAGNOSTIC_FUNCTION_ADDRESS_OFFSET), fn.address);
 		assert.equal(field(record, D.BLUA32_DIAGNOSTIC_FUNCTION_CODE_ADDRESS_OFFSET), fn.codeAddress);
+		if (!linked.symbols.metadata.functionIds[functionIndex].startsWith('module:scope_probe/')) continue;
 		const frameStart = field(record, D.BLUA32_DIAGNOSTIC_FUNCTION_FRAME_START_OFFSET);
 		const frameCount = field(record, D.BLUA32_DIAGNOSTIC_FUNCTION_FRAME_COUNT_OFFSET);
 		for (let word = 0; word < fn.codeByteCount / 4; word++) {
@@ -107,7 +112,7 @@ for (const optLevel of [3] as const) test(`O${optLevel}: packed firmware scopes 
 								: { kind: 'slot', location: live ? { inStack: (flags & D.BLUA32_DIAGNOSTIC_BINDING_UPVALUE) === 0, index: field(slot, D.BLUA32_DIAGNOSTIC_BINDING_INDEX_OFFSET) } : null }),
 					});
 				}
-				const scopes = runtimeLuaFrameScopes({ executionDomainId: -1, toolingImage: createBlua32SourceImage(linked.image, linked.symbols, new Map(), TEST_SYSTEM_CONTEXT_ID),
+				const scopes = runtimeLuaFrameScopes({ executionDomainId: -1, toolingImage,
 					functionAddress: fn.address, functionIndex, tracePc: pc }, depth);
 				const expected = new Map<string, unknown>();
 				for (const scope of [scopes[1], scopes[0], scopes[2]]) {

@@ -1,4 +1,4 @@
-import { loadHeapServiceTestModules } from './heap_service_system';
+import { loadHeapServiceTestModules, loadTestBiosUtilityModules } from './heap_service_system';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -164,7 +164,11 @@ math = require('math')
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
-	compiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), [...loadHeapServiceTestModules(), ...systemModules], {
+	compiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), [
+		...loadHeapServiceTestModules(),
+		...loadTestBiosUtilityModules().filter(module => !systemModules.some(input => input.path === module.path)),
+		...systemModules,
+	], {
 		entrySource: systemEntry,
 		optLevel,
 		preloadModules: HEAP_SERVICE_MODULES,

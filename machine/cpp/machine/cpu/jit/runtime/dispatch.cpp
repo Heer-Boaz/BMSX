@@ -459,16 +459,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
-		case NativeBlockExit::BiosCall: {
-			const auto [result, selector, argc] = exit->operands.biosCall;
-			cpu.enterBiosCall(*frame, result, selector, argc);
-			// The ordinary CPU runs the pinned service before another guest
-			// instruction can use the result or the same register window.
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-			++gateProfile.returns;
-#endif
-			return nullptr;
-		}
 		case NativeBlockExit::Continue:
 		case NativeBlockExit::ScalarBoundary:
 		case NativeBlockExit::PrivateCall:

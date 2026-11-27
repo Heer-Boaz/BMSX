@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, MAX_EXT_REGISTER_A, MAX_EXT_REGISTER_BC, MIN_SIGNED_BX, ValueMoveKind, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
 import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
 import { allocateFrameSlots } from '../../toolchain/ts/lua/compiler/optimizer/frame_slots';
@@ -29,7 +28,7 @@ function body(compiled: CompiledProgram, functionName?: string): DecodedInstruct
 	const result: DecodedInstruction[] = [];
 	for (let pc = entryPC; pc < entryPC + codeLen;) {
 		const decoded = decodeBlua32InstructionAtPc(code, 0, pc);
-		if (decoded.op === OpCode.BIOSCALL) assert.ok(decoded.a + decoded.c < maxStack);
+		if (decoded.op === OpCode.CALL && decoded.b !== 0) assert.ok(decoded.a + decoded.b <= maxStack);
 		result.push(decoded);
 		pc = decoded.pc + INSTRUCTION_BYTES;
 	}
@@ -45,12 +44,20 @@ function integer(instruction: DecodedInstruction): number {
 	}
 }
 
+function tableCall(instructions: readonly DecodedInstruction[]): number {
+	return instructions.findIndex((instruction, index) => instruction.op === OpCode.CALL && instruction.b === 3
+		&& instructions[index - 1].op === OpCode.CLOSURE && instructions[index - 1].a === instruction.a);
+}
+
 function tableCapacities(instructions: readonly DecodedInstruction[], site: number): number[] {
 	const call = instructions[site];
-	assert.equal(call.op, OpCode.BIOSCALL);
-	assert.equal(call.b, BiosCall.CreateTable);
+	assert.equal(call.op, OpCode.CALL);
+	assert.equal(call.b, 3);
 	assert.equal(call.c, 2);
-	const args = instructions.slice(site - 2, site);
+	const binding = instructions[site - 1];
+	assert.equal(binding.op, OpCode.CLOSURE);
+	assert.equal(binding.a, call.a);
+	const args = instructions.slice(site - 3, site - 1);
 	assert.deepEqual(args.map(arg => arg.a), [call.a + 1, call.a + 2]);
 	return args.map(integer);
 }
@@ -79,17 +86,17 @@ return empty, hinted, prepared, effects, virtual
 `;
 
 for (const opt of [0, 2, 3] as const) {
-	test(`BIOSCALL uses a fixed selector/window and preserves table sizing at O${opt}`, () => {
+	test(`the resident constructor uses an ordinary fixed call window and preserves table sizing at O${opt}`, () => {
 		const compiled = compileLuaSource(source, 'bioscall-shapes.lua', opt);
 		const empty = body(compiled, 'empty');
-		assert.deepEqual(empty.slice(0, 4).map(instruction => instruction.op), [OpCode.K0, OpCode.K0, OpCode.BIOSCALL, OpCode.RET]);
-		assert.deepEqual(tableCapacities(empty, 2), [0, 0]);
-		assert.equal(empty[2].a, empty[3].a, 'a free suffix needs no result move');
+		assert.deepEqual(empty.slice(0, 5).map(instruction => instruction.op), [OpCode.K0, OpCode.K0, OpCode.CLOSURE, OpCode.CALL, OpCode.RET]);
+		assert.deepEqual(tableCapacities(empty, 3), [0, 0]);
+		assert.equal(empty[3].a, empty[4].a, 'a free suffix needs no result move');
 		const hinted = body(compiled, 'hinted');
-		assert.deepEqual(tableCapacities(hinted, hinted.findIndex(instruction => instruction.op === OpCode.BIOSCALL)),
+		assert.deepEqual(tableCapacities(hinted, tableCall(hinted)),
 			opt === 3 ? [1, 1] : [0, 0]);
 		const virtual = body(compiled, 'virtual');
-		assert.equal(virtual.some(instruction => instruction.op === OpCode.BIOSCALL), opt !== 3);
+		assert.equal((tableCall(virtual) >= 0), opt !== 3);
 		if (opt === 3) {
 			assert.deepEqual(virtual.map(instruction => instruction.op), [OpCode.ADD, OpCode.RET]);
 			assert.deepEqual([virtual[0].b, virtual[0].c], [0, 1]);
@@ -99,7 +106,7 @@ for (const opt of [0, 2, 3] as const) {
 	test(`constructor preparation never reorders RHS effects or clobbers live operands at O${opt}`, () => {
 		const compiled = compileLuaSource(source, 'bioscall-order.lua', opt);
 		const record = body(compiled, 'prepared');
-		const site = record.findIndex(instruction => instruction.op === OpCode.BIOSCALL);
+		const site = tableCall(record);
 		assert.deepEqual(tableCapacities(record, site), [0, 2]);
 		const reads = record.filter(instruction => instruction.op === OpCode.GETFIELD);
 		const stores = record.filter(instruction => instruction.op === OpCode.SETFIELD);
@@ -109,12 +116,12 @@ for (const opt of [0, 2, 3] as const) {
 		assert.equal(reads.every(instruction => instruction.pc < record[site].pc), opt === 3);
 		assert.ok(stores.every(instruction => instruction.a === record[site].a));
 		if (opt === 3) {
-			const { a, c } = record[site];
-			assert.ok(reads.every(instruction => instruction.a < a || instruction.a > a + c));
+			const { a } = record[site];
+			assert.ok(reads.every(instruction => instruction.a < a), 'fixed RET keeps both prepared RHS roots live');
 		}
 		const effects = body(compiled, 'effects');
-		const allocation = effects.findIndex(instruction => instruction.op === OpCode.BIOSCALL);
-		const calls = effects.filter(instruction => instruction.op === OpCode.CALL);
+		const allocation = tableCall(effects);
+		const calls = effects.filter((instruction, index) => index !== allocation && instruction.op === OpCode.CALL);
 		const writes = effects.filter(instruction => instruction.op === OpCode.SETFIELD);
 		assert.equal(calls.length, 2);
 		assert.equal(writes.length, 2);
@@ -123,26 +130,20 @@ for (const opt of [0, 2, 3] as const) {
 	});
 }
 
-test('only the table selector is removable; BIOSCALL uses just the implicit input lane and defines its result', () => {
-	const instruction: Instruction = { op: OpCode.BIOSCALL, format: 'ABC', a: 9, b: BiosCall.CreateTable, c: 2, rkMask: 0, target: null };
-	assert.equal(OpCode.BIOSCALL, 0x10);
-	assert.equal(BASE_CYCLES[OpCode.BIOSCALL], BASE_CYCLES[OpCode.CALL]);
-	assert.deepEqual(collectInstructionUses(instruction, 15, () => []), [10, 11]);
-	assert.deepEqual(collectInstructionDefs(instruction, 15), [9]);
+test('only a constructor recognized by the compiler is removable; it uses the ordinary CALL liveness window', () => {
+	const instruction: Instruction = { op: OpCode.CALL, format: 'ABC', a: 9, b: 3, c: 2, rkMask: 0, target: null, tableConstructor: true };
+	assert.deepEqual(collectInstructionUses(instruction, 15, () => []), [9, 10, 11]);
+	assert.deepEqual(collectInstructionDefs(instruction, 15), [9, 10, 11, 12, 13, 14, 15]);
 	assert.equal(computeMaxRegister([instruction]), 11);
 	assert.equal(isPureInstruction(instruction), true);
-	assert.equal(isPureInstruction({ ...instruction, b: BiosCall.Count }), false);
-	assert.equal(isPureInstruction({ ...instruction, c: 1 }), false);
-	const zeroArgs = { ...instruction, c: 0 };
-	assert.deepEqual(collectInstructionUses(zeroArgs, 15, () => []), []);
-	assert.equal(computeMaxRegister([zeroArgs]), 9);
+	assert.equal(isPureInstruction({ ...instruction, tableConstructor: undefined }), false);
 
 	const load = (a: number): Instruction => ({ ...instruction, op: OpCode.K1, a, b: 0, c: 0 });
 	const unrelated = { ...instruction, op: OpCode.MOV, a: 15, b: 9, c: ValueMoveKind.Copy };
-	const allocated = allocateFrameSlots([load(10), load(11), instruction, unrelated], 16, 0, () => []);
+	const allocated = allocateFrameSlots([load(9), load(10), load(11), instruction, unrelated], 16, 0, () => []);
 	assert.ok(allocated);
 	assert.deepEqual([...allocated.slots.slice(9, 12)], [9, 10, 11], 'compaction does not split the window');
-	assert.equal(allocated.instructions[2].a, 9);
+	assert.equal(allocated.instructions[3].a, 9);
 	assert.ok(allocated.maxStack < 16, 'unrelated registers can still move');
 });
 
@@ -164,40 +165,46 @@ return collect`;
 		{ entrySource: 'return blua32.collect_step()', programDomain: 'system' }), /Unknown blua32 operation 'collect_step'/);
 	for (const optLevel of [0, 3] as const) {
 		const lowered = body(compileLuaChunkToProgram(chunk, modules, { entrySource, programDomain: 'system', optLevel }), 'collect');
-		assert.equal(lowered.some(instruction => instruction.op === OpCode.BIOSCALL), false);
+		assert.equal(tableCall(lowered), -1);
 		const calls = lowered.filter(instruction => instruction.op === OpCode.CALL);
 		assert.deepEqual(calls.map(call => call.b), [1, 1], 'no arguments, and the discarded step may not be erased');
-		assert.equal(lowered.filter(instruction => instruction.op === OpCode.LOADK).length, 2, 'both callees are link-time symbols');
+		assert.equal(lowered.filter(instruction => instruction.op === OpCode.CLOSURE).length, 2, 'both callees are link-time symbols');
 	}
 });
 
-test('disassembly names the ABI fields, without treating selector or count as registers', () => {
-	const image = linkTestSystemBlua32(compileLuaSource('return {}'));
-	const pc = image.image.functions.find(fn => fn.address === image.vectors.entryFunctionAddress)!.codeAddress + 2 * INSTRUCTION_BYTES;
-	const described = describeBlua32InstructionAtPc(image.image, image.symbols, pc);
-	assert.match(described.instructionText, /^BIOSCALL r\d+, 0, 2$/);
-	assert.deepEqual(described.operands.map(operand => [operand.label, operand.registerIndex]),
-		[['result', 0], ['selector', undefined], ['nargs', undefined]]);
+test('linked disassembly shows a real constructor binding and an ordinary CALL', () => {
+	const compiled = compileHeapServiceSystem('return {}', 0);
+	const image = linkTestSystemBlua32(compiled);
+	const bodyAddress = image.image.functions.find(fn => fn.address === image.vectors.entryFunctionAddress)!.codeAddress;
+	const code = body(compiled);
+	const site = tableCall(code);
+	const bindingPc = bodyAddress + code[site - 1].pc - compiled.program.protos[compiled.entryProtoIndex].entryPC - INSTRUCTION_BYTES;
+	const binding = decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, bindingPc);
+	const { slotName } = compiled.program.moduleExports.find(entry => entry.path === 'kernel/bios_create_table' && entry.exportPathKey === 'create_table')!;
+	const index = image.symbols.metadata.functionIds.indexOf(compiled.metadata.exportProtoIdBySlot[slotName]);
+	assert.equal(binding.bx * 16, image.symbols.functionAddresses[index]);
+	const described = describeBlua32InstructionAtPc(image.image, image.symbols, binding.pc + INSTRUCTION_BYTES);
+	assert.match(described.instructionText, /^CALL r\d+, 2, 1$/);
 });
 
-test('static fixed modules may not issue a potentially suspending BIOSCALL', () => {
+test('static fixed modules may not construct a managed Table', () => {
 	const moduleSource = 'module<const>\nlocal make<const> = function() return {} end\nreturn {make = make}';
 	const entry = 'halt_until_irq';
 	assert.throws(() => compileLuaChunkToProgram(parseLuaChunk(entry), [
 		{ path: 'static', source: moduleSource, chunk: parseLuaChunk(moduleSource, 'static.lua') },
 	], { entrySource: entry, preloadModules: ['static'], programDomain: 'system' }),
-	/forbidden static opcode BIOSCALL \(BIOS service call\)/);
+	/Static function export.*cannot construct a Table/);
 });
 
-test('literal capacities are Integer values rather than truncated ABC selector fields', () => {
+test('literal capacities travel as tagged Integer values rather than instruction fields', () => {
 	const explicit = compileLuaSource(`return {${'0,'.repeat(513)}}`);
 	const code = body(explicit);
-	assert.deepEqual(tableCapacities(code, code.findIndex(instruction => instruction.op === OpCode.BIOSCALL)), [513, 0]);
+	assert.deepEqual(tableCapacities(code, tableCall(code)), [513, 0]);
 	assert.throws(() => compileLuaSource(`return {${'0,'.repeat(MAX_EXT_REGISTER_BC + 1)}}`),
 		/constructor capacity exceeds 32767 slots/);
 });
 
-test('inlining rebases the entire BIOSCALL window and leaves its selector and arity unchanged', () => {
+test('inlining rebases the complete constructor window and keeps its relocated target', () => {
 	const compiled = compileLuaSource(`
 local function make(v) return {v} end
 local kept = 17
@@ -205,9 +212,9 @@ local t = make(kept)
 return kept, t
 `, 'inline-bioscall.lua', 3);
 	const instructions = body(compiled);
-	const site = instructions.findIndex(instruction => instruction.op === OpCode.BIOSCALL);
+	const site = tableCall(instructions);
 	assert.ok(site >= 0, 'the allocating callee was inlined into the entry body');
-	assert.equal(instructions.some(instruction => instruction.op === OpCode.CALL), false);
+	assert.equal(instructions.filter(instruction => instruction.op === OpCode.CALL).length, 1);
 	assert.deepEqual(tableCapacities(instructions, site), [1, 0]);
 });
 
@@ -218,11 +225,11 @@ test('a constructor above 4100 locals materializes both tagged capacities in the
 			const compiled = compileHeapServiceSystem(`local ${locals}\nreturn {${fields}}`, opt, [], 'high-bioscall.lua');
 			const proto = compiled.program.protos[compiled.entryProtoIndex];
 			const instructions = body(compiled);
-			const site = instructions.findIndex(instruction => instruction.op === OpCode.BIOSCALL);
+			const site = tableCall(instructions);
 			assert.ok(site >= 0);
 			const call = instructions[site];
 			assert.equal(call.a, 4100);
-			assert.equal(call.b, BiosCall.CreateTable);
+			assert.equal(call.b, 3);
 			assert.equal(call.c, 2);
 			assert.equal(proto.maxStack, call.a + 3, 'Integer materialization uses no extra slot');
 			const image = linkTestSystemBlua32(compiled);
@@ -233,6 +240,11 @@ test('a constructor above 4100 locals materializes both tagged capacities in the
 			assert.equal(runCpuWithinBudget(cpu, 40_000), RunResult.ExecutionStopped);
 			const frame = cpu.getFrameDepth() - 1;
 			assert.equal(cpu.readFramePc(frame), pc);
+			assert.equal(valueTag(cpu.readFrameRegister(frame, call.a)), ValueTag.ResidentFunction);
+			const binding = instructions[site - 1];
+			assert.equal(binding.a, call.a, 'the 14-bit CLOSURE destination is the high CALL base');
+			const linkedBinding = decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, pc - 2 * INSTRUCTION_BYTES);
+			assert.equal(valuePayload(cpu.readFrameRegister(frame, call.a)), linkedBinding.bx * 16);
 			assert.equal(cpu.readFrameRegister(frame, call.a + 1), valueInteger(array));
 			assert.equal(cpu.readFrameRegister(frame, call.a + 2), valueInteger(hash));
 		}

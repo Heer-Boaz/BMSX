@@ -7,7 +7,7 @@ import type { Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32
 import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import { bindFunctionInstructions } from '../../../runtime/instruction_probe';
-import type { DecodedInstruction } from '../../../../toolchain/ts/rompack/disassembler';
+import type { DecodedInstruction } from '../../../../toolchain/ts/rompack/blua32_instruction_decode';
 
 export type ScenePlanRegistration = {
 	readonly planHashId: number;

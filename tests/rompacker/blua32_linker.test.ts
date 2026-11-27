@@ -51,6 +51,8 @@ import {
 	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap, loadHeapServiceTestModules } from '../helpers/heap_service_system';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
@@ -343,7 +345,7 @@ test('compiler vectors become distinct physical BLua32 function addresses', () =
 
 test('compiler object and physical BLua32 image ignore source registry enumeration order', () => {
 	const entrySource = 'return require("alpha").value + require("zeta").value';
-	const modules = [
+	const authored = [
 		{ path: 'zeta', source: 'return { value = 7 }' },
 		{ path: 'alpha', source: 'return { value = 3 }' },
 	].map(module => ({
@@ -351,15 +353,18 @@ test('compiler object and physical BLua32 image ignore source registry enumerati
 		chunk: parseLuaChunk(module.source, `${module.path}.lua`),
 		source: module.source,
 	}));
+	const modules = [...loadHeapServiceTestModules(), ...authored];
 	const forward = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, {
 		entrySource,
 		optLevel: 3,
 		programDomain: 'system',
+		preloadModules: HEAP_SERVICE_MODULES,
 	});
 	const reverse = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules.slice().reverse(), {
 		entrySource,
 		optLevel: 3,
 		programDomain: 'system',
+		preloadModules: HEAP_SERVICE_MODULES,
 	});
 	const forwardImage = linkSystemBlua32Image(
 		encodeCompiledProgramObject(forward),
@@ -1193,7 +1198,7 @@ test('BLua32 capture-table reindexing is not a closure identity change', () => {
 test('BLua32 provenance does not admit a compacted closure over existing live cells', () => {
 	const before = 'local first = {}\nlocal second = {}\nfunction gather() return { first, second } end';
 	const after = before.replace('{ first, second }', '{ second }');
-	const compile = (source: string) => compileLuaChunkToProgram(
+	const compile = (source: string) => compileTestSystemWithHeap(
 		parseLuaChunk(source, 'entry'), [], { entrySource: source, programDomain: 'system', optLevel: 3 },
 	);
 	const initial = compile(before);

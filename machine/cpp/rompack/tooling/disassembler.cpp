@@ -173,7 +173,8 @@ DecodedDebugInstruction decodeInstructionFromStart(const Blua32ImageLayout& imag
 		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
 		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
 		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
+		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA
+			| (nextOp == OpCode::CLOSURE ? (cLow & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0);
 		const int b = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | nextB;
 		const int c = (cLow << cShift) | (extC << MAX_OPERAND_BITS) | nextC;
 		const uint32_t bxLow = (static_cast<uint32_t>(nextB) << 6U) | static_cast<uint32_t>(nextC);
@@ -295,8 +296,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SETT:
 			return "SETT r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
-		case OpCode::BIOSCALL:
-			return "BIOSCALL r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::ADD:
 		case OpCode::SUB:
 		case OpCode::MUL:
@@ -422,7 +421,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SETT:
 			return {registerOperand("table", decoded.a), rkOperand("key", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
-		case OpCode::BIOSCALL:
 			return {registerOperand("dst", decoded.a), plainOperand("selector", std::to_string(decoded.b)), plainOperand("argc", std::to_string(decoded.c))};
 		case OpCode::ADD:
 		case OpCode::SUB:

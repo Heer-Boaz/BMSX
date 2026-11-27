@@ -83,7 +83,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 		const nextPc = (plan.pc + (plan.endWord - plan.firstWord) * INSTRUCTION_BYTES) >>> 0;
 		if (plan.fallthrough) successors[index].add(index + 1);
 		else switch (page.ops[finalWord]) {
-			case OpCode.HALT: case OpCode.CALL: case OpCode.RET: case OpCode.BIOSCALL:
+			case OpCode.HALT: case OpCode.CALL: case OpCode.RET:
 			case OpCode.CLOSURE: case OpCode.CONCAT: case OpCode.CONCATN: case OpCode.RFE: case OpCode.ITERN: break;
 			case OpCode.MTC0:
 				if (page.b[finalWord] !== COP0_EXEC && page.b[finalWord] !== COP0_STATUS) addSuccessor(nextPc);

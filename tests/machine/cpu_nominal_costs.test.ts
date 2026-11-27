@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { compiledBlockSupports, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueTag, valueInteger, valueFloat, valueNil, valueTable, valueBool } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`nominal work classes retain every admitted effect, prefix and debt (${backend}, WIDE=${wide})`, () => {
@@ -107,8 +108,42 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 	});
 }
 
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+	test(`reserved 10H traps without reading an operand (${backend}, WIDE=${wide})`, () => {
+		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+		const body = wide ? 1 : 0;
+		if (wide) writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, body, 0x10, 63, 63, 63, 255);
+		writeInstruction(text, body + 1, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: body + 2, maxStack: 3 },
+			{ firstWord: 32, wordCount: 1 },
+		], exceptionFunctionIndex: 1 });
+		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.frameAtDepth(0);
+		const pc = frame.pc;
+		cpu.rootThread.resizeStack(32); // Reserve the exception frame independently of the opcode.
+		seedTestRomClosure(cpu, image.vectors.exceptionFunctionAddress);
+		const before = cpu.heapAllocator.occupiedBytes();
+		frame.registers.setInteger(0, 17);
+		frame.registers.setInteger(1, 2);
+		frame.registers.setInteger(2, 3);
+		frame.top = 3;
+		assert.equal(compiledBlockSupports(0x10, 63, 63), false);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, -1, 'one instruction-supply charge');
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		assert.equal(cpu.readEpcWord(), pc, 'EPC points to WIDE, not the body');
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.heapAllocator.occupiedBytes(), before);
+		assert.deepEqual([frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)],
+			[valueInteger(17), valueInteger(2), valueInteger(3)]);
+	});
+}
+
 const changed = [OpCode.GETT, OpCode.GETI, OpCode.GETFIELD, OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.SELF,
-	OpCode.CALL, OpCode.RET, OpCode.BIOSCALL, OpCode.CLOSURE, OpCode.GETUP, OpCode.SETUP, OpCode.GETSYS, OpCode.GETGL,
+	OpCode.CALL, OpCode.RET, 0x10, OpCode.CLOSURE, OpCode.GETUP, OpCode.SETUP, OpCode.GETSYS, OpCode.GETGL,
 	OpCode.SETSYS, OpCode.SETGL, OpCode.LEN, OpCode.MOD, OpCode.POW];
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) for (const op of changed) {
 	test(`skipping work-class opcode ${op} charges neither body nor WIDE (${backend}, WIDE=${wide})`, () => {

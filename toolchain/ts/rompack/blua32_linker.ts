@@ -425,11 +425,11 @@ export function rewriteResolvedABx(code: Uint8Array, wordIndex: number, op: OpCo
 	);
 }
 
-function rewriteLocalClosures(code: Uint8Array, functionAddresses: ReadonlyArray<number>): void {
+function rewriteLocalClosures(code: Uint8Array, functionAddresses: ReadonlyArray<number>, symbolLoads: ReadonlySet<number>): void {
 	const instructionCount = code.byteLength / INSTRUCTION_BYTES;
 	for (let wordIndex = 1; wordIndex < instructionCount; wordIndex += 1) {
 		const word = readInstructionWord(code, wordIndex);
-		if (((word >>> 18) & 0x3f) !== OpCode.CLOSURE) {
+		if (((word >>> 18) & 0x3f) !== OpCode.CLOSURE || symbolLoads.has(wordIndex)) {
 			continue;
 		}
 		const wideWord = readInstructionWord(code, wordIndex - 1);
@@ -823,7 +823,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		writeInstruction(code, word + 1, OpCode.JMP, 0,
 			(back & MAX_LOW_BX) >>> MAX_OPERAND_BITS, back & MAX_LOW_OPERAND, back >>> MAX_BX_BITS);
 	}
-	rewriteLocalClosures(code, functionAddressByProtoIndex);
+	const symbolLoads = new Set<number>();
+	for (const reloc of object.link.constRelocs) {
+		if (reloc.kind === 'export_proto' || reloc.kind === 'module_init') symbolLoads.add(reloc.wordIndex);
+	}
+	if (input.domain === 'cart') {
+		for (const reloc of input.object.link.biosFunctionConstRelocs) symbolLoads.add(reloc.wordIndex);
+	}
+	rewriteLocalClosures(code, functionAddressByProtoIndex, symbolLoads);
 	rewriteImageRelocations(
 		code,
 		input.object.link.constRelocs,

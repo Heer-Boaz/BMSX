@@ -9,6 +9,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
+#include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
@@ -77,15 +78,15 @@ struct Run {
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 DiagnosticOpcodeCounts difference(const DiagnosticOpcodeCounts& end, const DiagnosticOpcodeCounts& begin) {
-	return {end.biosCall-begin.biosCall, end.call-begin.call, end.setfield-begin.setfield,
+	return {end.call-begin.call, end.setfield-begin.setfield,
 		end.concat-begin.concat, end.concatn-begin.concatn};
 }
 void requireCounts(const DiagnosticOpcodeCounts& actual, DiagnosticOpcodeCounts expected, const char* message) {
-	require(actual.biosCall == expected.biosCall && actual.call == expected.call && actual.setfield == expected.setfield
+	require(actual.call == expected.call && actual.setfield == expected.setfield
 		&& actual.concat == expected.concat && actual.concatn == expected.concatn, message);
 }
 DiagnosticOpcodeCounts total(const Run& run) {
-	return {run.native.biosCall+run.interpreter.biosCall, run.native.call+run.interpreter.call,
+	return {run.native.call+run.interpreter.call,
 		run.native.setfield+run.interpreter.setfield, run.native.concat+run.interpreter.concat,
 		run.native.concatn+run.interpreter.concatn};
 }
@@ -169,7 +170,7 @@ test::Blua32TestImage mixedImage() {
 	writeInstruction(image.text,3,static_cast<u8>(OpCode::CONCAT),3,4,5);
 	writeInstruction(image.text,4,static_cast<u8>(OpCode::CONCATN),6,4,2);
 	writeInstruction(image.text,5,static_cast<u8>(OpCode::JMPIF),7,0,1);
-	writeInstruction(image.text,6,static_cast<u8>(OpCode::BIOSCALL),8,0,2);
+	writeInstruction(image.text,6,static_cast<u8>(OpCode::CALL),8,1,2);
 	writeInstruction(image.text,7,static_cast<u8>(OpCode::HALT),0,0,0);
 	return image;
 }
@@ -193,13 +194,13 @@ std::vector<u8> mixedGrants() {
 	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
 	require(generated.frame().registers.get(3)==generated.frame().registers.get(6),"CONCAT and CONCATN produce identical complete strings");
-	require(isNil(generated.frame().registers.get(8)),"an untaken BIOSCALL never changes its destination");
+	require(isNil(generated.frame().registers.get(8)),"an untaken CALL never changes its destination");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto& p=generated.runtime.machine.cpu.diagnosticExecutionProfile();
-	requireCounts({p.nativeOpcodes.biosCall+p.interpreterOpcodes.biosCall,p.nativeOpcodes.call+p.interpreterOpcodes.call,
+	requireCounts({p.nativeOpcodes.call+p.interpreterOpcodes.call,
 		p.nativeOpcodes.setfield+p.interpreterOpcodes.setfield,p.nativeOpcodes.concat+p.interpreterOpcodes.concat,
-		p.nativeOpcodes.concatn+p.interpreterOpcodes.concatn},{0,0,1,1,1},
-		"each completed mixed instruction counts once, excluding the untaken BIOSCALL suffix");
+		p.nativeOpcodes.concatn+p.interpreterOpcodes.concatn},{0,1,1,1},
+		"each completed mixed instruction counts once, excluding the untaken CALL suffix");
 #endif
 	return encodeRuntimeSaveState(captureRuntimeSaveState(generated.runtime));
 }
@@ -207,26 +208,26 @@ std::vector<u8> mixedGrants() {
 void scalarBoundaryRetry() {
 	auto image=imageWithHandler(3);
 	writeInstruction(image.text,0,static_cast<u8>(OpCode::K1),1,0,0);
-	writeInstruction(image.text,1,static_cast<u8>(OpCode::BIOSCALL),0,0,2);
+	writeInstruction(image.text,1,static_cast<u8>(OpCode::CALL),0,2,2);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::HALT),0,0,0);
 	Fixture generated(image,false),scalar(image,true);
 	const auto zero=runPair(generated,scalar,0);
 	require(zero.consumed==0,"an exhausted entry executes no instruction");
 	[[maybe_unused]] const auto shortGrant=runPair(generated,scalar,1);
 	require(generated.frame().registers.get(1)==valueInteger(1) && isNil(generated.frame().registers.get(0)),
-		"the insufficient prefix grant executes only the scalar K1, not the unadmitted BIOSCALL suffix");
+		"the insufficient prefix grant executes only the scalar K1, not the unadmitted CALL suffix");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	require(shortGrant.nativeCycles==0,"ScalarBoundary refunds the unexecuted native entry before scalar retry");
-	requireCounts(total(shortGrant),{},"a declined native suffix counts no BIOSCALL attempt");
+	requireCounts(total(shortGrant),{},"a declined native suffix counts no CALL attempt");
 #endif
 	const auto retry=runPair(generated,scalar,1);
-	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::BIOSCALL)],"the admitted BIOSCALL pays its fixed cost");
+	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::CALL)],"the admitted CALL pays its fixed cost");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(retry),{1,0,0,0,0},"the successor retry admits and counts BIOSCALL exactly once");
+	requireCounts(total(retry),{1,0,0,0},"the successor retry admits and counts CALL exactly once");
 #endif
 	[[maybe_unused]] const auto finish=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(finish),{},"the exception handler does not count BIOSCALL twice");
+	requireCounts(total(finish),{},"the exception handler does not count CALL twice");
 #endif
 }
 
@@ -253,7 +254,7 @@ void tableWrites() {
 		}
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{0,0,1,0,0},"cached, allocating-miss and faulting SETFIELD each count one admitted attempt");
+		requireCounts(total(measured),{0,1,0,0},"cached, allocating-miss and faulting SETFIELD each count one admitted attempt");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(measured.native.setfield==1 && measured.nativeCycles>0,"all three field routes retain native origin through shared semantic helpers");
 #endif
@@ -284,12 +285,18 @@ void directCalls() {
 	image.closureRelocations={{1,test::blua32TestFunctionAddress(RomImageDomain::System,3)},
 		{4,test::blua32TestFunctionAddress(RomImageDomain::System,3)},
 		{33,test::blua32TestFunctionAddress(RomImageDomain::System,4)}};
-	Fixture generated(image,false),scalar(image,true);
+	Fixture generated(image,false,false),scalar(image,true);
+	// Allocation is not the subject of this bare ROM diagnostic fixture.
+	for (auto* fixture : {&generated, &scalar}) for (auto index : {3u, 4u})
+		test::seedTestRomClosure(fixture->runtime.machine.cpu, fixture->rom.functionAddresses[index]);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	generated.runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 	for(int pass=0;pass<2;++pass) {
 		if(pass) { generated.restart(); scalar.restart(); }
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,512);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{0,4,0,0,0},"nested calls and linked continuations count actual CALL instructions, not native entries");
+		requireCounts(total(measured),{4,0,0,0},"nested calls and linked continuations count actual CALL instructions, not native entries");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(measured.native.call==4 && measured.nativeCycles>0,"precompiled direct-call and return chains retain native-origin counts");
 #endif
@@ -310,7 +317,7 @@ void fetchAndCallFaults() {
 		}
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{0,fetch?0u:1u,0,0,0},"fetch fault admits no opcode; faulting non-callable CALL counts one attempt before unwind");
+		requireCounts(total(measured),{fetch?0u:1u,0,0,0},"fetch fault admits no opcode; faulting non-callable CALL counts one attempt before unwind");
 #endif
 		require(fetch ? generated.runtime.machine.memory.readBusFaultSequence()>0
 			: generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"the selected actual fetch or language fault was exercised");
@@ -335,7 +342,7 @@ void interruptBoundary() {
 	[[maybe_unused]] const auto handler=runPair(generated,scalar,1);
 	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==2,"the short grant executes the actual interrupt handler in its own frame");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(handler),{0,0,0,0,1},"an interrupt entry counts the handler CONCATN, not a second root opcode");
+	requireCounts(total(handler),{0,0,0,1},"an interrupt entry counts the handler CONCATN, not a second root opcode");
 #endif
 	if(!nmi) for(auto* fixture : {&generated,&scalar}) fixture->runtime.machine.irqController.acknowledge(IRQ_GPU);
 	runPair(generated,scalar,64);

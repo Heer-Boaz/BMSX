@@ -1,5 +1,6 @@
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
+import { TABLE_CONSTRUCTOR_BINDING } from '../helpers/table_constructor';
 import { test } from 'node:test';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -283,7 +284,7 @@ return mem[base], mem[base + sizeof(q16_matrix) + 12]
 	const compiled = compileSource(source);
 	const disassembly = disassembleEntryFunction(compiled);
 
-	assert.equal(disassembly.includes('BIOSCALL'), false);
+	assert.doesNotMatch(disassembly, TABLE_CONSTRUCTOR_BINDING);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 0/);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 28/);
 	assert.deepEqual(runCompiledLua(source), [1, 8].map(valueInteger));

@@ -116,9 +116,9 @@ const NativeGateExitProfile& row(const Machine& m, NativeBlockExit kind) {
 #endif
 
 void simpleExits() {
-	for (auto operation : {OpCode::HALT, OpCode::ADD, OpCode::BIOSCALL, OpCode::LOADKR}) {
-		const auto rom = image(operation, operation == OpCode::LOADKR ? 1 : 0, operation == OpCode::BIOSCALL ? 2 : 0);
-		Machine generated(rom, false, operation == OpCode::BIOSCALL), scalar(rom, true, operation == OpCode::BIOSCALL);
+	for (auto operation : {OpCode::HALT, OpCode::ADD, OpCode::LOADKR}) {
+		const auto rom = image(operation, operation == OpCode::LOADKR ? 1 : 0);
+		Machine generated(rom, false), scalar(rom, true);
 		for (auto* m : {&generated, &scalar}) {
 			m->cpu.rootThread()->currentFrame->registers.set(0, valueInteger(3));
 			m->cpu.rootThread()->currentFrame->registers.set(1, valueInteger(100000));
@@ -130,10 +130,6 @@ void simpleExits() {
 		if (operation == OpCode::ADD) require(row(generated, NativeBlockExit::ScalarBoundary).entries == 1
 			&& row(generated, NativeBlockExit::ScalarBoundary).returns == 1
 			&& generated.cpu.readFrameRegister(0, 0) == valueInteger(6), "early scalar admission is counted and executes the opcode only once");
-		if (operation == OpCode::BIOSCALL) require(row(generated, NativeBlockExit::BiosCall).entries == 1
-			&& row(generated, NativeBlockExit::BiosCall).returns == 1 && row(generated, NativeBlockExit::BiosCall).resumes == 0
-			&& generated.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && generated.observed == 0,
-			"BIOSCALL leaves the native chain and an unbound selector does not reach the caller successor");
 		if (operation == OpCode::LOADKR) require(row(generated, NativeBlockExit::InvalidConstant).entries == 1
 			&& row(generated, NativeBlockExit::InvalidConstant).exceptions == 1
 			&& row(generated, NativeBlockExit::InvalidConstant).returns == 1, "a thrown dispatch exception is a counted null outcome");

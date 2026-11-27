@@ -17,9 +17,9 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 function assertParity(js: CPU, ref: CPU): void {
@@ -29,7 +29,7 @@ function assertParity(js: CPU, ref: CPU): void {
 	assert.equal(js.lastPc, ref.lastPc);
 }
 
-test('a warm JavaScript BIOSCALL exit yields to the bound BIOS before its compiled continuation', t => {
+test('a warm JavaScript CALL to the resident constructor yields to the bound BIOS before its compiled continuation', t => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
 	assert.ok(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const functionAddress = image.vectors.entryFunctionAddress;
@@ -49,46 +49,41 @@ test('a warm JavaScript BIOSCALL exit yields to the bound BIOS before its compil
 		assert.equal(cpu.heapServiceActive(), true);
 		retireService();
 	}
-	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const { textBytes, header: { textAddress } } = image.image;
+	let callPc = pc;
+	let call = decodeBlua32InstructionAtPc(textBytes, textAddress, callPc);
+	while (call.op !== OpCode.CALL) {
+		callPc = call.pc + INSTRUCTION_BYTES;
+		call = decodeBlua32InstructionAtPc(textBytes, textAddress, callPc);
+	}
+	const entry = (callPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
 	const { terminal, region } = block;
-	assert.equal(terminal.exit, CompiledBlockExit.BiosCall);
-	assert.ok(terminal.resumesFrame);
-	assert.ok(block.page.compiledBlocks!.entries[(terminal.nextPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
-		'the generated region includes a warm continuation');
-	assert.equal(terminal.exitB, BiosCall.CreateTable);
-	assert.equal(terminal.exitC, 2, 'the constructor uses the two tagged shape arguments');
+	assert.equal(terminal.exit, CompiledBlockExit.Call);
+	assert.deepEqual([terminal.exitB, terminal.exitC], [3, 2], 'two provided Values and one requested result');
 	const execute = region.execute;
-	let returnedExit: CompiledBlockExit | undefined;
+	let callExits = 0;
 	const compiled = t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
 		const exitIndex = execute(...args);
-		returnedExit = region.exits[exitIndex].exit;
+		if (region.exits[exitIndex].exit === CompiledBlockExit.Call) ++callExits;
 		return exitIndex;
 	});
 	enter();
-	frame.registers.setInteger(terminal.exitA, 73);
 	assert.equal(grant(), RunResult.Yielded);
-	assert.equal(compiled.mock.callCount(), 1);
-	assert.equal(returnedExit, CompiledBlockExit.BiosCall);
+	assert.equal(callExits, 1);
 	assert.equal(cpu.heapServiceActive(), true);
-	const state = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Opcode);
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex), terminal.exitA);
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultWord), 0);
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc), terminal.currentPc);
+	const state = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceResidentField.IssuePc), terminal.currentPc);
 	assert.equal(frame.pc, terminal.nextPc, 'the successor is published but fenced until BIOS RET');
 	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
 		[valueInteger(1), valueInteger(1)], 'the actual compiled exit publishes its argument window');
-	assert.equal(frame.registers.getInteger(terminal.exitA), 73, 'destination was not committed at launch');
-	const callerTop = frame.top;
+	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.ResidentFunction, 'no result before the return');
+	const callsBefore = compiled.mock.callCount();
 	retireService();
-	assert.equal(compiled.mock.callCount(), 1, 'allocator grants ran only the pinned BIOS lane');
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Idle);
+	assert.equal(compiled.mock.callCount(), callsBefore, 'allocator grants ran only the pinned BIOS lane');
 	assert.equal(frame.pc, terminal.nextPc);
 	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.Table);
-	assert.equal(frame.top, callerTop, 'generic BIOSCALL replaces only its destination, not the CALL window');
-	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
-		[valueInteger(1), valueInteger(1)]);
+	assert.equal(frame.top, terminal.exitA + 1, 'normal fixed CALL result placement');
 	assert.equal(grant(), RunResult.Halted);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);

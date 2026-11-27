@@ -844,10 +844,13 @@ The named BIOS function imports are:
 | 0 | `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
 | 1 | `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
 | 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, §2.4]{.content-visible when-format="pdf"} |
+| 3 | `kernel/bios_create_table` (`create_table`) | Two Integer capacities; returns one empty Table. | [Table construction](bios-table.md#sec-bios-table-construction) |
 
 
 
-Each path names a root static function. Import and call them as follows:
+Slots 0–2 name root static functions. Slot 3 is the resident routine used
+when an expression constructs a Table. Import and call the root functions
+as follows:
 
 ```lua
 local sin_turn32<const> = require('math/sin')

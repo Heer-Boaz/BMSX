@@ -617,7 +617,10 @@ int main() {
 		characterizeRamCharges();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(!nativeBlockSupports(static_cast<u8>(OpCode::WIDE)), "WIDE is a decode prefix");
-		for (size_t op = 1; op < OPCODE_COUNT; ++op) require(nativeBlockSupports(op), "every executable BLua32 opcode is admitted by native codegen");
+		for (size_t op = 1; op < OPCODE_COUNT; ++op) {
+			const bool executable = op != static_cast<u8>(OpCode::RESERVED_10);
+			require(nativeBlockSupports(op) == executable, "native codegen admits exactly the executable BLua32 opcodes");
+		}
 		nativeRegisterSpillIsDirty();
 		typedSuccessorRechecksLoopEntry();
 #endif

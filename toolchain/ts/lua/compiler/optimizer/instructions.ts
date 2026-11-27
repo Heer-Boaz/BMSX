@@ -1,4 +1,3 @@
-import { BiosCall } from '../../../../../machine/ts/spec/bmsx/bios';
 import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
@@ -23,6 +22,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	rkMask: instruction.rkMask,
 	target: instruction.target,
 	callProtoIndex: instruction.callProtoIndex,
+	tableConstructor: instruction.tableConstructor,
 	closureAddressRegister: instruction.closureAddressRegister,
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
@@ -88,9 +88,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				if (instruction.op === OpCode.CLOSURE && instruction.closureAddressRegister) {
 					updateMax(instruction.b);
 				}
-				break;
-			case OpCode.BIOSCALL:
-				updateMax(instruction.a + instruction.c);
 				break;
 			case OpCode.LOADNIL:
 				updateMax(instruction.a);
@@ -212,7 +209,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 
 // A dead result is not permission to remove an instruction that can raise a Lua fault.
 export const createsTable = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.BIOSCALL && instruction.b === BiosCall.CreateTable && instruction.c === 2;
+	instruction.op === OpCode.CALL && instruction.tableConstructor === true;
 
 export const isPureInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
@@ -232,7 +229,7 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.GETUP:
 		case OpCode.VARARG:
 			return true;
-		case OpCode.BIOSCALL:
+		case OpCode.CALL:
 			// Preserve elimination of an unobserved fresh table, not other calls.
 			return createsTable(instruction);
 		default:

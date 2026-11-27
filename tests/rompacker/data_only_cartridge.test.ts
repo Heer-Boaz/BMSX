@@ -131,7 +131,7 @@ test('the CLI links a debug cartridge named bmsx-bios to a separate BIOS ROM', a
 	const cart = parseCartridgePackage(await readFile(join(outputRoot, filename)));
 	assert.ok(cart.header.blua32ImageByteCount > 0);
 	const systemRom = await readFile(join(outputRoot, 'system', filename));
-	assert.equal(readBlua32BiosImports(systemRom).functions.length, 3);
+	assert.equal(readBlua32BiosImports(systemRom).functions.length, 4);
 	assert.deepEqual(await readdir(join(outputRoot, 'system')), [filename]);
 });
 

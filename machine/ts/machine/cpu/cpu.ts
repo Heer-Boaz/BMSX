@@ -61,7 +61,9 @@ import {
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
 import {
-	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
+	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG,
+	CLOSURE_DESTINATION_EXT_MASK,
+	CLOSURE_DESTINATION_EXT_SHIFT, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
 	instructionBranchTarget, instructionBx, instructionFieldExtraHashSlots, instructionLowB, instructionOpcode, instructionSignedBx, signExtend,
 } from '../../spec/blua32/instruction_format';
 import {
@@ -175,7 +177,6 @@ import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_
 import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
-import { BIOS_CALL_ARITY, BIOS_CALL_CONTEXT_WORDS, BiosCall } from '../../spec/bmsx/bios';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
@@ -186,7 +187,8 @@ import {
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
+	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
@@ -1588,7 +1590,8 @@ export class CPU implements MappedPageInvalidator {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				}
 			} else if (OPCODE_USES_BX[op] !== 0) {
-				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
+				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow
+					| (op === OpCode.CLOSURE ? (wideC & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0);
 				const bx = instructionBx(bodyWord, wideB);
 				switch (op) {
 					case OpCode.KSMI:
@@ -2234,27 +2237,6 @@ export class CPU implements MappedPageInvalidator {
 		return this.memory.readRamRecordWord(this.heapService.resultAddress);
 	}
 
-	private enterBiosCall(caller: CallFrame, destination: number, selector: number, supplied: number): void {
-		const functions = this.systemImage.heapServiceFunctions;
-		if (selector >= BiosCall.Count || supplied !== BIOS_CALL_ARITY[selector] || functions === null) {
-			this.enterSynchronousException(caller, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return;
-		}
-		const frame = this.prepareHeapServiceFrame(functions[HeapServiceOperation.Count + selector], 0, 0, 0, this.currentInstructionPc);
-		frame.registers.setInteger(0, this.heapAllocator.managementOffset());
-		frame.registers.setInteger(1, this.remainingDeviceCycles());
-		frame.registers.setInteger(2, this.runKind);
-		if (supplied !== 0) this.bumpRegisterTop(caller, destination + supplied);
-		for (let index = 0; index < supplied; ++index) {
-			const input = destination + 1 + index;
-			frame.registers.setInteger(BIOS_CALL_CONTEXT_WORDS + 2 * index, caller.registers.getTag(input));
-			frame.registers.setInteger(BIOS_CALL_CONTEXT_WORDS + 2 * index + 1, caller.registers.getPayload(input));
-		}
-		this.armBiosCall(HeapServiceBiosCallKind.Opcode, destination, 0);
-		frame.thread.enterFrame(frame);
-		this.requestYield();
-	}
-
 	private armBiosCall(kind: HeapServiceBiosCallKind, target: number, resultWord: number): void {
 		const memory = this.memory, state = this.heapService.biosCallAddress;
 		memory.writeRamRecordPair(state + HeapServiceBiosCallField.Kind, kind, this.currentInstructionPc);
@@ -2279,12 +2261,6 @@ export class CPU implements MappedPageInvalidator {
 		const target = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex);
 		const tag = memory.readRamRecordWord(state + HeapServiceBiosCallField.Tag) as ValueTag;
 		const word = memory.readRamRecordWord(state + HeapServiceBiosCallField.Word);
-		if (kind === HeapServiceBiosCallKind.Opcode) {
-			const caller = this.activeThread.currentFrame!;
-			caller.registers.setEncoded(target, tag, word);
-			this.bumpRegisterTop(caller, target);
-			return;
-		}
 		// The ordinary owner can grow the caller's stack. Builtin result
 		// scratch is a synchronous GC root until placement completes.
 		const results = this.acquireBuiltinResults();
@@ -3490,9 +3466,6 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.Length:
 					if (this.executeLength(frame, exit.exitA, exit.exitB)) return;
 					break;
-				case CompiledBlockExit.BiosCall:
-					this.enterBiosCall(frame, exit.exitA, exit.exitB, exit.exitC);
-					return;
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory:
 				case CompiledBlockExit.WriteWords: {
@@ -3714,8 +3687,8 @@ export class CPU implements MappedPageInvalidator {
 					if (this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))
 						&& this.pendingAllocation !== null) return ALLOCATION_PARKED;
 					return;
-				case OpCode.BIOSCALL:
-					this.enterBiosCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
+				case OpCode.RESERVED_10:
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				case OpCode.ADD:
 					this.setRegisterValueFast(frame, registers, a, valueAdd(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
@@ -3972,9 +3945,10 @@ export class CPU implements MappedPageInvalidator {
 		const callee = this.prepareHeapServiceFrame(address, 0, base, result, this.currentInstructionPc);
 		callee.registers.copyRangeFrom(source, 0, first, copied, callee.top - copied);
 		callee.protectedContinuationIndex = protectedIndex;
-		this.memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET,
-			this.currentInstructionPc, this.lastPc);
+		const context = this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
+		this.memory.writeRamRecordPair(context, this.currentInstructionPc, this.lastPc);
 		this.charge(callee.top);
+		this.memory.writeRamRecordPair(context + HeapServiceResidentField.SourceCycles, this.remainingDeviceCycles(), this.runKind);
 		callee.thread.enterFrame(callee);
 		this.requestYield();
 	}
@@ -3986,6 +3960,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		const sourceBase = memory.readRamRecordWord(context + HeapServiceResidentField.SourceBase);
 		const count = memory.readRamRecordWord(context + HeapServiceResidentField.SourceCount);
+		if (count === HEAP_SERVICE_RESULT_FAULT) throw new LuaExecutionError(sourceBase);
 		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
 		const index = frame.protectedContinuationIndex;
 		const caller = this.activeThread.currentFrame!;
@@ -4059,6 +4034,10 @@ export class CPU implements MappedPageInvalidator {
 				word = this.remainingDeviceCycles();
 			} else if (address === HEAP_SERVICE_MANAGEMENT_ADDRESS && kind !== MemoryAccessKind.U8) {
 				word = this.heapAllocator.managementOffset();
+			} else if (kind !== MemoryAccessKind.U8
+				&& (address === HEAP_SERVICE_CALL_CYCLES_ADDRESS || address === HEAP_SERVICE_CALL_RUN_KIND_ADDRESS)) {
+				word = memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET
+					+ HeapServiceResidentField.SourceCycles + address - HEAP_SERVICE_CALL_CYCLES_ADDRESS);
 			} else {
 				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
 				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
@@ -4071,6 +4050,13 @@ export class CPU implements MappedPageInvalidator {
 			}
 			this.setRegisterIntegerFast(frame, frame.registers, register, word);
 		} else {
+			if (address === HEAP_SERVICE_CALL_FAULT_ADDRESS && kind !== MemoryAccessKind.U8) {
+				const reason = wordOperand(frame.registers.get(register));
+				memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase,
+					reason, HEAP_SERVICE_RESULT_FAULT);
+				do this.heapService.thread.leaveFrame(); while (this.heapServiceActive());
+				return;
+			}
 			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address)
 				throw new Error('Heap service write is outside its private RAM port.');
 			const word = wordOperand(frame.registers.get(register));

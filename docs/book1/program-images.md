@@ -499,7 +499,7 @@ An independent linker resolves the published names through these fields and
 slots. It uses that function-record address for a CLOSURE operand, with the
 address divided by sixteen as specified in the
 [instruction reference](cpu.md#sec-cpu-calls-closures-globals-and-tables).
-Only the three published slots bind these named imports. Startup, vector and
+Only the published slots bind these named imports. Startup, vector and
 preparation entry points are identified separately by their header fields;
 other table positions do not themselves define additional BIOS interfaces.
 

@@ -1010,8 +1010,8 @@ void dumpReportsSelectedBuiltinAndVarargPaths() {
 		"a rejected builtin candidate is not printed as an emitted fast path");
 }
 
-void biosCallKeepsItsOperandWindowAndFrontier() {
-	DecodedInstruction call{.a = 66, .b = 192, .c = 2, .op = static_cast<u8>(OpCode::BIOSCALL)};
+void callKeepsItsOperandWindowAndFrontier() {
+	DecodedInstruction call{.a = 66, .b = 3, .c = 2, .op = static_cast<u8>(OpCode::CALL)};
 	DecodedInstruction next{.a = 69, .b = 66, .op = static_cast<u8>(OpCode::MOV)};
 	call.width = 2;
 	next.width = 1;
@@ -1028,13 +1028,13 @@ void biosCallKeepsItsOperandWindowAndFrontier() {
 		region.build(sources, uses, true, {.immutableSource = immutable});
 		const auto& entry = region.blocks().back();
 		const auto& exit = entry.terminal;
-		const auto [dest, selector, argc] = exit.operands.biosCall;
-		require(exit.exit == NativeBlockExit::BiosCall && dest == 66 && selector == 192 && argc == 2,
-			"raw selector and argc are independent of register operands");
+		const auto [callee, supplied, requested] = exit.operands.call;
+		require(exit.exit == NativeBlockExit::Call && callee == 66 && supplied == 2 && requested == 1,
+			"the normal CALL owns fixed input and result counts");
 		const auto slots = entry.instructions.back().slots;
-		require(slots.readsRange.first == 67 && slots.readsRange.count == 2
-				&& slots.writes.first == 66 && slots.writes.count == 1 && entry.requiredSlots == 69,
-			"BIOSCALL reads A+1 through A+C and defines only A");
+		require(slots.reads[0] == 66 && slots.readsRange.first == 67 && slots.readsRange.count == 2
+				&& slots.writes.first == 66 && slots.writes.count == 1,
+			"fixed CALL reads its callee and two arguments and defines one result");
 		require(exit.currentPc == start && exit.lastPc == start + INSTRUCTION_BYTES && exit.nextPc == successor
 				&& entry.sourceWords == 2 && exit.cycles == 32 && region.blocks().front().firstPc == successor,
 			"cross-page WIDE belongs to the terminal; the successor remains independently enterable");
@@ -1282,7 +1282,7 @@ int main() {
 		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
 		dumpDistinguishesFoldedEdgesFromPublicEntries();
 		dumpReportsSelectedBuiltinAndVarargPaths();
-		biosCallKeepsItsOperandWindowAndFrontier();
+		callKeepsItsOperandWindowAndFrontier();
 		registerUses();
 		knownFaultEndsOnlyTheNativePath();
 		knownFaultEndsTheFieldAddressLifetime();

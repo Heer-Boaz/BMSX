@@ -5,6 +5,7 @@ import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 import type { TraceStatementSelection } from './trace_statement';
+import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../../../machine/ts/spec/bmsx/bios';
 import type { ProgramStaticScopes } from './static_debug';
 
 export type ProgramConstant = null | boolean | NumberConstant | string;
@@ -13,6 +14,7 @@ export type ProgramConstant = null | boolean | NumberConstant | string;
 // The compiler must preserve the boundary; the System linker proves it.
 export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_collect_step', exportPathKey: 'collect_step', numParams: 0 },
+	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },
 ] as const;
 
 export type ProgramInitParticipant = {

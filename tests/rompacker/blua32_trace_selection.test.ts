@@ -7,9 +7,10 @@ import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../ma
 import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
+import { loadHeapServiceTestModules, loadTestBiosUtilityModules } from '../helpers/heap_service_system';
 
 test('image builders select channels independently per image and across module boundaries', () => {
 	const systemSource = `module<entry>
@@ -24,7 +25,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 `;
 	const system = buildBlua32Image({
 		luaModules: [{ path: 'entry', displayPath: 'entry.lua', source: systemSource, chunk: parseLuaChunk(systemSource, 'entry') },
-			...loadHeapServiceTestModules().map(module => ({ ...module, displayPath: `${module.path}.lua` }))],
+			...[...loadHeapServiceTestModules(), ...loadTestBiosUtilityModules()].map(module => ({ ...module, displayPath: `${module.path}.lua` }))],
 		preloadModules: HEAP_SERVICE_MODULES,
 		generatedLuaModules: [],
 		loadAddress: SYSTEM_ROM_BASE + 0x100,
@@ -32,7 +33,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		optLevel: 3,
 		traceStatements: ['boot'],
 		domain: 'system',
-		biosExports: [],
+		biosExports: BIOS_FUNCTION_EXPORTS,
 	});
 	const cartSource = `module<entry>
 local producer<const> = require('fixture/producer')
