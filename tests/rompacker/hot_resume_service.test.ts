@@ -145,6 +145,36 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
 });
 
+test('Hot Resume reorders and removes literals without replacing live String values', async t => {
+	const f = await fixture(t, `function describe(first)
+	if first then return 'amber' end
+	return 'sapphire'
+end
+old_label = 'bygone'`);
+	const { cpu, runtime } = f;
+	const depth = cpu.getFrameDepth();
+	const describe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('describe')!), cpu.gc);
+	const label = cpu.stringPool.find('old_label')!;
+	const retained = cpu.getGlobalByKey(label);
+	function describeFirst() {
+		cpu.beginCompletionCall(describe, [valueInteger(1)]);
+		assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+		return runtime.readCompletionValues()[0];
+	}
+	const before = describeFirst();
+	assert.equal(valuePayload(before), cpu.stringPool.find('amber'));
+	const previous = "'amber' end\n\treturn 'sapphire'\nend\nold_label = 'bygone'";
+	const offset = f.source.indexOf(previous);
+	assert.notEqual(offset, -1);
+	f.model.pushEditOperations([{ offset, deleteLength: previous.length,
+		text: "'sapphire' end\n\treturn 'amber'\nend\nold_label = nil" }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(valuePayload(describeFirst()), cpu.stringPool.find('sapphire'));
+	assert.equal(cpu.getGlobalByKey(label), retained, 'live state still refers to the removed literal');
+	assert.equal(valuePayload(retained), cpu.stringPool.find('bygone'));
+	assert.equal(cpu.getFrameDepth(), depth);
+});
+
 test('Hot Resume rebinds retained closures without replacing their captures or identity', async t => {
 	const f = await fixture(t, `local retained_value = 17
 function make_retained() return function(x) return x + retained_value + 3 end end

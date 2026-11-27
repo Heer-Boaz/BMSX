@@ -280,6 +280,8 @@ type CompileOptionsBase = {
 	/** Initialize these source modules and their dependencies before entry dependencies. */
 	preloadModules?: readonly string[];
 	captureLayout?: LuaCaptureLayout;
+	/** Keep the String slots of an installed image. Other constants can be rebuilt. */
+	installedConstants?: readonly ProgramConstant[];
 };
 
 export type ManagedEntry = { readonly symbol: string; readonly path: string; readonly callable?: true };
@@ -484,6 +486,7 @@ class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
 	private readonly constSlotByValue: Map<null | boolean | string | number, number>;
+	private nextConstantSlot = 0;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
 	private readonly globalNames: string[] = [];
@@ -543,12 +546,22 @@ class ProgramBuilder {
 		public readonly types: StructTypes,
 		public readonly tableShapes: TableShapes | undefined,
 		public readonly captureLayout?: LuaCaptureLayout,
+		installedConstants?: readonly ProgramConstant[],
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
 		this.programDomain = programDomain;
 		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
 		this.constSlotByValue = new Map();
+		if (installedConstants !== undefined) {
+			for (let slot = 0; slot < installedConstants.length; ++slot) {
+				const value = installedConstants[slot];
+				if (typeof value !== 'string') continue;
+				while (this.constPool.length < slot) this.constPool.push(null);
+				this.constPool.push(value);
+				this.constSlotByValue.set(value, slot + 1);
+			}
+		}
 	}
 
 	public registerLifetimes(file: FileSemanticData): FileRegisterLifetimes {
@@ -575,6 +588,13 @@ class ProgramBuilder {
 		return id;
 	}
 
+	private allocateConstantSlot(value: ProgramConstant): number {
+		while (typeof this.constPool[this.nextConstantSlot] === 'string') ++this.nextConstantSlot;
+		const slot = this.nextConstantSlot++;
+		this.constPool[slot] = value;
+		return slot;
+	}
+
 	public constIndex(value: ProgramConstant): number {
 		const key = typeof value === 'string' || typeof value === 'boolean' ? value
 			: value === null ? null : value.kind === 'builtin' ? 0x2_0000_0000 + value.word : numberConstantKey(value);
@@ -582,8 +602,7 @@ class ProgramBuilder {
 		if (slot) {
 			return slot - 1;
 		}
-		const index = this.constPool.length;
-		this.constPool.push(value);
+		const index = this.allocateConstantSlot(value);
 		this.constSlotByValue.set(key, index + 1);
 		return index;
 	}
@@ -593,8 +612,7 @@ class ProgramBuilder {
 		symbolIndex: number,
 		addend: number,
 	): number {
-		const index = this.constPool.length;
-		this.constPool.push(integerConstant(0));
+		const index = this.allocateConstantSlot(integerConstant(0));
 		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({
 			constIndex: index,
@@ -614,8 +632,7 @@ class ProgramBuilder {
 		if (slot) {
 			return slot - 1;
 		}
-		const index = this.constPool.length;
-		this.constPool.push(integerConstant(0));
+		const index = this.allocateConstantSlot(integerConstant(0));
 		this.relocatedConstIndices.add(index);
 		this.linkValueRelocSlotByKey.set(key, index + 1);
 		this.constValueRelocs.push({
@@ -6497,6 +6514,7 @@ export function compileLuaChunkToProgram(
 		new StructTypes(frontend.snapshot, createCompilerStaticBindings(frontend.snapshot, moduleCompileContext)),
 		tableShapes,
 		options.captureLayout,
+		options.installedConstants,
 	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;

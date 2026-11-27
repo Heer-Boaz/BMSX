@@ -260,6 +260,7 @@ export function buildBlua32Media(
 				traceStatements: installedSystem.symbols!.metadata.traceStatements,
 				preloadModules: installedSystem.symbols!.metadata.preloadModules,
 				captureLayout: mode === 'live' ? new LuaCaptureLayout(installedSystem.symbols!.metadata, sourceCorrespondence) : undefined,
+				installedConstants: mode === 'live' ? installedSystem.layout.constants : undefined,
 			},
 		);
 		const systemObject = encodeCompiledProgramObject(compiledSystem);
@@ -354,6 +355,7 @@ export function buildBlua32Media(
 				traceStatements: installed.symbols!.metadata.traceStatements,
 				preloadModules: installed.symbols!.metadata.preloadModules,
 				captureLayout: mode === 'live' ? new LuaCaptureLayout(installed.symbols!.metadata, sourceCorrespondence) : undefined,
+				installedConstants: mode === 'live' ? installed.layout.constants : undefined,
 			},
 		);
 		const cartObject = encodeCompiledProgramObject(compiled);
