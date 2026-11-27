@@ -2,6 +2,7 @@ import type { SuspendedGuestSession } from './suspended_guest';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
+import { asClosure, EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import {
 	aemDocumentFormat,
@@ -11,6 +12,8 @@ import {
 	parseStructuredTextDocument,
 } from '../../toolchain/ts/rompack/aem';
 import type { RomAssetEdit } from '../../toolchain/ts/rompack/blua32_tail';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { BLUA32_DIAGNOSTICS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityKey,
@@ -20,11 +23,15 @@ import {
 import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import {
 	buildBlua32Revision,
-	installBlua32Revision,
+	publishBlua32Revision,
 	prepareBlua32RevisionInstallation,
 	type BuiltBlua32Revision,
 } from './hot_resume';
-import type { HotResumeRelocation } from './hot_resume_relocation';
+import { buildHotResumeRelocation, type HotResumeRelocation } from './hot_resume_relocation';
+import { hasOpenFrameScopes, resolveFrameScopeRetirement } from './frame_scopes';
+import { RetainedContextGuestCallPlan } from './guest_call';
+import { applyRuntimeDebuggerHotResume, pushRuntimeDebuggerControlPlan, type RuntimeDebuggerState } from './debugger_state';
+import type { RuntimeDebuggerSourceStop } from './source_debugger';
 
 export type BuiltAemSourceRevision = {
 	resource: RuntimeResource;
@@ -37,52 +44,68 @@ export type BuiltAemSourceRevision = {
 
 export type AemSourceApplyResult =
 	| { readonly status: 'applied' }
-	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'installation-replaced' | 'context-not-installed' | 'module-not-installed' | 'asset-not-installed' | 'cpu-time-pending' }
+	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'installation-replaced' | 'context-not-installed' | 'module-not-installed' | 'asset-not-installed' | 'cpu-time-pending' | 'mutation-active' }
 	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
 
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
-export async function applyAemSourceRevision(
+export function applyAemSourceRevision(
 	sources: RuntimeSourceState,
 	guest: SuspendedGuestSession,
 	runtime: Runtime,
 	runtimeTasks: RuntimeTaskQueue,
+	debuggerState: RuntimeDebuggerState,
 	resource: RuntimeResource,
 	domain: ResourceDomain,
 	expectedImage: Blua32SourceImage,
 	source: string,
 ): Promise<AemSourceApplyResult> {
-	let result: AemSourceApplyResult;
-	await runtimeTasks.schedule(() => {
-		const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+	const { cpu } = runtime.machine;
+	const { promise, resolve } = Promise.withResolvers<AemSourceApplyResult>();
+	let settled = false;
+	const finish = (result: AemSourceApplyResult) => { settled = true; resolve(result); };
+	const failed = (error: unknown) => {
+		if (settled) return;
+		recordAemSourceApplyFailure(sources, resource, domain);
+		finish({ status: 'failed', phase: 'runtime', error });
+	};
+	const currentImage = () => domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+	const currentRom = () => domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemRom.bytes : sources.cartridgeSlots[domain]!.rom.bytes;
+	const reloadClosure = () => asClosure(guest.readStringMember(guest.global(buildModuleExportSlotName('cartlib/aem', [])), 'reload_from_rom'), cpu.gc);
+	void runtimeTasks.schedule(() => {
+		const image = currentImage();
 		if (image !== expectedImage) {
-			result = { status: 'not-applied', reason: 'installation-replaced' };
+			finish({ status: 'not-applied', reason: 'installation-replaced' });
 			return;
 		}
 		if (image.sourceContextId !== resource.contextId) {
-			result = { status: 'not-applied', reason: 'context-not-installed' };
+			finish({ status: 'not-applied', reason: 'context-not-installed' });
 			return;
 		}
 		// Authoring spans every installed ROM; reload_from_rom belongs to the
 		// currently executing domain. Do not install media or invoke another
 		// cartridge's globals while the BIOS (or a different cartridge) runs.
-		if (runtime.machine.cpu.activeCartridgeSlot() !== domain) {
-			result = { status: 'not-applied', reason: 'inactive-domain' };
+		if (cpu.activeCartridgeSlot() !== domain) {
+			finish({ status: 'not-applied', reason: 'inactive-domain' });
 			return;
 		}
 		const installedSources = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources
 			: sources.cartridgeSlots[domain]!.installedBlua32Sources;
 		if (!installedSources.has('cartlib/aem')) {
-			result = { status: 'not-applied', reason: 'module-not-installed' };
+			finish({ status: 'not-applied', reason: 'module-not-installed' });
 			return;
 		}
 		const installedPackage = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage
 			: sources.cartridgeSlots[domain]!.package;
 		if (installedPackage.audioevents[resource.source.resid] === undefined) {
-			result = { status: 'not-applied', reason: 'asset-not-installed' };
+			finish({ status: 'not-applied', reason: 'asset-not-installed' });
+			return;
+		}
+		if (debuggerState.plans.mutationActive) {
+			finish({ status: 'not-applied', reason: 'mutation-active' });
 			return;
 		}
 		if (!runtime.admitExternalCpuMutation()) {
-			result = { status: 'not-applied', reason: 'cpu-time-pending' };
+			finish({ status: 'not-applied', reason: 'cpu-time-pending' });
 			return;
 		}
 		let built: BuiltAemSourceRevision;
@@ -90,16 +113,101 @@ export async function applyAemSourceRevision(
 			built = buildAemSourceRevision(sources, runtime, resource, domain, source);
 		} catch (error) {
 			recordAemSourceApplyFailure(sources, resource, domain);
-			result = { status: 'failed', phase: 'build', error };
+			finish({ status: 'failed', phase: 'build', error });
 			return;
 		}
-		installAemSourceRevision(sources, guest, runtime, built);
-		result = { status: 'applied' };
-	}, error => {
-		recordAemSourceApplyFailure(sources, resource, domain);
-		result = { status: 'failed', phase: 'runtime', error };
-	});
-	return result;
+		const previousRom = currentRom(), threadAddress = cpu.activeThread.address, depth = cpu.getFrameDepth();
+		let unchangedScopes: boolean | undefined;
+		const afterPreparation = (completed: boolean, resume: () => void) => {
+			if (!completed) { failed(new Error('Audio map preparation was interrupted.')); return; }
+			void runtimeTasks.schedule(() => {
+				if (settled) return;
+				if (currentImage() !== expectedImage || currentRom() !== previousRom) {
+					finish({ status: 'not-applied', reason: 'installation-replaced' });
+					return;
+				}
+				if (cpu.activeCartridgeSlot() !== domain || cpu.activeThread.address !== threadAddress || cpu.getFrameDepth() !== depth) {
+					finish({ status: 'not-applied', reason: 'inactive-domain' });
+					return;
+				}
+				if (debuggerState.plans.mutationActive) {
+					finish({ status: 'not-applied', reason: 'mutation-active' });
+					return;
+				}
+				resume();
+			}, failed);
+		};
+		const runPreparation = (begin: () => void, resume: () => void) => {
+			let stop: RuntimeDebuggerSourceStop | undefined;
+			const plan = new RetainedContextGuestCallPlan(runtime, depth, completed => {
+				if (completed && stop !== undefined && debuggerState.source.returnToStop(stop))
+					debuggerState.stopPresentationPending = true;
+				afterPreparation(completed, resume);
+			});
+			guest.invalidate();
+			runtime.history.stop();
+			begin();
+			stop = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', 'retain');
+		};
+		const continueInstall = (windowRequested: boolean, scopesRetired: boolean) => {
+			const relocation = windowRequested || scopesRetired ? buildHotResumeRelocation(cpu, built.revision.revisions, depth) : built.relocation;
+			const thread = cpu.activeThread, reload = reloadClosure();
+			const binding = cpu.captureClosureBinding(reload);
+			const revision = built.revision.revisions[binding.executionDomainId + 1];
+			const rebound = relocation.closures.get(reload) ?? binding.functionAddress;
+			const target = revision === null ? -1 : blua32FunctionIndexAtAddress(revision.nextImage, rebound);
+			const functionShape = target < 0 ? binding : revision!.nextImage.functions[target];
+			let callWidth = Math.max(1, functionShape.numParams, functionShape.maxStack);
+			const retire = scopesRetired ? undefined : resolveFrameScopeRetirement(sources, guest);
+			const needsRetirement = retire !== undefined && hasOpenFrameScopes(guest, retire.registry)
+				&& !(unchangedScopes ??= preservesFrameScopes(sources, built.revision));
+			if (needsRetirement) {
+				const { maxStack, numParams } = cpu.captureClosureBinding(retire.closure);
+				callWidth = Math.max(callWidth, maxStack, numParams);
+			}
+			const valueEnd = Math.max(thread.stackTop, relocation.valueEnd) + callWidth;
+			if (!thread.frameSpaceFits(valueEnd)) {
+				if (windowRequested) throw new Error('Not enough guest memory for the audio map reload register window.');
+				if (cpu.readExceptionReturnFrameDepth() !== -1) {
+					finish({ status: 'not-applied', reason: 'cpu-time-pending' });
+					return;
+				}
+				runPreparation(
+					() => cpu.requestRegisterWindow(valueEnd, depth + 2, runtime.machine.scheduler.cyclesUntilDeadline()),
+					() => continueInstall(true, scopesRetired),
+				);
+				return;
+			}
+			if (needsRetirement) {
+				runPreparation(() => cpu.beginCompletionCall(retire.closure), () => continueInstall(windowRequested, true));
+				return;
+			}
+
+			const breakpoints = debuggerState.breakpoints.compile(built.revision.mediaInstallation.sourceMedia);
+			guest.invalidate();
+			publishBlua32Revision(sources, runtime, built.revision, relocation);
+			installAemPackage(sources, built);
+			const installedImage = currentImage()!, installedRom = currentRom();
+			applyRuntimeDebuggerHotResume(debuggerState, breakpoints);
+			const plan = new RetainedContextGuestCallPlan(runtime, depth, completed => {
+				if (settled) return;
+				if (currentImage() !== installedImage || currentRom() !== installedRom) {
+					finish({ status: 'not-applied', reason: 'installation-replaced' });
+				} else if (!completed) {
+					failed(new Error('Audio map reload was interrupted.'));
+				} else {
+					sources.aemSourceApplications.set(`${domain}\0${resourceIdentityKey(resource)}`, {
+						image: installedImage, rom: installedRom, installedSource: source, failed: false,
+					});
+					finish({ status: 'applied' });
+				}
+			});
+			cpu.beginCompletionCall(reload, EMPTY_CALL_ARGS);
+			pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench');
+		};
+		continueInstall(false, false);
+	}, failed);
+	return promise;
 }
 
 function buildRuntimeAemValidationLookup(sources: RuntimeSourceState, domain: ResourceDomain) {
@@ -146,15 +254,34 @@ export function buildAemSourceRevision(
 	return { resource, domain, source, eventMap, revision, relocation };
 }
 
-export function installAemSourceRevision(
-	sources: RuntimeSourceState,
-	guest: SuspendedGuestSession,
-	runtime: Runtime,
-	built: BuiltAemSourceRevision,
-): void {
-	const { resource, domain, source, eventMap } = built;
+function preservesFrameScopes(sources: RuntimeSourceState, built: BuiltBlua32Revision): boolean {
+	const replaced = [built.mediaInstallation.systemLayer, ...built.mediaInstallation.cartridgeLayers];
+	for (let i = 0; i < built.revisions.length; ++i) {
+		const revision = built.revisions[i];
+		if (revision === null) continue;
+		const { previousImage, nextImage } = revision;
+		if (previousImage.address !== nextImage.address || !sameBytes(previousImage.bytes, nextImage.bytes)) return false;
+		const oldLayer = i === 0 ? sources.systemRom : sources.cartridgeSlots[i - 1]!.rom;
+		const nextLayer = replaced[i]!;
+		const oldScopes = oldLayer.index.entries.find(item => item.resid === BLUA32_DIAGNOSTICS_IMAGE_ID);
+		const newScopes = nextLayer.index.entries.find(item => item.resid === BLUA32_DIAGNOSTICS_IMAGE_ID);
+		if (oldScopes === undefined || newScopes === undefined) {
+			if (oldScopes !== newScopes) return false;
+		} else if (!sameBytes(oldLayer.bytes.subarray(oldScopes.start!, oldScopes.end!),
+			nextLayer.bytes.subarray(newScopes.start!, newScopes.end!))) return false;
+	}
+	return true;
+}
+
+function sameBytes(before: Uint8Array, after: Uint8Array): boolean {
+	if (before.length !== after.length) return false;
+	for (let i = 0; i < before.length; ++i) if (before[i] !== after[i]) return false;
+	return true;
+}
+
+function installAemPackage(sources: RuntimeSourceState, built: BuiltAemSourceRevision): void {
+	const { resource, domain, eventMap } = built;
 	const assetId = resource.source.resid;
-	installBlua32Revision(sources, runtime, guest, built.revision, built.relocation);
 	const runtimePackage = domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[domain]!.package;
@@ -168,18 +295,6 @@ export function installAemSourceRevision(
 		installed.rom.package = installedPackage;
 	}
 	if (sources.activeCartridgeSlot === domain) sources.activePackage = installedPackage;
-	sources.aemSourceApplications.set(`${domain}\0${resourceIdentityKey(resource)}`, {
-		image: (domain === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain])!,
-		rom: domain === -1 ? sources.systemRom.bytes : sources.cartridgeSlots[domain]!.rom.bytes,
-		installedSource: source,
-		failed: false,
-	});
-	const aemResource = guest.global(
-		buildModuleExportSlotName('cartlib/aem', []),
-	);
-	guest.callClosure(
-		guest.readStringMember(aemResource, 'reload_from_rom'),
-	);
 }
 
 export function recordAemSourceApplyFailure(sources: RuntimeSourceState, resource: RuntimeResource, domain: ResourceDomain): void {

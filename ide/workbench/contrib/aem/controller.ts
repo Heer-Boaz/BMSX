@@ -7,6 +7,7 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
 import type { Blua32SourceImage } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import { applyAemSourceRevision } from '../../../runtime/aem';
@@ -34,6 +35,7 @@ export class AemEditorController {
 	public constructor(private readonly sources: RuntimeSourceState,
 		private readonly guest: SuspendedGuestSession,
 		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue,
+		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly actorLab: ActorLabController) {}
 	public open(group: EditorGroupView, quickInput: QuickInputController): void {
 		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', (_origin, lifetime) => {
@@ -124,7 +126,7 @@ export class AemEditorController {
 			input.applying = true;
 			input.applyStatus = `Applying source v${version} to physical ${choice.domain}`;
 			try {
-				const result = await applyAemSourceRevision(this.sources, this.guest, this.runtime, this.tasks, resource, choice.domain, choice.image, source);
+				const result = await applyAemSourceRevision(this.sources, this.guest, this.runtime, this.tasks, this.debuggerState, resource, choice.domain, choice.image, source);
 				input.applyStatus = result.status === 'applied' ? `Applied source v${version} to physical ${choice.domain}`
 					: result.status === 'not-applied' ? `Not applied to physical ${choice.domain}: ${result.reason}`
 						: `Apply failed in ${result.phase}: ${result.error instanceof Error ? result.error.message : String(result.error)}`;

@@ -647,7 +647,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 			this.play,
 		);
-		this.aemEditor = new AemEditorController(sources, guest, runtime, runtimeTasks, this.actorLab);
+		this.aemEditor = new AemEditorController(sources, guest, runtime, runtimeTasks, debuggerState, this.actorLab);
 		this.luaPrograms = new LuaProgramController(sources, guest, rewind, workbench.transport);
 		this.actionStrings = new ActionStringTester(sources.catalog, clock, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {

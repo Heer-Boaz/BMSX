@@ -1,4 +1,4 @@
-import { hasOpenFrameScopes, resolveFrameScopeRetirement, retireRuntimeFrameScopes } from './frame_scopes';
+import { hasOpenFrameScopes, resolveFrameScopeRetirement } from './frame_scopes';
 import { readRuntimeLuaModuleExport } from './lua_inspection';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
@@ -45,7 +45,7 @@ import {
 	type RuntimeDebuggerControlPlan,
 	type RuntimeDebuggerExecutionContext,
 } from './debugger_plans';
-import { RuntimeGuestCallPlan } from './guest_call';
+import { RetainedContextGuestCallPlan, RuntimeGuestCallPlan } from './guest_call';
 import type { RuntimeDebuggerSourceStop } from './source_debugger';
 import type { RuntimeFaultState } from './fault_state';
 import {
@@ -181,18 +181,6 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 	}
 }
 
-class HotResumePreparationPlan extends RuntimeGuestCallPlan {
-	public constructor(runtime: Runtime, private readonly retainedDepth: number, finish: (completed: boolean) => void) {
-		super(runtime, retainedDepth, 'completion', false, finish);
-	}
-
-	public override shouldStop(): boolean {
-		// A device interrupt can select another bank at the call's return frontier.
-		// Relocation needs the retained execution context selected again.
-		return this.cpu.activeThread.address === this.thread && this.cpu.getFrameDepth() === this.retainedDepth;
-	}
-}
-
 export function buildBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -278,18 +266,7 @@ export function prepareBlua32RevisionInstallation(
 	return buildHotResumeRelocation(cpu, built.revisions, retainedFrameCount);
 }
 
-export function installBlua32Revision(
-	sources: RuntimeSourceState,
-	runtime: Runtime,
-	guest: SuspendedGuestSession,
-	built: BuiltBlua32Revision,
-	relocation: HotResumeRelocation,
-): void {
-	retireRuntimeFrameScopes(runtime, sources, guest);
-	publishBlua32Revision(sources, runtime, built, relocation);
-}
-
-function publishBlua32Revision(
+export function publishBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
 	built: BuiltBlua32Revision,
@@ -553,7 +530,7 @@ export function admitHotResume(
 		const finishInstallation = (afterBinding: boolean): HotResumeAdmission => {
 			if (scopeRetirement !== undefined && (!afterBinding || hasOpenFrameScopes(guest, scopeRetirement.registry))) {
 				let retainedStop: RuntimeDebuggerSourceStop | undefined;
-				const plan = new HotResumePreparationPlan(runtime, retainedFrameCount, completed => {
+				const plan = new RetainedContextGuestCallPlan(runtime, retainedFrameCount, completed => {
 					if (!completed) { report({ kind: 'discarded' }); return; }
 					if (retainedStop !== undefined && debuggerState.source.returnToStop(retainedStop))
 						debuggerState.stopPresentationPending = true;
@@ -584,7 +561,7 @@ export function admitHotResume(
 				return 'rejected';
 			}
 			const { memory, executionAddressSpace } = runtime.machine;
-			const plan = new HotResumePreparationPlan(runtime, retainedFrameCount, completed => {
+			const plan = new RetainedContextGuestCallPlan(runtime, retainedFrameCount, completed => {
 				if (!completed) {
 					report({ kind: 'discarded' });
 					return;

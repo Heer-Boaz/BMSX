@@ -24,6 +24,7 @@ import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { applyAemSourceRevision } from '../../ide/runtime/aem';
+import { createRuntimeDebuggerState, didExecuteRuntimeDebuggerPlan, willExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { afterTest } from '../helpers/test_cleanup';
 
@@ -98,18 +99,33 @@ test('failed explicit AEM application preserves the exact installed acknowledgem
 	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true, 'the fixture has initialized and used the runtime AEM module before Apply');
 	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter), guest = new SuspendedGuestSession(runtime);
+	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
 	afterTest(t, async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'events.aem.yaml' })!;
 	const model = models.retain(resource, 'aem', AEM, AEM, null);
 	const accepted = 'events:\n  stop:\n    channel: music\n    rules:\n      - go:\n          stop: { fade_ms: 7 }\n';
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: accepted }]);
-	assert.deepEqual(await applyAemSourceRevision(sources, guest, runtime, tasks, resource, 0, sources.currentBlua32Media.cartridgeSlots[0]!, accepted), { status: 'applied' });
+	const beforeApply = runtime.machine.scheduler.nowCycles;
+	const apply = applyAemSourceRevision(sources, guest, runtime, tasks, debuggerState, resource, 0, sources.currentBlua32Media.cartridgeSlots[0]!, accepted);
+	await tasks.join();
+	assert.equal(runtime.machine.scheduler.nowCycles, beforeApply, 'AEM admission does not run the guest synchronously');
+	assert.equal(debuggerState.plans.workbenchControlActive, true);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'publishing media alone is not acknowledgement');
+	for (let grant = 0; grant < 100 && debuggerState.plans.controlActive; ++grant) {
+		willExecuteRuntimeDebuggerPlan(debuggerState);
+		target.advanceGame(10000);
+		didExecuteRuntimeDebuggerPlan(debuggerState);
+		await tasks.join();
+	}
+	assert.equal(debuggerState.plans.controlActive, false);
+	assert.ok(runtime.machine.scheduler.nowCycles > beforeApply, 'reload retired through scheduled guest execution');
+	assert.deepEqual(await apply, { status: 'applied' });
 	const installed = sources.currentBlua32Media.cartridgeSlots[0]!;
 	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'events: [' }]);
 	assert.equal((await saves.save(model).completion).status, 'saved'); assert.equal(model.dirty, false);
-	const failure = await applyAemSourceRevision(sources, guest, runtime, tasks, resource, 0, installed, model.buffer.getText());
+	const failure = await applyAemSourceRevision(sources, guest, runtime, tasks, debuggerState, resource, 0, installed, model.buffer.getText());
 	assert.equal(failure.status, 'failed');
 	const acknowledgement = sources.aemSourceApplications.get(`0\0${resourceIdentityKey(resource)}`)!;
 	assert.equal(acknowledgement.image, installed); assert.equal(acknowledgement.rom, sources.cartridgeSlots[0]!.rom.bytes);

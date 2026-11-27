@@ -9,7 +9,6 @@ import { buildScenarioMediaFixture } from '../helpers/scenario_media';
 import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { encodeBinary, utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -22,7 +21,8 @@ import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
 
 import { buildAemSourceRevision, applyAemSourceRevision } from '../../ide/runtime/aem';
-import { installBlua32Revision } from '../../ide/runtime/hot_resume';
+import { publishBlua32Revision } from '../../ide/runtime/hot_resume';
+import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
 import { buildBlua32Media, installBlua32Media, prepareBlua32MediaBoot, blua32InstallationNeedsRebuild } from '../../ide/runtime/lua_pipeline';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
@@ -73,7 +73,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 		const result = await saves.save(model).completion;
 		assert.ok(result.status === 'saved');
 		assert.deepEqual(result.application, { status: 'not-requested' });
-		const application = await applyAemSourceRevision(sources, new SuspendedGuestSession(runtime), runtime, tasks, resource, domain,
+		const application = await applyAemSourceRevision(sources, new SuspendedGuestSession(runtime), runtime, tasks, createRuntimeDebuggerState(runtime, sources), resource, domain,
 			(domain === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain])!, source);
 		assert.deepEqual(application, { status: 'not-applied', reason });
 		assert.equal(files.records.get(resolveWorkspacePath(resource.path, sources.catalog.getContext(contextId).projectRootPath))!.contents, source);
@@ -98,8 +98,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const systemSource = `module<entry>${MANAGED_CART_LAUNCH}`;
 	const cartSource = 'module<entry>\nwhile true do halt_until_irq end';
 	const media = await buildScenarioMediaFixture(directory, [], {
-		systemSource,
-		systemModules: BIOS_FUNCTION_EXPORTS.filter(exported => !exported.fixedStack).map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
+		systemSource: 'module<entry>', launchCartridge: true, systemModules: [],
 		cartSource, systemAssets: [asset, mapAsset], cartAssets: [asset, mapAsset],
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
@@ -122,7 +121,6 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	afterTest(t, () => target.dispose());
 	for (let frame = 0; frame < 100 && !runtime.machine.cpu.isCartridgeExecutionActive(); frame++) target.advanceGame(10000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
-	const guest = new SuspendedGuestSession(runtime);
 	const sourceOnly = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.records.find(record => !record.program_module)!;
 	await saveLuaResourceSource(clock, sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: sourceOnly.source_path }, 'return "pending scenario source"');
 	for (const edited of [-1, 0, 1] as const) {
@@ -142,7 +140,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 		assert.equal(image.sources.get('entry'), image === rebuilt.system ? systemSource : cartSource);
 		assert.equal(image.assetChanges.assetReplacements, undefined, 'no pending authored source enters the ROM');
 	}
-	installBlua32Revision(sources, runtime, guest, built.revision, built.relocation);
+	publishBlua32Revision(sources, runtime, built.revision, built.relocation);
 	assert.equal(sources.systemInstalledBlua32Sources.get('entry'), systemSource);
 	assert.equal(blua32InstallationNeedsRebuild(sources, -1), true);
 	assert.equal(blua32InstallationNeedsRebuild(sources, 0), true);

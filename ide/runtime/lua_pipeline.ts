@@ -233,7 +233,7 @@ export function buildBlua32Media(
 		const selected = request.system === 'workspace'
 			? collectProgramSources(systemRegistry, metadata.compiledModulePaths[0],
 				[...metadata.preloadModules, ...systemBuildModuleRoots(recipe)])
-			: collectInstalledProgramSources(installedSystem.sources, metadata.compiledModulePaths);
+			: collectInstalledProgramSources(installedSystem.sources, metadata.compiledModulePaths.filter(path => path !== SYSTEM_STARTUP_MODULE_PATH));
 		const assetChanges: Blua32PublicAssetChanges = request.system === 'workspace'
 			? buildLuaSourceAssetChanges(sources.systemRom, systemRegistry, sources.systemInstalledBlua32Sources, selected.parsed, assetEdits?.[0])
 			: { assetEdits: assetEdits?.[0] };

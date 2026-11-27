@@ -4,7 +4,7 @@ import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { asThread, valueBool, valueInteger, valueNil, valueString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
-import { retireRuntimeFrameScopes } from '../../ide/runtime/frame_scopes';
+import { resolveFrameScopeRetirement } from '../../ide/runtime/frame_scopes';
 import { readRuntimeLuaModuleExport } from '../../ide/runtime/lua_inspection';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -16,7 +16,7 @@ import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
-test('IDE retires real firmware borrows before source installation', () => {
+test('firmware retirement ends escaped accessors without unwinding their thread', () => {
 	const image = compileFrameEvaluationTest(`
 reader = false
 keeper = coroutine.create(function(value, ...)
@@ -34,7 +34,7 @@ return true`, 0);
 	const guest = new SuspendedGuestSession(runtime);
 	cpu.reset();
 	// A pre-initialization source installation has no scope registry yet.
-	retireRuntimeFrameScopes(runtime, sources, guest);
+	assert.equal(resolveFrameScopeRetirement(sources, guest), undefined);
 	runGuestToHalt(cpu, 30_000_000);
 	const initialized = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(initialized, [valueBool(true), valueBool(true)], initialized.map(value => guest.formatValue(value)).join('\t'));
@@ -42,8 +42,10 @@ return true`, 0);
 	const pcs = Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc));
 	const reader = guest.global('reader');
 	assert.deepEqual(guest.callClosure(reader), [valueInteger(17)]);
-	retireRuntimeFrameScopes(runtime, sources, guest);
-	assert.deepEqual(Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc)), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
+	const depth = cpu.getFrameDepth();
+	cpu.beginCompletionCall(resolveFrameScopeRetirement(sources, guest)!.closure);
+	cpu.runUntilDepth(depth, 30_000_000);
+	assert.deepEqual(Array.from({ length: cpu.readThreadFrameDepth(keeper) }, (_, index) => cpu.readThreadFrameWord(keeper, index, FrameField.Pc)), pcs, 'retirement neither resumes nor rewrites the borrowed stack');
 	assert.deepEqual(guest.callClosure(guest.global('verify')).map(value => guest.formatValue(value)),
 		['false', 'Selected frame evaluation has ended.']);
 });
@@ -90,8 +92,6 @@ function scope_probe() return 17 end
 			return values;
 		});
 	}
-	t.mock.method(cpu.gc.tables, 'set', () => assert.fail('Source installation must not erase scopes in the host'));
-	t.mock.method(cpu.gc.tables, 'setStringKey', () => assert.fail('Source installation must not rewrite scope owners in the host'));
 	const operation = ide.hotResumes.resume('workbench');
 	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
 	assert.equal(sources.currentBlua32Media, before);

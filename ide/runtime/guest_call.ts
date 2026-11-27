@@ -81,6 +81,17 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public discard(): void { this.finish(false); }
 }
 
+/** Media publication needs the original bank, not an IRQ at its return frontier. */
+export class RetainedContextGuestCallPlan extends RuntimeGuestCallPlan {
+	public constructor(runtime: Runtime, private readonly retainedDepth: number, finish: (completed: boolean) => void) {
+		super(runtime, retainedDepth, 'completion', false, finish);
+	}
+
+	public override shouldStop(): boolean {
+		return this.cpu.activeThread.address === this.thread && this.cpu.getFrameDepth() === this.retainedDepth;
+	}
+}
+
 /** Observe a nested target before the source debugger can stop at its first instruction. */
 class RuntimeGuestTargetPlan extends RuntimeGuestCallPlan {
 	private readonly domain: ExecutionDomainId;
