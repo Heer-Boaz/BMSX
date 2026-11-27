@@ -2,7 +2,7 @@ import { type RuntimeStackTraceFrame } from './stack_trace';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { asClosure, isTruthy, valueInteger, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asClosure, isTruthy, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../machine/ts/spec/bmsx/io';
 import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from './debugger_state';
@@ -25,6 +25,7 @@ export type LuaEvaluationObservation = {
 	readonly outputTruncated: boolean;
 };
 const EVALUATION_OUTPUT_CAPACITY = 2048;
+const encoder = new TextEncoder();
 
 export class LuaEvaluation {
 	public readonly output: string[] = [];
@@ -164,6 +165,7 @@ export class RuntimeLuaEvaluation {
 		const selected = context === 'cart' || context === 'session' ? undefined : context;
 		const name = selected === undefined ? context as LuaGlobalContext : 'frame';
 		const operation = new LuaEvaluation(source, name, ++this.serial, this.execution.revision), generation = this.generation;
+		const bytes = encoder.encode(source);
 		this.active = operation;
 		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
 			admission: selected === undefined ? 'quiescent' : 'at-stop', honorUserStops: true,
@@ -171,13 +173,16 @@ export class RuntimeLuaEvaluation {
 			prepare: () => {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');
 				if (module.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
-				return { domain: -1, closure: asClosure(this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame'), this.runtime.machine.cpu.gc),
-					argumentCount: selected === undefined ? 3 : 4,
+				const argumentCount = 4 + bytes.length;
+				return { domain: -1, closure: asClosure(this.guest.readStringMember(module.value, 'evaluate_bytes'), this.runtime.machine.cpu.gc),
+					argumentCount,
 					args: () => {
-						const pool = this.runtime.machine.cpu.stringPool;
-						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=evaluation:${operation.id}`))];
-						if (selected === undefined) args.push(valueString(pool.intern(name)));
-						else args.push(valueInteger(selected.frame.physicalFrameIndex), valueInteger(selected.frame.inlineDepth));
+						const args = new Array<Value>(argumentCount);
+						args[0] = valueInteger(operation.id);
+						args[1] = valueBool(name === 'session');
+						args[2] = selected === undefined ? valueNil() : valueInteger(selected.frame.physicalFrameIndex);
+						args[3] = selected === undefined ? valueNil() : valueInteger(selected.frame.inlineDepth);
+						for (let index = 0; index < bytes.length; index++) args[4 + index] = valueInteger(bytes[index]);
 						return args;
 					} };
 			},

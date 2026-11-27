@@ -4,6 +4,7 @@ local protect<const> = blua32.closure(entries.protected_call)
 local frame_bindings<const> = require('debug/frame')
 local frame_count<const> = __bmsx_frame_count
 local running<const> = __bmsx_coroutine_running
+local char<const> = require('string/char')
 
 -- A firmware-owned Lua session. Its environment is ordinary saved guest state,
 -- not a copy of the CPU's global registerfile or of a stopped stack frame.
@@ -76,6 +77,17 @@ function repl.evaluate(source, chunk_name, context, frame_index, names)
 		bindings = environment
 	end
 	return evaluate(source, chunk_name, bindings)
+end
+
+-- A byte-oriented caller can provide its program as ordinary arguments,
+-- without first allocating a String or sharing a writable memory range.
+function repl.evaluate_bytes(sequence, session, frame_index, inline_depth, ...)
+	local source<const> = char(...)
+	local chunk_name<const> = '=evaluation:' .. sequence
+	if frame_index ~= nil then
+		return repl.evaluate_frame(source, chunk_name, frame_index, inline_depth)
+	end
+	return repl.evaluate(source, chunk_name, session and 'session' or 'cart')
 end
 
 return repl
