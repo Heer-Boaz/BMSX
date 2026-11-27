@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/opcode.h"
 #include "blua32_test_rom.h"
 #include "thread_allocation_reference.h"
@@ -79,6 +80,66 @@ inline auto encodeManagedFixtureRom(Blua32TestImage image, u32 bssByteCount) -> 
 	return encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount);
 }
 
+// Author the preinstalled operands for raw opcode fixtures, not the BIOS boot path.
+inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addresses, Blua32ExecutionBoot boot) {
+	const auto domain = boot.executionDomainId;
+	auto& memory = cpu.memory();
+	auto& strings = cpu.stringPool();
+	Span<const u8> header, constants;
+	addresses.bindReadOnlyView(domain, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, header);
+	const auto field = [&](u32 offset) { return readLE32(header.data() + offset); };
+	const u32 buckets = field(BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET);
+	if (buckets != 0u) strings.activateRomTable(domain, field(BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET), buckets);
+	const u32 constantCount = field(BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
+	if (constantCount != 0u) addresses.bindReadOnlyView(domain, field(BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
+		constantCount * BLUA32_CONSTANT_RECORD_SIZE, constants);
+	const auto isString = [&](const u8* record) {
+		return readLE32(record + BLUA32_CONSTANT_TAG_OFFSET) == static_cast<u32>(Blua32ConstantTag::String);
+	};
+	u32 stringCount = 0u;
+	for (u32 i = 0u; i < constantCount; ++i)
+		stringCount += isString(constants.data() + i * BLUA32_CONSTANT_RECORD_SIZE);
+	const u32 names = field(BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET);
+	const u32 systemNames = field(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
+	const u32 bytes = 4u * (names + systemNames + stringCount);
+	if (bytes == 0u) return;
+	const u32 management = cpu.heapAllocator().managementOffset();
+	const u32 base = cpu.luaHeap().allocateRecord(bytes, false, 0u, 0u);
+	const auto bindNames = [&](u32 table, u32 count, u32 namespaceOffset, u32 destination) {
+		if (count == 0u) return;
+		Span<const u8> records;
+		addresses.bindReadOnlyView(domain, table, count * BLUA32_GLOBAL_NAME_RECORD_SIZE, records);
+		GlobalBank bank(memory, cpu.gcHeap(), management + namespaceOffset);
+		bank.bind();
+		for (u32 i = 0u; i < count; ++i) {
+			const u32 address = readLE32(records.data() + i * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET);
+			memory.writeRamRecordWord(destination + 4u * i, bank.registerName(strings.resolveImageRecord(domain, address)));
+		}
+	};
+	bindNames(field(BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), names, GLOBAL_BANK_OFFSET, base);
+	bindNames(field(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), systemNames, SYSTEM_GLOBAL_BANK_OFFSET, base + 4u * names);
+	const u32 stringBase = base + 4u * (names + systemNames);
+	for (u32 i = 0u; i < stringCount; ++i) memory.writeRamRecordWord(stringBase + 4u * i, 0u);
+	u32 slot = 0u, ramCount = 0u, nextRom = stringCount;
+	for (u32 i = 0u; i < constantCount; ++i) {
+		const auto* record = constants.data() + i * BLUA32_CONSTANT_RECORD_SIZE;
+		if (!isString(record)) continue;
+		const StringId id = strings.resolveImageRecord(domain, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+		const bool ram = isRamStringId(id);
+		const u32 dest = stringBase + 4u * (ram ? ramCount++ : --nextRom);
+		// Bit 0 belongs to the input ordinal; the remaining bits belong to the packed ID.
+		if (ram) {
+			const u32 ordinal = stringBase + 4u * slot;
+			memory.writeRamRecordWord(ordinal, memory.readRamRecordWord(ordinal) | IMAGE_STRING_RAM_ORDINAL);
+		}
+		memory.writeRamRecordWord(dest, memory.readRamRecordWord(dest) | id);
+		++slot;
+	}
+	const u32 binding = executionImageBindingOffset(management, domain);
+	memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBase, ramCount);
+	memory.writeRamRecordPair(binding, base, bytes);
+}
+
 inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	const std::optional<FrameEntryControl>& entry = std::nullopt) {
 	cpu.reset();
@@ -88,6 +149,7 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	const auto boot = addresses.resolveSystemDomain();
 	auto& memory = cpu.memory();
 	const u32 root = provisionManagedFixture(cpu, boot.staticEnd);
+	installFixtureOperands(cpu, addresses, boot);
 	Thread prepared(cpu.gcHeap(), root);
 	prepared.bindStack();
 	const int end = entry ? entry->stackBase + entry->capacity : raw.stackTop();
@@ -104,7 +166,6 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	memory.writeRamRecordWord(root + static_cast<u32>(ThreadField::FrameDepth), 1u);
 	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
 	cpu.restoreRuntimeState(state);
-	cpu.replaceExecutionImage(boot);
 }
 
 // Publish the original subject's exact logical MaxStack, not the rounded

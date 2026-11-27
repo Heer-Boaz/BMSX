@@ -16,6 +16,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function validImage() {
 	const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
@@ -65,7 +66,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	test(`live closures use the newly published entry and register layout (${backend})`, () => {
 		const { image, prefix, textAddress } = validImage();
-		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image, backend);
+		const { cpu, memory, executionAddressSpace } = createTestHeapServiceCpu(image, backend);
+		cpu.rootThread.reserveFrame(16);
 		const record = image.symbols.functionAddresses[0];
 		const closure = seedTestRomClosure(cpu, record);
 		const nextEntry = textAddress + (prefix + 4) * INSTRUCTION_BYTES;
@@ -81,9 +83,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.captureClosureBinding(closure).codeAddress, textAddress);
 		assert.throws(() => cpu.beginCompletionCall(closure), /ROM must be published/);
 		const boots = [executionAddressSpace.resolveSystemDomain()];
-		assert.throws(() => cpu.replaceExecutionImages(boots), /retained frame continuation/);
-		assert.equal(cpu.readFramePc(0), textAddress);
-		cpu.replaceExecutionImages(boots, { closures: new Map(), frames: [{ domain: SYSTEM_EXECUTION_DOMAIN_ID, functionAddress: record, pc: nextEntry }] });
+		cpu.replaceExecutionImages(boots);
+		assert.equal(cpu.readFramePc(0), textAddress, 'the host view publication does not relocate a guest register');
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, record, nextEntry);
 		cpu.beginCompletionCall(closure);
 		assert.equal(cpu.readFramePc(1), nextEntry);
 		assert.equal(cpu.activeThread.currentFrame!.stackCapacity, 7);

@@ -341,12 +341,10 @@ private:
 	void runBuiltinError(BuiltinArgsView args);
 	void unwindToDepth(int targetDepth);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
-	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
-	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
-	enum class ExecutionImageUpdate { Replace, Restore, Select, UseInstalled };
+	void bindConstantStrings(Blua32ExecutionImage& image, u32 stringBinding);
+	enum class ExecutionImageUpdate { Restore, Select, UseInstalled };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
 		ExecutionImageUpdate update);
-	void admitImageReplacement(const Blua32ExecutionImage& image);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);
@@ -572,7 +570,6 @@ private:
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;
 	Span<const u8> m_executionReadView;
-	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
 	HeapAllocator m_heapAllocator;
 	LuaHeap m_luaHeap;

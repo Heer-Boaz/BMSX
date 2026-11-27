@@ -96,7 +96,7 @@ const NativeBlock* entryAt(CPU& cpu, u32 pc) {
 	return page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 }
 
-void replacementAdmitsRetainedCoroutinesAndClosures() {
+void replacementLeavesRetainedCoroutinesAndClosuresToThePublisher() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(8u * INSTRUCTION_BYTES);
@@ -148,21 +148,19 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 			machine.memory.restoreSaveState(ram);
 			cpu.restoreRuntimeState(state);
 		}
-		const auto* previous = cpu.rootThread()->currentFrame->executionImage;
 		const u32 floor = cpu.heapAllocator().floorAddress();
+		const u32 continuation = machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc));
 		auto replacement = rom.bytes;
 		writeInstruction(replacement, rom.textAddress / INSTRUCTION_BYTES + 5u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		machine.memory.installSystemRom(replacement);
 		auto boot = machine.executionAddressSpace.resolveSystemDomain();
 		boot.staticEnd = floor + MAPPED_PAGE_BYTE_SIZE;
-		bool rejected = false;
-		try {
-			cpu.replaceExecutionImage(boot);
-		} catch (const std::runtime_error& error) {
-			rejected = std::string_view(error.what()) == "Replacement image does not preserve a retained frame continuation.";
-		}
-		require(rejected && cpu.rootThread()->currentFrame->executionImage == previous && cpu.heapAllocator().floorAddress() == floor,
-			"replacement rejects a retained coroutine's WIDE suffix before publication or heap-floor changes");
+		cpu.replaceExecutionImage(boot);
+		const auto* imageView = cpu.rootThread()->currentFrame->executionImage;
+		require(!imageView->admitsFunctionPc(rom.functionAddresses[1], continuation)
+			&& machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc)) == continuation
+			&& cpu.heapAllocator().floorAddress() == floor,
+			"raw ROM publication sees the new WIDE suffix without rewriting the suspended coroutine or aperture");
 		machine.memory.installSystemRom(rom.bytes);
 		cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());
 		cpu.runUntilDepth(0, 30);
@@ -181,13 +179,11 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	auto replacement = rom.bytes;
 	writeLE32(replacement.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, 1u);
 	machine.memory.installSystemRom(replacement);
-	bool rejected = false;
-	try {
-		cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());
-	} catch (const std::runtime_error& error) {
-		rejected = std::string_view(error.what()) == "Replacement image does not preserve a retained ROM closure.";
-	}
-	require(rejected, "replacement cannot remove the published record of a retained ROM closure");
+	cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());
+	require(!cpu.rootThread()->currentFrame->executionImage->romFunctions.find(rom.functionAddresses[1])
+		&& ThreadRecord::read(machine.memory, thread, ThreadField::Entry) == entry
+		&& machine.memory.readRamRecordWord(entry + CLOSURE_PROTOTYPE_ADDRESS) == rom.functionAddresses[1],
+		"raw ROM publication does not walk or overwrite the saved guest closure");
 }
 
 void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
@@ -781,7 +777,7 @@ void descriptiveHintsAreBudgetedBeforeDiscovery() {
 int main() {
 	try {
 		verifiedFunctionControlFlowIsAdmittedBeforeExecution();
-		replacementAdmitsRetainedCoroutinesAndClosures();
+		replacementLeavesRetainedCoroutinesAndClosuresToThePublisher();
 		preparationHasNoGuestEffects();
 		coldLazyWritesAndRestoreAgree();
 		unusedOperandsRemainUnobserved();

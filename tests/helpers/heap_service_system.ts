@@ -4,13 +4,23 @@ import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_form
 import { createTestSystemCpu, linkTestSystemBlua32, type TestBlua32Image } from './blua32';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { readLE32 } from '../../machine/ts/common/endian';
 import type { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_DIAGNOSTIC_FAULTS_OFFSET } from './firmware_heap_layout';
+import { GC_DIAGNOSTIC_FAULTS_OFFSET, storeImageStringBinding } from './firmware_heap_layout';
+import { EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import {
+	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
+	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
+	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, Blua32ConstantTag,
+} from '../../machine/ts/spec/blua32/image_format';
 import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram, type SystemCompileOptions } from '../../toolchain/ts/lua/compiler';
@@ -132,6 +142,50 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	adopted.stackTop = end;
 	memory.writeRamRecordWord(root + ThreadField.FrameDepth, 1);
 
+	// Raw instruction fixtures do not run BIOS binding code. Publish their
+	// actual operand backing here using the independent native reference.
+	const domain = SYSTEM_EXECUTION_DOMAIN_ID;
+	const view = { bytes: new Uint8Array(0), byteOffset: 0 };
+	executionAddressSpace.bindReadOnlyView(domain, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, view);
+	const header = view.bytes, h = view.byteOffset;
+	const globalCount = readLE32(header, h + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET);
+	const systemCount = readLE32(header, h + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
+	const constantCount = readLE32(header, h + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
+	if (constantCount !== 0) executionAddressSpace.bindReadOnlyView(domain,
+		readLE32(header, h + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET), constantCount * BLUA32_CONSTANT_RECORD_SIZE, view);
+	const constants = view.bytes, c = view.byteOffset;
+	let stringCount = 0;
+	for (let slot = 0; slot < constantCount; ++slot)
+		stringCount += +(readLE32(constants, c + slot * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET) === Blua32ConstantTag.String);
+	const bytes = 4 * (globalCount + systemCount + stringCount);
+	stringPool.activateRomTable(domain, readLE32(header, h + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
+		readLE32(header, h + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
+	if (bytes !== 0) {
+		const base = luaHeap.allocateRecord(bytes, false, 0, 0);
+		let output = base;
+		for (const [count, tableOffset, bank] of [
+			[globalCount, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, cpu['globalBank']],
+			[systemCount, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, cpu['systemGlobalBank']],
+		] as const) {
+			if (count === 0) continue;
+			executionAddressSpace.bindReadOnlyView(domain, readLE32(header, h + tableOffset), count * BLUA32_GLOBAL_NAME_RECORD_SIZE, view);
+			for (let slot = 0; slot < count; ++slot) {
+				const name = stringPool.resolveImageRecord(domain, readLE32(view.bytes, view.byteOffset + slot * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
+				memory.writeRamRecordWord(output, bank.registerName(name));
+				output += 4;
+			}
+		}
+		let ordinal = 0, ramCount = 0;
+		for (let slot = 0; slot < constantCount; ++slot) {
+			const word = c + slot * BLUA32_CONSTANT_RECORD_SIZE;
+			if (readLE32(constants, word + BLUA32_CONSTANT_TAG_OFFSET) !== Blua32ConstantTag.String) continue;
+			const id = stringPool.resolveImageRecord(domain, readLE32(constants, word + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+			ramCount = storeImageStringBinding(memory, output, stringCount, ordinal++, ramCount, id);
+		}
+		const binding = executionImageBindingOffset(management, domain);
+		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, output, ramCount);
+		memory.writeRamRecordPair(binding, base, bytes);
+	}
 	cpu.replaceExecutionImages([boot]);
 	const state = cpu.captureRuntimeState();
 	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;

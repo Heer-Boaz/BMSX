@@ -82,19 +82,13 @@ import {
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
-	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
-	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
-	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
-	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
-	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
-	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	Blua32ConstantTag,
 } from '../../spec/blua32/image_format';
 import {
@@ -159,9 +153,8 @@ import {
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
-	IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding, storeImageStringBinding,
+	IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding,
 	type Blua32ExecutionImage,
-	type ExecutionImageRelocation,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
@@ -252,8 +245,6 @@ export type ExecutionHook = (
 	pc: number,
 ) => boolean;
 
-
-const enum ExecutionImageUpdate { Replace, Restore, Select }
 
 export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
@@ -691,7 +682,7 @@ export class CPU implements MappedPageInvalidator {
 		this.executionImagesByDomain.fill(null);
 		this.unpublishedRomMask = 0;
 		const header = this.readExecutionImageHeader(systemBoot);
-		this.systemImage = this.materializeExecutionImage(systemBoot, header, ExecutionImageUpdate.Select);
+		this.systemImage = this.materializeExecutionImage(systemBoot, header, 0);
 		this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1] = this.systemImage;
 		this.cop0Words[COP0_SYSTEM_VECTOR] = systemBoot.exceptionFunctionAddress;
 		this.latchActiveExecutionImage(SYSTEM_EXECUTION_DOMAIN_ID, this.systemImage);
@@ -707,9 +698,9 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		bytes: Uint8Array, byteOffset: number,
 		constTags: Uint8Array, constWords: Uint32Array,
-		stringBinding: number, restoring: boolean,
+		stringBinding: number,
 		constantStringSlots: Uint32Array,
-	): number {
+	): void {
 		let stringIndex = 0, ramCount = 0;
 		const stringCount = constantStringSlots.length;
 		for (let index = 0; index < constTags.length; index += 1) {
@@ -748,15 +739,8 @@ export class CPU implements MappedPageInvalidator {
 						constTags[index] = ValueTag.UnboundStringLiteral;
 						break;
 					}
-					let id: StringId;
-					if (restoring) {
-						id = loadImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount);
-						ramCount += +isRamStringId(id);
-					} else {
-						id = this.stringPool.resolveImageRecord(executionDomainId,
-							readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-						ramCount = storeImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount, id);
-					}
+					const id = loadImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount);
+					ramCount += +isRamStringId(id);
 					constantStringSlots[stringIndex++] = index;
 					constTags[index] = ValueTag.String;
 					constWords[index] = id;
@@ -765,24 +749,6 @@ export class CPU implements MappedPageInvalidator {
 				default:
 					throw new Error('BLua32 constant tag is invalid.');
 			}
-		}
-		return ramCount;
-	}
-
-	private releaseImageData(base: number, bytes: number): void {
-		for (const bank of this.threadBanks) bank.dropParkedFrameViews();
-		if (base !== 0) this.luaHeap.releaseRecord(base, bytes);
-	}
-
-	private registerGlobalNames(domain: ExecutionDomainId, tableAddress: number, nameCount: number, bank: GlobalBank, destination: number): void {
-		if (nameCount === 0) return;
-		this.executionAddressSpace.bindReadOnlyView(domain, tableAddress,
-			nameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE, this.executionTableView);
-		const { bytes, byteOffset } = this.executionTableView;
-		for (let index = 0; index < nameCount; ++index) {
-			const record = byteOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			const key = this.stringPool.resolveImageRecord(domain, readLE32(bytes, record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
-			this.memory.writeRamRecordWord(destination + 4 * index, bank.registerName(key));
 		}
 	}
 
@@ -822,53 +788,35 @@ export class CPU implements MappedPageInvalidator {
 				stringCount += +(tag === Blua32ConstantTag.String);
 			}
 		}
-		const nameBytes = 4 * (globalNameCount + systemGlobalNameCount);
-		const imageBindingBytes = nameBytes + 4 * stringCount;
+		const imageBindingBytes = 4 * (globalNameCount + systemGlobalNameCount + stringCount);
 		if (imageBindingBytes > MAIN_RAM_SIZE) throw new Error('BLua32 image bank extents exceed main RAM.');
 		const romFunctions = readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView);
 		return {
-			constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused,
-			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
-			globalNameCount,
-			systemGlobalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
-			systemGlobalNameCount,
-			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
-			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
-			romFunctions,
+			constantBytes, constantOffset, constantCount, stringCount, imageBindingBytes, reused,
+			globalNameCount, systemGlobalNameCount, romFunctions,
 		};
 	}
 
 	private materializeExecutionImage(
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
-		update: ExecutionImageUpdate,
+		stringBinding: number,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
-		const { constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused, globalNameTableAddress, globalNameCount,
-			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
-		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
-		const restoring = update === ExecutionImageUpdate.Restore;
-		const selecting = update === ExecutionImageUpdate.Select;
-		const imageBindingBase = selecting ? 0 : restoring ? this.memory.readRamRecordWord(binding)
-			: imageBindingBytes === 0 ? 0 : this.luaHeap.allocateRecord(imageBindingBytes, false, 0, 0);
-		if (!restoring && !selecting) {
-			this.registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, this.globalBank, imageBindingBase);
-			this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
-				this.systemGlobalBank, imageBindingBase + 4 * globalNameCount);
-		}
-		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, ramStringCount = 0;
-		const stringBinding = selecting ? 0 : restoring ? this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET) : imageBindingBase + nameBytes;
+		const { constantBytes, constantOffset, constantCount, stringCount, reused, globalNameCount, systemGlobalNameCount } = header;
+		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array;
 		if (reused === null) {
 			const buffer = new ArrayBuffer(constantCount * 5);
 			constWords = new Uint32Array(buffer, 0, constantCount);
 			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 			constantStringSlots = new Uint32Array(stringCount);
-			ramStringCount = this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
-				stringBinding, restoring, constantStringSlots);
+			this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
+				stringBinding, constantStringSlots);
 		} else {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.
 			({ constWords, constTags, constantStringSlots } = reused);
+			let ramStringCount = 0;
 			for (let i = 0; i < constantStringSlots.length; ++i) {
 				const id = stringBinding === 0 ? 0 : loadImageStringBinding(this.memory, stringBinding, stringCount, i, ramStringCount);
 				constTags[constantStringSlots[i]] = stringBinding === 0 ? ValueTag.UnboundStringLiteral : ValueTag.String;
@@ -876,7 +824,7 @@ export class CPU implements MappedPageInvalidator {
 				ramStringCount += +isRamStringId(id);
 			}
 		}
-		const image: Blua32ExecutionImage = {
+		return {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
@@ -891,11 +839,6 @@ export class CPU implements MappedPageInvalidator {
 			decodedPages: new Map(),
 			compiledCodeLookup: null,
 		};
-		if (!restoring && !selecting) {
-			this.memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBinding, ramStringCount);
-			this.memory.writeRamRecordPair(binding, imageBindingBase, imageBindingBytes);
-		}
-		return image;
 	}
 
 	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
@@ -911,7 +854,7 @@ export class CPU implements MappedPageInvalidator {
 		const header = this.readExecutionImageHeader(executionBoot);
 		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
 		if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes) return null;
-		const image = this.materializeExecutionImage(executionBoot, header, ExecutionImageUpdate.Restore);
+		const image = this.materializeExecutionImage(executionBoot, header, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET));
 		this.executionImagesByDomain[imageIndex] = image;
 		return image;
 	}
@@ -954,113 +897,42 @@ export class CPU implements MappedPageInvalidator {
 		Closure.readBinding(this.memory, address, flags, image.romFunctions, this.executionReadView, target);
 	}
 
-	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
+	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[]): void {
 		if (executionBoots.length === 0) return;
 		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
-		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
-		const replacements = new Array<Blua32ExecutionImage['romFunctions'] | null>(EXECUTION_DOMAIN_COUNT).fill(null);
-		for (let i = 0; i < executionBoots.length; ++i)
-			replacements[executionBoots[i].executionDomainId + 1] = headers[i].romFunctions;
-		// The guest can retain a closure or activation without any host
-		// frame view. Admit these against the new catalogs before bank writes.
-		this.visitReachableExecutionRecords(address => {
-			const flags = this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-			if ((flags & Closure.CLOSURE_LATCHED_PROTOTYPE) !== 0) return;
-			const bank = Closure.executionDomain(flags) + 1;
-			const next = replacements[bank];
-			const previous = this.executionImagesByDomain[bank]?.romFunctions;
-			if (next === null || (next.mappedCode && previous?.mappedCode !== false)) return;
-			if (next.mappedCode || previous?.mappedCode === true)
-				throw new Error('Replacement image changes the addressing mode of a retained closure.');
-			const record = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-			const lane = romFunctionVersionLane(next, relocation?.closures.get(address) ?? record);
-			const old = previous === undefined ? -1 : romFunctionVersionLane(previous, record);
-			if (lane < 0 || (previous !== undefined && old >= 0
-				&& previous.versions[old + RomFunctionLane.UpvalueCount] !== next.versions[lane + RomFunctionLane.UpvalueCount]))
-				throw new Error('Replacement image does not preserve a retained closure binding.');
-		}, (address, depth) => {
-			for (let i = 0; i < depth; ++i) {
-				const domain = this.readThreadFrameExecutionDomain(address, i);
-				const next = replacements[domain + 1];
-				const previous = this.executionImagesByDomain[domain + 1]?.romFunctions;
-				if (next === null || (next.mappedCode && previous?.mappedCode !== false)) continue;
-				if (next.mappedCode || previous?.mappedCode === true)
-					throw new Error('Replacement image changes the addressing mode of a retained frame.');
-				const target = address === this.activeThread.address ? relocation?.frames[i] : undefined;
-				const record = this.readThreadFrameWord(address, i, FrameField.Function);
-				const old = previous === undefined ? -1 : romFunctionVersionLane(previous, record);
-				const pc = this.readThreadFrameWord(address, i, FrameField.Pc);
-				const nextRecord = target?.functionAddress ?? record, nextPc = target?.pc ?? pc;
-				const lane = romFunctionVersionLane(next, nextRecord);
-				if ((old >= 0 && lane < 0) || !admitsFunctionPc(next, nextRecord, nextPc))
-					throw new Error('Replacement image does not admit a retained frame continuation.');
-				if (target == null && previous !== undefined && old >= 0) {
-					for (const field of [RomFunctionLane.NumParams, RomFunctionLane.MaxStack, RomFunctionLane.Flags, RomFunctionLane.UpvalueCount]) {
-						if (previous.versions[old + field] !== next.versions[lane + field])
-							throw new Error('Replacement image does not preserve a retained frame layout.');
-					}
-				}
-			}
+		const images = executionBoots.map(boot => {
+			const header = this.readExecutionImageHeader(boot);
+			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), boot.executionDomainId);
+			if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes)
+				throw new Error('Replacement image requires an installed operand binding.');
+			return this.materializeExecutionImage(boot, header, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET));
 		});
-		const roots = this.acquireLocalRoots();
-		if (relocation !== undefined)
-			for (const closure of relocation.closures.keys()) this.localRoots.push(valueClosure(closure));
-		try {
-			// All media is already mounted. Rebind every index before looking up
-			// any constants: a lookup can touch the table of another changed image.
-			for (let i = 0; i < executionBoots.length; ++i) {
-				const { executionDomainId, staticEnd } = executionBoots[i];
-				if (executionDomainId === this.programExecutionDomainId && !this.heapAllocator.setFloor(staticEnd)) {
-					throw new Error('Replacement program static storage overlaps live language-heap pages.');
-				}
-				const { stringBucketAddress, stringBucketCount } = headers[i];
-				this.stringPool.activateRomTable(executionDomainId, stringBucketAddress, stringBucketCount);
-			}
-			for (let i = 0; i < executionBoots.length; ++i) {
-				const boot = executionBoots[i], domain = boot.executionDomainId, imageIndex = domain + 1;
-				const previous = this.executionImagesByDomain[imageIndex];
-				if (previous !== null) {
-					for (const page of previous.decodedPages.values()) {
-						this.compiledCodeCache.retirePage(page);
+		// The new images are only host views. The existing operands and the
+		// firmware's binding descriptor do not change when code is republished.
+		for (const thread of this.threadBanks) thread.dropParkedFrameViews();
+		for (const image of images) {
+			const domain = image.executionDomainId, imageIndex = domain + 1;
+			const previous = this.executionImagesByDomain[imageIndex];
+			this.executionImagesByDomain[imageIndex] = image;
+			this.unpublishedRomMask &= ~executionDomainBit(domain);
+			if (domain === SYSTEM_EXECUTION_DOMAIN_ID) this.systemImage = image;
+			if (previous !== null) {
+				for (const page of previous.decodedPages.values()) this.compiledCodeCache.retirePage(page);
+				for (const thread of this.threadBanks) {
+					if (thread.address === 0) continue;
+					for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
+						if (frame.executionImage !== previous) continue;
+						frame.executionImage = image;
+						frame.decodedPage = null;
+						frame.compilationEntry = true;
 					}
 				}
-				const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), domain);
-				const oldBase = this.memory.readRamRecordWord(binding);
-				const oldBytes = this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-				const image = this.materializeExecutionImage(boot, headers[i], ExecutionImageUpdate.Replace);
-				this.executionImagesByDomain[imageIndex] = image;
-				this.unpublishedRomMask &= ~executionDomainBit(domain);
-				if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
-					this.systemImage = image;
-				}
-				if (previous !== null) {
-					for (const thread of this.threadBanks) {
-						if (thread.address === 0) continue;
-						for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
-							if (frame.executionImage !== previous) continue;
-							frame.executionImage = image;
-							frame.decodedPage = null;
-							frame.compilationEntry = true;
-						}
-					}
-				}
-				if (previous !== null) this.releaseImageData(oldBase, oldBytes);
-				if (this.activeExecutionDomainId === domain) {
-					this.latchActiveExecutionImage(domain, image);
-					const frame = this.activeThread.currentFrame;
-					if (frame !== null && frame.executionImage === null) frame.executionImage = image;
-				}
 			}
-			if (relocation !== undefined) {
-				for (const [closure, record] of relocation.closures)
-					this.memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, record);
-				for (let i = 0; i < relocation.frames.length; ++i) {
-					const target = relocation.frames[i];
-					if (target !== null) this.writeFrameExecution(i, target.domain, target.functionAddress, target.pc);
-				}
+			if (this.activeExecutionDomainId === domain) {
+				this.latchActiveExecutionImage(domain, image);
+				const frame = this.activeThread.currentFrame;
+				if (frame !== null && frame.executionImage === null) frame.executionImage = image;
 			}
-		} finally {
-			this.releaseLocalRoots(roots);
 		}
 	}
 
@@ -4163,7 +4035,9 @@ export class CPU implements MappedPageInvalidator {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
 				const header = this.readExecutionImageHeader(boot, this.executionImagesByDomain[index]);
-				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, header, boardBank ? ExecutionImageUpdate.Select : ExecutionImageUpdate.Restore);
+				const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), boot.executionDomainId);
+				const strings = boardBank ? 0 : this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, header, strings);
 			} else this.executionImagesByDomain[index] = null;
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;

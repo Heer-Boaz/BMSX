@@ -45,14 +45,14 @@ import {
 import { RuntimeGuestCallPlan } from './guest_call';
 import type { RuntimeFaultState } from './fault_state';
 import {
-	applyHotResumeObservations,
+	applyHotResumeRelocation,
 	type HotResumeRelocation,
 	buildHotResumeRelocation,
 	type HotResumeRevision,
 	type HotResumeRevisions,
 } from './hot_resume_relocation';
+import { verifyHotResumeBinding } from './hot_resume_binding';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 
@@ -240,19 +240,23 @@ export function buildBlua32Revision(
 	};
 }
 
-function verifyHotResumeStringIdentities(runtime: Runtime, revisions: HotResumeRevisions): void {
+export function prepareBlua32RevisionInstallation(
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	built: BuiltBlua32Revision,
+	retainedFrameCount: number,
+): HotResumeRelocation {
 	const cpu = runtime.machine.cpu;
-	for (let i = 0; i < revisions.length; ++i) {
-		const revision = revisions[i], domain = (i - 1) as ExecutionDomainId;
-		if (revision === null || !cpu.isExecutionDomainResident(domain)) continue;
-		let previousEnd = revision.previousImage.address;
-		for (const record of blua32RomStrings(revision.previousImage)) previousEnd = Math.max(previousEnd, record.address + 1);
-		for (const { address, value } of blua32RomStrings(revision.nextImage)) {
-			if (address >= previousEnd && cpu.stringPool.shadowsResidentRomString(domain, value)) {
-				throw new Error('The edited image would replace a live String identity in another ROM. Rebuild and boot the ROM.');
-			}
+	for (let i = 0; i < built.revisions.length; ++i) {
+		const revision = built.revisions[i], domain = (i - 1) as ExecutionDomainId;
+		if (revision === null) continue;
+		if (blua32ToolingImageForDomain(sources.currentBlua32Media, domain)?.layout !== revision.previousImage) {
+			throw new Error('The installed ROM changed while preparing Hot Resume.');
 		}
+		if (cpu.isExecutionDomainResident(domain))
+			verifyHotResumeBinding(cpu, domain, revision.previousImage, revision.nextImage);
 	}
+	return buildHotResumeRelocation(cpu, built.revisions, retainedFrameCount);
 }
 
 export function installBlua32Revision(
@@ -279,8 +283,8 @@ export function installBlua32Revision(
 			replacements.push(image);
 		}
 	}
-	cpu.replaceExecutionImages(replacements, relocation);
-	applyHotResumeObservations(cpu, relocation);
+	cpu.replaceExecutionImages(replacements);
+	applyHotResumeRelocation(cpu, relocation);
 }
 
 /** Admit installation or a supervisor-return plan; init completion is reported by its physical roots. */
@@ -402,10 +406,9 @@ export function admitHotResume(
 			: cpu.getFrameDepth();
 		let relocation: HotResumeRelocation | null;
 		try {
-			if (prepared.built !== null) verifyHotResumeStringIdentities(runtime, prepared.built.revisions);
 			relocation = prepared.built === null
 				? null
-				: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
+				: prepareBlua32RevisionInstallation(sources, runtime, prepared.built, retainedFrameCount);
 			if (prepared.initCalls.length !== 0) {
 				// Install the revision only if the complete nested init batch has backing.
 				const thread = cpu.activeThread;

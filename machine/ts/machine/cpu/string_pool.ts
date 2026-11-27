@@ -258,13 +258,6 @@ export class StringPool {
 		return id === 0 ? undefined : id;
 	}
 
-	// Managed image replacement cannot change a previously exposed ROM identity.
-	public shadowsResidentRomString(domain: ExecutionDomainId, value: string): boolean {
-		const id = this.find(value);
-		if (id === undefined || id < CART_ROM_BASE) return false;
-		return domain === -1 || (domain + 1 === this.metadata(FIRST_CART) && (id >>> BLUA32_STRING_ROM_SOCKET_SHIFT) !== domain);
-	}
-
 	private rehashStep(oldCount: number, nextBase: number, allowance: number): number {
 		const oldBase = this.metadata(BUCKETS), count = 2 * oldCount;
 		let ready = this.metadata(REHASH_READY), work = 0;

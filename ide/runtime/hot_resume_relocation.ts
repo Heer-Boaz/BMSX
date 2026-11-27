@@ -1,6 +1,6 @@
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
-import { FRAME_WINDOW_MASK, FrameField, registerWindowBucket, type FrameExecutionTarget } from '../../machine/ts/machine/cpu/call_state';
-import type { ExecutionImageRelocation } from '../../machine/ts/machine/cpu/execution_image';
+import { FRAME_WINDOW_MASK, FrameField, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	blua32FunctionIndexAtAddress,
@@ -25,7 +25,11 @@ export type HotResumeRevisions = readonly [
 	HotResumeRevision | null,
 ];
 
-export type HotResumeRelocation = ExecutionImageRelocation & {
+type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number };
+
+export type HotResumeRelocation = {
+	readonly frames: ReadonlyArray<FrameExecutionTarget | null>;
+	readonly closures: ReadonlyMap<number, number>;
 	readonly observations: Uint32Array;
 	readonly valueEnd: number;
 };
@@ -261,6 +265,8 @@ export function applyHotResumeObservations(cpu: CPU, relocation: HotResumeReloca
 }
 
 export function applyHotResumeRelocation(cpu: CPU, relocation: HotResumeRelocation): void {
+	for (const [closure, record] of relocation.closures)
+		cpu.memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, record);
 	for (let i = 0; i < relocation.frames.length; ++i) {
 		const frame = relocation.frames[i];
 		if (frame !== null) cpu.writeFrameExecution(i, frame.domain, frame.functionAddress, frame.pc);

@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 		auto& cpu = runtime.machine.cpu;
 		auto& memory = runtime.machine.memory;
 		auto& scheduler = runtime.machine.scheduler;
-		std::vector<u8> replacementSystemRom;
+		std::vector<std::vector<u8>> replacementSystemRoms;
 		RuntimeSaveState saved;
 		RuntimeCheckpointState historyCheckpoint;
 		RamHistory ramHistory;
@@ -218,7 +218,8 @@ int main(int argc, char** argv) {
 					try {
 						if (source == 'n') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target);
 						else if (source == 'b') cpu.beginCompletionCall(target, BuiltinArgsView{cpu.readCompletionValues()});
-						else throw std::runtime_error("Expected a named Function or borrowed completion Values.");
+						else if (source == 'c') cpu.beginCompletionCall(target);
+						else throw std::runtime_error("Expected a Function or Closure completion call.");
 					} catch (const std::runtime_error& error) {
 						if (std::string_view(error.what()) != "External call exceeds the admitted register window.") throw;
 						admitted = false;
@@ -556,12 +557,33 @@ int main(int argc, char** argv) {
 					ramHistory.restore(memory, historyEnd, historyPartial);
 					applyRuntimeCheckpointState(runtime, historyCheckpoint, RuntimeRestoreOrigin::HistorySeek);
 					break;
-				case '^': {
+				case '^':
+				case '+': {
 					std::string path;
 					trace >> path;
-					replacementSystemRom = loadFile(path.c_str());
-					memory.installSystemRom(replacementSystemRom);
-					runtime.rebootSystem();
+					if (op == '+') memory.ramWriteWatches().armHistoryWrites();
+					memory.installSystemRom(replacementSystemRoms.emplace_back(loadFile(path.c_str())));
+					if (op == '^') {
+						runtime.rebootSystem();
+						break;
+					}
+					bool published = true, blocked = false;
+					try {
+						cpu.replaceExecutionImage(runtime.machine.executionAddressSpace.resolveSystemDomain());
+					} catch (const std::runtime_error& error) {
+						if (std::string_view(error.what()) != "Replacement image requires an installed operand binding.") throw;
+						published = false;
+						try {
+							cpu.runUntilDepth(0, 1);
+						} catch (const std::runtime_error& refusal) {
+							if (std::string_view(refusal.what()) != "Installed ROM must be published before CPU execution.") throw;
+							blocked = true;
+						}
+					}
+					const bool dirty = memory.ramWriteWatches().historyPageDirty(0, memory.ramByteCount() >> MAPPED_PAGE_BYTE_SHIFT);
+					memory.ramWriteWatches().disarmHistoryWrites();
+					std::cout << published << ' ' << blocked << ' ' << dirty << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,

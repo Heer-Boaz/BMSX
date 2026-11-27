@@ -21,9 +21,10 @@ import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import {
 	buildBlua32Revision,
 	installBlua32Revision,
+	prepareBlua32RevisionInstallation,
 	type BuiltBlua32Revision,
 } from './hot_resume';
-import { buildHotResumeRelocation, type HotResumeRelocation } from './hot_resume_relocation';
+import type { HotResumeRelocation } from './hot_resume_relocation';
 
 export type BuiltAemSourceRevision = {
 	resource: RuntimeResource;
@@ -138,9 +139,8 @@ export function buildAemSourceRevision(
 		},
 		assetEdits,
 	);
-	const relocation = buildHotResumeRelocation(
-		runtime.machine.cpu,
-		revision.revisions,
+	const relocation = prepareBlua32RevisionInstallation(
+		sources, runtime, revision,
 		runtime.machine.cpu.getFrameDepth(),
 	);
 	return { resource, domain, source, eventMap, revision, relocation };

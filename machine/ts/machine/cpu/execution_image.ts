@@ -1,5 +1,4 @@
 import type { FunctionEntry, FunctionPrototype } from './closure';
-import type { FrameExecutionTarget } from './call_state';
 import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
@@ -20,7 +19,7 @@ import type { Memory, MemoryByteView } from '../memory/memory';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
-import { isRamStringId, type StringId } from './string_pool';
+import type { StringId } from './string_pool';
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
@@ -53,11 +52,6 @@ export type Blua32RomFunctionDirectory = {
 	readonly textByteCount: number;
 	readonly instructionHeads: Uint32Array;
 	readonly codeOrder: Uint32Array;
-};
-
-export type ExecutionImageRelocation = {
-	readonly frames: readonly (FrameExecutionTarget | null)[];
-	readonly closures: ReadonlyMap<number, number>;
 };
 
 const EMPTY_ROM_LANES = new Uint32Array(0);
@@ -343,22 +337,6 @@ export type DecodedInstructionPage = MappedPageBinding & {
 // order; ROM identities grow from the high end. No arena extension or
 // unpublished root array is needed.
 export const IMAGE_STRING_RAM_ORDINAL = 1;
-
-export function storeImageStringBinding(memory: Memory, base: number, count: number, slot: number, ramCount: number, id: StringId): number {
-	const ram = +isRamStringId(id), right = count - 1 - (slot - ramCount);
-	const dest = ram ? ramCount : right;
-	const sourceAddress = base + 4 * slot;
-	if (dest === slot) {
-		memory.writeRamRecordWord(sourceAddress, id | ram);
-	} else {
-		const address = base + 4 * dest;
-		const flag = dest < slot ? memory.readRamRecordWord(address) & IMAGE_STRING_RAM_ORDINAL : 0;
-		memory.writeRamRecordWord(address, id | flag);
-		const payload = (slot < ramCount || slot > right) ? memory.readRamRecordWord(sourceAddress) & ~IMAGE_STRING_RAM_ORDINAL : 0;
-		memory.writeRamRecordWord(sourceAddress, payload | ram);
-	}
-	return ramCount + ram;
-}
 
 export function loadImageStringBinding(memory: Memory, base: number, count: number, slot: number, ramCount: number): StringId {
 	const word = memory.readRamRecordWord(base + 4 * slot);

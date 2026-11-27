@@ -4,11 +4,13 @@ import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
-import { writeLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
-import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { verifyHotResumeBinding } from '../../ide/runtime/hot_resume_binding';
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_execution';
@@ -16,9 +18,38 @@ import { createTestRuntime } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
+
+test('Hot Resume admits numeric edits but rejects equal-sized retargeting of installed operand slots', () => {
+	const text = new Uint8Array(4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }],
+		constants: [integerConstant(3), 'left', 'right'], globalNames: ['first', 'second'] });
+	const { cpu, memory } = createTestSystemCpu(system);
+	const image = system.image, { address, header } = image;
+	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const span = 4 * (header.globalNameCount + header.systemGlobalNameCount + 2);
+	memory.writeRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET, span);
+	const before = cpu.captureRuntimeState();
+	const verify = (bytes: Uint8Array) => verifyHotResumeBinding(cpu, SYSTEM_EXECUTION_DOMAIN_ID, image, decodeBlua32Image(bytes, address));
+	const immediate = header.constantTableAddress - address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
+	const changedNumber = image.bytes.slice();
+	writeLE32(changedNumber, immediate, 95);
+	verify(changedNumber);
+
+	const literal = immediate + BLUA32_CONSTANT_RECORD_SIZE;
+	const changedLiteral = image.bytes.slice();
+	writeLE32(changedLiteral, literal, readLE32(changedLiteral, literal + BLUA32_CONSTANT_RECORD_SIZE));
+	assert.throws(() => verify(changedLiteral), /installed String literal bindings/);
+	const name = header.globalNameTableAddress - address;
+	const changedName = image.bytes.slice();
+	writeLE32(changedName, name, readLE32(changedName, name + 4));
+	assert.throws(() => verify(changedName), /installed global-name slots/);
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), span);
+	assert.deepEqual(cpu.captureRuntimeState(), before);
+});
 
 test('Hot Resume rejects a widened retained frame before replacing its ROM', () => {
 	const text = new Uint8Array(4);
@@ -88,7 +119,8 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
 	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
 	const relocation = buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
-	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()], relocation);
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, relocation);
 	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
 	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);

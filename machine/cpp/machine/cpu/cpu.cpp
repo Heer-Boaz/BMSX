@@ -260,7 +260,7 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 	}
 }
 
-u32 CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring) {
+void CPU::bindConstantStrings(Blua32ExecutionImage& image, u32 stringBinding) {
 	auto& storage = image.decodedConstants;
 	const u32 count = static_cast<u32>(image.constantStringSlots.size());
 	u32 ramCount = 0, slot = 0;
@@ -271,38 +271,16 @@ u32 CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records
 			continue;
 		}
 		storage.tags()[index] = static_cast<u8>(ValueTag::String);
-		StringId id;
-		if (restoring) {
-			id = loadImageStringBinding(m_memory, stringBinding, count, slot, ramCount);
-			ramCount += isRamStringId(id);
-		} else {
-			const u8* record = records.data() + index * BLUA32_CONSTANT_RECORD_SIZE;
-			id = m_stringPool.resolveImageRecord(image.executionDomainId, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-			ramCount = storeImageStringBinding(m_memory, stringBinding, count, slot, ramCount, id);
-		}
-		++slot;
+		const StringId id = loadImageStringBinding(m_memory, stringBinding, count, slot++, ramCount);
+		ramCount += isRamStringId(id);
 		storage.words()[index] = id;
 	}
 	image.constPool = ConstValueSpan(storage.words(), storage.tags(), storage.capacity());
-	return ramCount;
-}
-
-void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination) {
-	if (nameCount == 0u) return;
-	m_executionAddressSpace.bindReadOnlyView(domain, tableAddress,
-		static_cast<size_t>(nameCount) * BLUA32_GLOBAL_NAME_RECORD_SIZE, m_executionTableView);
-	for (u32 index = 0; index < nameCount; ++index) {
-		const u8* record = m_executionTableView.data() + static_cast<size_t>(index) * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-		const StringId key = m_stringPool.resolveImageRecord(domain, readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
-		m_memory.writeRamRecordWord(destination + index * 4u, bank.registerName(key));
-	}
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	Blua32ExecutionBoot executionBoot, ExecutionImageUpdate update
 ) {
-	const bool restoring = update == ExecutionImageUpdate::Restore || update == ExecutionImageUpdate::UseInstalled;
-	const bool selecting = update == ExecutionImageUpdate::Select;
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -324,14 +302,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 constantCount = readLE32(
 		header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET
 	);
-	const u32 globalNameTableAddress = readLE32(
-		header + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET
-	);
 	const u32 globalNameCount = readLE32(
 		header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET
-	);
-	const u32 systemGlobalNameTableAddress = readLE32(
-		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET
 	);
 	const u32 systemGlobalNameCount = readLE32(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
@@ -343,7 +315,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		m_executionAddressSpace.bindReadOnlyView(executionDomainId, constantTableAddress,
 			constantCount * BLUA32_CONSTANT_RECORD_SIZE, records);
 	auto* previous = m_executionImagesByDomain[static_cast<size_t>(executionDomainId + 1)].get();
-	const bool reuseConstants = restoring && constantCount != 0u && previous
+	const bool reuseConstants = update == ExecutionImageUpdate::Restore && constantCount != 0u && previous
 		&& previous->constantSource.data() == records.data() && previous->constantSource.size() == records.size();
 	u32 stringCount = 0;
 	if (reuseConstants) {
@@ -356,35 +328,13 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u64 nameCount = static_cast<u64>(globalNameCount) + systemGlobalNameCount;
 	if (nameCount + stringCount > MAIN_RAM_SIZE / sizeof(u32))
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
-	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
-	if (update == ExecutionImageUpdate::Replace) {
-		admitImageReplacement(*image);
-		if (executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
-			throw BMSX_RUNTIME_ERROR("Replacement program static storage overlaps live language-heap pages.");
-		}
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-		discardNativeCompilation();
-#endif
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		clearNativeContinuationBindings();
-#endif
-	}
-	if (!restoring && !selecting) m_stringPool.activateRomTable(executionDomainId,
-		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
-		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
-	image->globalNameCount = globalNameCount;
-	image->systemNameCount = systemGlobalNameCount;
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionDomainId);
 	const u32 bytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
 	if (update == ExecutionImageUpdate::UseInstalled &&
 		m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) != bytes) return nullptr;
-	const u32 base = selecting ? 0u : restoring ? m_memory.readRamRecordWord(binding)
-		: bytes == 0u ? 0u : m_luaHeap.allocateRecord(bytes, false, 0, 0);
-	if (!restoring && !selecting && bytes != 0u) {
-		registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
-		registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
-			m_systemGlobalBank, base + 4u * globalNameCount);
-	}
+	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
+	image->globalNameCount = globalNameCount;
+	image->systemNameCount = systemGlobalNameCount;
 	image->constantSource = records;
 	if (reuseConstants) {
 		image->decodedConstants = std::move(previous->decodedConstants);
@@ -394,62 +344,10 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		image->constantStringSlots.reserve(stringCount);
 		decodeConstantPool(*image, records);
 	}
-	const u32 strings = selecting ? 0u : restoring ? m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET)
-		: base + static_cast<u32>(nameCount) * sizeof(u32);
-	const u32 ramStringCount = bindConstantStrings(*image, records, strings, restoring);
-	if (!restoring && !selecting) {
-		m_memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, strings, ramStringCount);
-		m_memory.writeRamRecordPair(binding, base, bytes);
-	}
+	const u32 strings = update == ExecutionImageUpdate::Select ? 0u
+		: m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	bindConstantStrings(*image, strings);
 	return image;
-}
-
-void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
-	const auto* previous = m_executionImagesByDomain[static_cast<size_t>(image.executionDomainId + 1)].get();
-	if (image.romFunctions.mappedCode && (!previous || previous->romFunctions.mappedCode)) return;
-	struct Admission {
-		const Memory& memory;
-		const GcHeap& heap;
-		const Blua32ExecutionImage* previous;
-		const Blua32ExecutionImage& image;
-	} admission{m_memory, m_heap, previous, image};
-	// A dormant coroutine may not have a host Thread view. Walk the allocated
-	// records before changing banks or rebinding any retained frame view.
-	m_heap.visitObjectRecords(&admission, [](void* context, u32 address) {
-		const auto& [memory, heap, previous, image] = *static_cast<const Admission*>(context);
-		const u8 kind = memory.readRamRecordByte(address);
-		if (kind == static_cast<u8>(ValueTag::Closure)) {
-			const ClosureRecord::BindingFlags binding{memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS)};
-			if (binding.latched() || binding.domain() != image.executionDomainId || heap.sweepGarbage(address)) return;
-			const u32 function = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-			const auto* prior = previous && !previous->romFunctions.mappedCode ? previous->romFunctions.find(function) : nullptr;
-			const auto* next = image.romFunctions.find(function);
-			if (!prior || image.romFunctions.mappedCode || !next || prior->upvalueCount != next->upvalueCount) {
-				throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained ROM closure.");
-			}
-		} else if (kind == THREAD_RECORD_KIND && !heap.sweepGarbage(address)) {
-			const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
-			const auto storage = ThreadRecord::storageLayout(memory, address);
-			for (u32 i = 0; i < depth; ++i) {
-				const u32 frame = storage.frameAddress(i);
-				const u32 flags = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags));
-				if (frameExecutionBank(flags) != image.executionDomainId) continue;
-				const u32 function = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
-				const u32 pc = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc));
-				if ((previous && previous->romFunctions.mappedCode != image.romFunctions.mappedCode)
-					|| !image.admitsFunctionPc(function, pc)) {
-					throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained frame continuation.");
-				}
-				if (const auto* prior = previous ? previous->romFunctions.find(function) : nullptr) {
-					const auto* next = image.romFunctions.find(function);
-					if (!next || prior->entry.numParams != next->entry.numParams || prior->entry.maxStack != next->entry.maxStack
-						|| prior->entry.flags != next->entry.flags || prior->upvalueCount != next->upvalueCount) {
-						throw BMSX_RUNTIME_ERROR("Replacement image does not preserve a retained frame layout.");
-					}
-				}
-			}
-		}
-	});
 }
 
 Blua32ExecutionImage* CPU::executionImageForDomain(ExecutionDomainId executionDomainId) {
@@ -503,11 +401,15 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
-	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionBoot.executionDomainId);
-	const u32 oldBase = m_memory.readRamRecordWord(binding);
-	const u32 oldBytes = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(executionBoot, ExecutionImageUpdate::Replace);
+		activateExecutionImage(executionBoot, ExecutionImageUpdate::UseInstalled);
+	if (!image) throw BMSX_RUNTIME_ERROR("Replacement image requires an installed operand binding.");
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	auto previousImage = std::move(imageEntry);
 	Blua32ExecutionImage* activatedImage = image.get();
 	imageEntry = std::move(image);
@@ -525,7 +427,6 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 			}
 		});
 	}
-	if (previousImage && oldBase != 0u) m_luaHeap.releaseRecord(oldBase, oldBytes);
 	if (m_activeExecutionDomainId == activatedImage->executionDomainId) {
 		latchActiveExecutionImage(m_activeExecutionDomainId, activatedImage);
 		auto* frame = m_activeThread->currentFrame;
@@ -891,7 +792,7 @@ void CPU::activateRootContext(u32 address) {
 	auto& image = *m_systemImage;
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const u32 strings = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-	bindConstantStrings(image, image.constantSource, strings, true);
+	bindConstantStrings(image, strings);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
 #endif
