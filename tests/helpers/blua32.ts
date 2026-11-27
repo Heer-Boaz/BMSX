@@ -325,7 +325,7 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 	};
 }
 
-function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source, system: LinkedSystemBlua32Image): void {
+function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source, system: Pick<LinkedBlua32Image, 'symbols'>): void {
 	if (!source.verifiedControlFlow) {
 		linked.layout.header.flags = BLUA32_IMAGE_MAPPED_CODE_FLAG;
 		writeLE32(linked.bytes, BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
@@ -356,19 +356,11 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount =
 }
 
 export function linkRawTestBlua32Pair(
-	systemSource: TestBlua32Source,
+	systemSource: TestBlua32Source | TestBlua32Image,
 	cartSource: TestBlua32Source,
 	bssByteCount = 0,
 ): TestBlua32ImagePair {
-	const systemRaw = createRawTestBlua32Object(systemSource, 'system', bssByteCount);
-	const system = linkSystemBlua32Image(
-		systemRaw.object,
-		systemRaw.metadata,
-		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
-		LINK_TARGET_RAM_BYTES,
-		[],
-	);
-	prepareRawTestImage(system, systemSource, system);
+	const system = 'romBytes' in systemSource ? systemSource : linkRawTestSystemBlua32(systemSource, bssByteCount);
 	const cartRaw = createRawTestBlua32Object(cartSource, 'cart', bssByteCount);
 	const cart = linkCartBlua32Image(
 		system.biosImports,
@@ -379,16 +371,16 @@ export function linkRawTestBlua32Pair(
 	);
 	prepareRawTestImage(cart, cartSource, system);
 	return {
-		systemImage: system.layout,
+		systemImage: system.image,
 		systemSymbols: system.symbols,
 		systemBiosImports: system.biosImports,
-		systemVectors: rawTestVectors(systemSource, system),
-		systemStaticModulePaths: [],
+		systemVectors: system.vectors,
+		systemStaticModulePaths: system.staticModulePaths,
 		cartImage: cart.layout,
 		cartSymbols: cart.symbols,
 		cartVectors: rawTestVectors(cartSource, cart),
 		cartStaticModulePaths: [],
-		systemRomBytes: writeTestBlua32Rom(system),
+		systemRomBytes: system.romBytes,
 		cartRomBytes: writeTestBlua32Rom(cart),
 	};
 }

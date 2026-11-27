@@ -1,3 +1,4 @@
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -48,7 +49,7 @@ end`;
 
 for (const opt of [0, 3] as const) {
 	test(`ordinary CALL enters fixed, private firmware under physical exhaustion (O${opt})`, () => {
-	const compiled = compileHeapServiceSystem('cop0.exec = mem32le[0x10000028]', opt, [{ path: probePath, source: probeSource }]);
+	const compiled = compileHeapServiceSystem(MANAGED_CART_LAUNCH, opt, [{ path: probePath, source: probeSource }]);
 	const object = encodeCompiledProgramObject(compiled);
 	const linked = linkSystemBlua32Image(object, compiled.metadata, SYSTEM_ROM_BASE + 0x100,
 		PSX_MACHINE_SPEC.ramBytes, [{ path: probePath, exportPathKey: '', fixedStack: true }]);

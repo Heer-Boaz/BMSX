@@ -1,4 +1,6 @@
 import { cartridgeSlots } from '../helpers/cartridge';
+import { CART_EXEC, MANAGED_CART_LAUNCH, MANAGED_CART_PREPARE } from '../helpers/managed_cart_launch';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
@@ -62,7 +64,9 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import {
 	linkRawTestBlua32Pair,
+	linkTestSystemBlua32,
 	linkTestBlua32Pair,
+	type TestBlua32Image,
 	type TestBlua32Source,
 } from '../helpers/blua32';
 
@@ -109,6 +113,28 @@ function makeExecutionSelectorSystemSource(): TestBlua32Source {
 		exceptionFunctionIndex: 0,
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map((primitive) => primitive.name),
 	};
+}
+
+// The same image is re-entered from its System exception vector. A socket
+// is prepared once per reset; subsequent EXEC keeps its installed operands.
+const managedSelectorSource = `
+bss prepared_slots: u32
+local launch<const> = function()
+	local bit<const> = 1 << mem[${IO_CART_SELECT}]
+	if (*prepared_slots & bit) == 0 then
+		${MANAGED_CART_PREPARE}
+		*prepared_slots = *prepared_slots | bit
+	end
+	${CART_EXEC}
+end
+function exception()
+	launch()
+end
+launch()
+`;
+let managedSelectorImage: TestBlua32Image;
+function managedSelectorSystem(): TestBlua32Image {
+	return managedSelectorImage ??= linkTestSystemBlua32(compileHeapServiceSystem(managedSelectorSource, 3));
 }
 
 function makeClosureCartSource(value: number, path: string, staticClosure: boolean): TestBlua32Source {
@@ -443,9 +469,9 @@ test('runtime reset boundary restarts system firmware and preserves cartridge en
 data marker: word = 41
 *marker = *marker + 1
 mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+${MANAGED_CART_LAUNCH}
 `;
-	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system_reset_system.lua'), [], { entrySource: systemSource, programDomain: 'system' });
+	const system = compileHeapServiceSystem(systemSource, 3, [], 'system_reset_system.lua');
 	const cartSource = `
 bss marker: word
 function irq(flags)
@@ -463,7 +489,7 @@ return
 	runtime.boot();
 
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
-	runGuestToHalt(runtime.machine.cpu, 1000);
+	runGuestToHalt(runtime.machine.cpu, 100_000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
 	assert.equal(runtime.machine.memory.readMappedU32LE(cartMarkerAddress), 99);
@@ -476,7 +502,7 @@ return
 	assert.equal(runtime.machine.systemController.captureState().resetRequested, false);
 	assert.equal(runtime.frameScheduler.lastTickSequence, 0);
 
-	runGuestToHalt(runtime.machine.cpu, 1000);
+	runGuestToHalt(runtime.machine.cpu, 100_000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 42);
 	assert.equal(runtime.machine.memory.readMappedU32LE(cartMarkerAddress), 99);
@@ -544,7 +570,7 @@ test('cartridge instruction fetch remains on the EXEC-latched socket when data s
 });
 
 test('guest cartridge selection and EXEC-latched closures survive the runtime save-state wire format', () => {
-	const systemSource = makeExecutionSelectorSystemSource();
+	const systemSource = managedSelectorSystem();
 	const slot0 = linkRawTestBlua32Pair(systemSource, makeClosureCartSource(111, 'slot0.lua', true));
 	const slot1 = linkRawTestBlua32Pair(systemSource, makeClosureCartSource(222, 'slot1.lua', true));
 	const runtime = createSystemResetRuntime(
@@ -555,7 +581,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const selectedClosureResultName = cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
@@ -576,7 +602,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'entering a system exception frame does not replace the EXEC latch');
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
@@ -609,7 +635,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
 
@@ -638,20 +664,20 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 
 test('distinct non-static closures remain distinct table keys through the runtime save-state wire format', () => {
 	const images = linkRawTestBlua32Pair(
-		makeExecutionSelectorSystemSource(),
+		managedSelectorSystem(),
 		makeClosureCartSource(111, 'slot0.lua', false),
 	);
 	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const firstClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	const secondClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(firstClosure, secondClosure);
 	assert.deepEqual(cpu.captureClosureBinding(asClosure(firstClosure, cpu.gc)), cpu.captureClosureBinding(asClosure(secondClosure, cpu.gc)));
@@ -686,7 +712,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 });
 
 test('mixed static and non-static cartridge closures keep their identities across either save-state latch', () => {
-	const systemSource = makeExecutionSelectorSystemSource();
+	const systemSource = managedSelectorSystem();
 	const slot0 = linkRawTestBlua32Pair(
 		systemSource,
 		makeClosureCartSource(111, 'slot0.lua', false),
@@ -703,13 +729,13 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	const canonicalClosure = cpu.getGlobalByKey(selectedClosureName);
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(cpu.captureClosureBinding(asClosure(dynamicClosure, cpu.gc)).functionAddress, cpu.captureClosureBinding(asClosure(canonicalClosure, cpu.gc)).functionAddress);
@@ -742,7 +768,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	applyRuntimeSaveState(
 		runtime,
 		decodeRuntimeSaveState(
@@ -761,7 +787,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	runGuestToHalt(cpu, 100);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(selectedClosureName), restoredCanonical);
 	assert.equal(cpu.gc.tables.get(restoredTable, cpu.getGlobalByKey(selectedClosureName)), valueInteger(22));
 });

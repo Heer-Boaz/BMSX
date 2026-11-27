@@ -1,3 +1,4 @@
+import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,7 +22,6 @@ import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HeapServiceCaptureBindingField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
@@ -50,7 +50,7 @@ local fourth = test_factory()
 return 10 * (first(7, 0, 0, 0, 0, 0, 701) + fourth(7, 0, 0, 0, 0, 0, 701)) +
 	(first == second and 1 or 0) + (first ~= third and 2 or 0) + (third == fourth and 4 or 0)
 `;
-const boot = `cop0.exec = mem32le[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+const boot = MANAGED_CART_LAUNCH;
 
 const folder = mkdtempSync(join('tmp', 'bmsx-mapped-captureless-'));
 try {

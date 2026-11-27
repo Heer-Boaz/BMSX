@@ -1,3 +1,4 @@
+import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,7 +23,6 @@ import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_RETAINED_WORD_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_CPU } from '../../../machine/ts/machine/memory/bus_signals';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
@@ -51,7 +51,7 @@ local closure = make(2)
 return closure()
 `;
 
-const boot = `cop0.exec = mem32le[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+const boot = MANAGED_CART_LAUNCH;
 
 // BIOS closure_work layout; the source-map test checks its field sizes.
 const captureLimit = 1024;

@@ -1,3 +1,4 @@
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
@@ -19,7 +20,6 @@ import {
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -146,7 +146,7 @@ for (const optLevel of [0, 3] as const) for (const [name, operation, argc] of [
 	['frame backing', HeapServiceOperation.ReserveFrameSpace, 4],
 	['closed-cell store', HeapServiceOperation.StoreClosedUpvalue, 2],
 ] as const) test(`an ordinary cartridge CLOSURE and CALL cannot enter the private ${name} root at O${optLevel}`, () => {
-	const boot = compileHeapServiceSystem(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel);
+	const boot = compileHeapServiceSystem(MANAGED_CART_LAUNCH, optLevel);
 	const cartSource = 'local a,b,c,d=121,122,123,124; return a,b,c,d';
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua').chunk, [], { entrySource: cartSource, optLevel });
 	const linked = linkTestBlua32Pair(boot, cart);
