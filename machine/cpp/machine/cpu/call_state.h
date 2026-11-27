@@ -26,9 +26,6 @@ inline u32 frameCaptureCount(const Memory& memory, u32 closure) {
 
 enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
-// Canonical frame control followed by argument count and inline Value lanes.
-constexpr uint32_t PREPARED_FRAME_SCOPE_TAG = 1u;
-enum class PreparedFrameField : uint32_t { Supplied = 60, Payloads = 68, Tags = 80, End = 83 };
 
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
 constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;
@@ -39,9 +36,7 @@ constexpr u32 FRAME_BANK_CART = 1u << 3;
 constexpr u32 FRAME_BANK_SECOND = 1u << 4;
 constexpr u32 FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 constexpr u32 FRAME_EXTEND_RESULT_TOP = 1u << 5;
-// The fixed root returns into a prepared ordinary frame, not Value slots.
 constexpr u32 FRAME_RESIDENT_ACTIVATION = 1u << 6;
-constexpr u32 FRAME_RESIDENT_PREPARED_ENTRY = 1u << 7;
 constexpr u32 FRAME_FIXED_WORK = 1u << 10;
 constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
@@ -155,7 +150,6 @@ struct CallFrame {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
 	void initializeControl(const FrameEntryControl& entry);
-	void applyPreparedControl(u32 source);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Only used inside a grant that already admitted the linear frame/stack
 	// backing and recorded those ranges for history.

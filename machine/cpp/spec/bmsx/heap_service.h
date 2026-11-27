@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, TableGrow, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, StoppedFinalMark, StoreClosedUpvalue, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -66,9 +66,6 @@ enum class HeapServiceBiosCallField : uint32_t {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBase = 24, ResultWord = 28,
 };
-
-// One pending ordinary VM transfer owns this scratch while backing is acquired.
-constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;

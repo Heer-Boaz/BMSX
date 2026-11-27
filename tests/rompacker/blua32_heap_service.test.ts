@@ -69,7 +69,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
-		['kernel/thread_frame_storage', 'reserve_frame_space'],
 		['kernel/gc_barrier', 'store_closed_upvalue'],
 		['kernel/allocate_captured_closure', 'allocate_captured_closure'],
 	];
@@ -116,11 +115,13 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE));
 });
 
-test('the ROM linker rejects a missing floor-control entry and a call out of its verified module', () => {
-	const floor = serviceModules.find(({ path }) => path === 'kernel/heap_floor')!;
-	const missing = compile(3, allocator, [{ path: floor.path, source: floor.source.replace('reserve_floor = reserve_floor', 'omitted = reserve_floor') }]);
+test('the ROM linker rejects a missing fixed entry and a call out of its verified module', () => {
+	const capture = serviceModules.find(({ path }) => path === 'kernel/allocate_captured_closure')!;
+	const missing = compile(3, allocator, [{
+		path: capture.path, source: capture.source.replace('allocate_captured_closure = allocate_captured_closure', 'omitted = allocate_captured_closure'),
+	}]);
 	assert.throws(() => linkSystemBlua32Image(missing.object, missing.program.metadata, loadAddress, MAIN_RAM_SIZE,
-		BIOS_FUNCTION_EXPORTS), /reserve_floor.*not a linked static function/);
+		BIOS_FUNCTION_EXPORTS), /allocate_captured_closure.*not a linked static function/);
 	const source = allocator.replace('module<const>', "module<const>\nlocal foreign<const> = require('test/foreign')")
 		.replace('return 1 -- C:548', 'return foreign.floor(floor)');
 	assert.notEqual(source, allocator);

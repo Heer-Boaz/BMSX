@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
 export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
-	AllocateRecord, TableGrow, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, StoppedFinalMark, StoreClosedUpvalue, CapturedClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -55,9 +55,6 @@ export const enum HeapServiceBiosCallField {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBase = 24, ResultWord = 28,
 }
-
-// One pending ordinary VM transfer owns this scratch while backing is acquired.
-export const HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 export const HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;

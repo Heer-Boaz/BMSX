@@ -3,8 +3,7 @@
 static_assert(HEAP_SERVICE_THREAD_OFFSET + THREAD_HEAP_BYTES <= HEAP_SERVICE_RESULT_OFFSET);
 static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_CLOSURE_OFFSET);
-static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_PREPARED_FRAME_OFFSET);
-static_assert(HEAP_SERVICE_PREPARED_FRAME_OFFSET + static_cast<u32>(PreparedFrameField::End) <= HEAP_SERVICE_FIRMWARE_DATA_OFFSET);
+static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_FIRMWARE_DATA_OFFSET);
 static_assert(HEAP_SERVICE_FIRMWARE_DATA_OFFSET < RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
@@ -107,13 +106,6 @@ void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPla
 	enterResidentFrame(callee);
 }
 
-void CPU::beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags) {
-	const std::array args{m_activeThread->address, valueEnd, frameEnd, root};
-	auto& firmware = prepareHeapServiceFrame(function, 0, static_cast<int>(args.size()), {}, m_currentInstructionPc);
-	for (size_t i = 0; i < args.size(); ++i) firmware.registers.set(i, valueInteger(static_cast<i32>(args[i])));
-	enterResidentFrame(firmware, receiverFlags);
-}
-
 void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
 	const auto address = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StoreClosedUpvalue)];
 	if (address == 0u) {
@@ -127,8 +119,8 @@ void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
 	enterResidentFrame(frame);
 }
 
-void CPU::enterResidentFrame(CallFrame& frame, u32 receiverFlags) {
-	frame.addControlFlags(FRAME_RESIDENT_ACTIVATION | receiverFlags);
+void CPU::enterResidentFrame(CallFrame& frame) {
+	frame.addControlFlags(FRAME_RESIDENT_ACTIVATION);
 	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
 	m_memory.writeRamRecordPair(context, m_currentInstructionPc, lastPc);
 	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceResidentField::SourceCycles),
@@ -185,10 +177,6 @@ void CPU::finishResidentCall(u32 flags) {
 	if (produced == HEAP_SERVICE_RESULT_FAULT) throw LuaExecutionError(source);
 	const int base = static_cast<int>(source), count = static_cast<int>(produced);
 	const auto& frame = *m_heapServiceView.firstFrame;
-	if ((flags & FRAME_RESIDENT_PREPARED_ENTRY) != 0u) {
-		enterPreparedFrame();
-		return;
-	}
 	const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
 		frame.readWindow(FrameField::ReturnCount), flags);
 	auto& caller = *m_activeThread->currentFrame;

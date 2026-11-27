@@ -98,7 +98,10 @@ local transfer_coroutine<const> = function(address, operand)
 	return false, nil, nil, nil
 end
 
-local enter<const> = function(values, depth, instruction, source_cycles)
+-- The direct entry reserves the full architectural call-overflow argument
+-- prefix. Ordinary traps still supply their original shorter argument list.
+local enter<const> = function(values, depth, instruction, source_cycles,
+	fn, entry_pc, closure, flags, params, base, return_base, return_count, a, b, c)
 	local cause<const> = cop0.cause
 	local denied_window<const> = cause == register_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
@@ -115,7 +118,15 @@ local enter<const> = function(values, depth, instruction, source_cycles)
 		end
 	end
 	if denied_window then
-		if window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
+		if instruction == 0 then
+			local count<const> = blua32.argument_count() - 12
+			local pc<const> = window.land_call(values, depth, source_cycles, count,
+				fn, entry_pc, closure, flags, params, base, return_base, return_count, a, b, c)
+			if pc then
+				cop0.epc = pc
+				blua32.rfe()
+			end
+		elseif window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
 	end
 	local reason<const> = transfer_fault or (denied_window and out_of_memory) or cop0.lua_fault_reason
 	local raised<const> = cause == trap or denied_window or transfer_fault ~= nil

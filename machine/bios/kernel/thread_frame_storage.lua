@@ -252,20 +252,15 @@ local prepare_frame_space<const> = function(management, address, value_end, fram
 	return (grow_thread_frame_storage(management, address, values, frames, root, source_cycles, interrupted)) -- V:166 W:189
 end
 
-local reserve_frame_space<const> = function(address, value_end, frame_end, root) -- X:517-521 V:159-166 W:181-189
-	local management_port<const>: *u32 = layout.management_address -- T:227 A:25 C:234 B:20; ordinary resident context
-	local cycles_port<const>: *u32 = layout.call_cycles_address -- X:5201-5207 Y:2809-2815; issuing allowance
-	local fault_port<const>: *u32 = layout.call_fault_address -- L:1111 N:1214; ordinary resident fault
-	local status<const> = prepare_frame_space(*management_port, address, value_end, frame_end, root, *cycles_port) -- V:166 W:189
-	if status ~= 0 then *fault_port = status - 1 end -- L:1111 N:1214; same Lua exception, after rollback/recovery
-	return -- V:166 W:189; acquisition has no language results
-end
-
 -- The firmware owns the root bank's next zero-based EXEC window.
 local reserve_system_entry<const> = function(value_end) -- W:181-189; firmware admits the entry before EXEC
 	local port<const>: *u32 = layout.management_address -- T:227 A:25 C:234 B:20
-	local roots<const>: *root_descriptors = layout.ram_base + *port + layout.root_banks_offset -- X:5274; the root is already firmware-published
-	reserve_frame_space(roots.root, value_end, 2, 0) -- W:182-189 V:159-166
+	local management<const> = *port
+	local roots<const>: *root_descriptors = layout.ram_base + management + layout.root_banks_offset -- X:5274; the root is already firmware-published
+	local cycles<const>: *u32 = layout.call_cycles_address
+	local fault<const>: *u32 = layout.call_fault_address
+	local status<const> = prepare_frame_space(management, roots.root, value_end, 2, 0, *cycles) -- W:182-189 V:159-166
+	if status ~= 0 then *fault = status - 1 end -- L:1111 N:1214; same Lua exception after recovery
 end
 
 return {
@@ -275,6 +270,6 @@ return {
 		publish_frame_roots = publish_frame_roots,
 	},
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
-	prepare_frame_space = prepare_frame_space, reserve_frame_space = reserve_frame_space,
+	prepare_frame_space = prepare_frame_space,
 	reserve_system_entry = reserve_system_entry,
 }

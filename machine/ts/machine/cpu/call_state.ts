@@ -13,13 +13,6 @@ import { decodeValueCount, encodeFixedValueCount } from '../../spec/blua32/opcod
 export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number };
 export const FRAME_CONTROL_BYTES = 56;
-// Entry: canonical frame control followed by its physical stack source.
-// A first resume borrows the resumer's stack, otherwise the active stack.
-// A detached call uses the three inline Value lanes instead.
-export const PREPARED_FRAME_DETACHED_SOURCE = 0xffffffff;
-export const PREPARED_FRAME_SCOPE_TAG = 1;
-export const enum PreparedFrameField { SourceSlot = 56, Supplied = 60, RelocateFormals = 64, Payloads = 68, Tags = 80, End = 83 }
-
 export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 export const CALL_RESULT_EXTEND_TOP = 0x80000000;
 export const SINGLE_CALL_RESULT = CALL_RESULT_EXTEND_TOP | encodeFixedValueCount(1);
@@ -33,11 +26,9 @@ export const FRAME_NMI = 4;
 const FRAME_BANK_CART = 1 << 3;
 const FRAME_BANK_SECOND = 1 << 4;
 const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
-const FRAME_EXTEND_RESULT_TOP = 1 << 5;
+export const FRAME_EXTEND_RESULT_TOP = 1 << 5;
 // Fixed-root activation takes the ordinary VM return/fault path.
 export const FRAME_RESIDENT_ACTIVATION = 1 << 6;
-// The fixed root returns into a prepared ordinary frame, not Value slots.
-export const FRAME_RESIDENT_PREPARED_ENTRY = 1 << 7;
 export const FRAME_FIXED_WORK = 1 << 10;
 
 export function registerWindowBucket(required: number): number {
@@ -47,7 +38,7 @@ export function registerWindowBucket(required: number): number {
 export function frameExecutionBank(flags: number): ExecutionDomainId {
 	return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
 }
-function frameBankWord(domain: ExecutionDomainId): number {
+export function frameBankWord(domain: ExecutionDomainId): number {
 	return domain === SYSTEM_EXECUTION_DOMAIN_ID ? 0 : FRAME_BANK_CART | (domain << 4);
 }
 
@@ -111,12 +102,6 @@ export class CallFrame {
 		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, argumentCount,
 			returnBase, returnCount, top, closureAddress, base, capacity);
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
-	}
-	public applyPreparedControl(source: number): void {
-		const memory = this.controlMemory;
-		memory.ramData().copyWithin(this.controlOffset, source, source + FRAME_CONTROL_BYTES);
-		this.registers.rebind(this.thread.stackRegisters, this.stackBase, this.stackCapacity);
-		memory.invalidateRamWrite(this.controlOffset, FRAME_CONTROL_BYTES);
 	}
 	public growRegisterWindow(capacity: number): void {
 		const memory = this.controlMemory, address = (this.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK;

@@ -429,10 +429,7 @@ private:
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
-	void enterPreparedFrame();
-	void prepareFrameEntry(u32 function, const FrameEntryControl&, BuiltinArgsView detached);
-	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
-	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
+	void enterResidentFrame(CallFrame&);
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);

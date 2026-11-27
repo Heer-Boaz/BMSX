@@ -2784,49 +2784,6 @@ void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded
 	instructionBudgetRemaining -= relocate ? copied + padded : padded;
 }
 
-void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, BuiltinArgsView arguments) {
-	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-	entry.writeWords([&](FrameField field, u32 word) {
-		m_memory.writeRamRecordWord(prepared + static_cast<u32>(field), word);
-	});
-	const u32 supplied = static_cast<u32>(arguments.size());
-	m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied), supplied);
-	const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
-	const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
-	for (u32 slot = 0; slot < supplied; ++slot) {
-		const Value value = arguments[slot];
-		m_memory.writeRamRecordWord(words + 4u * slot, valuePayload(value));
-		m_memory.writeRamRecordByte(tags + slot, static_cast<u8>(valueTag(value)));
-	}
-	beginFrameSpaceAcquisition(function, entry.stackBase + entry.capacity, static_cast<u32>(m_activeThread->frameDepth()) + 2u,
-		prepared | PREPARED_FRAME_SCOPE_TAG, FRAME_RESIDENT_PREPARED_ENTRY);
-}
-
-void CPU::enterPreparedFrame() {
-	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-	auto& thread = *m_activeThread;
-	auto& frame = *thread.acquireFrame();
-	frame.applyPreparedControl(prepared);
-	const auto domain = frame.savedExecutionBank();
-	frame.executionImage = executionImageForDomain(domain);
-	const int params = frame.readWindow(FrameField::Top);
-	const int supplied = static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied)));
-	const int copied = std::min(params, supplied);
-	const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
-	const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
-	const auto source = [&](int index) {
-		return valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tags + index)), m_memory.readRamRecordWord(words + 4u * index));
-	};
-	for (int slot = 0; slot < copied; ++slot) frame.registers.set(slot, source(slot));
-	frame.registers.clear(copied, params - copied);
-	const int extras = frame.varargCount(), base = frame.readWindow(FrameField::VarargBase);
-	for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
-	instructionBudgetRemaining -= params + extras;
-	thread.setStackTop(frame.stackBase() + frame.stackCapacity());
-	thread.enterFrame(&frame);
-	latchActiveExecutionImage(domain, frame.executionImage);
-}
-
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall, u32 codeFunction) {
 	const auto [image, functionRecord] = resolveFunctionActivation(closure, codeFunction);
@@ -2843,13 +2800,23 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	};
 	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
-		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
-		if (function == 0u) {
-			if (thread.frameDepth() == 0u) throw LuaOutOfMemorySignal{};
-			enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return nullptr;
-		}
-		prepareFrameEntry(function, entry, args);
+		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
+		// This instruction has already resolved the callable and consumed
+		// the lookup. Its successor stays in the caller's physical frame.
+		constexpr size_t firstArgument = 12u;
+		std::array<Value, firstArgument + 3u> operands{
+			valueInteger(static_cast<i32>(placement.stackEnd())),
+			valueInteger(static_cast<i32>(thread.frameDepth()) + 2),
+			valueInteger(0), valueInteger(remainingDeviceCycles()),
+			valueInteger(static_cast<i32>(entry.function)), valueInteger(static_cast<i32>(entry.pc)),
+			valueInteger(static_cast<i32>(closure)),
+			valueInteger(static_cast<i32>(entry.flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u))),
+			valueInteger(placement.top()), valueInteger(placement.stackBase),
+			valueInteger(result.base), valueInteger(static_cast<i32>(result.countWord())),
+		};
+		for (size_t slot = 0; slot < argCount; ++slot) operands[firstArgument + slot] = args[slot];
+		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+			m_currentInstructionPc, {operands.data(), firstArgument + argCount});
 		return nullptr;
 	}
 	auto* frame = thread.acquireFrame();

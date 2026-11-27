@@ -120,7 +120,7 @@ test('bare System ROM enters closures from its own private arena, including a ca
 	// collector metadata is needed to describe these two call targets.
 	const context = CPU_FIXED_STACK_BASE - 0x1000, frames = context + 0x100, values = context + 0x200;
 	const plain = context + 0x300, captured = plain + 0x10, cell = captured + 0x10;
-	const slots = 16, window = 8, repetitions = 96;
+	const slots = 16, window = 8, repetitions = 96, warmVisits = 80;
 	const capturedValue = -0x12345678;
 	const constants: number[] = [];
 	const instructions: [OpCode, number, number, number, number?][] = [];
@@ -202,17 +202,21 @@ test('bare System ROM enters closures from its own private arena, including a ca
 		for (let n = 0; result === RunResult.Yielded && n < instructions.length + repetitions * 7; ++n) {
 			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 			if (depth === 2 && pc === linked.image.functions[2].codeAddress) ++plainVisits;
-			if (depth === 2 && pc === linked.image.functions[3].codeAddress) ++capturedVisits;
-			commands.push('P', 'E 1');
-			result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+			const enteredCapture = depth === 2 && pc === linked.image.functions[3].codeAddress;
+			if (enteredCapture) ++capturedVisits;
+			// The final grant leaves the compiled CALL and its target room to
+			// execute together, instead of always stopping at the transfer.
+			const grant = enteredCapture && capturedVisits === warmVisits ? 2048 : 1;
+			commands.push('P', `E ${grant}`);
+			result = scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled);
 			assert.equal(cpu.heapServiceActive(), false);
-			rows.push(`${depth} ${pc}`, `${result} ${1 - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} -1`);
+			rows.push(`${depth} ${pc}`, `${result} ${grant - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} -1`);
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.rootThread.address, context);
 		assert.equal(cpu.readCauseWord(), 0);
 		assert.equal(plainVisits, 1);
-		assert.equal(capturedVisits, repetitions);
+		assert.equal(capturedVisits, warmVisits);
 		const output = [valueInteger(37), valueInteger(capturedValue)];
 		assert.deepEqual(runtime.readCompletionValues(), output);
 		assert.deepEqual(memory.ramData().subarray(first, end), empty);

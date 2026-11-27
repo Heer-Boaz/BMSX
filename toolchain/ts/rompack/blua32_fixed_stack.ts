@@ -153,6 +153,10 @@ export function deriveBlua32FixedStack(
 				case OpCode.RFE:
 					if (!boundary?.ordinaryCode?.exceptionVectors.has(index)) reject('not an authored exception vector');
 					continue;
+				case OpCode.ARGC:
+					if (boundary?.ordinaryCode === undefined || a >= width) reject('not an ordinary CPU argument count read');
+					registers[a] = 0;
+					break;
 				case OpCode.MFC0:
 					if (boundary?.ordinaryCode === undefined || !cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control read');

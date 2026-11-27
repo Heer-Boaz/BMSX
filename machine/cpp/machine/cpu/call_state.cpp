@@ -3,7 +3,6 @@
 #include "machine/cpu/thread.h"
 
 #include <algorithm>
-#include <cstring>
 
 namespace bmsx {
 
@@ -37,12 +36,6 @@ void CallFrame::initializeControl(const FrameEntryControl& entry) {
 		controlMemory->invalidateRamWrite(controlOffset, first);
 		controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 	}
-}
-
-void CallFrame::applyPreparedControl(u32 source) {
-	std::memcpy(controlMemory->ramData() + controlOffset, controlMemory->ramData() + source, FRAME_CONTROL_BYTES);
-	registers = thread->stack.subspan(stackBase(), stackCapacity());
-	controlMemory->invalidateRamWrite(controlOffset, FRAME_CONTROL_BYTES);
 }
 
 void CallFrame::growRegisterWindow(i32 capacity) {
