@@ -78,7 +78,7 @@ export class ThreadRecords {
 			return;
 		}
 
-		const writing = id === BuiltinFunctionId.SetFrameRegister || id === BuiltinFunctionId.SetFrameUpvalue;
+		const writing = id === BuiltinFunctionId.SetFrameRegister;
 		if (length < (writing ? 4 : 3)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const operand = integerOperand(registers.get(base + 2)) >>> 0;
 		if (id === BuiltinFunctionId.GetFrameRegister || id === BuiltinFunctionId.SetFrameRegister) {
@@ -92,8 +92,7 @@ export class ThreadRecords {
 			const closure = memory.readRamRecordWord(frame + FrameField.Closure);
 			if (operand >= frameCaptureCount(memory, closure)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const cell = Closure.captureAddress(memory, closure, operand);
-			if (writing) Upvalue.store(heap, cell, registers.getTag(base + 3), registers.getPayload(base + 3));
-			else out.push(Upvalue.load(memory, cell));
+			out.push(Upvalue.load(memory, cell));
 		}
 	}
 	public readLayout(address: number, target: ThreadLayout): void {

@@ -6,7 +6,7 @@ import { GC_CHANGED_HEAD, GC_MODE_META, GC_REMARK_VISIT_STATE, GC_TRACE_HEAD, GC
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { initialize, store, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
+import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
@@ -15,6 +15,7 @@ import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { storeUpvalueReference, writeBlackClosedValueReference, writeClosedValueReference } from '../helpers/upvalue_store_reference';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const BARRIER = 'kernel/gc_barrier', entrySource = 'halt_until_irq';
@@ -196,11 +197,11 @@ for (const optLevel of [0, 3] as const) {
 		phase(GcPhase.MarkAgain);
 		byte(cell + GC_COLOR_OFFSET, 3);
 		word(cell + UPVALUE_NEXT, 0x819ab2ef);
-		oracle.gc.writeClosedValue(cell, ValueTag.Table, value);
+		writeClosedValueReference(oracle, cell, ValueTag.Table, value);
 		invoke('write_closed_value', arena, metadata, cell, ValueTag.Table, value, 0);
 		assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x819ab2ef);
 		phase(GcPhase.Mark);
-		oracle.gc.writeBlackClosedValue(cell, ValueTag.Table, value);
+		writeBlackClosedValueReference(oracle, cell, ValueTag.Table, value);
 		invoke('write_black_closed_value', arena, metadata, cell, ValueTag.Table, value, 0);
 		assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x311);
 		oracle.gc.writeBarrier(cell, UPVALUE_NEXT);
@@ -258,10 +259,10 @@ for (const optLevel of [0, 3] as const) {
 			word(wordLane, 73);
 			byte(tagLane, ValueTag.Integer);
 			actual.length = expected.length = 0;
-			store(oracle.gc, cell, ValueTag.String, value);
+			storeUpvalueReference(oracle, cell, ValueTag.String, value);
 			assert.deepEqual(expected, [...barrier, ...valueWrites]);
 
-			begin('store_black_closed_value', arena, metadata, cell, ValueTag.String, value, 1);
+			begin('store_closed_value', arena, metadata, cell, ValueTag.String, value, 1);
 			for (let i = 0; i < 1024 && actual.length < stop; ++i) grant(1);
 			assert.ok(cpu.heapServiceActive(), 'the accepted activation can stop between its writes');
 			assert.deepEqual(actual, expected.slice(0, stop));

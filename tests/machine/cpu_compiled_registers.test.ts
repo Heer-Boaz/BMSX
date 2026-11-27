@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
@@ -46,7 +47,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 		} else {
 			Upvalue.bindOpen(cpu.memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 		}
-		Upvalue.store(cpu.gc, upvalue, valueTag(value), valuePayload(value));
+		storeUpvalueReference(cpu, upvalue, valueTag(value), valuePayload(value));
 		for (const grant of [1, 64]) {
 			r.set(2, value);
 			r.setInteger(8, 73); r.setInteger(20, 74); r.setInteger(21, 75);

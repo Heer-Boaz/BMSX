@@ -214,16 +214,6 @@ export class GcHeap {
 			this.creditBarrierMarks();
 		} else this.enqueue(address, GC_RECORD_LINK, GC_CHANGED_HEAD);
 	}
-	public writeClosedValue(address: number, tag: ValueTag, word: number): void {
-		if (!valueTagHasGcEdge(tag) || this.markColor(address) !== 3) return;
-		this.writeBlackClosedValue(address, tag, word);
-	}
-	public writeBlackClosedValue(address: number, tag: ValueTag, word: number): void {
-		if (this.phase() === GcPhase.MarkAgain) {
-			this.markValue(valueFromTag(tag, word));
-			this.creditBarrierMarks();
-		} else this.enqueue(address, UPVALUE_NEXT, GC_CHANGED_HEAD);
-	}
 	public tableEntriesMoved(address: number): void {
 		const table = this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD);
 		if (table !== address && this.memory.readRamRecordWord(this.controlOffset + GC_MODE_META) !== address) return;
@@ -829,30 +819,6 @@ export class GcHeap {
 			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 0);
 		}
 		return work;
-	}
-
-	/** Native reference for differential collector tests. */
-	public assistPhysicalPressureAtTick(): void {
-		if (this.cpu.tableRebuild.record) return;
-		if (this.fullEpochs()) return;
-		const occupied = this.arena.occupiedBytes();
-		const previousOccupied = this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
-		if (occupied !== previousOccupied) this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
-		const current = this.phase();
-		if (current === GcPhase.Atomic) return;
-		if (this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST) === 0) {
-			if (occupied <= previousOccupied) return;
-			const demand = occupied - previousOccupied;
-			const completed = this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK);
-			const previous = this.memory.readRamRecordWord(this.controlOffset + GC_LAST_EPOCH_WORK);
-			const remaining = Math.max(previous, completed) - completed;
-			// Atomic entry and exit can end a pulse early. Leave room for the next interval's growth.
-			const quanta = (((remaining + GC_STEP_WORDS - 1) / GC_STEP_WORDS) >>> 0) + 3;
-			if (this.arena.unoccupiedBytes() > demand * quanta) return;
-			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 1);
-		}
-		const idleMark = (current === GcPhase.Mark || current === GcPhase.MarkAgain) && this.cpu.isHaltedUntilIrq();
-		this.step(valueNil(), valueNil(), valueNil(), 0, false, idleMark ? 4 * GC_STEP_WORDS : GC_STEP_WORDS);
 	}
 
 	private beginPaceCredit(estimate: number, runwayShift: number): void {

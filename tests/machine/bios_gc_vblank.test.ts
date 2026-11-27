@@ -15,6 +15,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { assistPhysicalPressureAtTickReference } from '../helpers/gc_vblank_reference';
 
 const MODULE = 'kernel/gc_vblank', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
@@ -104,7 +105,7 @@ for (const opt of [0, 3] as const) {
 			oracle.tableRebuild.record = rebuilding;
 			const before = nativeStep.mock.callCount();
 			allowance = 0;
-			oracle.gc.assistPhysicalPressureAtTick();
+			assistPhysicalPressureAtTickReference(oracle);
 			assert.equal(nativeStep.mock.callCount() - before, +(expected !== 0));
 			assert.equal(allowance, expected, `native decision in phase ${phase}`);
 			f.begin(waiting, rebuilding);

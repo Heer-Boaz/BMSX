@@ -125,10 +125,9 @@ local write_closed_value<const> = function(control, arena, metadata, cell, tag, 
 	write_black_closed_value(control, arena, metadata, cell, tag, payload, cpp_mirror) -- T:230-231 H:136-137
 end
 
--- The SETUP caller already admitted a closed black cell and an edge.
--- The cell is its canonical RAM offset, not a public raw address.
-local store_black_closed_value<const> = function(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:63-67 N:65-72
-	write_black_closed_value(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:67 N:72
+-- The cell is closed; firmware owns the color test and any barrier.
+local store_closed_value<const> = function(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:63-67 N:65-72
+	write_closed_value(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:63-67 N:65-72
 	local value<const>: *u32 = ram_base + cell_offset + upvalue_value_word -- U:68 N:68,74
 	*value = payload -- U:68 N:74
 	local tag_lane<const>: *u8 = ram_base + cell_offset + upvalue_value_tag -- U:69 N:68,75
@@ -145,7 +144,7 @@ local store_closed_upvalue<const> = function(cell_offset, value) -- U:63-69 N:65
 	*tagged_value = value -- U:63 N:65; tagged transport
 	local tag<const>: *u8 = address + layout.value_cell_tag_offset -- U:67,69 N:72,75
 	local word<const>: *u32 = address -- U:67-68 N:72,74
-	store_black_closed_value(management + layout.control_offset, management + layout.arena_offset, -- T:232-236 N:72; canonical collector association
+	store_closed_value(management + layout.control_offset, management + layout.arena_offset, -- T:232-236 N:72; canonical collector association
 		management + layout.metadata_offset, cell_offset, *tag, *word, 1) -- N:72-75 C:146-153; canonical C++ color store
 end
 
@@ -205,7 +204,7 @@ return {
 	write_table_assignment = write_table_assignment,
 	write_black_closed_value = write_black_closed_value,
 	write_closed_value = write_closed_value,
-	store_black_closed_value = store_black_closed_value,
+	store_closed_value = store_closed_value,
 	store_closed_upvalue = store_closed_upvalue,
 	table_entries_moved = table_entries_moved,
 }

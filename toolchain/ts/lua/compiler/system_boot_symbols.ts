@@ -29,7 +29,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_get_frame_register', id: BuiltinFunctionId.GetFrameRegister },
 	{ name: '__bmsx_set_frame_register', id: BuiltinFunctionId.SetFrameRegister },
 	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
-	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
 	{ name: '__bmsx_number_type', id: BuiltinFunctionId.NumberType },
 	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -53,7 +54,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 			} else {
 				Upvalue.bindOpen(memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 			}
-			Upvalue.store(cpu.gc, upvalue, v.valueTag(value), v.valuePayload(value)); other.stackRegisters.set(8, value);
+			storeUpvalueReference(cpu, upvalue, v.valueTag(value), v.valuePayload(value)); other.stackRegisters.set(8, value);
 			r.set(0, value);r.set(1, v.valueFloatBits(0xffa54321));
 		}
 	}

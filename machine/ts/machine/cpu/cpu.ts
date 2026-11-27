@@ -4490,7 +4490,7 @@ export class CPU implements MappedPageInvalidator {
 	private copyRegisterToUpvalue(frame: CallFrame, address: number, registers: ValueSlots, registerIndex: number): boolean {
 		const cell = address & Upvalue.UPVALUE_ADDRESS_MASK;
 		const tag = registers.getTag(registerIndex), word = registers.getPayload(registerIndex);
-		if (Upvalue.tryStoreWithoutBarrier(this.memory, cell, tag, word)) return false;
+		if (Upvalue.tryStoreDirect(this.memory, cell, tag, word)) return false;
 		const services = this.systemImage.heapServiceFunctions;
 		if (services === null) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -4636,7 +4636,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.GetFrameRegister:
 			case BuiltinFunctionId.SetFrameRegister:
 			case BuiltinFunctionId.GetFrameUpvalue:
-			case BuiltinFunctionId.SetFrameUpvalue:
 				this.gc.threads.invokeDiagnostic(this.gc, id, args, out);
 				break;
 			case BuiltinFunctionId.StringByte:

@@ -343,7 +343,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const auto access = exit->operands.upvalue;
 			const u32 cell = frame->captureAddress(access.capture) & UPVALUE_ADDRESS_MASK;
 			const Value value = frame->registers.get(access.slot);
-			if (!Upvalue::tryStoreWithoutBarrier(cpu.m_memory, cell, value)) {
+			if (!Upvalue::tryStoreDirect(cpu.m_memory, cell, value)) {
 				cpu.enterClosedUpvalueStore(*frame, cell, value);
 				transition = NativeBlockTransition::Redispatch;
 			}

@@ -6,12 +6,13 @@ import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { compileHeapServiceSystem, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { assistPhysicalPressureAtTickReference } from '../helpers/gc_vblank_reference';
 
 const driver = 'module<const>\n'
 	+ 'local roots<const> = require("kernel/gc_root_inputs")\n'
@@ -60,6 +61,9 @@ function fixture(optLevel: 0 | 3) {
 		return [live, garbage] as const;
 	});
 	assert.deepEqual(addresses[0], addresses[1]);
+	// Supply the same fixed-vector inputs as BIOS reset and IRQ admission.
+	memory.writeRamRecordWord(management + HEAP_SERVICE_ROOT_BANKS_OFFSET, cpu.rootThread.address);
+	memory.writeRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS, cpu.activeThread.address);
 	const [live, garbage] = addresses[0];
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -115,7 +119,7 @@ for (const opt of [0, 3] as const) {
 		for (const target of [cpu, oracle])
 			target.memory.writeRamRecordWord(f.control + physicalAssist, 1);
 		const before = oracle.gc.epochWork();
-		oracle.gc.assistPhysicalPressureAtTick();
+		assistPhysicalPressureAtTickReference(oracle);
 		assert.equal(oracle.gc.phase(), GcPhase.Atomic);
 		oracle.gc.finishFinalMark();
 		const expected = oracle.gc.epochWork() - before;

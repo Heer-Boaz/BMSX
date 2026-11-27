@@ -4,6 +4,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/closure_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/upvalue_store_reference.h"
 
 #include <algorithm>
 #include <iostream>
@@ -268,7 +269,7 @@ void captures() {
 							frame->writeControl(FrameField::OpenHead, cell);
 						}
 					}
-					Upvalue::store(m.cpu.gcHeap(), cell, value);
+					bmsx::test::storeUpvalueReference(m.cpu, cell, value);
 					frame->registers.set(0, value);
 					frame->registers.set(1, valueFloatBits(0x7fc12345));
 				}
@@ -299,7 +300,7 @@ void nativeClosedBarrierOracleAfterHeapGrowth() {
 	m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3,
 		"collector has scanned the closed cell before mutation");
-	Upvalue::store(m.cpu.gcHeap(), cell, valueTable(child.address()));
+	bmsx::test::storeUpvalueReference(m.cpu, cell, valueTable(child.address()));
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 2,
 		"closed writes queue the scanned cell again");
 	m.cpu.collectHeap();

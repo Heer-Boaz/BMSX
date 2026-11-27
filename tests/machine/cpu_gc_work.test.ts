@@ -41,6 +41,7 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { assistPhysicalPressureAtTickReference } from '../helpers/gc_vblank_reference';
 
 // Native measurements deliberately assemble an image without resident GC services.
 function source(operation: OpCode = OpCode.HALT, wide = false) {
@@ -287,7 +288,7 @@ test('physical occupancy advances a large live epoch before a table replacement 
 		assert.notEqual(ballast, 0);
 		assert.ok(arena.occupiedBytes() >= before + pressureBytes, 'reserve actual storage outside the language budget');
 	} while (arena.unoccupiedBytes() > initialIntervals * pressureBytes);
-	gc.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(cpu);
 	gc.collect();
 	frame.top = 2;
 	const white = gc.white();
@@ -300,7 +301,7 @@ test('physical occupancy advances a large live epoch before a table replacement 
 		const halted = !exercisedHalt && gc.phase() === GcPhase.Mark && physicalSteps >= 2;
 		const before = cpu.memory.readRamRecordWord(paid);
 		if (halted) cpu.haltUntilIrq();
-		gc.assistPhysicalPressureAtTick();
+		assistPhysicalPressureAtTickReference(cpu);
 		if (halted) {
 			assert.equal(cpu.memory.readRamRecordWord(paid) - before, 4 * GC_STEP_WORDS);
 			assert.ok(cpu.isHaltedUntilIrq());
@@ -316,10 +317,10 @@ test('physical occupancy advances a large live epoch before a table replacement 
 	assert.ok(exercisedHalt && physicalSteps >= 50 && !gc.active() && gc.white() === (white ^ 1));
 	assert.equal(gc.tableRecordAddress(garbage), 0);
 	assert.ok(arena.unoccupiedBytes() > 2 * pressureBytes);
-	gc.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(cpu);
 	assert.equal(gc.active(), false, 'no change in occupancy does not trigger another epoch');
 	arena.free(ballast);
-	gc.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(cpu);
 	assert.equal(gc.active(), false, 'a net release is not positive allocation pressure');
 	const recoveredWhite = gc.white();
 	tables.setInteger(owner, 513, valueInteger(73));

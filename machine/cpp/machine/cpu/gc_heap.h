@@ -105,8 +105,6 @@ public:
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS);
-	// Native reference for differential collector tests.
-	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	std::optional<size_t> reservationAssistAllowance(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u,
@@ -135,13 +133,8 @@ public:
 			writeBlackTableValue(table, value);
 	}
 	void writeTableEntry(u32 table, Value key, Value value);
-	void writeClosedValue(u32 cell, Value value) {
-		if (valueTagHasGcEdge(valueTag(value)) && markColor(cell) == 3u)
-			writeBlackClosedValue(cell, value);
-	}
 	// Native stores already checked the color and the presence of an edge.
 	void writeBlackTableValue(u32 table, Value value);
-	void writeBlackClosedValue(u32 cell, Value value);
 	void tableEntriesMoved(u32 address);
 	u32 changedHeadOffset() const { return m_controlOffset + GC_CHANGED_HEAD; }
 private:

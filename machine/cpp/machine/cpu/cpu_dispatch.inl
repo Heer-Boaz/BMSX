@@ -514,7 +514,7 @@ DISPATCH_LABEL(SETUP) {
 	if (static_cast<u32>(b) >= FRAME.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 cell = FRAME.captureAddress(static_cast<u32>(b)) & UPVALUE_ADDRESS_MASK;
 	const Value value = REG(a);
-	if (Upvalue::tryStoreWithoutBarrier(m_memory, cell, value)) DISPATCH_NEXT();
+	if (Upvalue::tryStoreDirect(m_memory, cell, value)) DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
 	enterClosedUpvalueStore(FRAME, cell, value);
 	DISPATCH_CONTINUE();

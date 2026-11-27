@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -394,9 +395,8 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = page.compiledBlocks!.entries[entry]!.region;
 	assert.equal(region.entries[0].sourceWords, 9);
-	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueFloatBits(0x7fa12345), 'upvalue'] as const) {
-		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12,
-			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
+	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueFloatBits(0x7fa12345)]) {
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12, value);
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(frame.registers.get(3), valueInteger(10), 'SETUP invalidates the earlier cached alias of R0');
@@ -405,7 +405,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		assert.equal(frame.top, 7, 'SETUP does not extend top to its source register');
 	}
 	const upvalue = ClosureRecord.captureAddress(js.memory, frame.closure, 0);
-	Upvalue.close(js.gc, upvalue); Upvalue.store(js.gc, upvalue, ValueTag.Integer, 1);
+	Upvalue.close(js.gc, upvalue); storeUpvalueReference(js, upvalue, ValueTag.Integer, 1);
 	const r = frame.registers, writes = new Uint32Array(16);
 	observeRegisterStores(r, index => { ++writes[index]; });
 	const block = page.compiledBlocks!.entries[entry]!, run = {

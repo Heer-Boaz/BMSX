@@ -86,12 +86,8 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 	const bool global = record == StoreBarrierRecord::Global;
 	if (barrier == NativeGcBarrier::None || (global && !m_bindings.gcPhase)) return;
 	auto* c = m_compiler;
-	// A Table already has its receiver in the scratch. A closed Cell
-	// uses the same slow exit as a watched or open SETUP.
 	const bool cell = record == StoreBarrierRecord::ClosedUpvalue;
-	const auto address = cell ? SLJIT_R2 : SLJIT_R0;
 	const auto flags = global ? SLJIT_R1 : cell ? SLJIT_R0 : SLJIT_R2;
-	const auto test = cell ? SLJIT_R1 : SLJIT_R3;
 	std::array<sljit_jump*, 2> scalar{};
 	if (barrier == NativeGcBarrier::Dynamic) {
 		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
@@ -105,16 +101,20 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 		};
 	}
 	sljit_jump* mutation;
-	if (global) {
+	if (cell) {
+		// Closed-cell references enter firmware before either lane is written.
+		// Only firmware decides whether the collector needs a barrier.
+		mutation = sljit_emit_jump(c, SLJIT_JUMP);
+	} else if (global) {
 		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.gcPhase));
 		sljit_emit_op2(c, SLJIT_AND32, flags, 0, flags, 0, SLJIT_IMM, 7);
 		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, static_cast<u8>(GcPhase::Mark));
 		mutation = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM,
 			static_cast<u8>(GcPhase::Atomic) - static_cast<u8>(GcPhase::Mark));
 	} else {
-		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(address), GC_COLOR_OFFSET);
-		sljit_emit_op2(c, SLJIT_AND32, test, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
-		mutation = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, test, 0, SLJIT_IMM, 3);
+		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
+		mutation = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 3);
 	}
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);

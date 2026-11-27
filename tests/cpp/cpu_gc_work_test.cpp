@@ -12,6 +12,7 @@
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
+#include "support/upvalue_store_reference.h"
 
 #include <array>
 #include <iostream>
@@ -194,6 +195,38 @@ void tableBackingRecoveryRetriesEachEpoch() {
 	}
 }
 
+// Frozen C++ admission reference for kernel/gc_vblank.lua.
+void assistPhysicalPressureAtTickReference(Machine& machine) {
+	auto& cpu = machine.cpu;
+	auto& heap = cpu.gcHeap();
+	auto& memory = machine.memory;
+	auto& arena = cpu.heapAllocator();
+	const u32 control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	if (cpu.tableRebuild.record) return;
+	if (heap.fullEpochs()) return;
+	const u32 occupied = arena.occupiedBytes();
+	const u32 previousOccupied = memory.readRamRecordWord(control + GC_PHYSICAL_OCCUPIED_AT_TICK);
+	if (occupied != previousOccupied) memory.writeRamRecordWord(control + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
+	// The existing maintenance boundary owns atomic work.
+	const auto current = heap.phase();
+	if (current == GcPhase::Atomic) return;
+	if (memory.readRamRecordWord(control + GC_PHYSICAL_ASSIST) == 0u) {
+		if (occupied <= previousOccupied) return;
+		const u32 demand = occupied - previousOccupied;
+		const u32 completed = heap.epochWork();
+		const u32 previous = memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK);
+		const u32 remaining = std::max(previous, completed) - completed;
+		// Allow the two phase handoffs at atomic entry and exit, plus the
+		// next interval's growth. This is an estimate, not a reservation.
+		const u64 quanta = remaining / GC_STEP_WORDS + (remaining % GC_STEP_WORDS != 0u) + 3u;
+		if (arena.unoccupiedBytes() > demand * quanta) return;
+		memory.writeRamRecordWord(control + GC_PHYSICAL_ASSIST, 1u);
+	}
+	// The interrupt wait lends bandwidth to an existing mark pass, not a new cycle.
+	const bool idleMark = (current == GcPhase::Mark || current == GcPhase::MarkAgain) && cpu.isHaltedUntilIrq();
+	heap.step(valueNil(), valueNil(), valueNil(), 0u, false, idleMark ? 4u * GC_STEP_WORDS : GC_STEP_WORDS);
+}
+
 void physicalPressurePacesLargeLiveHeap() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap(); auto& arena = cpu.heapAllocator();
@@ -214,7 +247,7 @@ void physicalPressurePacesLargeLiveHeap() {
 		require(ballast != 0u && arena.occupiedBytes() >= before + pressureBytes,
 			"reserve actual allocator storage outside the language budget");
 	} while (arena.unoccupiedBytes() > initialIntervals * pressureBytes);
-	heap.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(machine);
 	cpu.collectHeap(); // calibrate a completed live epoch, then make the large reserve garbage.
 	frame.setTop(2);
 	const u8 white = heap.white();
@@ -228,7 +261,7 @@ void physicalPressurePacesLargeLiveHeap() {
 		const bool wasActive = heap.active();
 		const bool halted = !exercisedHalt && heap.phase() == GcPhase::Mark && physicalSteps >= 2u;
 		if (halted) cpu.haltUntilIrq();
-		heap.assistPhysicalPressureAtTick();
+		assistPhysicalPressureAtTickReference(machine);
 		const auto after = machine.memory.readRamRecordWord(control + (heap.active() ? GC_EPOCH_WORK : GC_LAST_EPOCH_WORK));
 		if (halted) {
 			require(after - before == 4u * GC_STEP_WORDS && cpu.isHaltedUntilIrq(), "pressure uses idle mark bandwidth without waking the CPU");
@@ -247,10 +280,10 @@ void physicalPressurePacesLargeLiveHeap() {
 	require(exercisedHalt && physicalSteps >= 50u && !heap.active() && heap.white() == (white ^ 1u)
 		&& heap.tableRecordAddress(garbage) == 0u && arena.unoccupiedBytes() > 2u * pressureBytes,
 		"the larger epoch completed before the allocator exhausted its byte runway");
-	heap.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(machine);
 	require(!heap.active(), "without additional occupancy an idle collector does not start again");
 	arena.free(ballast);
-	heap.assistPhysicalPressureAtTick();
+	assistPhysicalPressureAtTickReference(machine);
 	require(!heap.active(), "a net release is not positive allocation pressure");
 	const u8 recoveredWhite = heap.white();
 	owner.setInteger(513, valueInteger(73));
@@ -891,7 +924,7 @@ void resumesLargeClosureCaptures() {
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
 		const auto replacement = bmsx::test::allocateTableReference(cpu).address();
-		Upvalue::store(heap, cell, valueTable(replacement));
+		bmsx::test::storeUpvalueReference(cpu, cell, valueTable(replacement));
 		require(advance() == GC_STEP_WORDS
 			&& memory.readRamRecordWord(control + GC_TRACE_CURSOR) > next,
 			"the next grant resumes from the saved capture word");

@@ -15,6 +15,7 @@
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
+#include "support/upvalue_store_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -642,7 +643,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 			std::array<u32, 1> cells{};
 			const auto closure = cpu.luaHeap().allocateClosureRecord(1u, false, cells);
 			ClosureRecord::initialize(machine->memory, closure, target, heap.white(), 1u, false, false);
-			Upvalue::store(heap, cells[0], valueInteger(slot == 1 ? 11 : 27));
+			bmsx::test::storeUpvalueReference(cpu, cells[0], valueInteger(slot == 1 ? 11 : 27));
 			ClosureRecord::setCaptureAddress(machine->memory, closure, 0u, cells[0]);
 			heap.publishObject(closure);
 			frame.registers.set(slot, valueClosure(closure));

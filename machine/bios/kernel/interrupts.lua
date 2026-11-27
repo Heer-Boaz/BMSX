@@ -7,4 +7,5 @@ return {
 	dma_completion_sequence = bios_dma_completion_sequence,
 	vblank_count = bios_vblank_count,
 	dma_done = 0x0001,
+	vblank = 0x0004,
 }

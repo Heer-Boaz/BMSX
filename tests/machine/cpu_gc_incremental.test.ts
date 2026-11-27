@@ -1,4 +1,5 @@
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -123,7 +124,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 	const storage = tables.hashAddress(strong);
 	tables.set(strong, valueTable(key), valueInteger(71));
 	assert.equal(tables.hashAddress(strong), storage, 'the key was inserted without a rehash');
-	Upvalue.store(gc, cells[0], ValueTag.Table, cellValue);
+	storeUpvalueReference(cpu, cells[0], ValueTag.Table, cellValue);
 	for (const child of [onlyClosure, fieldValue, key, cellValue]) assert.equal(gc.isAlive(child), true);
 	assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'forward writes do not enqueue the strong owners again');
 	tables.setInteger(weak, 1, valueTable(weakValue));
@@ -316,7 +317,7 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 	const finish = () => {
 		const replacement = cpu.createTable();
-		Upvalue.store(gc, cell, ValueTag.Table, replacement);
+		storeUpvalueReference(cpu, cell, ValueTag.Table, replacement);
 		assert.equal(gc.step(), GC_STEP_WORDS);
 		assert.ok(memory.readRamRecordWord(control + GC_TRACE_CURSOR) > next);
 		for (let step = 0; gc.active() && step < 20; ++step) gc.step();

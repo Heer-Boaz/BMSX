@@ -51,18 +51,13 @@ void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, 
 			}
 			return;
 		}
-		case BuiltinFunctionId::GetFrameUpvalue:
-		case BuiltinFunctionId::SetFrameUpvalue: {
+		case BuiltinFunctionId::GetFrameUpvalue: {
 			const u32 capture = static_cast<u32>(integerOperand(args[2]));
 			const u32 closure = field(FrameField::Closure);
 			if (capture >= frameCaptureCount(memory, closure))
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const u32 cell = ClosureRecord::captureAddress(memory, closure, capture);
-			if (id == BuiltinFunctionId::GetFrameUpvalue) out.push_back(Upvalue::load(memory, cell));
-			else {
-				if (args.size() < 4) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				Upvalue::store(heap, cell, args[3]);
-			}
+			out.push_back(Upvalue::load(memory, cell));
 			return;
 		}
 		default: BMSX_UNREACHABLE();

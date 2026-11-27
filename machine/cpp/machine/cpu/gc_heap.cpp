@@ -143,15 +143,6 @@ void GcHeap::writeTableEntry(u32 table, Value key, Value value) {
 	}
 }
 
-void GcHeap::writeBlackClosedValue(u32 cell, Value value) {
-	if (phase() == GcPhase::MarkAgain) {
-		markValue(value);
-		creditBarrierMarks();
-	} else {
-		enqueue(cell, UPVALUE_NEXT, GC_CHANGED_HEAD);
-	}
-}
-
 void GcHeap::tableEntriesMoved(u32 address) {
 	const u32 table = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
 	if (table != address && memory.readRamRecordWord(m_controlOffset + GC_MODE_META) != address) return;
@@ -894,32 +885,6 @@ size_t GcHeap::accountEpochWork(size_t work) {
 		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 0u);
 	}
 	return work;
-}
-
-void GcHeap::assistPhysicalPressureAtTick() {
-	if (m_cpu.tableRebuild.record) return;
-	if (fullEpochs()) return;
-	const u32 occupied = arena.occupiedBytes();
-	const u32 previousOccupied = memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
-	if (occupied != previousOccupied) memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
-	// The existing maintenance boundary owns atomic work.
-	const auto current = phase();
-	if (current == GcPhase::Atomic) return;
-	if (memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST) == 0u) {
-		if (occupied <= previousOccupied) return;
-		const u32 demand = occupied - previousOccupied;
-		const u32 completed = epochWork();
-		const u32 previous = memory.readRamRecordWord(m_controlOffset + GC_LAST_EPOCH_WORK);
-		const u32 remaining = std::max(previous, completed) - completed;
-		// Allow the two phase handoffs at atomic entry and exit, plus the
-		// next interval's growth. This is an estimate, not a reservation.
-		const u64 quanta = remaining / GC_STEP_WORDS + (remaining % GC_STEP_WORDS != 0u) + 3u;
-		if (arena.unoccupiedBytes() > demand * quanta) return;
-		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 1u);
-	}
-	// The interrupt wait lends bandwidth to an existing mark pass, not a new cycle.
-	const bool idleMark = (current == GcPhase::Mark || current == GcPhase::MarkAgain) && m_cpu.isHaltedUntilIrq();
-	step(valueNil(), valueNil(), valueNil(), 0u, false, idleMark ? 4u * GC_STEP_WORDS : GC_STEP_WORDS);
 }
 
 void GcHeap::beginPaceCredit(u32 estimate, u32 runwayShift) {

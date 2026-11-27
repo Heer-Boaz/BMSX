@@ -1,5 +1,4 @@
 import { CLOSURE_CAPTURE_WORDS } from './closure';
-import { GC_COLOR_OFFSET, GC_COLOR_MASK } from './gc_object';
 import { UPVALUE_ADDRESS_MASK, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from './upvalue';
 import { ThreadField } from './thread_record';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
@@ -62,8 +61,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 				const watches=m.ramWriteWatches();
 				if((m.rb(c+${UPVALUE_FLAGS})&${UPVALUE_OPEN})||watches.anyWatched(c,8)) ${failure}
 				const t=${tag},v=${word};
-				if(t>=${ValueTag.String}&&t<=${ValueTag.Thread}&&t!==${ValueTag.BuiltinFunction}
-					&&(m.rb(c+${GC_COLOR_OFFSET})&${GC_COLOR_MASK})===3) ${failure}
+				if(t>=${ValueTag.String}&&t<=${ValueTag.Thread}&&t!==${ValueTag.BuiltinFunction}) ${failure}
 				m.wd(c+${UPVALUE_VALUE_WORD},v);m.wb(c+${UPVALUE_VALUE_TAG},t);}`;
 		}
 		case OpCode.VARARG: {

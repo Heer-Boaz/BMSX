@@ -1325,7 +1325,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameRegister:
 		case BuiltinFunctionId::SetFrameRegister:
 		case BuiltinFunctionId::GetFrameUpvalue:
-		case BuiltinFunctionId::SetFrameUpvalue:
 			ThreadRecord::invokeDiagnostic(m_heap, fn.id, args, out);
 			break;
 		case BuiltinFunctionId::StringChar:

@@ -12,6 +12,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/value_bank.h"
 #include "support/table_allocation_reference.h"
+#include "support/upvalue_store_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -463,38 +464,7 @@ void hotUpvalueAlias() {
 		require(frame.registers.get(3) == valueInteger(10) && frame.registers.get(4) == valueInteger(9)
 			&& frame.registers.get(6) == value && static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
 	}
-	// These bare images exercise the direct lanes. Linked firmware conformance
-	// exercises the black-reference handoff end to end.
-	{
-		for (auto* m : {&native, &scalar}) {
-			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
-			const auto child = valueTable(bmsx::test::allocateTableReference(m->cpu).address());
-			m->memory.writeRamRecordByte(frame.captureAddress(1) + GC_COLOR_OFFSET, 0u);
-			frame.registers.set(12, child);
-			frame.registers.set(6, valueInteger(73));
-			frame.writeControl(FrameField::Pc, m->rom.textAddress);
-		}
-		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
-		const auto closed = frame.captureAddress(1);
 
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		const auto& writes = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteUpvalue)];
-		const auto previousWrites = writes.entries, previousResumes = writes.resumes;
-#endif
-		require(test::runCpuParity(native.cpu, scalar.cpu, loopCycles) == RunResult::Yielded
-			&& native.cpu.instructionBudgetRemaining == 0 && native.cpu.readFramePc(0) == native.rom.textAddress,
-			"open and closed writes complete in the same exact loop grant");
-		requireParity(native, scalar);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		require(writes.entries == previousWrites + 1 && writes.resumes == previousResumes + 1,
-			"only the open write materializes, then resumes native execution for the closed write");
-#endif
-		require(native.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 0u
-			&& Upvalue::load(native.memory, closed) == frame.registers.get(12)
-			&& frame.registers.get(6) == frame.registers.get(12)
-			&& frame.registers.get(3) == valueInteger(10) && frame.registers.get(4) == valueInteger(9),
-			"the returning closed write preserves its live prefix and the compiled GETUP sees the committed value");
-	}
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -651,6 +621,12 @@ void rawContextValues(CpuMachine& machine) {
 		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
 		NativeBlockRunState state{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
 		const auto& exit = *outerRead.blocks.front()->run(captureRegisters, state);
+		if (valueTagHasGcEdge(valueTag(value))) {
+			require(exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == outerRead.source[3].pc
+				&& exit.nextPc == outerRead.source[4].pc && captureRegisters.get(3) == valueInteger(2)
+				&& captureRegisters.get(6) == valueNil(), "a closed reference leaves for firmware after the exact native prefix");
+			continue;
+		}
 		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == outerRead.source.back().pc && exit.nextPc == 0
 			&& captureRegisters.get(0) == valueInteger(1)
 			&& captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(3) == valueInteger(2)
@@ -671,9 +647,10 @@ void rawContextValues(CpuMachine& machine) {
 	captureRegisters.set(12, child);
 	closedStore.remainingCycles = 100;
 	const auto& whiteReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
-	require(whiteReferenceExit.exit == NativeBlockExit::Continue && whiteReferenceExit.currentPc == outerRead.source.back().pc
-		&& Upvalue::load(machine.memory, closed) == child && machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == heap.white(),
-		"an unvisited cell accepts the reference natively without a collector mutation");
+	require(whiteReferenceExit.exit == NativeBlockExit::WriteUpvalue && whiteReferenceExit.currentPc == outerRead.source[3].pc
+		&& whiteReferenceExit.nextPc == outerRead.source[4].pc
+		&& Upvalue::load(machine.memory, closed) == scalar && machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == heap.white(),
+		"native SETUP does not read collector color or publish either lane of a closed reference");
 
 	const auto queued = bmsx::test::allocateTableReference(cpu).address();
 	machine.memory.writeRamRecordByte(queued + GC_COLOR_OFFSET, 3u);
@@ -768,7 +745,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 		&& exit.nextPc == generated.source[1].pc && Upvalue::load(memory, cell) == valueNil()
 		&& registers.get(1) == valueNil() && memory.readRamRecordWord(control + GC_TRACE_HEAD) == 0u,
 		"the native handoff precedes both the final-remark barrier and the next read");
-	Upvalue::store(heap, cell, child); // Original implementation, used as the firmware's differential oracle.
+	bmsx::test::storeUpvalueReference(cpu, cell, child); // Original implementation, used as the firmware's differential oracle.
 	require(Upvalue::load(memory, cell) == child, "the reference commits the original Value");
 	require(memory.readRamRecordByte(cell + GC_COLOR_OFFSET) == 3u && memory.readRamRecordWord(cell + UPVALUE_NEXT) == 0u
 		&& memory.readRamRecordWord(heap.changedHeadOffset()) == 0u

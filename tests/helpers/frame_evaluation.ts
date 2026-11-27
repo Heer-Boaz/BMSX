@@ -21,7 +21,8 @@ frame_header = __bmsx_frame_header
 get_frame_register = __bmsx_get_frame_register
 set_frame_register = __bmsx_set_frame_register
 get_frame_upvalue = __bmsx_get_frame_upvalue
-set_frame_upvalue = __bmsx_set_frame_upvalue
+local captures<const> = require('kernel/frame_upvalue')
+set_frame_upvalue = captures.set_frame_upvalue
 local creation<const> = require('kernel/thread_create')
 create_thread = creation.create_coroutine
 yield_thread = __bmsx_coroutine_yield
@@ -124,7 +125,6 @@ for _, operation in ipairs({ get_frame_upvalue, set_frame_upvalue }) do
  for _, index in ipairs({ -1, captures, 0x100000, 0.5, '0' }) do reject(operation, a, 0, index, 99) end
 end
 reject(set_frame_register, a, 0, 0)
-reject(set_frame_upvalue, a, 0, 0)
 ok, value = coroutine.resume(a)
 assert(ok and value == 60 and frame_count(a) == 0)
 for _, operation in ipairs({ frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do
