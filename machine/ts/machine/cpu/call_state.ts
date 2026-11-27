@@ -38,6 +38,7 @@ export const FRAME_RESIDENT_ACTIVATION = 1 << 6;
 // The fixed root returns into a prepared ordinary frame, not Value slots.
 export const FRAME_RESIDENT_PREPARED_ENTRY = 1 << 7;
 export const FRAME_RESIDENT_PLACE_WINDOW = 1 << 8;
+export const FRAME_RESIDENT_RETIRE_WINDOW_SOURCE = 1 << 9;
 
 export function registerWindowBucket(required: number): number {
 	return Math.max(8, 1 << (32 - Math.clz32(required - 1)));

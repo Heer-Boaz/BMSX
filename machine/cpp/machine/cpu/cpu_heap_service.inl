@@ -193,12 +193,18 @@ void CPU::finishResidentCall(u32 flags) {
 		return;
 	}
 	if ((flags & FRAME_RESIDENT_PLACE_WINDOW) != 0u) {
-		auto& window = *m_activeThread->currentFrame;
+		auto& current = *m_activeThread->currentFrame;
+		const bool retire = (flags & FRAME_RESIDENT_RETIRE_WINDOW_SOURCE) != 0u;
+		auto& window = retire ? *current.previous : current;
 		const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 		using Window = PreparedWindowField;
 		const auto read = [&](Window field) { return static_cast<i32>(m_memory.readRamRecordWord(prepared + static_cast<u32>(field))); };
 		window.growRegisterWindow(read(Window::Capacity));
 		placeRegisterWindow(window, read(Window::Destination), read(Window::SourceSlot), read(Window::Copied), read(Window::Padded), read(Window::Top));
+		if (retire) {
+			current.thread->leaveFrame();
+			resumeFrameBank();
+		}
 		return;
 	}
 	const i32 protectedIndex = static_cast<i32>(frame.readControl(FrameField::Protected));

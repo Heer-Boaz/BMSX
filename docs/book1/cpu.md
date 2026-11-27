@@ -1015,7 +1015,17 @@ guest cycles and can span a CPU grant; it does not execute the following
 instruction. If the allocation fails, the Out of memory exception identifies
 the original `VARARG` instruction and no results are placed.
 
-`RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
+`RET` closes the returning frame's open upvalues before routing its results.
+An ordinary nested return places results in the caller's saved destination
+range and releases the returning frame. If that range needs more physical
+stack storage, the returning frame remains live while the BIOS acquires it
+on ordinary CPU grants. No result is placed until the backing is ready. If
+the allocation fails, the Out of memory exception identifies the original
+`RET` and the caller's result window is unchanged.
+
+A return need not have an ordinary caller: protected-call targets, completion,
+and coroutine resumption have distinct return routes. Returning from a root
+frame with no resumer records completion values.
 
 #### Value placement and capture cycles
 

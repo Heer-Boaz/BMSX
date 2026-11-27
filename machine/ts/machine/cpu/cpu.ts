@@ -170,7 +170,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -3069,7 +3069,14 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const caller = frame.previous!;
-		this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
+		const destination = frame.returnBase, result = frame.returnCount;
+		const selected = selectedCallResultCount(result, total), end = destination + selected;
+		const copied = Math.min(total, selected), padded = selected - copied;
+		const source = frame.stackBase + a;
+		const top = (result & CALL_RESULT_EXTEND_TOP) === 0 || end > caller.top ? end : -1;
+		if (selected !== 0 && end > caller.stackCapacity
+			&& this.acquireRegisterWindow(caller, destination, source, copied, padded, top, end, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
+		this.placeRegisterWindow(caller, destination, source, copied, padded, top);
 		frame.thread.leaveFrame();
 		this.resumeFrameBank();
 		return true;
@@ -3102,26 +3109,32 @@ export class CPU implements MappedPageInvalidator {
 			if (top >= 0) frame.top = top;
 			return false;
 		}
-		const thread = frame.thread, source = frame.varargBase, copied = Math.min(count, available), padded = count - copied;
-		if (end > frame.stackCapacity) {
-			const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
-			if (extent > thread.stackRegisters.capacity()) {
-				const services = this.systemImage.heapServiceFunctions;
-				if (services !== null) {
-					const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Destination, a, source);
-					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Copied, copied, padded);
-					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Capacity, capacity, top);
-					// The executing Closure is already a live Thread frame
-					// edge. No extra operand scope is required for this write.
-					this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], extent, 0, 0, FRAME_RESIDENT_PLACE_WINDOW);
-					return true;
-				}
-				this.ensureStackCapacity(extent, valueClosure(frame.closureAddress));
-			}
-			frame.growRegisterWindow(capacity);
-		}
+		const source = frame.varargBase, copied = Math.min(count, available), padded = count - copied;
+		if (end > frame.stackCapacity && this.acquireRegisterWindow(frame, a, source, copied, padded, top, end, 0)) return true;
 		this.placeRegisterWindow(frame, a, source, copied, padded, top);
+		return false;
+	}
+
+	// Both source and receiver remain live on this Thread until placement.
+	private acquireRegisterWindow(frame: CallFrame, destination: number, source: number, copied: number, padded: number,
+		top: number, end: number, receiverFlags: number): boolean {
+		const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
+		if (extent > frame.thread.stackRegisters.capacity()) {
+			const services = this.systemImage.heapServiceFunctions;
+			if (services !== null) {
+				const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Destination, destination, source);
+				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Copied, copied, padded);
+				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Capacity, capacity, top);
+				// The live frame chain already owns both Closure roots. The
+				// reference C++ window path has no additional operand scope.
+				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], extent, 0, 0,
+					FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
+				return true;
+			}
+			this.ensureStackCapacity(extent, valueClosure(frame.closureAddress));
+		}
+		frame.growRegisterWindow(capacity);
 		return false;
 	}
 
@@ -4003,11 +4016,17 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		if ((flags & FRAME_RESIDENT_PLACE_WINDOW) !== 0) {
-			const window = this.activeThread.currentFrame!, prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+			const current = this.activeThread.currentFrame!, retire = (flags & FRAME_RESIDENT_RETIRE_WINDOW_SOURCE) !== 0;
+			const window = retire ? current.previous! : current;
+			const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 			window.growRegisterWindow(memory.readRamRecordWord(prepared + PreparedWindowField.Capacity));
 			this.placeRegisterWindow(window, memory.readRamRecordWord(prepared + PreparedWindowField.Destination),
 				memory.readRamRecordWord(prepared + PreparedWindowField.SourceSlot), memory.readRamRecordWord(prepared + PreparedWindowField.Copied),
 				memory.readRamRecordWord(prepared + PreparedWindowField.Padded), memory.readRamRecordWord(prepared + PreparedWindowField.Top) | 0);
+			if (retire) {
+				current.thread.leaveFrame();
+				this.resumeFrameBank();
+			}
 			return;
 		}
 		const index = frame.protectedContinuationIndex;

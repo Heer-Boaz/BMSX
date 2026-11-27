@@ -109,8 +109,15 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 		CallFrame& caller = *frame.previous;
 		const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
 			frame.readWindow(FrameField::ReturnCount), frame.readControl(FrameField::Flags));
-		admitAndClose(std::min(count, result.selected(count)));
-		writeReturnValuesFromRegisters(caller, result, frame, a, count);
+		const auto placement = ValuePlacement::fit(count, result.selected(count));
+		admitAndClose(placement.copied);
+		const int selected = placement.count(), end = result.base + selected;
+		const int source = frame.stackBase() + a;
+		const int top = !result.extendsTop() || end > caller.readWindow(FrameField::Top) ? end : -1;
+		if (selected != 0 && end > caller.stackCapacity()
+			&& acquireRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top, end,
+				FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
+		placeRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top);
 	}
 	m_activeThread->leaveFrame();
 	resumeFrameBank();
@@ -126,28 +133,32 @@ inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {
 		if (top >= 0) frame.setTop(top);
 		return false;
 	}
-	auto& thread = *frame.thread;
 	const int source = frame.readWindow(FrameField::VarargBase);
-	if (end > frame.stackCapacity()) {
-		const auto capacity = registerWindowBucket(static_cast<size_t>(end));
-		const auto extent = static_cast<size_t>(frame.stackBase()) + capacity;
-		if (extent > thread.stackCapacity) {
-			const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
-			if (function != 0u) {
-				const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-				using Window = PreparedWindowField;
-				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Destination), a, source);
-				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Copied), placement.copied, placement.padded);
-				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Capacity), static_cast<u32>(capacity), static_cast<u32>(top));
-				// The executing Closure is already an edge of the live Thread.
-				beginFrameSpaceAcquisition(function, static_cast<u32>(extent), 0, 0, FRAME_RESIDENT_PLACE_WINDOW);
-				return true;
-			}
-			thread.resizeStack(nextPowerOfTwo(extent));
-		}
-		frame.growRegisterWindow(static_cast<int>(capacity));
-	}
+	if (end > frame.stackCapacity() && acquireRegisterWindow(frame, a, source, placement.copied, placement.padded, top, end, 0u)) return true;
 	placeRegisterWindow(frame, a, source, placement.copied, placement.padded, top);
+	return false;
+}
+
+inline bool CPU::acquireRegisterWindow(CallFrame& frame, int destination, int source, int copied, int padded,
+	int top, int end, u32 receiverFlags) {
+	auto& thread = *frame.thread;
+	const auto capacity = registerWindowBucket(static_cast<size_t>(end));
+	const auto extent = static_cast<size_t>(frame.stackBase()) + capacity;
+	if (extent > thread.stackCapacity) {
+		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
+		if (function != 0u) {
+			const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+			using Window = PreparedWindowField;
+			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Destination), destination, source);
+			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Copied), copied, padded);
+			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Capacity), static_cast<u32>(capacity), static_cast<u32>(top));
+			// Both Closure roots are already edges of this live Thread.
+			beginFrameSpaceAcquisition(function, static_cast<u32>(extent), 0, 0, FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
+			return true;
+		}
+		thread.resizeStack(nextPowerOfTwo(extent));
+	}
+	frame.growRegisterWindow(static_cast<int>(capacity));
 	return false;
 }
 

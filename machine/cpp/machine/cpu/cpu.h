@@ -497,6 +497,7 @@ private:
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced);
 	bool executeVararg(CallFrame& frame, int first, int requested);
+	bool acquireRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top, int end, u32 receiverFlags);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
 	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
