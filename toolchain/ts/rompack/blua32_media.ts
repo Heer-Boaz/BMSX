@@ -28,19 +28,27 @@ export type Blua32ToolingMedia = {
 	];
 };
 
-/** A second executable can be read as data while the mounted image remains executable. */
-export function stageBlua32Executable(installedRom: Uint8Array, image: Blua32ImageLayout,
-	domain: ExecutionDomainId): { bytes: Uint8Array; imageAddress: number } {
+/** Read replacement executables as data without displacing the mounted executable. */
+export function stageBlua32Executables(installedRom: Uint8Array, images: readonly (Blua32ImageLayout | null)[],
+	domain: ExecutionDomainId): { bytes: Uint8Array; imageAddresses: number[] } {
 	const system = domain === SYSTEM_EXECUTION_DOMAIN_ID;
 	const base = system ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 	const limit = system ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
-	const offset = alignBlua32ImageOffset(installedRom.byteLength, base, 4);
-	const extent = offset + image.bytes.byteLength;
+	let extent = installedRom.byteLength;
+	const imageAddresses = images.map(image => {
+		if (image === null) return 0;
+		const offset = alignBlua32ImageOffset(extent, base, 4);
+		extent = offset + image.bytes.byteLength;
+		return base + offset;
+	});
 	if (extent > limit) throw new Error('Staged executable exceeds the physical ROM aperture.');
 	const bytes = new Uint8Array(extent);
 	bytes.set(installedRom);
-	bytes.set(image.bytes, offset);
-	return { bytes, imageAddress: base + offset };
+	for (let i = 0; i < images.length; ++i) {
+		const image = images[i];
+		if (image !== null) bytes.set(image.bytes, imageAddresses[i] - base);
+	}
+	return { bytes, imageAddresses };
 }
 
 /** Omitted entries decode the ROM TOC; supplied entries (including empty) are authoritative. */

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
@@ -13,16 +14,25 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { parseSystemRomImage } from '../../../machine/ts/rompack/image';
 import {
 	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID,
-	GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET, GlobalBankField,
+	GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET, GlobalBankField, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET,
+	EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET,
 } from '../../../machine/ts/spec/blua32/execution_domain';
+import {
+	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_BYTE_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_STRING_RECORD_ALIGNMENT, Blua32ConstantTag,
+} from '../../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
+import { alignBlua32ImageOffset, decodeBlua32Image, type Blua32ImageLayout } from '../../../toolchain/ts/rompack/blua32_image';
 import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
-import { loadBlua32ToolingImage, stageBlua32Executable } from '../../../toolchain/ts/rompack/blua32_media';
-import { blua32RomStrings } from '../../../toolchain/ts/rompack/blua32_rom_strings';
+import { loadBlua32ToolingImage, stageBlua32Executables } from '../../../toolchain/ts/rompack/blua32_media';
+import { Blua32RomStringLayout } from '../../../toolchain/ts/rompack/blua32_rom_strings';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -30,7 +40,7 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const oldLiteral = 'installed literal';
 const ramAlias = 'already live in RAM';
-const freshLiteral = 'literal only in replacement media';
+const freshLiteral = 'same literal in two replacement images';
 const characterOperands = (text: string) => Array.from(text, ch => ch.charCodeAt(0)).join(', ');
 const source = (probe: string) => `module<entry>
 bss report: word
@@ -69,7 +79,35 @@ mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
 
-test('stock firmware binds a staged cartridge image without dropping live Values', t => {
+/** Add System operands to the stock image while keeping its actual reset and bridge code. */
+function extendSystemOperands(old: Blua32ImageLayout, literal: string, name: string): Blua32ImageLayout {
+	const { address, header } = old;
+	const strings = new Blua32RomStringLayout(address + BLUA32_IMAGE_HEADER_SIZE, old);
+	strings.endAddress = alignBlua32ImageOffset(address + old.bytes.length, 0, BLUA32_STRING_RECORD_ALIGNMENT);
+	strings.add(literal);
+	strings.add(name);
+	const constants = strings.endAddress - address;
+	const globalNames = constants + (header.constantCount + 1) * BLUA32_CONSTANT_RECORD_SIZE;
+	const bytes = new Uint8Array(globalNames + (header.globalNameCount + 1) * BLUA32_GLOBAL_NAME_RECORD_SIZE);
+	bytes.set(old.bytes);
+	const oldConstants = header.constantTableAddress - address, oldNames = header.globalNameTableAddress - address;
+	const constant = constants + header.constantCount * BLUA32_CONSTANT_RECORD_SIZE;
+	bytes.set(old.bytes.subarray(oldConstants, oldConstants + (constant - constants)), constants);
+	writeLE32(bytes, constant + BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag.String);
+	writeLE32(bytes, constant + BLUA32_CONSTANT_PAYLOAD_OFFSET, strings.addressOf(literal));
+	const nameWord = globalNames + header.globalNameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+	bytes.set(old.bytes.subarray(oldNames, oldNames + (nameWord - globalNames)), globalNames);
+	writeLE32(bytes, nameWord, strings.addressOf(name));
+	strings.write(bytes, address, header.stringBucketAddress - address, header.stringBucketCount);
+	writeLE32(bytes, BLUA32_IMAGE_BYTE_COUNT_OFFSET, bytes.length);
+	writeLE32(bytes, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, header.constantCount + 1);
+	writeLE32(bytes, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, address + constants);
+	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, header.globalNameCount + 1);
+	writeLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, address + globalNames);
+	return decodeBlua32Image(bytes, address);
+}
+
+test('stock firmware binds staged System and cartridge operands together without dropping live Values', t => {
 	const work = mkdtempSync(join(tmpdir(), 'bmsx-staged-binding-'));
 	const commands: string[] = [], rows: string[] = [];
 	let passed = false;
@@ -87,7 +125,8 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 		'--output-dir', work, '--store-dir', join(work, 'store')]);
 	const systemPath = join(work, 'system', 'bmsx-bios.debug.rom');
 	const system = new Uint8Array(readFileSync(systemPath));
-	const systemSymbols = loadBlua32ToolingImage(parseSystemRomImage(system), SYSTEM_ROM_BASE)!.symbols!;
+	const currentSystem = loadBlua32ToolingImage(parseSystemRomImage(system), SYSTEM_ROM_BASE)!;
+	const systemSymbols = currentSystem.symbols!;
 	const bindingIndex = systemSymbols.metadata.functionIds.indexOf('module:kernel/bind_image_entry/module');
 	assert.notEqual(bindingIndex, -1, 'the stock firmware must expose an ordinary bind entry');
 	const entry = systemSymbols.functionAddresses[bindingIndex];
@@ -109,10 +148,17 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 	assert.ok(candidate.layout.header.globalNameCount > original.layout.header.globalNameCount);
 	assert.equal(candidate.layout.header.stringBucketAddress, original.layout.header.stringBucketAddress);
 	assert.equal(candidate.layout.header.stringBucketCount, original.layout.header.stringBucketCount);
+	const replacementSystem = extendSystemOperands(currentSystem.layout, freshLiteral, 'fresh_global');
+	const replacementSystemRom = new Uint8Array(replacementSystem.address + replacementSystem.bytes.length);
+	replacementSystemRom.set(system.subarray(0, replacementSystem.address));
+	replacementSystemRom.set(replacementSystem.bytes, replacementSystem.address);
+	writeLE32(replacementSystemRom, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, replacementSystem.bytes.length);
 	const oldCart = writeTestBlua32Rom(original), newCart = writeTestBlua32Rom(candidate);
-	const staged = stageBlua32Executable(system, candidate.layout, SYSTEM_EXECUTION_DOMAIN_ID);
+	const staged = stageBlua32Executables(system, [replacementSystem, candidate.layout, null], SYSTEM_EXECUTION_DOMAIN_ID);
 	const stagePath = join(work, 'staged.rom'), oldCartPath = join(work, 'old-cart.rom'), newCartPath = join(work, 'new-cart.rom');
+	const newSystemPath = join(work, 'new-system.rom');
 	writeFileSync(stagePath, staged.bytes);
+	writeFileSync(newSystemPath, replacementSystemRom);
 	writeFileSync(oldCartPath, oldCart);
 	writeFileSync(newCartPath, newCart);
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(oldCart), machineModel: PSX_MACHINE_SPEC }, {
@@ -136,9 +182,12 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 	}
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const ram = memory.ramData(), binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
+	const management = cpu.heapAllocator.managementOffset();
+	const ram = memory.ramData(), binding = executionImageBindingOffset(management, 0);
+	const systemBinding = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 	const oldSpan = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-	const oldBinding = ram.slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
+	const oldSystemSpan = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+	const oldBindings = ram.slice(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE);
 	const readGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 	const alias = valuePayload(readGlobal('retained_alias'));
 	const oldString = valuePayload(readGlobal('saved_literal'));
@@ -174,8 +223,8 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 		return values;
 	}
-	const ints = [0, staged.imageAddress, candidate.layout.address];
-	const bind = (budget?: number) => complete([`T i ${entry} ${SYSTEM_EXECUTION_DOMAIN_ID} 3`, ...ints].join(' '),
+	const ints = [staged.imageAddresses[0], replacementSystem.address, staged.imageAddresses[1], candidate.layout.address, 0, 0];
+	const bind = (budget?: number) => complete([`T i ${entry} ${SYSTEM_EXECUTION_DOMAIN_ID} 6`, ...ints].join(' '),
 		() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, entry, ints.map(valueInteger)), budget);
 
 	const baseline = captureRuntimeSaveState(runtime);
@@ -183,13 +232,14 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 	const pressure = valuePayload(readGlobal('exhaust_memory'));
 	const [allocated] = complete(`T c ${pressure}`, () => cpu.beginCompletionCall(pressure), 65536);
 	assert.ok(valuePayload(allocated) > 0, 'guest Tables fill the heap and remain rooted');
-	const management = cpu.heapAllocator.managementOffset();
 	const names = management + SYSTEM_GLOBAL_BANK_OFFSET;
 	const namesEnd = management + GLOBAL_BANK_OFFSET + GlobalBankField.Count + 4;
 	const namespace = ram.slice(names, namesEnd);
+	const ordinaryCount = management + GLOBAL_BANK_OFFSET + GlobalBankField.Count;
+	const beforeNameCount = memory.readRamRecordWord(ordinaryCount);
 	publishSystem(stagePath, staged.bytes);
 	assert.deepEqual(bind(8192), [valueInteger(10)], 'the firmware reports that replacement storage is exhausted');
-	assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBinding);
+	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
 	assert.deepEqual(ram.subarray(names, namesEnd), namespace);
 	observe(`H ${names} ${namesEnd}`, hashBytes(ram, names, namesEnd - names));
 	publishSystem(systemPath, system);
@@ -202,19 +252,24 @@ test('stock firmware binds a staged cartridge image without dropping live Values
 	commands.push('U');
 
 	publishSystem(stagePath, staged.bytes);
-	assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBinding);
+	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
 	assert.deepEqual(bind(), [valueInteger(0)]);
 	assert.ok(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) > oldSpan);
-	observe(`H ${binding} ${binding + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(ram, binding, EXECUTION_IMAGE_BINDING_SIZE));
-	publishSystem(systemPath, system);
+	assert.equal(memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), oldSystemSpan + 8);
+	assert.equal(memory.readRamRecordWord(ordinaryCount), beforeNameCount + 1, 'the shared new global owns one namespace slot');
+	const systemStrings = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	const systemRamStrings = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+	const canonical = memory.readRamRecordWord(systemStrings + 4 * systemRamStrings) & ~1;
+	observe(`H ${systemBinding} ${binding + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(ram, systemBinding, 2 * EXECUTION_IMAGE_BINDING_SIZE));
+	publishSystem(newSystemPath, replacementSystemRom);
 	cartridgeController.installRom(0, newCart);
 	cpu.replaceExecutionImages([executionAddressSpace.resolveDomain(0)!]);
 	commands.push(`[ 0 ${newCartPath}`);
 	const values = complete(`T c ${probe}`, () => cpu.beginCompletionCall(probe));
 	assert.deepEqual(values.slice(0, 5), [valueInteger(43), valueString(oldString), valueString(alias), valueString(alias), valueInteger(79)]);
-	const newRecord = Array.from(blua32RomStrings(candidate.layout)).find(({ value }) => value === freshLiteral)!;
 	assert.equal(cpu.stringPool.toString(valuePayload(values[5])), freshLiteral);
-	assert.equal(values[5], valueString(newRecord.address), 'a fresh literal uses its final ROM identity, never the stage address or RAM');
+	assert.equal(values[5], valueString(canonical), 'both images bind the new literal to the same canonical record');
+	assert.ok(canonical < CART_ROM_BASE, 'the fresh spelling uses System ROM, not the staging tail or cartridge alias');
 	assert.equal(readGlobal('fresh_global'), values[5]);
 	assert.equal(readGlobal('retained_table'), table);
 	assert.equal(memory.readRamRecordWord(candidate.layout.header.bssAddress), 73);

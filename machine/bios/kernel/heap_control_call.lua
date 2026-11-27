@@ -48,11 +48,11 @@ local receive<const> = function(owner, token, destination, count)
 	elseif token == ids.bind_live_image then
 		-- Publishing an executable bank belongs to a stopped loader, not
 		-- to an ordinary cartridge CALL of the same System address.
-		if (frame.flags & (completion_frame | cartridge_bank)) ~= completion_frame or count ~= 3 then
+		if (frame.flags & (completion_frame | cartridge_bank)) ~= completion_frame or count ~= 6 then
 			return invalid_argument
 		end
 		local arguments<const>: *u32 = frames.internal.value_planes(owner, slot + 1)
-		result_word = live_binding.bind_live(arguments[0], arguments[1], arguments[2])
+		result_word = live_binding.bind_live(arguments)
 	elseif token < ids.admit_floor then
 		if count ~= 0 then return invalid_argument end
 		if token == ids.collect_step then

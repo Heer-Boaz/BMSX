@@ -20,7 +20,7 @@ import {
 } from '../../../machine/ts/spec/blua32/image_format';
 import { RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { stageBlua32Executable } from '../../../toolchain/ts/rompack/blua32_media';
+import { stageBlua32Executables } from '../../../toolchain/ts/rompack/blua32_media';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
@@ -49,10 +49,14 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const probe = initial.symbols.functionAddresses[probeIndex];
 	assert.equal(edited.symbols.functionAddresses[edited.symbols.metadata.functionDisplayNames.indexOf('publication_probe')], probe);
 	const initialRom = writeTestBlua32Rom(initial), editedRom = writeTestBlua32Rom(edited), differentRom = writeTestBlua32Rom(different);
-	const staged = stageBlua32Executable(initialRom, different.layout, SYSTEM_EXECUTION_DOMAIN_ID);
-	const stagedOffset = staged.imageAddress - SYSTEM_ROM_BASE;
+	const staged = stageBlua32Executables(initialRom, [different.layout, null, edited.layout], SYSTEM_EXECUTION_DOMAIN_ID);
+	const [differentAddress, absentAddress, editedAddress] = staged.imageAddresses;
+	const stagedOffset = differentAddress - SYSTEM_ROM_BASE;
 	assert.deepEqual(staged.bytes.subarray(0, initialRom.length), initialRom);
-	assert.deepEqual(staged.bytes.subarray(stagedOffset), different.layout.bytes);
+	assert.deepEqual(staged.bytes.subarray(stagedOffset, stagedOffset + different.layout.bytes.length), different.layout.bytes);
+	assert.equal(absentAddress, 0);
+	assert.ok(editedAddress >= differentAddress + different.layout.bytes.length);
+	assert.deepEqual(staged.bytes.subarray(editedAddress - SYSTEM_ROM_BASE), edited.layout.bytes);
 	const runtime = new Runtime({ systemRomBytes: initialRom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
@@ -122,8 +126,8 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 
 	runProbe(17);
 	publish(stage, staged.bytes, true);
-	const magic = staged.imageAddress + BLUA32_IMAGE_MAGIC_OFFSET;
-	const count = staged.imageAddress + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET;
+	const magic = differentAddress + BLUA32_IMAGE_MAGIC_OFFSET;
+	const count = differentAddress + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET;
 	assert.equal(memory.readMappedU32LE(magic), BLUA32_IMAGE_MAGIC);
 	assert.equal(memory.readMappedU32LE(count), different.layout.header.globalNameCount);
 	observe(`M ${magic}`, `${BLUA32_IMAGE_MAGIC} 0`);

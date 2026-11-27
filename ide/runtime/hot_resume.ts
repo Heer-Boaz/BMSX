@@ -56,7 +56,7 @@ import {
 } from './hot_resume_relocation';
 import { verifyHotResumeBinding } from './hot_resume_binding';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { blua32ToolingImageForDomain, stageBlua32Executable } from '../../toolchain/ts/rompack/blua32_media';
+import { blua32ToolingImageForDomain, stageBlua32Executables } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 
 export type BuiltBlua32Revision = {
@@ -457,7 +457,6 @@ export function admitHotResume(
 				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
 			}
 			if (bindingChanges.length !== 0) {
-				if (bindingChanges.length > 1) throw new Error('Publish operand growth in one resident image at a time.');
 				const system = sources.currentBlua32Media.system!;
 				const bind = system.symbols?.metadata.functionIds.indexOf('module:kernel/bind_image_entry/module');
 				if (bind === undefined || bind < 0)
@@ -517,11 +516,12 @@ export function admitHotResume(
 			return 'deferred';
 		}
 		if (bindFunctionAddress !== 0) {
-			const built = prepared.built!, domain = bindingChanges[0], candidate = built.revisions[domain + 1]!.nextImage;
+			const built = prepared.built!;
+			const candidates = built.revisions.map((revision, i) => bindingChanges.includes((i - 1) as ExecutionDomainId) ? revision!.nextImage : null);
 			const system = sources.systemRom.bytes;
-			let staged: ReturnType<typeof stageBlua32Executable>;
+			let staged: ReturnType<typeof stageBlua32Executables>;
 			try {
-				staged = stageBlua32Executable(system, candidate, SYSTEM_EXECUTION_DOMAIN_ID);
+				staged = stageBlua32Executables(system, candidates, SYSTEM_EXECUTION_DOMAIN_ID);
 			} catch (error) {
 				report({ kind: 'rejected', error });
 				return 'rejected';
@@ -554,7 +554,7 @@ export function admitHotResume(
 			memory.installSystemRom(staged.bytes);
 			cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, bindFunctionAddress,
-				[valueInteger(domain), valueInteger(staged.imageAddress), valueInteger(candidate.address)]);
+				candidates.flatMap((candidate, i) => [valueInteger(staged.imageAddresses[i]), valueInteger(candidate === null ? 0 : candidate.address)]));
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}
