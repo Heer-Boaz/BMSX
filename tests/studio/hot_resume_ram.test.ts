@@ -133,7 +133,7 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
 });
 
-test('Hot Resume preserves a suspended coroutine and its open capture at a proven physical continuation', () => {
+test('Hot Resume moves a suspended coroutine continuation and preserves its open capture', () => {
 	const source = `module<entry>
 local coroutines<const> = require('coroutine')
 function edited(value) return value + 1951 end
@@ -150,7 +150,7 @@ local finished, last = coroutines.resume(worker)
 return ok, first, finished, last, read_back()
 `;
 	const initial = linkManagedTestSystem(source, 3, COROUTINE_FIRMWARE_MODULES);
-	const fresh = linkManagedTestSystem(source.replace('1951', '1953'), 3, COROUTINE_FIRMWARE_MODULES);
+	const fresh = linkManagedTestSystem(source.replace('return value + 1951', 'return -value + 1953'), 3, COROUTINE_FIRMWARE_MODULES);
 	const runtime = createTestRuntime(writeTestBlua32Rom(initial));
 	runtime.boot();
 	const { cpu, memory, executionAddressSpace } = runtime.machine;
@@ -174,23 +174,26 @@ return ok, first, finished, last, read_back()
 	const plan = { previousImage, nextImage, revision };
 	const bodyPc = cpu.readThreadFrameWord(worker, bodyFrame, FrameField.Pc);
 	const bodyWord = (bodyPc - previousImage.header.textAddress) / INSTRUCTION_BYTES;
-	assert.equal(revision.pcAddresses[bodyWord], bodyPc);
-	const moved = { ...plan, revision: { ...revision, pcAddresses: revision.pcAddresses.slice() } };
-	moved.revision.pcAddresses[bodyWord] += INSTRUCTION_BYTES;
+	const movedPc = revision.pcAddresses[bodyWord];
+	assert.ok(movedPc >= 0 && movedPc !== bodyPc, `coroutine PC 0x${bodyPc.toString(16)} -> ${movedPc}`);
+	const unmapped = { ...plan, revision: { ...revision, pcAddresses: revision.pcAddresses.slice() } };
+	unmapped.revision.pcAddresses[bodyWord] = -1;
 	const framesOffset = cpu.readThreadFrameAddress(worker, 0);
 	const frameBytes = cpu.readThreadFrameDepth(worker) * FRAME_CONTROL_BYTES;
 	const controlBefore = memory.ramData().slice(framesOffset, framesOffset + frameBytes);
 	const before = cpu.captureRuntimeState();
-	assert.throws(() => buildHotResumeRelocation(cpu, [moved, null, null], cpu.getFrameDepth()), /inactive thread .* continuation/);
+	assert.throws(() => buildHotResumeRelocation(cpu, [unmapped, null, null], cpu.getFrameDepth()), /inactive thread .* continuation/);
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 	assert.deepEqual(memory.ramData().subarray(framesOffset, framesOffset + frameBytes), controlBefore);
 
 	verifyHotResumeBinding(cpu, SYSTEM_EXECUTION_DOMAIN_ID, previousImage, nextImage);
 	const accepted = buildHotResumeRelocation(cpu, [plan, null, null], cpu.getFrameDepth());
+	assert.deepEqual(memory.ramData().subarray(framesOffset, framesOffset + frameBytes), controlBefore);
 	memory.installSystemRom(writeTestBlua32Rom(fresh));
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	applyHotResumeRelocation(cpu, accepted);
-	assert.deepEqual(memory.ramData().subarray(framesOffset, framesOffset + frameBytes), controlBefore);
+	assert.equal(cpu.readThreadFrameWord(worker, bodyFrame, FrameField.Pc), movedPc);
+	assert.equal(cpu.readThreadFrameWord(worker, bodyFrame + 1, FrameField.CallSite), movedPc - INSTRUCTION_BYTES);
 	assert.equal(isOpen(memory, cell), true);
 	assert.equal(readCapture(memory, cell), valueInteger(42));
 
@@ -198,10 +201,10 @@ return ok, first, finished, last, read_back()
 	runGuestToHalt(cpu, 1_000_000);
 	const result: Value[] = [];
 	cpu.readCompletionValues(result);
-	assert.deepEqual(result, [valueBool(true), valueInteger(42), valueBool(true), valueInteger(1995), valueInteger(1995)]);
+	assert.deepEqual(result, [valueBool(true), valueInteger(42), valueBool(true), valueInteger(1911), valueInteger(1911)]);
 	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Dead);
 	assert.equal(isOpen(memory, cell), false);
-	assert.equal(readCapture(memory, cell), valueInteger(1995));
+	assert.equal(readCapture(memory, cell), valueInteger(1911));
 });
 
 test('Hot Resume retains a closure held only by the xpcall argument window', () => {
