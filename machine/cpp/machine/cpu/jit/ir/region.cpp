@@ -80,6 +80,11 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	size_t fixedFieldReads = 0;
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
+			if (inst.directCodeFunction != 0u) {
+				m_instructions.emplace_back(NativeLiteral{
+					inst.decoded->a, valueFromTag(ValueTag::CodeFunction, inst.directCodeFunction)});
+				continue;
+			}
 			auto operation = translateNativeOperation(*inst.decoded);
 			if (auto* field = std::get_if<NativeTableAccess>(&operation); field && field->keyKind == NativeTableKey::Field) {
 				if (field->readsFixedField()) ++fixedFieldReads;

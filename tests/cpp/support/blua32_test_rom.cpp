@@ -218,6 +218,7 @@ auto encodeImage(
 			record + BLUA32_FUNCTION_FLAGS_OFFSET,
 			(function.isVararg ? BLUA32_FUNCTION_VARARG : 0u)
 				| (function.staticClosure ? BLUA32_FUNCTION_STATIC : 0u)
+				| (function.codeFunction ? BLUA32_FUNCTION_CODE : 0u)
 		);
 		writeLE32(
 			record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,

@@ -25,6 +25,7 @@ struct Blua32TestFunction {
 	bool isVararg = false;
 	bool staticClosure = true;
 	std::vector<Blua32UpvalueRecord> upvalues{};
+	bool codeFunction = false;
 };
 
 struct Blua32TestClosureRelocation {

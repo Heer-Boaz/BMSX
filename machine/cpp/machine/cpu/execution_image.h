@@ -33,6 +33,11 @@ namespace bmsx {
 struct Blua32ExecutionImage;
 class Memory;
 
+constexpr bool isStaticCodeFunction(u32 flags, u32 upvalueCount) {
+	constexpr u32 required = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
+	return upvalueCount == 0u && (flags & required) == required;
+}
+
 // The directory is scoped to one mounted execution image. A version names a
 // checked ROM span, not a latched copy of physical RAM or MMIO code.
 struct Blua32RomFunctionVersion {

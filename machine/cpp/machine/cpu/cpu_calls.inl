@@ -13,13 +13,11 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 	}
 	const auto& record = m_functionRecordLatch;
 	const auto domain = record.image->executionDomainId;
-	if (record.romBacked && domain == SYSTEM_EXECUTION_DOMAIN_ID) {
-		if (record.upvalueCount == 0u
-			&& (record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) == (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) {
-			frame.registers.set(destination, valueFromTag(ValueTag::CodeFunction, functionAddress));
-			frame.extendTop(destination + 1);
-			return;
-		}
+	if (record.romBacked && domain == SYSTEM_EXECUTION_DOMAIN_ID
+		&& isStaticCodeFunction(record.flags, record.upvalueCount)) {
+		frame.registers.set(destination, valueFromTag(ValueTag::CodeFunction, functionAddress));
+		frame.extendTop(destination + 1);
+		return;
 	}
 	const std::array arguments{
 		valueInteger(destination), valueInteger(static_cast<i32>(record.address)), valueInteger(domain),

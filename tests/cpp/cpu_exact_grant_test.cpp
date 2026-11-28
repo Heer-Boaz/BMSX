@@ -434,6 +434,84 @@ void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32>
 }
 #endif
 
+void exactImmutableCodeClosureGrant() {
+	constexpr u8 destination = 5;
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(6 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), destination, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 7, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
+		{.firstWord = 5, .wordCount = 1, .codeFunction = true}};
+	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	struct ResetMachine {
+		Memory memory;
+		IrqController irq;
+		ExecutionAddressSpace addresses;
+		CPU cpu;
+		explicit ResetMachine(const test::Blua32TestRom& rom)
+			: memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
+			  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
+			cpu.reset();
+		}
+	} generated(rom), scalar(rom);
+	auto& native = generated.cpu;
+	scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr,
+		SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	const u32 start = rom.textAddress;
+	const u32 wide = start + INSTRUCTION_BYTES, body = wide + INSTRUCTION_BYTES, successor = body + INSTRUCTION_BYTES;
+	const int prefixCycles = BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
+	const int closureCycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)];
+	const auto expected = valueFromTag(ValueTag::CodeFunction, rom.functionAddresses[1]);
+	const auto check = [&](u32 pc, u32 last, int top, Value value) {
+		for (auto* cpu : {&native, &scalar.cpu}) {
+			const auto& frame = *cpu->activeThread()->currentFrame;
+			require(cpu->readFramePc(0) == pc && cpu->lastPc == last && frame.readWindow(FrameField::Top) == top
+				&& frame.registers.get(destination) == value, "the WIDE CLOSURE publishes exact PC, Top and tagged Value");
+		}
+	};
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.prepareSystemNativeCode();
+	const auto& installed = *native.activeThread()->currentFrame->executionImage;
+	const auto* page = installed.nativeCodeLookup->find(start, 0);
+	const auto* entry = page->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	require(entry && entry->terminal.exit == NativeBlockExit::Continue && entry->terminal.currentPc == wide
+		&& entry->terminal.lastPc == body && entry->terminal.nextPc == successor
+		&& entry->terminal.cycles == prefixCycles + closureCycles,
+		"native System CLOSURE retires WIDE as a charged continuation, not a native binding exit");
+#endif
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& exits = native.nativeGateProfile().exits;
+	const auto& bindingExit = exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
+	const auto& continuation = exits[static_cast<size_t>(NativeBlockExit::Continue)];
+	const auto oldBindings = bindingExit.entries;
+	const auto oldContinuations = continuation.entries;
+#endif
+	require(test::runCpuParity(native, scalar.cpu, prefixCycles + 1) == RunResult::Yielded
+		&& native.instructionBudgetRemaining == 1 - closureCycles, "a positive short grant still charges one whole CLOSURE");
+	check(successor, body, destination + 1, expected);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(continuation.entries > oldContinuations && bindingExit.entries == oldBindings,
+		"the generated short-grant stop does not enter the C++ binding gate");
+#endif
+	require(test::runCpuParity(native, scalar.cpu, prefixCycles) == RunResult::Yielded
+		&& native.instructionBudgetRemaining == 0, "the successor uses a separate grant");
+	check(successor + INSTRUCTION_BYTES, successor, 8, expected);
+	native.reset();
+	scalar.cpu.reset();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	native.prepareSystemNativeCode();
+#endif
+	require(test::runCpuParity(native, scalar.cpu, prefixCycles) == RunResult::Yielded
+		&& native.instructionBudgetRemaining == 0, "an exact prefix grant stops before the WIDE head");
+	check(wide, start, 2, valueNil());
+}
+
 void exactGrant(bool store) {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
 	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
@@ -951,6 +1029,7 @@ int main(int argc, char** argv) {
 		if (argc != 2) throw std::runtime_error("expected allocate or store");
 		const std::string_view scenario(argv[1]);
 		if (scenario == "closure") exactGrant(false);
+		else if (scenario == "immutable-code-closure") exactImmutableCodeClosureGrant();
 		else if (scenario == "store") exactGrant(true);
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);
