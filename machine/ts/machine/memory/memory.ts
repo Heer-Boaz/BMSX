@@ -7,8 +7,8 @@ import {
 	CART_READ_QUALIFIER,
 	CART_READ_SLOT_SHIFT,
 	CART_ROM_BASE,
-	CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END,
 	CART_ROM_END,
+	CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END,
 	CART_ROM_SIZE,
 	IO_BASE,
 	IO_WORD_SIZE,
@@ -554,10 +554,10 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	private readQualifiedCartridge(addr: number, width: 1 | 2 | 4): number | null {
+	private readQualifiedCartridge(addr: number, width: 1 | 2 | 4, cpuProtected: boolean): number | null {
 		if ((addr & CART_READ_QUALIFIER) === 0) return null;
 		const address = addr & CART_READ_ADDRESS_MASK;
-		if (address < CART_ROM_BASE || address > CART_RAM_END - width) return null;
+		if (address < CART_ROM_BASE || address > (cpuProtected ? CART_RAM_END : CART_ROM_END) - width) return null;
 		const signals = mappedBusSignalsForCartridgeSlot(addr >>> CART_READ_SLOT_SHIFT);
 		const controller = this.cartridgeController;
 		switch (width) {
@@ -578,8 +578,8 @@ export class Memory {
 		} else if (addr < CART_BUS_END) {
 			const value = this.cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU);
 			if (value !== null) return value;
-		} else if (cpuProtected) {
-			const value = this.readQualifiedCartridge(addr, 1);
+		} else {
+			const value = this.readQualifiedCartridge(addr, 1, cpuProtected);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -746,8 +746,8 @@ export class Memory {
 		} else if (addr <= CART_BUS_END - 2) {
 			const value = this.cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU);
 			if (value !== null) return value;
-		} else if (cpuProtected) {
-			const value = this.readQualifiedCartridge(addr, 2);
+		} else {
+			const value = this.readQualifiedCartridge(addr, 2, cpuProtected);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
@@ -794,8 +794,8 @@ export class Memory {
 			}
 			const value = this.cartridgeController.readU32(addr, busSignals);
 			if (value !== null) return value;
-		} else if (cpuProtected) {
-			const value = this.readQualifiedCartridge(addr, 4);
+		} else if ((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY)) === 0) {
+			const value = this.readQualifiedCartridge(addr, 4, cpuProtected);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);

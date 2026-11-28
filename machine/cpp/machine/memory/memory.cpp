@@ -317,8 +317,8 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess, bool cpuProtect
 		}
 	} else if (addr < CART_BUS_END) {
 		if (const auto value = m_cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU)) return static_cast<u8>(*value);
-	} else if (cpuProtected && (addr & CART_READ_QUALIFIER) != 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 1u)) return *bytes;
+	} else if ((addr & CART_READ_QUALIFIER) != 0u) {
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 1u, cpuProtected)) return *bytes;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	return 0;
@@ -497,8 +497,8 @@ uint32_t Memory::readMappedU16LE(uint32_t addr, bool cpuProtected) const {
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
 		if (const auto value = m_cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU)) return *value;
-	} else if (cpuProtected && (addr & CART_READ_QUALIFIER) != 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 2u)) return readLE16(bytes);
+	} else if ((addr & CART_READ_QUALIFIER) != 0u) {
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 2u, cpuProtected)) return readLE16(bytes);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 	return 0;
@@ -542,8 +542,9 @@ uint32_t Memory::readMappedBusU32LE(
 			return 0u;
 		}
 		if (const auto value = m_cartridgeController.readU32(addr, busSignals)) return *value;
-	} else if (cpuProtected && (addr & CART_READ_QUALIFIER) != 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 4u)) return readLE32(bytes);
+	} else if ((addr & CART_READ_QUALIFIER) != 0u
+		&& (busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY)) == 0u) {
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 4u, cpuProtected)) return readLE32(bytes);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	return 0;
@@ -804,9 +805,9 @@ bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals b
 	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
 }
 
-const u8* Memory::readBankedCartridgeBytes(u32 address, size_t length) const {
+const u8* Memory::readBankedCartridgeBytes(u32 address, size_t length, bool cpuProtected) const {
 	const u32 bus = address & CART_READ_ADDRESS_MASK;
-	if (bus < CART_ROM_BASE || bus > CART_RAM_END - length) return nullptr;
+	if (bus < CART_ROM_BASE || bus > (cpuProtected ? CART_RAM_END : CART_ROM_END) - length) return nullptr;
 	Span<const u8> bytes;
 	return m_cartridgeController.bindMappedReadView(bus, length,
 		mappedBusSignalsForCartridgeSlot(address >> CART_READ_SLOT_SHIFT), bytes) ? bytes.data() : nullptr;

@@ -13,6 +13,9 @@
 #endif
 
 namespace bmsx {
+namespace {
+constexpr Span<const u8> EMPTY_CARTRIDGE_ROM{};
+}
 
 NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cpu,
 	std::span<const NativeCodeSourcePage> sourcePages, bool historyWriteWatches)
@@ -21,7 +24,12 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
 	  systemRom(&memory.systemRomStorage()),
 	  cartridgeRom(&memory.cartridgeController().cpuRomStorage()),
-	  strings(&pool), cpu(cpu), sourcePages(sourcePages), historyWriteWatches(historyWriteWatches) {}
+	  strings(&pool), cpu(cpu), sourcePages(sourcePages), historyWriteWatches(historyWriteWatches) {
+	for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
+		const auto* rom = memory.cartridgeController().romStorage(slot);
+		qualifiedCartridgeRoms[slot] = rom ? rom : &EMPTY_CARTRIDGE_ROM;
+	}
+}
 
 void CPU::synchronizeNativeHistoryWrites() {
 	const bool armed = m_memory.ramWriteWatches().historyWritesArmed();

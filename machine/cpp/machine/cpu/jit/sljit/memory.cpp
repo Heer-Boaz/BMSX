@@ -187,8 +187,7 @@ void NativeLowering::emitRamMisses() {
 		auto* range = sljit_emit_label(c);
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, miss.width);
-		fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, size_)),
-			*miss.bus, miss.registers);
+		auto* romMiss = sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, size_));
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, data_), SLJIT_R0, 0);
 		emitBackingLoad(miss.format, true);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), miss.romResult);
@@ -197,6 +196,24 @@ void NativeLowering::emitRamMisses() {
 		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - miss.width),
 			*miss.bus, miss.registers);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.systemRom));
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), range);
+
+		// A qualified ROM address is socket | qualifier | (CART_ROM_BASE + offset).
+		// R0 already excludes CART_ROM_BASE on the cartridge path. A System
+		// ROM miss cannot fall in this offset range.
+		sljit_set_label(romMiss, sljit_emit_label(c));
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, CART_READ_QUALIFIER | CART_READ_ADDRESS_MASK);
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, CART_READ_QUALIFIER);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, CART_ROM_SIZE - miss.width),
+			*miss.bus, miss.registers);
+		auto* socket1 = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.qualifiedCartridgeRoms[0]));
+		auto* socketRead = sljit_emit_jump(c, SLJIT_JUMP);
+		sljit_set_label(socket1, sljit_emit_label(c));
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.qualifiedCartridgeRoms[1]));
+		sljit_set_label(socketRead, sljit_emit_label(c));
+		// The normalized offset cannot qualify again if this ROM is short.
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R1, 0);
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), range);
 	}
 }

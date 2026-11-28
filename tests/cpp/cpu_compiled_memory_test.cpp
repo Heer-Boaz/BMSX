@@ -6,9 +6,11 @@
 #include "support/native_region_fixture.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/thread_record.h"
+#include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/system/debug_transmit.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -22,6 +24,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace bmsx;
@@ -38,9 +41,10 @@ struct CpuMachine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	explicit CpuMachine(test::Blua32TestImage image, bool scalar = false)
+	explicit CpuMachine(test::Blua32TestImage image, bool scalar = false,
+		const CartridgeSocketMediaPair& cards = test::cartridgeSlots())
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
-		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+		, memory(MemoryInit{rom.bytes, cards}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
@@ -460,6 +464,103 @@ void generatedNumericRamUsesLivePrivilege() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(privateTransfersStayedNative, "admitted protected numeric RAM should stay in generated code without a ReadMemory or WriteMemory gate");
 #endif
+}
+
+void generatedQualifiedCartridgeReads() {
+	const std::array<u8, 4> card0{0x11, 0x22, 0x33, 0x44}, card1{0x55, 0x66, 0x77, 0x88};
+	const std::array<u8, 4> replacement{0x99, 0xaa, 0xbb, 0xcc};
+	auto cards = test::cartridgeSlots(card0, card1);
+	cards[1]->ramByteCount = 4u;
+	constexpr u32 qualified0 = CART_READ_QUALIFIER | CART_ROM_BASE;
+	constexpr u32 qualified1 = qualified0 | (1u << CART_READ_SLOT_SHIFT);
+	constexpr u32 qualifiedRam1 = CART_READ_QUALIFIER | CART_RAM_BASE | (1u << CART_READ_SLOT_SHIFT);
+	struct Format {
+		MemoryAccessKind kind;
+		u32 width, access, slot0, slot1, replaced;
+	};
+	for (const auto& format : std::array{
+		Format{MemoryAccessKind::U8, 1, BUS_FAULT_ACCESS_U8, 0x11, 0x55, 0x99},
+		Format{MemoryAccessKind::U16LE, 2, BUS_FAULT_ACCESS_U16, 0x2211, 0x6655, 0xaa99},
+		Format{MemoryAccessKind::U32LE, 4, BUS_FAULT_ACCESS_U32, 0x44332211, 0x88776655, 0xccbbaa99},
+	}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(6u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOAD_MEM), 0, 1, static_cast<u8>(format.kind));
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::MTC0), 3, COP0_STATUS, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 4}, {.firstWord = 5, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		CpuMachine native(image, false, cards), scalar(image, true, cards);
+		DeviceScheduler nativeScheduler(native.cpu), scalarScheduler(scalar.cpu);
+		DmaController nativeDma(native.memory, native.cpu, native.irq, nativeScheduler);
+		DmaController scalarDma(scalar.memory, scalar.cpu, scalar.irq, scalarScheduler);
+		native.memory.cartridgeController().connect(native.memory, native.irq, nativeDma);
+		scalar.memory.cartridgeController().connect(scalar.memory, scalar.irq, scalarDma);
+		const u32 start = native.rom.textAddress;
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start + 3u * INSTRUCTION_BYTES);
+			cpu.activeThread()->currentFrame->registers.set(3, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MTC0)]) == RunResult::Yielded
+			&& native.cpu.isUserMode() && scalar.cpu.isUserMode(), "the issuing code enters User mode");
+		const auto seed = [&](u32 addr, u32 selected) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->memory.writeMappedU32LE(IO_CART_SELECT, selected);
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+				machine->cpu.activeThread()->currentFrame->registers.set(1, valueInteger(addr));
+			}
+		};
+		const int readCycles = BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)];
+		const int loopCycles = readCycles + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		seed(qualified0, 1);
+		require(test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 2) * loopCycles)
+			== RunResult::Yielded, "qualified data reads warm a User ROM loop");
+		const auto* page = native.cpu.activeThread()->currentFrame->decodedPage;
+		const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		test::waitForNativeEntry(native.cpu, *page, entry);
+		const auto* warm = page->nativeBlocks->entries[entry].get();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto gate = [&](NativeBlockExit exit) {
+			return native.cpu.nativeGateProfile().exits[static_cast<size_t>(exit)].entries;
+		};
+#endif
+		const auto check = [&](u32 address, u32 selected, u32 expected) {
+			seed(address, selected);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			const auto reads = gate(NativeBlockExit::ReadMemory), continuations = gate(NativeBlockExit::Continue);
+#endif
+			require(test::runCpuParity(native.cpu, scalar.cpu, 4 * loopCycles) == RunResult::Yielded
+				&& native.cpu.instructionBudgetRemaining == 0 && native.cpu.readFramePc(0) == start
+				&& native.cpu.activeThread()->currentFrame->registers.get(2) == valueInteger(expected)
+				&& native.memory.readIoU32(IO_CART_SELECT) == selected,
+				"the exact native/scalar grant reads the selected alias without affecting SELECT");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			require(gate(NativeBlockExit::ReadMemory) == reads && gate(NativeBlockExit::Continue) > continuations,
+				"admitted aliased reads retire in generated machine code without a bus exit");
+#endif
+		};
+		check(qualified0, 1, format.slot0);
+		check(qualified1, 0, format.slot1);
+		for (auto* machine : {&native, &scalar}) machine->memory.cartridgeController().installRom(1, replacement);
+		require(page->nativeBlocks->entries[entry].get() == warm, "ROM refresh retains the unrelated warm code");
+		check(qualified1, 0, format.replaced);
+		for (const u32 address : {qualified1 + 4u, qualifiedRam1}) {
+			for (auto* machine : {&native, &scalar}) machine->memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
+			seed(address, 0);
+			require(test::runCpuParity(native.cpu, scalar.cpu, readCycles) == RunResult::Yielded
+				&& native.cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
+				&& native.cpu.readEpcWord() == start && native.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == address
+				&& native.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | format.access),
+				"an absent ROM span or a mutable alias faults at the original qualified address");
+			require(test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::RFE)]) == RunResult::Yielded,
+				"the exact exception return grant stops before retrying the data read");
+		}
+	}
 }
 
 void generatedTaggedValueTransfers() {
@@ -1121,8 +1222,13 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
 	try {
+		generatedQualifiedCartridgeReads();
+		if (argc == 2 && std::string_view(argv[1]) == "qualified-cartridge-reads") {
+			std::cout << "Qualified cartridge ROM reads passed\n";
+			return 0;
+		}
 		countedStoresPreserveTheirPrefixOnWindowFault();
 		publishedStoresObserveNewCodeWords();
 		ramScalarDatapathsAndGuards();

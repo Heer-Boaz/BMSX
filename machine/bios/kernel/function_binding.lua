@@ -6,6 +6,7 @@ local captured<const> = require('kernel/allocate_captured_closure')
 local closure_index<const> = require('kernel/canonical_closure_index')
 local _capture_layout<const> = require('kernel/closure_capture_create')
 local _image_layout<const> = require('kernel/system_image_bind')
+local cartridge_rom<const> = require('kernel/string_record').rom_read_address
 local frames<const> = require('kernel/thread_frame_storage').internal
 local tags<const> = require('kernel/value_type')
 local isa<const> = require('bmsx/blua32')
@@ -48,7 +49,7 @@ local receive<const> = function(owner, destination, count, deadline)
 	end
 	local record_bytes<const> = sizeof(launch_function_record)
 	local domain = (frame.flags & cartridge_bank) == 0 and -1 or ((frame.flags >> second_socket_shift) & 1)
-	local rom, rom_base, ram_end, image = 0, 0, 0, 0
+	local rom, rom_base, ram_end, image, fetch = 0, 0, 0, 0, prototype
 	if prototype >= 0 and prototype < system_rom_end then
 		domain, rom = -1, 1
 	elseif prototype >= cart_rom_start and prototype < cart_rom_end then
@@ -69,33 +70,37 @@ local receive<const> = function(owner, destination, count, deadline)
 		local rom_bytes<const>: *word = 0x080101f4 + 4 * (domain + 1)
 		local extent<const> = *rom_bytes
 		if extent < boot_header_bytes or prototype - rom_base > extent - record_bytes then return invalid_argument end
-		local offset<const> = blua32.context_word(rom_base + boot_image_offset)
-		local bytes<const> = blua32.context_word(rom_base + boot_image_byte_count)
+		-- Resolve the issuing socket once. These fixed-size records can
+		-- use ordinary mapped loads without changing the data selector.
+		local bus_base<const> = cartridge_rom(rom_base | (domain == 1 and 0x80000000 or 0))
+		local image_offset<const>: *u32 = bus_base + boot_image_offset
+		local image_bytes<const>: *u32 = bus_base + boot_image_byte_count
+		local offset<const>, bytes<const> = *image_offset, *image_bytes
 		local header_bytes<const> = sizeof(immutable_image_operands)
 		if offset < boot_header_bytes or (offset & 3) ~= 0
 			or bytes < header_bytes or offset > extent - bytes then
 			return invalid_argument
 		end
-		image = rom_base + offset
-		if blua32.context_word(image + offsetof(immutable_image_operands.magic)) ~= image_magic then return invalid_argument end
-		local functions<const> = blua32.context_word(image + offsetof(immutable_image_operands.functions))
-		local count<const> = blua32.context_word(image + offsetof(immutable_image_operands.function_count))
-		local relative<const>, entry<const> = functions - image, prototype - functions
+		image = bus_base + offset
+		local directory<const>: *immutable_image_operands = image
+		if directory.magic ~= image_magic then return invalid_argument end
+		local functions<const>, count<const> = directory.functions, directory.function_count
+		local relative<const>, entry<const> = functions - (rom_base + offset), prototype - functions
 		if (functions & function_alignment_mask) ~= 0 or relative < header_bytes
 			or count <= 0 or count > (bytes - relative) // record_bytes
 			or entry < 0 or (entry & (record_bytes - 1)) ~= 0 or entry >= count * record_bytes then
 			return invalid_argument
 		end
+		fetch = bus_base + (prototype - rom_base)
 	end
-	local code<const> = blua32.context_word(prototype + offsetof(launch_function_record.code))
+	local binding_record<const>: *launch_function_record = fetch
+	local code<const> = binding_record.code
 	if rom == 0 and (code < ordinary_ram_start or code >= ram_end) then return invalid_argument end
-	local formals<const> = blua32.context_word(prototype + offsetof(launch_function_record.formals))
-	local stack<const> = blua32.context_word(prototype + offsetof(launch_function_record.maximum))
-	local flags<const> = blua32.context_word(prototype + offsetof(launch_function_record.flags))
-	local descriptors<const> = blua32.context_word(prototype + offsetof(launch_function_record.captures))
-	local captures<const> = blua32.context_word(prototype + offsetof(launch_function_record.capture_count))
+	local formals<const>, stack<const>, flags<const> = binding_record.formals, binding_record.maximum, binding_record.flags
+	local descriptors<const>, captures<const> = binding_record.captures, binding_record.capture_count
+	local directory<const>: *immutable_image_operands = image
 	if rom ~= 0 and captures == 0 and (flags & code_flags) == code_flags
-		and (blua32.context_word(image + offsetof(immutable_image_operands.flags)) & isa.image_mapped_code_flag) == 0 then
+		and (directory.flags & isa.image_mapped_code_flag) == 0 then
 		local result_word<const>: *u32 = words - 4
 		local result_kind<const>: *u8 = kinds - 1
 		*result_word, *result_kind = prototype | (domain == 1 and 0x80000000 or 0), tags.code_tag

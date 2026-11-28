@@ -248,7 +248,7 @@ private:
 	void onBusFaultAckWrite(uint32_t addr, u32 value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
 	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess, bool cpuProtected = false) const;
-	const u8* readBankedCartridgeBytes(u32 address, size_t length) const;
+	const u8* readBankedCartridgeBytes(u32 address, size_t length, bool cpuProtected) const;
 	void writeBusFaultSlots() const;
 };
 

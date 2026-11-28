@@ -7,7 +7,7 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_CPU, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
+import { MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -16,7 +16,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_CART_SELECT, IO_GX_GPU_GP0, IO_SLOT_COUNT, IO_SYS_BUS_FAULT_ACK, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { CART_MMIO_BASE, CART_RAM_SIZE, CART_ROM_BASE, IO_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_MMIO_BASE, CART_RAM_BASE, CART_RAM_SIZE, CART_READ_QUALIFIER, CART_READ_SLOT_SHIFT, CART_ROM_BASE, IO_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -62,6 +62,56 @@ test('instruction fetch select retains data selector and explicit cartridge sock
 			assert.equal(memory.readMappedBusU32LE(CART_ROM_BASE, signals | MAPPED_BUS_INSTRUCTION_FETCH), slot === 0 ? 0x44332211 : 0x88776655);
 		}
 	}
+});
+
+test('socket-qualified public data reads expose only immutable cartridge ROM', () => {
+	const memory = new Memory({ systemRom: system.romBytes, cartridgeSlots: [
+		{ rom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), ramByteCount: null, mailboxPresent: false },
+		{ rom: new Uint8Array([0x55, 0x66, 0x77, 0x88]), ramByteCount: 4, mailboxPresent: true },
+	] }, PSX_MACHINE_SPEC.ramBytes);
+	const irq = new IrqController(memory);
+	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory), CpuExecutionBackend.Interpreter);
+	const dma = new DmaController(memory, cpu, irq, new DeviceScheduler(cpu));
+	memory.cartridgeController.connect(memory, irq, dma);
+	const qualifier1 = (CART_READ_QUALIFIER | (1 << CART_READ_SLOT_SHIFT)) >>> 0;
+	const aliased0 = CART_ROM_BASE | CART_READ_QUALIFIER;
+	const aliased1 = (CART_ROM_BASE | qualifier1) >>> 0;
+	const ram1 = (CART_RAM_BASE | qualifier1) >>> 0;
+	const mmio1 = (CART_MMIO_BASE | qualifier1) >>> 0;
+	const sequence = memory.readBusFaultSequence();
+	for (const selected of [0, 1]) {
+		memory.writeMappedU32LE(IO_CART_SELECT, selected);
+		assert.equal(memory.readMappedU8(aliased0 + 3), 0x44);
+		assert.equal(memory.readMappedU16LE(aliased1 + 2), 0x8877);
+		assert.equal(memory.readMappedU32LE(aliased0), 0x44332211);
+		assert.equal(memory.readMappedU32LE(aliased1), 0x88776655);
+		assert.equal(memory.readMappedU32LE(CART_ROM_BASE), selected === 0 ? 0x44332211 : 0x88776655);
+		assert.equal(memory.readIoU32(IO_CART_SELECT), selected);
+	}
+	memory.cartridgeController.writeU32(CART_RAM_BASE, 0x12345678, mappedBusSignalsForCartridgeSlot(1));
+	assert.equal(memory.readMappedU32LE(ram1, undefined, true), 0x12345678);
+	assert.equal(memory.readBusFaultSequence(), sequence);
+	for (const [address, signal] of [
+		[aliased1 + 4, MAPPED_BUS_MASTER_CPU],
+		[ram1, MAPPED_BUS_MASTER_CPU],
+		[mmio1, MAPPED_BUS_MASTER_CPU],
+		[aliased1, MAPPED_BUS_INSTRUCTION_FETCH],
+		[aliased1, MAPPED_BUS_MASTER_DMA],
+		[aliased1, MAPPED_BUS_DMA_MEMORY],
+	]) {
+		memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
+		const before = memory.readBusFaultSequence();
+		assert.equal(memory.readMappedBusU32LE(address, signal), 0);
+		assert.equal(memory.readBusFaultSequence(), before + 1);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	}
+	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
+	const before = memory.readBusFaultSequence();
+	memory.writeMappedU32LE(aliased1, 0, undefined, true);
+	assert.equal(memory.readBusFaultSequence(), before + 1);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), aliased1);
+	assert.equal(memory.readMappedU32LE(aliased1), 0x88776655);
 });
 
 test('straight-line execution across a page publishes its exact grant before a forbidden successor fetch', () => {

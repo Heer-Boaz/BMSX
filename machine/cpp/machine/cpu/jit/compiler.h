@@ -2,6 +2,7 @@
 
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/jit/compilation_input.h"
+#include "spec/bmsx/cartridge.h"
 
 namespace bmsx {
 
@@ -25,6 +26,7 @@ struct NativeCodeBindings {
 	const u32* ramCodeWatchWords = nullptr;
 	const Span<const u8>* systemRom = nullptr;
 	const Span<const u8>* cartridgeRom = nullptr;
+	std::array<const Span<const u8>*, CARTRIDGE_SLOT_COUNT> qualifiedCartridgeRoms{};
 	StringPool* strings = nullptr;
 	// Only CPU-owned emission may call completion owners. Standalone blocks
 	// retain the base run-state ABI and ordinary CALL exits.
