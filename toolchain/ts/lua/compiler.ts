@@ -1138,7 +1138,7 @@ class ProgramBuilder {
 			const reloc = this.constValueRelocs[i];
 			if (reloc.kind !== 'code_function') continue;
 			const protoIndex = this.resolveLocalCodeSymbol(reloc.target);
-			if (protoIndex !== undefined && lowered.leaves.has(protoIndex))
+			if (protoIndex !== undefined && lowered.entries.has(protoIndex))
 				this.constValueRelocs[i] = { kind: 'text_addr', constIndex: reloc.constIndex, protoIndex };
 		}
 	}
@@ -6695,7 +6695,8 @@ export function compileLuaChunkToProgram(
 		options.captureLayout,
 		options.installedConstants,
 		options.installedBss,
-		options.programDomain === 'system' ? options.linkedStaticExports : undefined,
+		// Cartridges do not export a linked calling convention to another image.
+		options.programDomain === 'system' ? options.linkedStaticExports : [],
 	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;
