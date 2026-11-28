@@ -22,6 +22,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_WORKSPACE_END } from '../../helpers/firmware_heap_layout';
 import { allocateThreadRecordReference } from '../../helpers/thread_allocation_reference';
 
 const source = `
@@ -42,9 +43,9 @@ end
 return start, outer, body
 `;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
+const native = nativeConformanceRunner('bmsx_machine_conformance_runner', {
 	buildDirectory: join(tmpdir(), 'build-native-coroutine-first-resume'),
-	configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON', '-DBMSX_NATIVE_GATE_PROFILE=ON'],
+	configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON'],
 });
 const deadText = 'unreachable cross-Thread frame reservation blocker '.repeat(180);
 
@@ -100,8 +101,8 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
-			commands.push(`g ${cycles} 0`);
-			expected.push(`${result} ${paid} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+			commands.push(`E ${cycles}`);
+			expected.push(`${result} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return result;
 		}
 		assert.equal(grant(1), RunResult.Yielded);
@@ -133,10 +134,12 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 			assert.equal(frame.thread.stackRegisters.get(frame.varargBase + 1), valueTable(box));
 			assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined);
 		}
-		for (const address of [parent, child]) {
-			const from = address - RAM_BASE;
-			commands.push(`H ${from} ${from + THREAD_HEAP_BYTES}`);
-			expected.push(String(hashBytes(memory.ramData(), from, THREAD_HEAP_BYTES)));
+		const management = arena.managementOffset();
+		for (const [from, end] of [[parent - RAM_BASE, parent - RAM_BASE + THREAD_HEAP_BYTES],
+			[child - RAM_BASE, child - RAM_BASE + THREAD_HEAP_BYTES],
+			[memory.ramBusEnd() - RAM_BASE, management + GC_WORKSPACE_END]]) {
+			commands.push(`H ${from} ${end}`);
+			expected.push(String(hashBytes(memory.ramData(), from, end - from)));
 		}
 		let outcome = RunResult.Yielded;
 		for (let step = 0; step < 8192 && outcome === RunResult.Yielded; ++step) outcome = grant(251);
@@ -150,6 +153,9 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 		commands.push('c');
 		expected.push([result.length, ...result.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 		writeFileSync(trace, commands.join('\n'));
-		assert.deepEqual(execFileSync(native, [rom, trace, seed], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).trimEnd().split('\n'), expected);
+		const actual = execFileSync(native, [rom, trace, seed], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).trimEnd().split('\n');
+		assert.equal(actual.length, expected.length);
+		const mismatch = actual.findIndex((row, index) => row !== expected[index]);
+		assert.equal(mismatch, -1, `observation ${mismatch}: C++=${actual[mismatch]} TS=${expected[mismatch]}`);
 	});
 }
