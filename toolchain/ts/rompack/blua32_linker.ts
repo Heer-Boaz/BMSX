@@ -8,6 +8,7 @@ import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
 	CLOSURE_ADDRESS_REGISTER_WIDE_C,
+	CLOSURE_DESTINATION_EXT_MASK,
 	INSTRUCTION_BYTES,
 	MAX_BX_BITS,
 	MAX_EXT_BX,
@@ -454,14 +455,6 @@ function rewriteLocalClosures(code: Uint8Array, functionAddresses: ReadonlyArray
 	}
 }
 
-function functionAddressesById(ids: ReadonlyArray<string>, addresses: ReadonlyArray<number>): Map<string, number> {
-	const addressById = new Map<string, number>();
-	for (let index = 0; index < ids.length; index += 1) {
-		addressById.set(ids[index], addresses[index]);
-	}
-	return addressById;
-}
-
 function moduleAddressesByPath(entries: ReadonlyArray<Blua32ModuleFunction>): Map<string, number> {
 	const addresses = new Map<string, number>();
 	for (let index = 0; index < entries.length; index += 1) {
@@ -556,34 +549,64 @@ function resolvePinnedBiosFunctionIds(
 	return ids;
 }
 
-function localFunctionAddressesBySymbol(
+function localFunctionSlotsBySymbol(
 	moduleExports: ReadonlyArray<{ path: string; exportPathKey: string; slotName: string }>,
 	localSymbols: ProgramRuntimeSymbols,
-	localFunctionAddressById: ReadonlyMap<string, number>,
+	localFunctionSlotById: ReadonlyMap<string, number>,
 ): Map<string, number> {
-	const addresses = new Map<string, number>();
+	const slots = new Map<string, number>();
 	for (let index = 0; index < moduleExports.length; index += 1) {
 		const entry = moduleExports[index];
 		const functionId = localSymbols.exportProtoIdBySlot[entry.slotName];
 		if (functionId === undefined) {
 			continue;
 		}
-		const address = localFunctionAddressById.get(functionId);
-		if (address === undefined) {
+		const slot = localFunctionSlotById.get(functionId);
+		if (slot === undefined) {
 			throw new Error(`BLua32 static function '${entry.path}:${entry.exportPathKey}' has no function record.`);
 		}
-		addresses.set(
+		slots.set(
 			programModuleExportKey(entry.path, entry.exportPathKey),
-			address,
+			slot,
 		);
 	}
-	return addresses;
+	return slots;
+}
+
+function planCartCodeFunctionLoads(
+	object: ProgramCartObjectImage,
+	functionLayout: FunctionRecordLayout,
+	slotBySymbol: ReadonlyMap<string, number>,
+): Blua32CodeFunctionPlan | undefined {
+	const targets = new Set<number>(), loads = new Map<number, number>(), unencodable = new Set<number>();
+	const { code, protos } = object.sections.text;
+	for (const reloc of object.link.constRelocs) {
+		// Only the dependency-analyzed named exports have symbol references.
+		// STATIC also appears on lexical const declarations executed repeatedly.
+		if (reloc.kind !== 'export_proto') continue;
+		const slot = slotBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
+		if (slot === undefined) continue; // The relocation reports the missing symbol.
+		const proto = protos[functionLayout.protoIndexBySlot[slot]];
+		if (!proto.staticClosure || proto.upvalueDescs.length !== 0) continue;
+		const prefix = readInstructionWord(code, reloc.wordIndex - 1);
+		if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) unencodable.add(slot);
+		targets.add(slot);
+		loads.set(reloc.wordIndex, slot);
+	}
+	// No mixture of code references and Closure materializations for one
+	// symbol. CLOSURE can name a wider destination than LOADK.
+	if (unencodable.size !== 0) {
+		for (const slot of unencodable) targets.delete(slot);
+		for (const [word, slot] of loads) if (unencodable.has(slot)) loads.delete(word);
+	}
+	return targets.size === 0 ? undefined : { targets, loads };
 }
 
 function rewriteImageRelocation(
 	code: Uint8Array,
 	reloc: ProgramImageConstReloc,
-	localFunctionAddressBySymbol: ReadonlyMap<string, number>,
+	localFunctionSlotBySymbol: ReadonlyMap<string, number>,
+	functionAddresses: ReadonlyArray<number>,
 	localModuleAddressByPath: ReadonlyMap<string, number>,
 	globalSlotByObjectSlot: Uint32Array,
 	systemGlobalSlotByObjectSlot: Uint32Array,
@@ -604,11 +627,11 @@ function rewriteImageRelocation(
 		}
 		case 'export_proto': {
 			const symbol = `${reloc.path}:${reloc.exportPathKey}`;
-			const address = localFunctionAddressBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
-			if (address === undefined) {
+			const slot = localFunctionSlotBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
+			if (slot === undefined) {
 				throw new Error(`BLua32 function symbol '${symbol}' is not part of this executable image.`);
 			}
-			rewriteResolvedABx(code, reloc.wordIndex, OpCode.CLOSURE, address >> 4);
+			rewriteResolvedABx(code, reloc.wordIndex, OpCode.CLOSURE, functionAddresses[slot] >> 4);
 			break;
 		}
 		case 'module_init': {
@@ -625,16 +648,20 @@ function rewriteImageRelocation(
 function rewriteImageRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramImageConstReloc>,
-	localFunctionAddressBySymbol: ReadonlyMap<string, number>,
+	codeLoads: ReadonlyMap<number, number> | undefined,
+	localFunctionSlotBySymbol: ReadonlyMap<string, number>,
+	functionAddresses: ReadonlyArray<number>,
 	localModuleAddressByPath: ReadonlyMap<string, number>,
 	globalSlotByObjectSlot: Uint32Array,
 	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
-	for (let index = 0; index < relocs.length; index += 1) {
+	for (const reloc of relocs) {
+		if (codeLoads?.has(reloc.wordIndex)) continue;
 		rewriteImageRelocation(
 			code,
-			relocs[index],
-			localFunctionAddressBySymbol,
+			reloc,
+			localFunctionSlotBySymbol,
+			functionAddresses,
 			localModuleAddressByPath,
 			globalSlotByObjectSlot,
 			systemGlobalSlotByObjectSlot,
@@ -718,7 +745,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const functionLayout = layoutFunctionRecords(input.metadata.protoIds, pinnedFunctionIds, input.previous);
 	const functionCount = functionLayout.protoIndexBySlot.length;
 	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? RETIRED_FUNCTION_BYTES : 0);
-	const codeFunctions = input.domain === 'system' ? input.codeFunctions : undefined;
+	const localFunctionSlotById = new Map<string, number>();
+	for (const [slot, id] of functionLayout.functionIds.entries()) localFunctionSlotById.set(id, slot);
+	const localFunctionSlotBySymbol = localFunctionSlotsBySymbol(rodata.moduleExports, object.link.symbols, localFunctionSlotById);
+	const codeFunctions = input.domain === 'system'
+		? input.codeFunctions : planCartCodeFunctionLoads(input.object, functionLayout, localFunctionSlotBySymbol);
 	const codeConstantSlots = new Map<number, number>();
 	if (codeFunctions !== undefined) {
 		const used = new Set(codeFunctions.loads.values());
@@ -819,15 +850,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		const entry = rodata.moduleProtos[index];
 		moduleFunctions[index] = { path: entry.path, address: functionAddressByProtoIndex[entry.protoIndex] };
 	}
-	const localFunctionAddressById = functionAddressesById(
-		object.link.symbols.protoIds,
-		functionAddressByProtoIndex,
-	);
-	const localFunctionAddressBySymbol = localFunctionAddressesBySymbol(
-		rodata.moduleExports,
-		object.link.symbols,
-		localFunctionAddressById,
-	);
 	const localModuleAddressByPath = moduleAddressesByPath(moduleFunctions);
 
 	const code = new Uint8Array(textByteCount);
@@ -852,7 +874,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	rewriteImageRelocations(
 		code,
 		input.object.link.constRelocs,
-		localFunctionAddressBySymbol,
+		codeFunctions?.loads,
+		localFunctionSlotBySymbol,
+		functionAddresses,
 		localModuleAddressByPath,
 		globalNameLayout.slotByObjectSlot,
 		systemGlobalNameLayout.slotByObjectSlot,

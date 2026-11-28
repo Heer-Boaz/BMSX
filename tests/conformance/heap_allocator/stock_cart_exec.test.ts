@@ -17,7 +17,7 @@ import { EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, G
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
@@ -59,6 +59,8 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const { dataAddress, dataByteCount, bssAddress: systemBssAddress, bssByteCount: systemBssByteCount } = image.header;
 			const systemStaticEnd = Math.max(dataAddress + dataByteCount, systemBssAddress + systemBssByteCount);
 			const payload = 'socket one cartridge literal';
+			const clampPath = 'cartlib/util/clamp';
+			const clampSource = readFileSync(clampPath + '.lua', 'utf8');
 			const source = `bss report: word[0x2000]
 selected_payload = '${payload}'
 report[0] = 37
@@ -105,11 +107,26 @@ local make<const> = function(seed)
 end
 local add<const> = make(17)
 report[14] = add(3) * 100 + add(7)
+
+local clamp<const> = require('${clampPath}')
+local function clamp_pair(...)
+	local first<const> = clamp(...)
+	local second<const> = clamp(...)
+	return first * 100 + second
+end
+report[15] = clamp_pair(-12, 3, 10) + clamp_pair(54, 3, 10) * 1000
+local function make_uncaptured()
+	return function() return 37 end
+end
+local a, b = make_uncaptured(), make_uncaptured()
+report[16] = a ~= b and a() + b() or 0
 mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
 			const cart = (entrySource: string, path: string) => {
-				const program = compileLuaChunkToProgram(parseLuaChunk(entrySource, path), [], { entrySource, optLevel });
+				const program = compileLuaChunkToProgram(parseLuaChunk(entrySource, path), [
+					{ path: clampPath, source: clampSource, chunk: parseLuaChunk(clampSource, clampPath + '.lua') },
+				], { entrySource, optLevel });
 				return linkCartBlua32Image(readBlua32BiosImports(system), encodeCompiledProgramObject(program), program.metadata,
 					CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
 			};
@@ -118,17 +135,26 @@ halt_until_irq
 			const other = writeTestBlua32Rom(slot0), selected = writeTestBlua32Rom(slot1);
 			const captured = new Set(slot1.layout.functions.filter(fn => fn.upvalues.length !== 0).map(fn => fn.address));
 			assert.equal(captured.size, 2);
+			const immutable = slot1.layout.functions.filter(fn => (fn.flags & BLUA32_FUNCTION_CODE) !== 0);
+			assert.equal(immutable.length, 1, 'ordinary lexical factories are not immutable cartridge symbols');
+			const literal = slot1.layout.constants.findIndex(c => typeof c === 'object' && c !== null
+				&& c.kind === 'code_function' && c.word === immutable[0].address);
+			assert.ok(literal >= 0);
 			const firstPc = slot1.layout.header.textAddress;
 			const lastPc = firstPc + slot1.layout.textBytes.length;
-			let bindings = 0;
+			let bindings = 0, staticLoads = 0;
 			for (let pc = firstPc; pc < lastPc;) {
 				const instruction = decodeBlua32InstructionAtPc(selected, CART_ROM_BASE, pc);
-				if (instruction.op === OpCode.CLOSURE)
+				if (instruction.op === OpCode.CLOSURE) {
 					assert.equal(captured.has(instruction.bx * BLUA32_FUNCTION_ALIGNMENT), false);
+					assert.notEqual(instruction.bx * BLUA32_FUNCTION_ALIGNMENT, immutable[0].address);
+				}
+				if (instruction.op === OpCode.LOADK && instruction.bx === literal) ++staticLoads;
 				if (instruction.op === OpCode.SVC && instruction.b === 2) bindings += 1;
 				pc = instruction.pc + INSTRUCTION_BYTES;
 			}
 			assert.equal(bindings, captured.size);
+			assert.equal(staticLoads, 2, 'both ordinary static calls share one immutable literal');
 			// Socket 0 has a distinct operand record but no startup vector.
 			writeLE32(other, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, 0);
 			const otherPath = join(output, 'slot0.rom'), selectedPath = join(output, 'slot1.rom');
@@ -197,7 +223,7 @@ halt_until_irq
 			const { bssAddress, bssByteCount } = slot1.layout.header;
 			assert.equal(memory.readMappedU32LE(bssAddress), 37);
 			assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
-			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1, 2027];
+			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1, 2027, 1010303, 74];
 			for (let slot = 0; slot < expectedReport.length; ++slot)
 				assert.equal(memory.readMappedU32LE(bssAddress + 4 * (slot + 2)), expectedReport[slot], `report word ${slot + 2}`);
 			const bank = nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
