@@ -707,6 +707,66 @@ return a, b, c, d, e, *mutual_steps
 	assert.deepEqual(replay(), observations.slice(checkpoint));
 });
 
+test('a fixed-result tail transfer retains the link only when it forwards the whole result', () => {
+	const path = 'window/fixed-tail';
+	const source = `module<const>
+bss visited: word
+local mix<const> = function(x)
+	${mixing}
+	return x
+end
+local one<const> = function(x, y)
+	x = mix(x)
+	${mixing}
+	return x + y
+end
+local pair<const> = function(x, y)
+	x = mix(x)
+	${mixing}
+	return x, y
+end
+local exact<const> = function(x, y)
+	${mixing}
+	*visited = *visited + 1
+	return (one(y, x))
+end
+local truncated<const> = function(x, y)
+	${mixing}
+	*visited = *visited + 1
+	return (pair(y, x))
+end
+local count<const> = function() return *visited end
+return { exact = exact, truncated = truncated, count = count, one = one, pair = pair, mix = mix }
+`;
+	const linked = linkManagedTestSystem(`
+local direction<const> = require('${path}')
+local a, b = direction.exact(3, 5), direction.truncated(7, 11)
+return a, b, direction.count()
+`, 3, [{ path, source }]);
+	const { layout, symbols: { metadata } } = linked;
+	const [exact, truncated, one, pair] = ['exact', 'truncated', 'one', 'pair'].map(name =>
+		metadata.functionIds.findIndex(id => id.endsWith(`__${name}`)));
+	const exactWindow = metadata.softwareFramesByFunction[exact]!;
+	assert.equal(exactWindow.entry, true);
+	assert.deepEqual(exactWindow.calls, []);
+	assert.equal(exactWindow.tailJumps.length, 1);
+	assert.equal(exactWindow.tailJumps[0].targetFunction, one);
+	const branch = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress,
+		layout.functions[exact].codeAddress + exactWindow.tailJumps[0].wordOffset * INSTRUCTION_BYTES);
+	assert.equal(branch.op, OpCode.JMP);
+	assert.equal(branch.a, 0);
+	assert.equal(branch.pc + (1 + branch.sbx) * INSTRUCTION_BYTES, layout.functions[one].codeAddress);
+	const truncatedWindow = metadata.softwareFramesByFunction[truncated]!;
+	assert.equal(truncatedWindow.entry, true);
+	assert.deepEqual(truncatedWindow.tailJumps, []);
+	assert.deepEqual(truncatedWindow.calls.map(call => call.targetFunctions), [[pair]]);
+	const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }, CpuExecutionBackend.Interpreter);
+	runGuestToHalt(cpu, 1_000_000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [
+		valueInteger((mixInt(mixInt(5)) + mixInt(3)) | 0), valueInteger(mixInt(mixInt(11))), valueInteger(2),
+	]);
+});
+
 test('a wide software callee uses backing admitted at entry without growing it on the call', () => {
 	const path = 'window/footprint';
 	const locals = Array.from({ length: 180 }, (_, i) => `term${i}`);

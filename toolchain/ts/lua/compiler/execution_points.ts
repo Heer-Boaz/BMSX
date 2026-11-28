@@ -162,6 +162,7 @@ export function buildProgramDebugPoints(
 			if (registers.length === 0) return;
 			const start = instructionWordOffsets[instructionIndex];
 			const end = instructionIndex + 1 < instructions.length ? instructionWordOffsets[instructionIndex + 1] : wordCount;
+			if (start === end) return; // A physical argument can already reside in its final slot.
 			const range = sourceRanges[instructionIndex];
 			const inline = instructions[instructionIndex].inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 			for (let index = 0; index < registers.length; index += 1) {

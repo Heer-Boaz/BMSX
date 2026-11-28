@@ -29,13 +29,13 @@ type WindowLayout = ResultRange & {
 type WindowCall = { callee: WindowLayout; supplied: ResultRange; directTarget?: number };
 type WindowCallSite = WindowCall & { targets: readonly number[]; targetLive: readonly number[] };
 type CallEdge = { targets: readonly WindowCandidate[]; site: CallSite };
-type TailTransfer = { definition: number; target: number; parameters: number };
+type TailTransfer = { definition: number; target: number; parameters: number; directArguments?: boolean };
 type WindowCandidate = StronglyConnectedNode<WindowCandidate> & {
 	protoIndex: number;
 	returns: BodyReturns;
 	dependencies: WindowCandidate[];
 	complete: boolean;
-	tailTransfers?: ReadonlyMap<number, TailTransfer>;
+	tailTransfers?: Map<number, TailTransfer>;
 };
 
 export type WindowBodyLowering = {
@@ -285,6 +285,35 @@ function prepareWindowCall(instructions: Instruction[], origin: Instruction, bas
 	return jump;
 }
 
+/** Can this already-evaluated, noninterleaved argument suffix write the
+ * incoming formal lanes directly, without killing a later argument input? */
+function canPlaceTailArguments(instructions: readonly Instruction[], site: CallSite, parameters: number): boolean {
+	const call = instructions[site.instruction];
+	if (call.b !== parameters + 1 || call.a < parameters || site.instruction - parameters <= site.tailDefinition) return false;
+	const origin = instructions[site.tailDefinition];
+	const overwritten = new Set<number>();
+	for (let formal = 0; formal < parameters; ++formal) {
+		const producer = instructions[site.instruction - parameters + formal];
+		// Neither an independently resumable point nor a statement boundary
+		// can see an earlier argument overwrite its original formal slot.
+		if (producer.a !== call.a + 1 + formal || producer.resumeId !== undefined
+			|| (producer.resumeRange !== undefined && producer.resumeRange !== origin.resumeRange)
+			|| (producer.statementRange !== undefined && producer.statementRange !== origin.statementRange)) return false;
+		switch (producer.op) {
+			case OpCode.MOV:
+				if (producer.c !== ValueMoveKind.Copy || producer.b >= call.a || overwritten.has(producer.b)) return false;
+				if (producer.b === formal) continue;
+				break;
+			case OpCode.KNIL: case OpCode.KFALSE: case OpCode.KTRUE: case OpCode.K0: case OpCode.K1: case OpCode.KSMI:
+				break;
+			default:
+				return false;
+		}
+		overwritten.add(formal);
+	}
+	return true;
+}
+
 function lowerWindowBody(body: Body, protoIndex: number, entry: WindowLayout | undefined,
 	callees: ReadonlyMap<number, WindowCallSite> | undefined, returns: BodyReturns | undefined,
 	tailTransfers: ReadonlyMap<number, TailTransfer> | undefined): WindowBodyLowering {
@@ -296,25 +325,37 @@ function lowerWindowBody(body: Body, protoIndex: number, entry: WindowLayout | u
 	const registerBias = entry === undefined ? 0 : entry.bias + placement;
 	const tailTargetLoads = tailTransfers === undefined ? undefined
 		: new Set(Array.from(tailTransfers.values(), site => site.definition));
+	let tailArgumentRegisters: Map<number, number> | undefined;
+	if (tailTransfers !== undefined) for (const [pc, tail] of tailTransfers) {
+		if (!tail.directArguments) continue;
+		const registers = tailArgumentRegisters ??= new Map();
+		for (let formal = 0; formal < tail.parameters; ++formal) registers.set(pc - tail.parameters + formal, formal);
+	}
 	let maxStack = entry === undefined ? body.proto.maxStack : entry.width + placement;
 	if (placement !== 0) linkSlots.push({ instruction: 0, slot: placement });
 	for (let i = 0; i < body.instructions.length; ++i) {
 		const instruction = body.instructions[i];
 		const tail = tailTransfers?.get(i), tailReturn = tailTransfers?.get(i - 1);
+		const tailArgument = tailArgumentRegisters?.get(i);
 		starts[i] = instructions.length;
 		if (entry !== undefined && tailTargetLoads?.has(i)) {
 			// Argument evaluation can raise Top through this outgoing lane.
 			// Define it without materializing the now-unused function address.
 			instructions.push(controlInstruction(instruction, OpCode.KNIL, instruction.a + registerBias, 0));
+		} else if (tailArgument !== undefined) {
+			if (instruction.op === OpCode.MOV && instruction.b === tailArgument) continue;
+			instructions.push(shiftWindowRegisters({ ...instruction, a: tailArgument }, registerBias));
 		} else if (tail !== undefined) {
 			// The argument expressions already ran in their original order. Move
 			// their prepared slots down to the formals, without changing the link.
-			const copied = Math.min(tail.parameters, decodeValueCount(instruction.b, 0));
-			const source = instruction.a + registerBias + 1;
-			for (let formal = 0; formal < copied; ++formal)
-				instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + formal, source + formal));
-			if (copied < tail.parameters)
-				instructions.push(controlInstruction(instruction, OpCode.LOADNIL, registerBias + copied, tail.parameters - copied));
+			if (!tail.directArguments) {
+				const copied = Math.min(tail.parameters, decodeValueCount(instruction.b, 0));
+				const source = instruction.a + registerBias + 1;
+				for (let formal = 0; formal < copied; ++formal)
+					instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + formal, source + formal));
+				if (copied < tail.parameters)
+					instructions.push(controlInstruction(instruction, OpCode.LOADNIL, registerBias + copied, tail.parameters - copied));
+			}
 			instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + tail.parameters, 0, ValueMoveKind.SetTopImmediate));
 		} else if (tailReturn !== undefined) {
 			const jump = controlInstruction(instruction, OpCode.JMP, 0, 0);
@@ -452,10 +493,12 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			if (found?.has(call)) continue;
 			(found ??= new Set()).add(call);
 			const instruction = instructions[call];
+			const ret = instructions[call + 1];
 			const returns = signatures.get(caller);
 			const tailDefinition = direct && instruction.b !== 0 && returns !== undefined
 				&& !returns.variadic && !returns.readsArgumentCount && returns.suffixes.size === 0
-				&& returns.forwarded.includes(call + 1) && instructions[call + 1].a === instruction.a ? i : -1;
+				&& ret?.op === OpCode.RET && ret.c === ReturnSource.Registers && ret.a === instruction.a
+				&& ret.b === instruction.c && !entries.has(call + 1) ? i : -1;
 			let producer = -1;
 			if (instruction.b === 0) {
 				const previous = instructions[call - 1];
@@ -517,7 +560,8 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			const internal = new Map<number, TailTransfer>();
 			for (const [pc, { targets, site }] of edges.get(member.protoIndex)!) {
 				if (!targets.some(target => target.component === group)) continue;
-				if (targets.length !== 1 || site.tailDefinition < 0) continue tailComponents;
+				if (targets.length !== 1 || site.tailDefinition < 0 || bodies[member.protoIndex].instructions[pc].c !== 0)
+					continue tailComponents;
 				const target = targets[0].protoIndex;
 				const parameters = bodies[target].proto.numParams;
 				if (parameters + 1 > MAX_EXT_REGISTER_A) continue tailComponents;
@@ -843,20 +887,44 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 
 	const rewrites = new Map<number, WindowBodyLowering>();
 	for (let protoIndex = 0; protoIndex < bodies.length; ++protoIndex) {
+		const body = bodies[protoIndex];
 		const window = windows.get(protoIndex), callees = edges.get(protoIndex);
-		const tailTransfers = window === undefined ? undefined : candidates.get(protoIndex)!.tailTransfers;
+		const candidate = candidates.get(protoIndex);
+		let tailTransfers = window === undefined ? undefined : candidate!.tailTransfers;
 		let lowered: Map<number, WindowCallSite> | undefined;
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
 				if (tailTransfers?.has(pc)) continue;
 				const callee = sharedWindow(edge);
-				if (callee !== undefined) (lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)!, targets: edge.site.targets,
+				if (callee === undefined) continue;
+				const target = edge.targets[0];
+				const instruction = body.instructions[pc];
+				// Already-certified, compatible fixed-result entries can retain
+				// the issuing link instead of saving it and copying results back.
+				if (window !== undefined && edge.site.tailDefinition >= 0 && instruction.c !== 0
+					&& target.component !== candidate!.component && !body.proto.isVararg && !bodies[target.protoIndex].proto.isVararg
+					&& window.bias === 1 && callee.bias === 1 && window.placement === callee.placement
+					&& window.width >= callee.width && window.max === window.min && callee.min === window.max && callee.max === window.max
+					&& decodeValueCount(instruction.c, -1) === window.max
+					&& callee.placement + callee.parameters + 1 <= MAX_EXT_REGISTER_A) {
+					const argumentsPlaced = canPlaceTailArguments(body.instructions, edge.site, callee.parameters);
+					const copied = Math.min(callee.parameters, decodeValueCount(instruction.b, 0));
+					const rebind = copied + +(copied < callee.parameters);
+					// Use the cheaper transfer: the ordinary edge rebases both ways,
+					// links, sets Top and returns (including any result/link moves).
+					if (argumentsPlaced || rebind + 2 < 5 + (window.max === 0 ? 0 : window.max + 1)) {
+						(tailTransfers ??= new Map()).set(pc, { definition: edge.site.tailDefinition, target: target.protoIndex,
+							parameters: callee.parameters, directArguments: argumentsPlaced });
+						continue;
+					}
+				}
+				(lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)!, targets: edge.site.targets,
 					targetLive: edge.site.targetLive,
 					directTarget: edge.targets.length === 1 ? edge.targets[0].protoIndex : undefined });
 			}
 		}
 		if (window !== undefined || lowered !== undefined)
-			rewrites.set(protoIndex, lowerWindowBody(bodies[protoIndex], protoIndex, window, lowered, signatures.get(protoIndex), tailTransfers));
+			rewrites.set(protoIndex, lowerWindowBody(body, protoIndex, window, lowered, signatures.get(protoIndex), tailTransfers));
 	}
 	return { entries: new Set(windows.keys()), bodies: rewrites };
 }
