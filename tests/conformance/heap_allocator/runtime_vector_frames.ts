@@ -14,13 +14,12 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/bl
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
-import { CPU_RESET_BANK_ADDRESS, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_END, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_END, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const createRuntime = (romBytes: Uint8Array) => {
@@ -50,7 +49,7 @@ const firmware = linkRawTestSystemBlua32({ text: code, functions, verifiedContro
 const pcs = firmware.image.functions.map(fn => fn.codeAddress);
 const runtime = createRuntime(firmware.romBytes), { cpu, memory, scheduler, irqController } = runtime.machine;
 const trace: string[] = [], expected: string[] = [];
-const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
+const management = CPU_FIXED_STACK_BASE - RAM_BASE;
 const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 const zeroHeap = new Uint8Array(heapEnd - heapFirst);
 const heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
@@ -59,8 +58,6 @@ const observe = (cmd: string, output?: string | number) => {
 	if (output !== undefined) expected.push(String(output));
 };
 function observeHeap() {
-	assert.equal(arena.occupiedBytes(), 0);
-	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 	assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 	observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 }
@@ -81,7 +78,7 @@ function frame(index: number, pc: number, exception: boolean, nmi = false) {
 function grant(cycles: number, paid: number) {
 	const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
-	observe(`J ${cycles} 1`, `${result} ${paid} 0 0 0`);
+	observe(`E ${cycles}`, `${result} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 	observeHeap();
 	return result;
 }
@@ -139,7 +136,7 @@ function finish() {
 mkdirSync('tmp', { recursive: true });
 const dir = mkdtempSync(join('tmp', 'vector-frames-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const rom = join(dir, 'system.rom'), commands = join(dir, 'trace.txt');
 	const portable = join(dir, 'portable.state'), exported = join(dir, 'from-native.state');
 	writeFileSync(portable, encodeRuntimeSaveState(checkpoint));
@@ -181,7 +178,7 @@ try {
 	const faultRam = fault.machine.memory.ramData(), values = CPU_FIXED_VALUE_ADDRESS - RAM_BASE, valuesEnd = CPU_FIXED_VALUE_END - RAM_BASE;
 	assert.deepEqual(faultRam.subarray(heapFirst, heapEnd), zeroHeap);
 	const profile = process.env.BMSX_TEST_PINNED_NATIVE_PROFILE === '1';
-	const cmds = ['W 0 16777216', profile ? '_ 128' : 'J 128 1', 'Z', `H ${heapFirst} ${heapEnd}`, `H ${values} ${valuesEnd}`];
+	const cmds = ['W 0 16777216', profile ? '_ 128' : 'E 128', 'Z', `H ${heapFirst} ${heapEnd}`, `H ${values} ${valuesEnd}`];
 	writeFileSync(rom, missing.romBytes);
 	writeFileSync(commands, cmds.join('\n'));
 	const lines = execFileSync(native, [rom, commands, portable], { encoding: 'utf8' }).trimEnd().split('\n');

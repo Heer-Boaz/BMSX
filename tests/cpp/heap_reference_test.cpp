@@ -14,11 +14,14 @@
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <unordered_set>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -193,7 +196,7 @@ void closedCellLivesInRam() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	auto closure = bmsx::test::asClosure(frame.registers.get(1), heap);
 	const u32 key = bmsx::test::StringPoolReference(cpu).intern("saved_capture");
-	cpu.setGlobalByKey(key, frame.registers.get(1));
+	NativeGlobalBankReference::setGlobalByKey(cpu, key, frame.registers.get(1));
 	const u32 address = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(heap.cellRecordAddress(address) == address, "capture is an issued allocator record");
 	require(heap.openCellAddress(address + MAIN_RAM_SIZE) == address, "a mirrored open link selects the same physical cell");
@@ -214,7 +217,7 @@ void closedCellLivesInRam() {
 	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"the open record follows the new stack block without being rewritten");
 	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *frame.thread, oldCapacity);
-	cpu.abortCompletionCall(0);
+	bmsx::test::GcHeap::abortCompletionCall(cpu, 0);
 	require(!Upvalue::isOpen(memory, address) && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
 		"closing a capture writes the exact value to the allocated cell");
@@ -229,7 +232,7 @@ void closedCellLivesInRam() {
 	cpu.rootThread()->currentFrame->registers.set(0, valueInteger(44));
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
-	closure = bmsx::test::asClosure(cpu.getGlobalByKey(key), heap);
+	closure = bmsx::test::asClosure(NativeGlobalBankReference::getGlobalByKey(cpu, key), heap);
 	require(ClosureRecord::captureAddress(cpu.memory(), closure, 0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"restore retains the saved capture address and word");
 	bmsx::test::GcHeap(cpu).collect();
@@ -237,7 +240,7 @@ void closedCellLivesInRam() {
 	const auto occupied = arena.occupiedBytes();
 	const auto closureBytes = arena.allocationBytes(closure - bmsx::test::GC_OBJECT_PREFIX);
 	const auto cellBytes = arena.allocationBytes(address - bmsx::test::GC_OBJECT_PREFIX);
-	cpu.setGlobalByKey(key, valueNil());
+	NativeGlobalBankReference::setGlobalByKey(cpu, key, valueNil());
 	bmsx::test::GcHeap(cpu).collect();
 	require(arena.occupiedBytes() == occupied - closureBytes - cellBytes,
 		"collection releases both raw records");

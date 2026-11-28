@@ -1,5 +1,6 @@
 #include "global_bank_reference.h"
 #include "gc_heap_reference.h"
+#include "machine/cpu/cpu.h"
 
 #include <cstring>
 
@@ -9,6 +10,31 @@ namespace {
 constexpr u32 GLOBAL_NAME_BUDGET_BYTES = 9u;
 constexpr u32 NAME_AND_BUCKET_BYTES_PER_SLOT = 12u;
 using Bank = GlobalBankField;
+}
+
+Value NativeGlobalBankReference::getSystemGlobalByKey(const CPU& cpu, StringId key) {
+	return cpu.m_systemGlobalBank.values().get(*find(cpu.m_systemGlobalBank, key));
+}
+
+Value NativeGlobalBankReference::getGlobalByKey(const CPU& cpu, StringId key) {
+	const auto slot = find(cpu.m_globalBank, key);
+	return slot ? cpu.m_globalBank.values().get(*slot) : valueNil();
+}
+
+void NativeGlobalBankReference::setGlobalByKey(CPU& cpu, StringId key, const Value& value) {
+	GcHeap heap(cpu);
+	NativeGlobalBankReference bank(cpu.m_globalBank);
+	const u32 slot = bank.registerName(heap, key, value);
+	bank.writeSlot(heap, slot, value);
+}
+
+void NativeGlobalBankReference::setSystemGlobalByKey(CPU& cpu, StringId key, const Value& value) {
+	const auto slot = find(cpu.m_systemGlobalBank, key);
+	if (!slot) {
+		throw BMSX_RUNTIME_ERROR("System global '" + cpu.m_stringPool.toString(key) + "' has no register slot.");
+	}
+	GcHeap heap(cpu);
+	NativeGlobalBankReference(cpu.m_systemGlobalBank).writeSlot(heap, *slot, value);
 }
 
 u32 NativeGlobalBankReference::bucketFor(const Memory& memory, u32 base, u32 capacity, StringId key) {

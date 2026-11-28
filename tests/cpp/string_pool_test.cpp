@@ -18,6 +18,7 @@
 #include "support/managed_fixture.h"
 #include "support/string_slice_reference.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +26,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -173,7 +176,7 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 8192;
 	auto roots = bmsx::test::allocateTableReference(cpu, capacity, 0);
-	cpu.setGlobalByKey(pool.intern("String growth root"), valueTable(roots.address()));
+	NativeGlobalBankReference::setGlobalByKey(cpu, pool.intern("String growth root"), valueTable(roots.address()));
 	const u32 metadata = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
 	const u32 count = capacity - read(8u);
@@ -307,7 +310,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 4096u;
 	auto roots = bmsx::test::allocateTableReference(cpu, 4, 0);
-	cpu.setGlobalByKey(pool.intern("collision rehash root"), valueTable(roots.address()));
+	NativeGlobalBankReference::setGlobalByKey(cpu, pool.intern("collision rehash root"), valueTable(roots.address()));
 	const u32 metadata = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
 	u32 candidate = 0;
@@ -465,7 +468,7 @@ void reuseDeletedStringKeyId() {
 	bmsx::test::StringPoolReference pool(cpu);
 	const auto root = pool.intern("table root");
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
-	cpu.setGlobalByKey(root, valueTable(table.address()));
+	NativeGlobalBankReference::setGlobalByKey(cpu, root, valueTable(table.address()));
 	const auto removed = pool.intern("removed key");
 	table.setStringKey(removed, valueInteger(19));
 	table.setStringKey(removed, valueNil());

@@ -55,7 +55,7 @@
 
 namespace bmsx {
 
-namespace test { class GcHeap; }
+namespace test { class GcHeap; class NativeGlobalBankReference; }
 
 class CPU;
 class NativeCompilerWorker;
@@ -199,10 +199,6 @@ public:
 #endif
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
-	void setGlobalByKey(StringId key, const Value& value);
-	void setSystemGlobalByKey(StringId key, const Value& value);
-	Value getSystemGlobalByKey(StringId key) const;
-	Value getGlobalByKey(StringId key) const;
 	size_t globalSlotCount() const { return m_globalBank.count(); }
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
@@ -260,7 +256,6 @@ public:
 	u32 readFrameCallSitePc(int childFrameIndex) const;
 	bool completionCallPending() const;
 	bool readFrameReturnsToCompletionLatch(int frameIndex) const;
-	void abortCompletionCall(int frameIndex);
 	auto readCompletionValues() const -> ConstValueSpan;
 	bool isExceptionFrame(int frameIndex) const;
 	int readExceptionReturnFrameDepth() const;
@@ -293,6 +288,7 @@ public:
 private:
 	friend class BuiltinResultsScratchScope;
 	friend class test::GcHeap;
+	friend class test::NativeGlobalBankReference;
 	using RunUntilDepthEntry = RunResult (*)(CPU&, int, int);
 	enum class GrantAdmission : u8 { Admitted, Halted, RequestedYield, OutOfCycles };
 

@@ -60,8 +60,8 @@ function grant(cycles: number, result: RunResult, paid: number) {
 	assert.equal(scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled), result);
 	assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
 	assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
-	trace.push(`J ${cycles} 1`, `H ${heapFirst} ${heapEnd}`);
-	expected.push(`${result} ${paid} 0 0 0`, String(heapHash));
+	trace.push(`E ${cycles}`, `H ${heapFirst} ${heapEnd}`);
+	expected.push(`${result} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`, String(heapHash));
 }
 grant(1, RunResult.Yielded, 2);
 assert.equal(cpu.readFramePc(0), entryPc + INSTRUCTION_BYTES);
@@ -81,7 +81,7 @@ try {
 	const rom = join(directory, 'system.rom'), input = join(directory, 'trace.txt'), unused = join(directory, 'unused.state');
 	writeFileSync(rom, firmware.romBytes);
 	writeFileSync(input, trace.join('\n'));
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const actual = execFileSync(native, [rom, input, unused], { encoding: 'utf8' }).trimEnd().split('\n');
 	assert.deepEqual(actual, expected);
 	console.log('MINIMAL-SYSTEM-ROM:PASS exact first instruction, physical IRQ mask write, and return without a BIOS roster, global names, or arena');

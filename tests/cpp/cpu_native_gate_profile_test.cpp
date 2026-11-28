@@ -8,10 +8,13 @@
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -192,7 +195,7 @@ void warmClosureAndSnapshot() {
 	const auto before = generated.cpu.nativeGateProfile();
 #endif
 	parity(generated, scalar, loopCycles);
-	require(generated.cpu.readFramePc(0) == rom.textAddress && generated.cpu.getGlobalByKey(bmsx::test::StringPoolReference(generated.cpu).intern("marker")) == valueInteger(1),
+	require(generated.cpu.readFramePc(0) == rom.textAddress && NativeGlobalBankReference::getGlobalByKey(generated.cpu, bmsx::test::StringPoolReference(generated.cpu).intern("marker")) == valueInteger(1),
 		"the actual second closure iteration reaches its guest marker and loop boundary");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& after = generated.cpu.nativeGateProfile();

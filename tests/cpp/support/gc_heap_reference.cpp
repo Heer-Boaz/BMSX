@@ -19,6 +19,30 @@ GcHeap::GcHeap(CPU& cpu, LocalStringRoots* roots)
 	, m_cpu(cpu), m_roots(roots), m_stringPool(cpu, roots)
 	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
 
+void GcHeap::abortCompletionCall(CPU& cpu, int frameIndex) {
+	if (cpu.fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
+	if (static_cast<int>(cpu.m_activeThread->frameDepth()) > frameIndex) {
+		GcHeap heap(cpu);
+		cpu.abortStalledMemoryWrite();
+		do {
+			auto& frame = *cpu.m_activeThread->currentFrame;
+			u32 address = frame.readControl(FrameField::OpenHead);
+			for (u32 closed = 0u; address != 0u && closed < UPVALUE_CHAIN_LIMIT; ++closed) {
+				const u32 cell = address & RAM_REFERENCE_MASK;
+				if (cpu.m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(cpu.m_memory, cell)) break;
+				address = cpu.m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
+				Upvalue::close(cpu.m_memory, cell);
+				const auto tag = static_cast<ValueTag>(cpu.m_memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG));
+				if (valueTagIsStorageReference(tag)) heap.writeBarrier(cell, UPVALUE_NEXT);
+			}
+			frame.writeControl(FrameField::OpenHead, 0u);
+			cpu.m_activeThread->leaveFrame();
+		} while (static_cast<int>(cpu.m_activeThread->frameDepth()) > frameIndex);
+		cpu.resumeFrameBank();
+	}
+	cpu.m_completionValues.clear(0, cpu.m_completionValueCount); cpu.m_completionValueCount = 0;
+}
+
 void GcHeap::writeBarrier(u32 address, u32 link) {
 	if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 }

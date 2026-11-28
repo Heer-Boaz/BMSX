@@ -6,18 +6,19 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { captureAddress, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
+import { captureAddress, CLOSURE_PROTOTYPE_ADDRESS, recordAddress as closureRecordAddress } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { THREAD_HEAP_BYTES, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
+import { GlobalBank } from '../../../machine/ts/machine/cpu/global_bank';
+import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, load, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_OWNER } from '../../../machine/ts/machine/cpu/upvalue';
-import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
-import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
+import { EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -25,13 +26,11 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { asClosure, asThread, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../helpers/native_heap/gc_heap';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
-const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 test('terminal register-window OOM returns to the resumer and preserves the failed coroutine for close', t => {
+	t.mock.method(WebAssembly, 'Instance', () => assert.fail('register-window recovery must not instantiate the allocator oracle'));
 	const staticBytes = 3_600_000, marker = 0x4f2172c9;
 	const locals = Array.from({ length: 160 }, (_, index) => `local z${index} = 1`).join('\n');
 	// The authored ROM admits less heap through its BSS extent, not a
@@ -94,7 +93,10 @@ return ok, err, close_ok, close_error, escaped_cell()
 		assert.equal(memory.readRamRecordWord(issuer + FrameField.Pc), pc);
 		const { op, a: callee } = decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, pc);
 		assert.equal(op, OpCode.CALL);
-		const closure = asClosure(cpu.readThreadRegister(interrupted, frameCount - 1, callee), nativeHeapReference(cpu).gc);
+		const calleeValue = cpu.readThreadRegister(interrupted, frameCount - 1, callee);
+		if (valueTag(calleeValue) !== ValueTag.Closure) continue;
+		const closure = closureRecordAddress(memory, valuePayload(calleeValue));
+		assert.notEqual(closure, 0);
 		const prototype = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 		if (prototype !== memory.readRamRecordWord(issuer + FrameField.Function)) continue;
 		const fn = entries.get(prototype)!;
@@ -121,16 +123,24 @@ return ok, err, close_ok, close_error, escaped_cell()
 	assert.ok(memory.ramBusEnd() >= linked.layout.header.bssAddress + staticBytes);
 	assert.notEqual(resumePc, issue);
 
-	const faultHead = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
-	const faults = memory.readRamRecordWord(faultHead + GcDiagnosticField.FaultIds);
-	const diagnostic = memory.readRamRecordWord(faults + INSTRUCTION_BYTES * LUA_FAULT_REASON_OUT_OF_MEMORY);
-	const error = valueString(diagnostic), captured = valueInteger(marker);
-	assert.equal(cpu.stringPool.toString(diagnostic), 'Out of memory.');
+	const error = cpu.readThreadRegister(cpu.rootThread.address, resumeFrame, resumeBase + 1), captured = valueInteger(marker);
+	assert.equal(valueTag(error), ValueTag.String);
+	assert.equal(cpu.stringPool.toString(valuePayload(error)), 'Out of memory.');
 
 	function inspectFailed(rt: Runtime) {
 		const { cpu, memory } = rt.machine;
-		const observedGlobal = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
-		assert.equal(asThread(observedGlobal('failed_thread'), nativeHeapReference(cpu).gc), failed);
+		const bank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET);
+		bank.bind();
+		const ordinaryMap = memory.readRamRecordWord(executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID) + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET);
+		const observedGlobal = (name: string) => {
+			const ordinal = linked.layout.globalNames.indexOf(name);
+			assert.notEqual(ordinal, -1);
+			return bank.slots.get(memory.readRamRecordWord(ordinaryMap + ordinal * 4));
+		};
+		const failedValue = observedGlobal('failed_thread');
+		assert.equal(valueTag(failedValue), ValueTag.Thread);
+		assert.equal(valuePayload(failedValue), failed);
+		assert.equal(memory.readRamRecordByte(failed + ThreadField.Header), THREAD_RECORD_KIND);
 		assert.equal(cpu.readThreadStatus(failed), ThreadStatus.Failed);
 		assert.equal(cpu.readThreadFrameDepth(failed), depth, 'failure did not unwind the coroutine');
 		assert.equal(cpu.readThreadFrameWord(failed, depth - 1, FrameField.Pc), issue);
@@ -147,7 +157,10 @@ return ok, err, close_ok, close_error, escaped_cell()
 		assert.equal(cpu.readThreadFrameDepth(cpu.rootThread.address), resumeFrame + 1);
 		assert.equal(cpu.readThreadRegister(cpu.rootThread.address, resumeFrame, resumeBase), valueBool(false));
 		assert.equal(cpu.readThreadRegister(cpu.rootThread.address, resumeFrame, resumeBase + 1), error);
-		const closure = asClosure(observedGlobal('escaped_cell'), nativeHeapReference(cpu).gc);
+		const escaped = observedGlobal('escaped_cell');
+		assert.equal(valueTag(escaped), ValueTag.Closure);
+		const closure = closureRecordAddress(memory, valuePayload(escaped));
+		assert.notEqual(closure, 0);
 		const cell = captureAddress(memory, closure, 0);
 		assert.ok(isOpen(memory, cell));
 		assert.equal(memory.readRamRecordWord((cell & UPVALUE_ADDRESS_MASK) + UPVALUE_OWNER), failed);
@@ -184,6 +197,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 
 	const dir = mkdtempSync(join(tmpdir(), 'bmsx-firmware-coroutine-window-oom-'));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const romPath = join(dir, 'system.rom'), trace = join(dir, 'trace');
 	const tsState = join(dir, 'ts.state'), nativeState = join(dir, 'native.state');
 	writeFileSync(romPath, rom);

@@ -13,6 +13,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +21,8 @@
 #include <limits>
 #include <stdexcept>
 #include <tuple>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -256,8 +259,8 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a late unknown selector still hard-halts after the earlier guard succeeds");
 	}
 	requireParity(native, scalar);
@@ -272,7 +275,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	requireParity(native, scalar);
@@ -305,7 +308,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 			m->cpu.writeEpcWord(m->rom.textAddress + 18u * INSTRUCTION_BYTES);
 		}
 		if (op == OpCode::MTC0) m->cpu.activeThread()->firstFrame->registers.set(12, valueInteger(-1));
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
 		// Clearing reset inhibit hands control back before the vector's RFE.
 		// That hardware boundary is distinct from the later rejected opcode.
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Yielded && m->cpu.getFrameDepth() == 2
@@ -342,8 +345,8 @@ void execReplacesFramesAfterNativeReturn() {
 	native.cpu.setNativeCompilationProfiling(true);
 #endif
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("next"), valueInteger(m->rom.functionAddresses[1]));
-		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("start"), valueInteger(m->rom.functionAddresses[0]));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("next"), valueInteger(m->rom.functionAddresses[1]));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find("start"), valueInteger(m->rom.functionAddresses[0]));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 800);
 	}
 	requireParity(native, scalar);
@@ -368,7 +371,7 @@ void execReplacesFramesAfterNativeReturn() {
 	require(generated, "the context-replacing EXEC is a real generated exit, even when the new frame has not fetched yet");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		for (const auto key : {"next", "start"}) m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find(key), valueInteger(m->rom.functionAddresses[2]));
+		for (const auto key : {"next", "start"}) NativeGlobalBankReference::setGlobalByKey(m->cpu, *bmsx::test::StringPoolReference(m->cpu).find(key), valueInteger(m->rom.functionAddresses[2]));
 		require(m->cpu.runUntilDepth(0, 4) == RunResult::Halted, "EXEC rejects non-static records without retaining an obsolete native frame");
 	}
 	requireParity(native, scalar);

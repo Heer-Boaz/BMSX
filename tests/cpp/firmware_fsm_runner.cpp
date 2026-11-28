@@ -11,6 +11,9 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
+#include "support/global_bank_reference.h"
+
+using bmsx::test::NativeGlobalBankReference;
 
 using namespace bmsx;
 
@@ -56,7 +59,7 @@ int main(int argc, char** argv) {
 			require(result == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0 && cpu.readExceptionReturnFrameDepth() == -1,
 				"firmware FSM phase must reach its real HALT/completion without a fault");
 			require(cpu.isHaltedUntilIrq() == (phase != 8), "unexpected firmware FSM checkpoint");
-			if (phase != 8) require(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("fsm_phase")) == valueInteger(phase), "wrong firmware FSM phase");
+			if (phase != 8) require(NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("fsm_phase")) == valueInteger(phase), "wrong firmware FSM phase");
 			if (phase == 8) {
 				const auto values = runtime.readCompletionValues();
 				require(values.size() == 2 && values.get(0) == valueBool(true) && values.get(1) == valueBool(true),
@@ -85,7 +88,7 @@ int main(int argc, char** argv) {
 				const u32 cartEnd = CART_ROM_BASE + static_cast<u32>(cart.size());
 				const auto count = phase >= 5 ? 2 : 1;
 				for (int evaluator = 0; evaluator < count; ++evaluator) {
-					const auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), bmsx::test::GcHeap(cpu));
+					const auto closure = bmsx::test::asClosure(NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), bmsx::test::GcHeap(cpu));
 					require(cpu.readClosureBinding(closure).executionDomainId == image->executionDomainId, "inspect the evaluator in its cartridge execution image");
 					const u32 address = cpu.readClosureBinding(closure).functionAddress;
 					const u32 code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
@@ -124,7 +127,7 @@ int main(int argc, char** argv) {
 						<< ",\"compiled\":" << (compiled ? "true" : "false") << ",\"regionBytes\":" << regionBytes << '}';
 				}
 				if (phase >= 4) {
-					const auto& bindings = TableRecord(cpu.memory(), valuePayload(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("fsm_bindings"))));
+					const auto& bindings = TableRecord(cpu.memory(), valuePayload(NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("fsm_bindings"))));
 					for (int index = 1; index <= 3; ++index)
 						require(cpu.readClosureBinding(bmsx::test::asClosure(bindings.getInteger(index), bmsx::test::GcHeap(cpu))).functionAddress == primaryFunction,
 							"binding did not retain its ROM evaluator");

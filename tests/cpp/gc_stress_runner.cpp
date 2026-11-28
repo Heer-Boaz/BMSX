@@ -5,6 +5,7 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/runtime/history/ram_history.h"
 #include "spec/bmsx/model.h"
+#include "support/global_bank_reference.h"
 
 #include <array>
 #include <fstream>
@@ -14,6 +15,8 @@
 #include <string_view>
 #include <vector>
 #include <tuple>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 bool stressEnabled = false;
@@ -59,7 +62,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	using namespace bmsx;
 	bmsx::test::GcHeap collector(cpu);
 	auto& memory = cpu.memory();
-	const auto global = [&](std::string_view name) { return cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find(name)); };
+	const auto global = [&](std::string_view name) { return NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find(name)); };
 	runPressureStage(cpu);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (compiled) for (std::string_view name : {"assign", "change"}) {

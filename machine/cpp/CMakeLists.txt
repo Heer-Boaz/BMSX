@@ -739,9 +739,12 @@ endif()
 # ======================================================================
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	# Architectural replay links only the same core as the production hosts.
+	add_executable(bmsx_machine_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_service_conformance_runner.cpp)
+	target_link_libraries(bmsx_machine_conformance_runner PRIVATE bmsx_core)
 	add_library(bmsx_native_heap_reference STATIC
 		../common/dlmalloc/dlmalloc.c
-		../../tests/cpp/support/cpu_heap_reference.cpp
 		../../tests/cpp/support/gc_heap_reference.cpp
 		../../tests/cpp/support/global_bank_reference.cpp
 		../../tests/cpp/support/heap_allocator_reference.cpp
@@ -780,6 +783,7 @@ if(BMSX_BUILD_TESTS)
 	endif()
 	add_executable(bmsx_heap_service_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_service_conformance_runner.cpp)
+	target_compile_definitions(bmsx_heap_service_conformance_runner PRIVATE BMSX_CONFORMANCE_HEAP_ORACLE=1)
 	target_link_libraries(bmsx_heap_service_conformance_runner PRIVATE bmsx_core)
 	add_executable(bmsx_pow_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/pow_conformance_runner.cpp)

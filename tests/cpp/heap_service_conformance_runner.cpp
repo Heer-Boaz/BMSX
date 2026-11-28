@@ -1,26 +1,31 @@
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "support/string_pool_reference.h"
-#include "support/lua_heap_reference.h"
-#include "support/heap_allocator_reference.h"
 #include "machine/runtime/runtime.h"
-#include "machine/cpu/errors.h"
 #include "machine/runtime/history/ram_history.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
+
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
+#include "machine/cpu/errors.h"
 #include "support/gc_heap_reference.h"
 #include "support/global_bank_reference.h"
+#include "support/heap_allocator_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/string_pool_reference.h"
 #include "support/string_slice_reference.h"
 #include "support/table_allocation_reference.h"
+#endif
 
 namespace {
 using namespace bmsx;
@@ -54,11 +59,13 @@ int main(int argc, char** argv) {
 		Runtime runtime({rom, cartridges, PSX_MACHINE_SPEC}, input);
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
-		bmsx::test::GcHeap collector(cpu);
 		auto& memory = runtime.machine.memory;
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
+		bmsx::test::GcHeap collector(cpu);
 		HeapAllocator arena(memory);
 		LuaHeap heapBudget(cpu);
 		bmsx::test::StringPoolReference strings(cpu);
+#endif
 		auto& scheduler = runtime.machine.scheduler;
 		std::vector<std::vector<u8>> replacementRoms;
 		RuntimeSaveState saved;
@@ -67,6 +74,7 @@ int main(int argc, char** argv) {
 		RamHistory::PageMap historyBaseline, historyPartial, historyEnd;
 		for (char op; trace >> op;) {
 			switch (op) {
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case '=': {
 					u32 source, first, bytes;
 					trace >> source >> first >> bytes;
@@ -108,7 +116,7 @@ int main(int argc, char** argv) {
 					} else throw std::runtime_error("Expected native namespace or image retirement");
 					break;
 				}
-
+#endif
 				case 'E': {
 					int cycles;
 					trace >> cycles;
@@ -118,6 +126,7 @@ int main(int argc, char** argv) {
 						<< ' ' << static_cast<int>(cpu.activeCartridgeSlot()) << '\n';
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'J': {
 					int cycles, mode;
 					trace >> cycles >> mode;
@@ -146,6 +155,7 @@ int main(int argc, char** argv) {
 						<< ' ' << static_cast<int>(collector.phase()) << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
+#endif
 				case 'j': {
 					u32 address, word;
 					trace >> address >> word;
@@ -160,6 +170,7 @@ int main(int argc, char** argv) {
 					std::cout << grants << '\n';
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'w': {
 					u32 words;
 					trace >> words;
@@ -183,17 +194,18 @@ int main(int argc, char** argv) {
 					std::string name;
 					trace >> name;
 					const auto key = strings.intern(name);
-					const auto value = cpu.getGlobalByKey(key);
-					cpu.setGlobalByKey(key, valueNil());
+					const auto value = bmsx::test::NativeGlobalBankReference::getGlobalByKey(cpu, key);
+					bmsx::test::NativeGlobalBankReference::setGlobalByKey(cpu, key, valueNil());
 					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
 					break;
 				}
 				case 'k': {
 					u32 key;
 					trace >> key;
-					cpu.setGlobalByKey(key, valueNil());
+					bmsx::test::NativeGlobalBankReference::setGlobalByKey(cpu, key, valueNil());
 					break;
 				}
+#endif
 				case 'o': {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 					u32 function;
@@ -229,6 +241,7 @@ int main(int argc, char** argv) {
 					cpu.requestRegisterWindow(valueEnd, frameEnd, deadline);
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'T': {
 					char source;
 					u32 target;
@@ -291,6 +304,7 @@ int main(int argc, char** argv) {
 						<< arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
+#endif
 				case 'K': {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
@@ -341,6 +355,7 @@ int main(int argc, char** argv) {
 #endif
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'a':
 				case 'd': {
 					auto& frames = runtime.frameScheduler;
@@ -354,6 +369,7 @@ int main(int argc, char** argv) {
 						<< ' ' << arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
+#endif
 				case 'v': {
 					int cycles;
 					trace >> cycles;
@@ -373,6 +389,7 @@ int main(int argc, char** argv) {
 						<< cpu.isHaltedUntilIrq() << '\n';
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'A': {
 					u32 bytes;
 					trace >> bytes;
@@ -385,6 +402,7 @@ int main(int argc, char** argv) {
 					arena.free(address);
 					break;
 				}
+#endif
 				case 'c': {
 					const auto values = runtime.readCompletionValues();
 					std::cout << values.size();
@@ -400,6 +418,7 @@ int main(int argc, char** argv) {
 					std::cout << (values.size() == 0 ? 0 : asInteger(values.get(0))) << '\n';
 					break;
 				}
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
 				case 'Y': {
 					int array, hash;
 					trace >> array >> hash;
@@ -418,6 +437,7 @@ int main(int argc, char** argv) {
 					std::cout << collector.step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
+#endif
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;
 				case 'F': std::cout << cpu.captureRuntimeState().hardHalted << '\n'; break;
 				case '&': {
@@ -574,7 +594,9 @@ int main(int argc, char** argv) {
 					requireRefusal([&] { runtime.rebootSystem(); }, fixedRefusal);
 					requireRefusal([&] { cpu.reset(); }, fixedRefusal);
 					requireRefusal([&] { runtime.callClosure(0u); }, "External Lua closure execution requires a settled CPU and device frontier.");
-					requireRefusal([&] { cpu.abortCompletionCall(0); }, "Fixed execution must retire before replacing code execution.");
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
+					requireRefusal([&] { bmsx::test::GcHeap::abortCompletionCall(cpu, 0); }, "Fixed execution must retire before replacing code execution.");
+#endif
 					std::cout << "reset deferred\n";
 					break;
 				}
@@ -623,8 +645,11 @@ int main(int argc, char** argv) {
 					}
 					const bool dirty = memory.ramWriteWatches().historyPageDirty(0, memory.ramByteCount() >> MAPPED_PAGE_BYTE_SHIFT);
 					memory.ramWriteWatches().disarmHistoryWrites();
-					std::cout << published << ' ' << blocked << ' ' << dirty << ' ' << arena.occupiedBytes()
-						<< ' ' << heapBudget.usedBytes() << '\n';
+					std::cout << published << ' ' << blocked << ' ' << dirty;
+#if defined(BMSX_CONFORMANCE_HEAP_ORACLE)
+					std::cout << ' ' << arena.occupiedBytes() << ' ' << heapBudget.usedBytes();
+#endif
+					std::cout << '\n';
 					break;
 				}
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,

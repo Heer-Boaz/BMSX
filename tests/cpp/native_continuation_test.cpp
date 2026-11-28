@@ -11,11 +11,14 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/global_bank_reference.h"
 
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -100,7 +103,7 @@ struct Machine {
 			"CALL copies the published callsite bindings to its activation");
 		cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[1], calleePc());
 		parent->registers.set(1, callerMarker);
-		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("continuationResult"), valueNil());
+		NativeGlobalBankReference::setGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("continuationResult"), valueNil());
 	}
 };
 
@@ -163,7 +166,7 @@ void boundReturn(bool replaceTargetStorage, bool changeBank) {
 		+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
 	root[rootIndex] = group;
 	require(machine.cpu.getFrameDepth() == 1
-		&& machine.cpu.getGlobalByKey(bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
+		&& NativeGlobalBankReference::getGlobalByKey(machine.cpu, bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
 		"RET follows the current published slot without a hierarchy walk or C++ continuation lookup");
 }
 
@@ -288,7 +291,7 @@ void observationAndLifecycle(int action) {
 		require(!parent->nativeContinuationCells[0], "hot-resume invalidates the caller's former continuation binding");
 		machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
-		require(machine.cpu.getGlobalByKey(bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
+		require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
 			"return after hot-resume follows the rewritten caller PC");
 	} else if (action == 3) {
 		machine.cpu.replaceExecutionImage(machine.addresses.resolveSystemDomain());
@@ -322,7 +325,7 @@ void physicalCallerBankDeclinesOldContinuation() {
 	previous->nativeCode[word] = marker->nativeCode[markerWord];
 	parent->writeControl(FrameField::Flags, frameBankWord(1));
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
-	require(machine.cpu.getGlobalByKey(bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == valueNil()
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == valueNil()
 		&& (machine.cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
 		&& machine.cpu.readExceptionDomainWord() == 1,
 		"native RET declines the warm old-bank cell and fetch faults in the missing physical socket");
@@ -337,7 +340,7 @@ void physicalCallerPcRedirectsNativeReturn() {
 	parent->writeControl(FrameField::Pc, machine.markerPc());
 	require(parent->nativeContinuationCells[0] == oldCell, "a raw frame write does not withdraw its old code cell");
 	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
-	require(machine.cpu.getGlobalByKey(bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, bmsx::test::StringPoolReference(machine.cpu).intern("continuationResult")) == callerMarker,
 		"the native return consumes the physical successor instead of its stale continuation key");
 }
 } // namespace

@@ -14,12 +14,15 @@
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"
+#include "support/global_bank_reference.h"
 #endif
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -85,7 +88,7 @@ struct Machine {
 			target.emplace(bmsx::test::allocateTableReference(cpu, 0, 1)); meta.emplace(bmsx::test::allocateTableReference(cpu, 0, 1));
 			meta->setStringKey(bmsx::test::StringPoolReference(cpu).intern("field"), valueInteger(71));
 			target->setMetatableAddress(meta->address());
-			cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("target"), valueTable(target->address()));
+			NativeGlobalBankReference::setGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("target"), valueTable(target->address()));
 			r.set(1, mode == 3 ? valueInteger(17) : valueTable(target->address()));
 			r.set(2, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());

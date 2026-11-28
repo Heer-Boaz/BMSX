@@ -13,7 +13,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/exec
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
-import { CART_ROM_BASE, CPU_IRQ_VECTOR_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_IRQ_VECTOR_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
@@ -22,8 +22,6 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_LAST_EPOCH_WORK, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../helpers/native_heap/gc_heap';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const length = 0x120000;
@@ -61,8 +59,11 @@ end
 assert(coroutine.resume(coroutine.create(run)))
 `;
 const enum Report { Command, Ready, Calls, Pending, Length, FinalByte, Collected, AfterAck }
-// Only the production-owned sample is observed; this test never sets GC policy RAM.
-const physicalSample = GC_LAST_EPOCH_WORK + 4;
+// Read only the stock firmware's gc_control and bmsx_dlmalloc_state records.
+const enum CollectorField {
+	Phase = 0, TraceHead = 0x04, TraceRecord = 0x34, TraceCursor = 0x38, EpochWork = 0x5c, LastEpochWork = 0x60, PhysicalSample = 0x64,
+}
+const arenaOccupiedOffset = 0x400 + 0x1ac;
 
 function verify(romPath: string, native: string, output: string, optLevel: 0 | 3): void {
 	const system = readFileSync(romPath);
@@ -74,15 +75,17 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cartridge), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler, gxGpu } = runtime.machine;
-	const frames = runtime.frameScheduler, arena = nativeHeapReference(cpu).heapAllocator;
-	const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, reports = linked.layout.header.bssAddress;
+	const frames = runtime.frameScheduler;
+	const management = CPU_FIXED_STACK_BASE - RAM_BASE;
+	const control = management + HEAP_GC_CONTROL_OFFSET, reports = linked.layout.header.bssAddress;
 	const report = (field: Report) => memory.readRamRecordWord(reports + field * 4);
 	const flags = () => memory.readIoU32(IO_IRQ_FLAGS);
-	const sample = () => memory.readRamRecordWord(control + physicalSample);
-	const work = () => [nativeHeapReference(cpu).gc.epochWork(), memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK)];
-	const traceCursor = () => [nativeHeapReference(cpu).gc.phase(), memory.readRamRecordWord(control + GC_TRACE_HEAD),
-		memory.readRamRecordWord(control + GC_TRACE_RECORD), memory.readRamRecordWord(control + GC_TRACE_CURSOR),
-		nativeHeapReference(cpu).gc.epochWork(), arena.occupiedBytes()];
+	const readControl = (field: CollectorField) => memory.readRamRecordWord(control + field);
+	const occupied = () => memory.readRamRecordWord(management + arenaOccupiedOffset);
+	const sample = () => readControl(CollectorField.PhysicalSample);
+	const work = () => [readControl(CollectorField.EpochWork), readControl(CollectorField.LastEpochWork)];
+	const traceCursor = () => [memory.readRamRecordByte(control + CollectorField.Phase), readControl(CollectorField.TraceHead),
+		readControl(CollectorField.TraceRecord), readControl(CollectorField.TraceCursor), readControl(CollectorField.EpochWork), occupied()];
 	const commands: string[] = [], expected: string[] = [];
 	const observe = (command: string, result?: string | number) => {
 		commands.push(command);
@@ -92,13 +95,10 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const observeState = () => {
 		observe(`M ${IO_IRQ_FLAGS}`, `${flags()} 0`);
 		fingerprint(reports - RAM_BASE, 32);
-		fingerprint(control, physicalSample + 8);
+		fingerprint(control, CollectorField.PhysicalSample + 8);
 	};
 	function grant(cycles: number) {
-		if (gxGpu.backendCommandDrainPending()) {
-			gxGpu.retireExecutedCommands();
-			observe('>');
-		}
+		assert.equal(gxGpu.backendCommandDrainPending(), false, 'the cartridge does not submit graphics commands');
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const done = frames.runCyclesToNextLogicalTick(cycles);
 		observe(`p ${cycles}`, [Number(done), scheduler.nowCycles - before, frames.lastTickSequence - tick, Number(cpu.isHaltedUntilIrq())].join(' '));
@@ -106,14 +106,18 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	// Preparing the pressure fixture itself concatenates several MiB of
 	// String data in the BIOS. Only IRQ delivery below is under test here.
 	const readyDeadline = 20 * PSX_MACHINE_SPEC.cpuFreqHz;
-	for (let offered = 0; offered < readyDeadline && report(Report.Ready) !== length; offered += 65536) grant(65536);
+	for (let offered = 0; offered < readyDeadline && report(Report.Ready) !== length; offered += 65536) {
+		// The stock boot screen may queue work before the cartridge starts.
+		if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
+		frames.runCyclesToNextLogicalTick(65536);
+	}
 	assert.equal(report(Report.Ready), length,
 		`pressure fixture not ready at cycle ${scheduler.nowCycles} (Lua fault ${cpu.readLuaFaultReasonWord()})`);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const interruptedThread = cpu.activeThread.address;
 	assert.notEqual(interruptedThread, cpu.rootThread.address, 'the coroutine is not the system root context');
 	grant(0);
-	const completionCount = arena.managementOffset() + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE;
+	const completionCount = management + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE;
 	// Both cores start with the real coroutine stopped at a CPU grant boundary.
 	const initialState = join(output, 'before-collection.ts');
 	writeFileSync(initialState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -131,7 +135,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const systemIrqInstruction = (pc: number, domain: number) =>
 		domain === SYSTEM_EXECUTION_DOMAIN_ID && pc >= irqCode && pc < irqEnd;
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0, 'the cartridge owns its mask');
-	assert.ok(arena.occupiedBytes() >= length);
+	assert.ok(occupied() >= length);
 	const maskedTick = frames.lastTickSequence, maskedSample = sample(), maskedWork = work();
 	for (let i = 0; i < 128 && frames.lastTickSequence < maskedTick + 3; ++i) grant(65536);
 	// A logical tick can stop partway through the submitted grant. Spend its
@@ -156,14 +160,14 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 			observe(`x ${vectorState}`);
 		}
 	}
-	assert.equal(sample(), arena.occupiedBytes(), 'the IRQ has reached the physical-pressure sampler');
+	assert.equal(sample(), occupied(), 'the IRQ has reached the physical-pressure sampler');
 	assert.notEqual(sample(), maskedSample);
 	assert.equal(frames.lastTickSequence, maskedTick + 3, 'unmasking delivers the latched request without a fourth VBlank');
 	for (let i = 0; i < 32768 && traceCursor().every((word, index) => word === beforeTrace[index]); ++i) grant(1);
 	const partialCycle = scheduler.nowCycles;
 	assert.notDeepEqual(traceCursor(), beforeTrace, 'collection advanced before capture');
 	assert.ok(cpu.fixedInterruptActive(), 'ordinary BIOS instructions still own the IRQ');
-	assert.equal(memory.readRamRecordWord(arena.managementOffset() + GC_ROOT_BANKS_OFFSET + 4),
+	assert.equal(memory.readRamRecordWord(management + GC_ROOT_BANKS_OFFSET + 4),
 		interruptedThread, 'firmware scans the suspended context, not its own IRQ frames');
 	assert.equal(memory.readRamRecordWord(completionCount), 0, 'the IRQ requires no host completion roots');
 	fingerprint(completionCount, 12);
@@ -246,7 +250,7 @@ test('stock PCRTC VBlank runs BIOS collection before cartridge IRQ acknowledgmen
 	t.mock.method(WebAssembly, 'Instance', () => assert.fail('stock boot and collection must not instantiate the allocator oracle'));
 	mkdirSync('tmp', { recursive: true });
 	const dir = mkdtempSync(join('tmp', 'stock-vblank-gc-'));
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { buildDirectory: join(dir, 'native') });
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner', { buildDirectory: join(dir, 'native') });
 	let failed = false;
 	for (const optLevel of [0, 3] as const) await t.test(`O${optLevel}`, () => {
 		const output = join(dir, `O${optLevel}`);

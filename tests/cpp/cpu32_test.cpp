@@ -16,11 +16,14 @@
 #include "support/cpu_execution_parity.h"
 #include "support/number32_cpu_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -693,31 +696,31 @@ void constantsGlobalsAndRestore() {
 	auto image = constantImage();
 	Number32Machine m(image);
 	bmsx::test::StringPoolReference strings(m.cpu);
-	m.cpu.setGlobalByKey(*strings.find("saved"), valueFloatBits(0xffa54321));
-	m.cpu.setSystemGlobalByKey(*strings.find("system"), valueInteger(INT32_MIN));
+	NativeGlobalBankReference::setGlobalByKey(m.cpu, *strings.find("saved"), valueFloatBits(0xffa54321));
+	NativeGlobalBankReference::setSystemGlobalByKey(m.cpu, *strings.find("system"), valueInteger(INT32_MIN));
 	auto graph = bmsx::test::allocateTableReference(m.cpu), child = bmsx::test::allocateTableReference(m.cpu);
 	const auto self = strings.intern("self"), childKey = strings.intern("child");
 	graph.setStringKey(self, valueTable(graph.address()));
 	graph.setStringKey(childKey, valueTable(child.address()));
 	child.setMetatableAddress(graph.address());
-	m.cpu.setGlobalByKey(*strings.find("graph"), valueTable(graph.address()));
+	NativeGlobalBankReference::setGlobalByKey(m.cpu, *strings.find("graph"), valueTable(graph.address()));
 	const auto graphHash = graph.address(), childHash = child.address();
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "Float constant preserves signaling NaN bits");
 	const auto state = m.cpu.captureRuntimeState();
 	const auto ram = m.memory.captureSaveState();
 	m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(8));
-	m.cpu.setGlobalByKey(*strings.find("saved"), valueInteger(7));
+	NativeGlobalBankReference::setGlobalByKey(m.cpu, *strings.find("saved"), valueInteger(7));
 	for (int i = 0; i < 10; ++i)
 		bmsx::test::allocateTableReference(m.cpu);
 	m.memory.restoreSaveState(ram);
 	m.cpu.restoreRuntimeState(state);
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "frame restore preserves raw Float word");
-	require(m.cpu.getGlobalByKey(*strings.find("saved")) == valueFloatBits(0xffa54321),
+	require(NativeGlobalBankReference::getGlobalByKey(m.cpu, *strings.find("saved")) == valueFloatBits(0xffa54321),
 		"compact global restore preserves raw Float word");
-	require(m.cpu.getSystemGlobalByKey(*strings.find("system")) == valueInteger(INT32_MIN),
+	require(NativeGlobalBankReference::getSystemGlobalByKey(m.cpu, *strings.find("system")) == valueInteger(INT32_MIN),
 		"system globals retain signed Integer identity");
-	auto restored = TableRecord(m.cpu.memory(), valuePayload(m.cpu.getGlobalByKey(*strings.find("graph"))));
+	auto restored = TableRecord(m.cpu.memory(), valuePayload(NativeGlobalBankReference::getGlobalByKey(m.cpu, *strings.find("graph"))));
 	auto restoredChild = TableRecord(m.cpu.memory(), valuePayload(restored.getStringKey(childKey)));
 	require(restored.address() == graphHash && restoredChild.address() == childHash,
 		"heap restore preserves hash identities independently of payload ids");

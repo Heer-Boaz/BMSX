@@ -20,12 +20,15 @@
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 #include "support/upvalue_store_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -390,7 +393,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 	}
 	const auto marker = bmsx::test::StringPoolReference(machine.cpu).intern("nativeCallMarker");
-	machine.cpu.setGlobalByKey(marker, valueBool(false));
+	NativeGlobalBankReference::setGlobalByKey(machine.cpu, marker, valueBool(false));
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
 	auto* calleePage = lookup.find(calleePc, 0);
 	auto* alternate = lookup.find(markerPc, 0);
@@ -416,20 +419,20 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
 			&& thread->currentFrame == caller && caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
 			&& caller->registers.get(base) == caller->registers.get(6)
-			&& machine.cpu.getGlobalByKey(marker) == valueBool(false),
+			&& NativeGlobalBankReference::getGlobalByKey(machine.cpu, marker) == valueBool(false),
 			"a grant exhausted by MOV stops before CALL and frame placement");
 		return;
 	}
 	if (grant <= callPrefix + placed) {
 		require(machine.cpu.instructionBudgetRemaining == grant - callPrefix - placed
-			&& machine.cpu.getGlobalByKey(marker) == valueBool(false)
+			&& NativeGlobalBankReference::getGlobalByKey(machine.cpu, marker) == valueBool(false)
 			&& thread->currentFrame == spare && spare->readControl(bmsx::FrameField::Pc) == calleePc,
 			"an exhausting CALL completes placement once without entering its raw callee body");
 		return;
 	}
 	if (coldTarget) {
 		const auto result = args == 0 ? valueNil() : payloads.front();
-		require(machine.cpu.getGlobalByKey(marker) == valueBool(false) && thread->currentFrame == caller
+		require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, marker) == valueBool(false) && thread->currentFrame == caller
 			&& caller->registers.get(base) == result,
 			"the admitted cold call enters the interpreter and returns the first formal to the caller");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -438,7 +441,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		return;
 	}
 	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueInteger(63);
-	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth() == 2,
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, marker) == first && thread->currentFrame == spare && thread->frameDepth() == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
 	require(caller->readControl(bmsx::FrameField::Pc) == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == callerTop
 		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
@@ -1077,7 +1080,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (size_t index = 0; index < callerBeforeReturn.size(); ++index)
 		callerBeforeReturn[index] = caller->registers.get(index);
 	const auto marker = bmsx::test::StringPoolReference(machine.cpu).intern("nativeReturnMarker");
-	machine.cpu.setGlobalByKey(marker, valueNil());
+	NativeGlobalBankReference::setGlobalByKey(machine.cpu, marker, valueNil());
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
 	auto* continuation = lookup.find(caller->readControl(bmsx::FrameField::Pc), 0);
 	auto* alternate = lookup.find(markerPc, 0);
@@ -1127,7 +1130,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 			require(caller->registers.get(index) == callerBeforeReturn[index],
 				"return does not overwrite slots outside the selected receiving range");
 	const bool runsMarker = !coldTarget && !grows && grant > returnBase + count + markerAdmission;
-	require(machine.cpu.getGlobalByKey(marker) == (runsMarker ? caller->registers.get(7) : valueNil()),
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, marker) == (runsMarker ? caller->registers.get(7) : valueNil()),
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
 	const int markerCycles = markerAdmission + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	if (runsMarker && grant <= returnBase + count + markerCycles)
@@ -1810,7 +1813,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 		target->nativeCode[(targetPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]
 			= alternate->nativeCode[(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		cpu.runUntilDepth(0, 100);
-		require(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("rawBindingMarker")) == valueInteger(73)
+		require(NativeGlobalBankReference::getGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("rawBindingMarker")) == valueInteger(73)
 			&& cpu.getFrameDepth() == 2, "native CALL reads the live raw binding and enters its independently redirected native target without general VM dispatch");
 		return;
 	}

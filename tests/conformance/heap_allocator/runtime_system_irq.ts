@@ -14,18 +14,15 @@ import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_f
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_IRQ_VECTOR_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_IRQ_VECTOR_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { SYSTEM_KERNEL_MODULES } from '../../../toolchain/ts/rompack/system';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { loadHeapServiceTestModules } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const irqPath = 'kernel/irq', eventsPath = 'kernel/interrupts', resetPath = 'fixture/reset';
 const exceptionPath = 'kernel/cold_exception';
@@ -35,6 +32,7 @@ const authored = [
 	[resetPath, 'do return 37 end'],
 	[irqPath, readFileSync('machine/bios/' + irqPath + '.lua', 'utf8')],
 	[exceptionPath, readFileSync('machine/bios/' + exceptionPath + '.lua', 'utf8')],
+	['kernel/exception_report', readFileSync('machine/bios/kernel/exception_report.lua', 'utf8')],
 	[eventsPath, readFileSync('machine/bios/' + eventsPath + '.lua', 'utf8')],
 ].map(([path, source]) => ({ path, source, displayPath: path + '.lua', chunk: parseLuaChunk(source, path) }));
 const armedReset = `
@@ -43,7 +41,6 @@ cop0.status = cop0.status | ${CPU_STATUS_USER_MODE_CURRENT}
 halt_until_irq
 do return 37 end
 `;
-const library = loadHeapServiceTestModules().map(module => ({ ...module, displayPath: module.path + '.lua' }));
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const handled = IRQ_DMA0_DONE | IRQ_VBLANK;
 const flags = handled | IRQ_DMA1_DONE;
@@ -51,14 +48,14 @@ const flags = handled | IRQ_DMA1_DONE;
 mkdirSync('tmp', { recursive: true });
 const dir = mkdtempSync(join('tmp', 'authored-system-irq-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const optLevel of [0, 3] as const) for (const armed of [false, true]) {
 		const sources = armed ? authored.map(module => module.path === resetPath
 			? { ...module, source: armedReset, chunk: parseLuaChunk(armedReset, resetPath) } : module) : authored;
 		const built = buildBlua32Image({
-			domain: 'system', luaModules: [...sources, ...library], generatedLuaModules: [], loadAddress: 0x100,
+			domain: 'system', luaModules: sources, generatedLuaModules: [], loadAddress: 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
-			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, preloadModules: SYSTEM_KERNEL_MODULES, biosExports: [],
+			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, biosExports: [],
 		});
 		const { layout, functionProtoIndices } = built.linked, { header } = layout;
 		const irq = layout.functions[functionProtoIndices.indexOf(built.object.vectors.irqProtoIndex)];
@@ -85,7 +82,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
 		const trace: string[] = [], expected: string[] = [];
-		const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
+		const management = CPU_FIXED_STACK_BASE - RAM_BASE;
 		const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 		const zeroHeap = new Uint8Array(heapEnd - heapFirst), heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -106,14 +103,11 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const elapsed = cycles - cpu.instructionBudgetRemaining;
-			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
-			assert.equal(arena.occupiedBytes(), 0);
-			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0`);
+			assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
+			observe(`E ${cycles}`, `${result} ${elapsed} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return result;
 		}
 		assert.equal(scheduler.nowCycles, 0);
-		assert.equal(arena.occupiedBytes(), 0);
-		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 		observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 		if (armed) {
@@ -143,8 +137,7 @@ try {
 		observe('Z', `${CPU_CAUSE_IRQ} 0 ${resetPc}`);
 		assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
 		observe('P', `2 ${irq.codeAddress}`);
-		assert.equal(arena.occupiedBytes(), 0, 'vector admission uses the fixed board bank');
-		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
+		assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap, 'vector admission uses the fixed board bank');
 		// Before RAM_END is published, these authored BSS words are visible
 		// to the board vector's CPU data path, not to the ordinary bus.
 		for (let step = 0; step < 64 && memory.readRamRecordWord(dma) === 0; ++step) {

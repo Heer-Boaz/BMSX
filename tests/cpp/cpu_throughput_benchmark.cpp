@@ -18,6 +18,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <chrono>
@@ -25,6 +26,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -231,8 +234,8 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		frame.setTop(1);
 	}
 	if (workload == Workload::Globals) {
-		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1));
-		cpu.setSystemGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
+		NativeGlobalBankReference::setGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1));
+		NativeGlobalBankReference::setSystemGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
 	}
 	if (workload == Workload::FieldMiss) {
 		auto table = bmsx::test::allocateTableReference(cpu, 0, 64);

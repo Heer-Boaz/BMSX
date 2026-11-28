@@ -21,6 +21,7 @@
 #include "machine/cpu/upvalue.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/global_bank_reference.h"
 
 #include <array>
 #include <cstddef>
@@ -28,6 +29,8 @@
 #include <span>
 #include <stdexcept>
 #include <utility>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 
@@ -319,8 +322,8 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 		{"irq"}
 	));
 	const bmsx::StringId irqKey = bmsx::test::StringPoolReference(machine.cpu).intern("irq");
-	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(11));
-	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(22));
+	NativeGlobalBankReference::setSystemGlobalByKey(machine.cpu, irqKey, bmsx::valueInteger(11));
+	NativeGlobalBankReference::setGlobalByKey(machine.cpu, irqKey, bmsx::valueInteger(22));
 
 	machine.cpu.replaceExecutionImage(
 		machine.executionAddressSpace.resolveSystemDomain()
@@ -342,18 +345,18 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 		&& machine.memory.readRamRecordByte(systemValues + 4u * machine.memory.readRamRecordWord(systemBank + capacity)) == static_cast<bmsx::u8>(bmsx::ValueTag::Integer)
 		&& machine.memory.readRamRecordByte(ordinaryValues + 4u * machine.memory.readRamRecordWord(ordinaryBank + capacity)) == static_cast<bmsx::u8>(bmsx::ValueTag::Integer),
 		"each descriptor points directly at its Value payload plane followed by tags");
-	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "media remount preserves the system registerfile");
-	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
+	require(NativeGlobalBankReference::getSystemGlobalByKey(machine.cpu, irqKey) == bmsx::valueInteger(11), "media remount preserves the system registerfile");
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
 
-	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(33));
-	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(44));
+	NativeGlobalBankReference::setSystemGlobalByKey(machine.cpu, irqKey, bmsx::valueInteger(33));
+	NativeGlobalBankReference::setGlobalByKey(machine.cpu, irqKey, bmsx::valueInteger(44));
 	machine.memory.restoreSaveState(savedRam);
 	machine.cpu.restoreRuntimeState(saved);
 	require(machine.memory.readRamRecordWord(systemBank + values) == systemValues
 		&& machine.memory.readRamRecordWord(ordinaryBank + values) == ordinaryValues,
 		"restore retains both physical Value addresses");
-	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "save-state restores the system registerfile independently");
-	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "save-state restores the ordinary global independently");
+	require(NativeGlobalBankReference::getSystemGlobalByKey(machine.cpu, irqKey) == bmsx::valueInteger(11), "save-state restores the system registerfile independently");
+	require(NativeGlobalBankReference::getGlobalByKey(machine.cpu, irqKey) == bmsx::valueInteger(22), "save-state restores the ordinary global independently");
 }
 
 void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {

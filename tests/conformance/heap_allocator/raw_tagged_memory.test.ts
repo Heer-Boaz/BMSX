@@ -14,10 +14,13 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	COP0_BAD_ADDRESS, COP0_CONTEXT, COP0_EPC, COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
-	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_CART_ENTRY, CPU_STATUS_SYSTEM_ENTRY,
+	COP0_BAD_ADDRESS, COP0_CAUSE, COP0_CONTEXT, COP0_EPC, COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
+	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
+	CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_CART_ENTRY, CPU_STATUS_SYSTEM_ENTRY,
 } from '../../../machine/ts/spec/blua32/cop0';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
+import {
+	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET,
+} from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -29,12 +32,11 @@ import { CART_ROM_BASE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_STACK_BASE, DYNAMIC_R
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../../helpers/blua32';
+import { linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
-const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const publicCell = DYNAMIC_RAM_BASE + 0x104;
 const protectedCell = CPU_FIXED_STACK_BASE - 0x120 + 4;
@@ -44,31 +46,34 @@ const word = INSTRUCTION_BYTES;
 const guard = 0x83361d92;
 const nil = valueFromTag(ValueTag.Nil, 0xdecafbad);
 const float = valueFloatBits(0xff812345);
+const reservedStart = CPU_FIXED_STACK_BASE - RAM_BASE;
+const reservedEnd = CPU_FIXED_FRAME_ADDRESS - RAM_BASE - word; // The final word is the boundary probe's seed.
+const emptyReservedHash = hashBytes(new Uint8Array(reservedEnd - reservedStart), 0, reservedEnd - reservedStart);
 
 class RawProgram {
 	readonly code: [OpCode, number, number, number, number?][] = [];
 	readonly constants: number[] = [];
-	readonly functions: { firstWord: number; wordCount: number; maxStack: number }[] = [];
+	readonly functions: { firstWord: number; wordCount: number; maxStack: number; numParams: number }[] = [];
 	emit(op: OpCode, a = 0, b = 0, c = 0, ext?: number) { this.code.push([op, a, b, c, ext]); }
 	load(register: number, value: number) {
 		const slot = this.constants.length;
 		this.constants.push(value);
 		this.emit(OpCode.LOADK, register, slot >>> 6, slot & 63);
 	}
-	body(emit: () => void) {
+	body(emit: () => void, numParams = 0) {
 		const firstWord = this.code.length;
 		emit();
-		this.functions.push({ firstWord, wordCount: this.code.length - firstWord, maxStack: 8 });
+		this.functions.push({ firstWord, wordCount: this.code.length - firstWord, maxStack: 8, numParams });
 	}
 	seed(address: number, data: number) {
 		this.load(6, data); this.load(7, address);
 		this.emit(OpCode.STORE_MEM, 6, 7, MemoryAccessKind.Word);
 	}
-	source(exceptionFunctionIndex = 1) {
+	source(exceptionFunctionIndex = 1, closureRelocations?: TestBlua32Source['closureRelocations']) {
 		const text = new Uint8Array(this.code.length * word);
 		for (const [index, instruction] of this.code.entries()) writeInstruction(text, index, ...instruction);
 		return { text, functions: this.functions, constants: this.constants.map(integerConstant),
-			exceptionFunctionIndex, verifiedControlFlow: true };
+			exceptionFunctionIndex, closureRelocations, verifiedControlFlow: true };
 	}
 }
 
@@ -96,8 +101,8 @@ function paired(t: TestContext, rom: Uint8Array, cart: Uint8Array | null = null)
 		if (row !== undefined) rows.push(String(row));
 	}
 	function replay() {
-		writeFileSync(trace, commands.join('\n'));
-		assert.deepEqual(execFileSync(native, nativeArgs, { encoding: 'utf8' }).trimEnd().split('\n'), rows);
+		writeFileSync(trace, [...commands, `H ${reservedStart} ${reservedEnd}`].join('\n'));
+		assert.deepEqual(execFileSync(native, nativeArgs, { encoding: 'utf8' }).trimEnd().split('\n'), [...rows, String(emptyReservedHash)]);
 	}
 	function step(rt = runtime, expectedResult = RunResult.Yielded) {
 		const { cpu, memory, scheduler } = rt.machine;
@@ -110,8 +115,7 @@ function paired(t: TestContext, rom: Uint8Array, cart: Uint8Array | null = null)
 		const charged = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(result, expectedResult, `PC 0x${pc.toString(16)}`);
 		assert.equal(charged, BASE_CYCLES[op] + (op === OpCode.RET ? b - 1 : op === OpCode.STORE_MEM_WORDS ? c : 0), `PC 0x${pc.toString(16)}`);
-		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
-		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
+		assert.ok(memory.ramData().subarray(reservedStart, reservedEnd).every(byte => byte === 0));
 		observe('E 1', `${result} ${charged} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 	}
 	function inspect(rt: Runtime, address: number, bytes: readonly number[]) {
@@ -261,18 +265,18 @@ for (const { name, address, load, displacement, user, check, checkTag } of [
 	replay();
 });
 
-test('ordinary tagged Value requires System ROM authority even in cartridge supervisor mode', t => {
+function rawCartridge(cells: ReadonlyArray<readonly [number, number]>) {
 	const root = CPU_FIXED_STACK_BASE - 0x2000, frame = root + 0x100;
 	const system = new RawProgram(), card = new RawProgram();
 	let functionSlot: number, codeSlot: number, cartSlot: number;
 	system.body(() => {
 		system.load(0, aperture); system.emit(OpCode.MTC0, 0, COP0_RAM_END);
-		system.seed(publicCell, guard);
+		for (const [address, data] of cells) system.seed(address, data);
 		system.seed(root + ThreadField.StackTop, 8);
 		system.seed(root + ThreadField.StackBlock, root + 0x200);
-		system.seed(root + ThreadField.StackCapacity, 8);
+		system.seed(root + ThreadField.StackCapacity, 32);
 		system.seed(root + ThreadField.FrameDepth, 1);
-		system.seed(root + ThreadField.FrameCapacity, 2);
+		system.seed(root + ThreadField.FrameCapacity, 3);
 		system.seed(root + ThreadField.FrameBlock, frame);
 		system.seed(frame + FrameField.StackCapacity, 8);
 		functionSlot = system.constants.length; system.seed(frame + FrameField.Function, -1);
@@ -285,6 +289,22 @@ test('ordinary tagged Value requires System ROM authority even in cartridge supe
 		system.load(0, -3); system.emit(OpCode.MTC0, 0, COP0_EXEC);
 		system.emit(OpCode.RET, 0, 1);
 	});
+	return { system, card, link(cardClosures?: TestBlua32Source['closureRelocations']) {
+		const pair = linkRawTestBlua32Pair(system.source(2), card.source(0, cardClosures));
+		for (const [slot, pointer] of [
+			[functionSlot!, pair.systemImage.functions[1].address],
+			[codeSlot!, pair.systemImage.functions[1].codeAddress],
+			[cartSlot!, pair.cartImage.functions[0].address],
+		]) {
+			writeLE32(pair.systemRomBytes, pair.systemImage.header.constantTableAddress
+				+ slot * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET, pointer);
+		}
+		return pair;
+	} };
+}
+
+test('ordinary tagged Value requires System ROM authority even in cartridge supervisor mode', t => {
+	const { system, card, link } = rawCartridge([[publicCell, guard]]);
 	system.body(() => {
 		// The cartridge first uses normal SVC entry. Firmware deliberately
 		// makes its next instruction supervisor, without changing its domain.
@@ -298,15 +318,7 @@ test('ordinary tagged Value requires System ROM authority even in cartridge supe
 		card.emit(OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Value);
 		card.emit(OpCode.RET, 0, 2);
 	});
-	const pair = linkRawTestBlua32Pair(system.source(2), card.source(0));
-	for (const [slot, pointer] of [
-		[functionSlot!, pair.systemImage.functions[1].address],
-		[codeSlot!, pair.systemImage.functions[1].codeAddress],
-		[cartSlot!, pair.cartImage.functions[0].address],
-	]) {
-		writeLE32(pair.systemRomBytes, pair.systemImage.header.constantTableAddress
-			+ slot * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET, pointer);
-	}
+	const pair = link();
 	const { runtime, step, observe, replay, inspect } = paired(t, pair.systemRomBytes, pair.cartRomBytes);
 	const { cpu, memory } = runtime.machine;
 	for (let i = 0; i < 100 && cpu.activeCartridgeSlot() !== 0; ++i) step();
@@ -328,5 +340,100 @@ test('ordinary tagged Value requires System ROM authority even in cartridge supe
 	assert.equal(memory.readBusFaultSequence(), before);
 	observe('Z', `${CPU_CAUSE_CODE_RESERVED_INSTRUCTION} 0 ${pc}`);
 	inspect(runtime, publicCell, [0x92, 0x1d, 0x36, 0x83, 0, 0, 0, 0]);
+	replay();
+});
+
+test('a cartridge CALL preserves user privilege across System ROM, while SVC enters supervisor', t => {
+	const denied = 0x1234, allowed = 0x5ac39e17, padding = 0x60504000;
+	const { system, card, link } = rawCartridge([[protectedCell, guard], [protectedCell + word, padding | ValueTag.Float]]);
+	system.body(() => {
+		system.emit(OpCode.MFC0, 1, COP0_CAUSE);
+		system.load(2, CPU_CAUSE_CODE_SYSCALL);
+		system.emit(OpCode.EQ, 1, 1, 2);
+		const syscall = system.code.length;
+		system.emit(OpCode.JMP);
+		system.emit(OpCode.MFC0, 1, COP0_EPC);
+		system.load(2, word);
+		system.emit(OpCode.ADD, 1, 1, 2);
+		system.emit(OpCode.MTC0, 1, COP0_EPC);
+		system.emit(OpCode.RFE);
+		system.code[syscall][3] = system.code.length - syscall - 1;
+		// The same physical function is called from both contexts.
+		system.emit(OpCode.MOV, 1, 0);
+		system.emit(OpCode.WIDE);
+		system.emit(OpCode.CLOSURE, 0, 0, 3);
+		system.emit(OpCode.CALL, 0, 2, 2);
+		system.emit(OpCode.RFE);
+	});
+	system.body(() => {
+		system.load(1, protectedCell);
+		system.emit(OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Value);
+		system.emit(OpCode.LOAD_MEM, 0, 1, MemoryAccessKind.Value);
+		system.emit(OpCode.RET, 0, 2);
+	}, 1);
+	card.body(() => {
+		card.emit(OpCode.WIDE);
+		card.emit(OpCode.CLOSURE, 0);
+		card.load(1, denied);
+		card.emit(OpCode.CALL, 0, 2, 2);
+		card.load(0, allowed);
+		card.emit(OpCode.SVC, 0);
+		card.emit(OpCode.MFC0, 0, COP0_STATUS);
+		card.emit(OpCode.RET, 0, 2);
+	});
+	const pair = link([{ wordIndex: 1, systemFunctionIndex: 3 }]), callee = pair.systemImage.functions[3];
+	writeLE32(pair.systemRomBytes, callee.address + BLUA32_FUNCTION_FLAGS_OFFSET, callee.flags | BLUA32_FUNCTION_CODE);
+
+	const { runtime, step, inspect, observe, completion, replay } = paired(t, pair.systemRomBytes, pair.cartRomBytes);
+	const { cpu, memory } = runtime.machine;
+	const cardPc = pair.cartImage.functions[0].codeAddress;
+	for (let i = 0; i < 100 && cpu.activeCartridgeSlot() !== 0; ++i) step();
+	assert.equal(cpu.readFramePc(0), cardPc);
+	assert.equal(cpu.isUserMode(), true);
+	step();
+	assert.equal(cpu.readFrameRegister(0, 0), valueFromTag(ValueTag.CodeFunction, callee.address));
+	step(); step();
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.equal(cpu.readFramePc(1), callee.codeAddress);
+	assert.equal(cpu.activeCartridgeSlot(), -1);
+	assert.equal(cpu.isUserMode(), true);
+	step();
+	const before = memory.readBusFaultSequence();
+	const seed = [0x92, 0x1d, 0x36, 0x83, ValueTag.Float, 0x40, 0x50, 0x60];
+	function deny(cause: number, pc: number) {
+		step();
+		assert.equal(cpu.readCauseWord(), cause);
+		assert.equal(cpu.readEpcWord(), pc);
+		assert.equal(memory.readBusFaultSequence(), before);
+		observe('Z', `${cause} 0 ${pc}`);
+		for (let i = 0; i < 8 && cpu.fixedInterruptActive(); ++i) step();
+		assert.equal(cpu.fixedInterruptActive(), false);
+		assert.equal(cpu.isUserMode(), true);
+	}
+	deny(CPU_CAUSE_CODE_RESERVED_INSTRUCTION, callee.codeAddress + word);
+	deny(CPU_CAUSE_CODE_RESERVED_INSTRUCTION, callee.codeAddress + 2 * word);
+	inspect(runtime, protectedCell, seed);
+	assert.equal(cpu.readFrameRegister(1, 0), valueInteger(denied));
+	step();
+	assert.equal(cpu.activeCartridgeSlot(), 0);
+	assert.equal(cpu.readFramePc(0), cardPc + 4 * word);
+	step(); step();
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+	assert.equal(cpu.isUserMode(), false);
+	observe('Z', `${CPU_CAUSE_CODE_SYSCALL} 0 ${cardPc + 6 * word}`);
+	for (let i = 0; i < 12 && cpu.getFrameDepth() === 1; ++i) step();
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.equal(cpu.readFramePc(1), callee.codeAddress);
+	assert.equal(cpu.isUserMode(), false);
+	step(); step(); step();
+	assert.equal(cpu.readFrameRegister(1, 0), valueInteger(allowed));
+	inspect(runtime, protectedCell, [0x17, 0x9e, 0xc3, 0x5a, ValueTag.Integer, 0x40, 0x50, 0x60]);
+	step(); step();
+	assert.equal(cpu.activeCartridgeSlot(), 0);
+	assert.equal(cpu.isUserMode(), true);
+	assert.equal(cpu.readFramePc(0), cardPc + 6 * word);
+	deny(CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, cardPc + 6 * word);
+	step(runtime, RunResult.Halted);
+	completion(runtime, [valueInteger(allowed)]);
 	replay();
 });

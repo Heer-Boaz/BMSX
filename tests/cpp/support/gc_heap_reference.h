@@ -92,6 +92,7 @@ public:
 	u32 diagnosticWord(GcDiagnosticField field) const {
 		return memory.readRamRecordWord(diagnosticOffset(field));
 	}
+	static void abortCompletionCall(CPU&, int frameIndex);
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;

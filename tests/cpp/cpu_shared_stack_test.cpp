@@ -12,10 +12,13 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <array>
 #include <iostream>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -186,7 +189,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	bmsx::test::GcHeap(cpu).collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	require(valueIsTable(cpu.activeThread()->currentFrame->registers.get(2)), "an open capture owns its slot even above lowered top");
 	cpu.setExecutionHook({}); cpu.runUntilDepth(0, 100);
-	auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("read")), bmsx::test::GcHeap(cpu));
+	auto closure = bmsx::test::asClosure(NativeGlobalBankReference::getGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("read")), bmsx::test::GcHeap(cpu));
 	cpu.beginCompletionCall(closure); cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");

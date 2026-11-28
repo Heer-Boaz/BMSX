@@ -15,6 +15,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/gc_heap_reference.h"
 
 #include <array>
 #include <cstring>
@@ -653,7 +654,7 @@ void externalTakeoverFlushesOnlyTheUnacceptedStore() {
 			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[3]);
 			cpu.runUntilDepth(1, 20);
 			require(cpu.isMemoryWriteBlocked() && device.writes.empty(), "injected completion reaches its own unaccepted store");
-			cpu.abortCompletionCall(1);
+			bmsx::test::GcHeap::abortCompletionCall(cpu, 1);
 			device.ready = true;
 			cpu.runUntilDepth(0, 6);
 			require(device.writes == std::vector<u32>{0x12345678u} && cpu.getFrameDepth() == 1,

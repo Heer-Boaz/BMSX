@@ -18,12 +18,15 @@
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"
+#include "support/global_bank_reference.h"
 #endif
 
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -88,7 +91,7 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
-	cpu.setGlobalByKey(shared, valueInteger(19));
+	NativeGlobalBankReference::setGlobalByKey(cpu, shared, valueInteger(19));
 	cpu.replaceExecutionImage(*addresses.resolveDomain(0));
 	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
 	const auto bank0 = cpu.activeThread()->currentFrame->executionImage->constPool;
@@ -234,7 +237,7 @@ struct Machine {
 		}
 		throw std::runtime_error("the real system callee reaches its RET boundary");
 	}
-	Value global(const char* name) { return cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern(name)); }
+	Value global(const char* name) { return NativeGlobalBankReference::getGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern(name)); }
 	void completedMarkers() {
 		require(global("systemMarker") == valueInteger(303) && global("cartMarker") == valueInteger(303 + 101 * (slot + 1))
 			&& global("cartSystemMarker") == valueInteger(606 + 101 * (slot + 1)),
@@ -320,7 +323,7 @@ void irqInSystemCallee(const Images& images, u32 slot) {
 		if (generated.cpu.isHaltedUntilIrq()) break;
 	}
 	const auto key = bmsx::test::StringPoolReference(generated.cpu).intern("irqSeen");
-	require(generated.cpu.getSystemGlobalByKey(key) == valueInteger(1), "IRQ in a user-mode BIOS callee uses the program socket's vector");
+	require(NativeGlobalBankReference::getSystemGlobalByKey(generated.cpu, key) == valueInteger(1), "IRQ in a user-mode BIOS callee uses the program socket's vector");
 	generated.completedMarkers(); scalar.completedMarkers();
 }
 

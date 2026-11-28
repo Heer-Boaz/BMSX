@@ -8,10 +8,13 @@
 #include "support/closure_fixture.h"
 #include "support/table_allocation_reference.h"
 #include "support/upvalue_store_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -244,7 +247,7 @@ u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
 	auto closure = bmsx::test::asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
 										: machine.cpu.readCompletionValues().get(0),
 		bmsx::test::GcHeap(machine.cpu));
-	machine.cpu.setGlobalByKey(
+	NativeGlobalBankReference::setGlobalByKey(machine.cpu,
 		*bmsx::test::StringPoolReference(machine.cpu).find("saved"), valueClosure(closure));
 	machine.cpu.beginCompletionCall(closure);
 	return closure;

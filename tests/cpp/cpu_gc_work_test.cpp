@@ -18,12 +18,15 @@
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 #include "support/upvalue_store_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -625,8 +628,8 @@ void replacementUsesIndependentOperandPlanes() {
 	for (size_t lane = 0; lane < offsets.size(); ++lane)
 		require(memory.readRamRecordWord(binding + offsets[lane]) == installed[lane], "mounting media does not rebind the operands");
 	bmsx::test::StringPoolReference strings(cpu);
-	cpu.setGlobalByKey(*strings.find("__index"), valueInteger(3));
-	cpu.setSystemGlobalByKey(*strings.find("__newindex"), valueInteger(5));
+	NativeGlobalBankReference::setGlobalByKey(cpu, *strings.find("__index"), valueInteger(3));
+	NativeGlobalBankReference::setSystemGlobalByKey(cpu, *strings.find("__newindex"), valueInteger(5));
 	const std::array planes{bmsx::LuaHeap(cpu).allocateRecord(8u, false, 0u, 0u),
 		bmsx::LuaHeap(cpu).allocateRecord(8u, false, 0u, 0u), bmsx::LuaHeap(cpu).allocateRecord(12u, false, 0u, 0u)};
 	require(planes[0] + 8u != planes[1] && planes[1] + 8u != planes[2],
@@ -659,10 +662,10 @@ void replacementUsesIndependentOperandPlanes() {
 		const auto result = cpu.readCompletionValues();
 		require(result.size() == 3u && result.get(0) == valueInteger(73) && result.get(1) == valueInteger(79) && result.get(2) == valueString(id),
 			"each opcode consumes the selected map");
-		require(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__index")) == valueInteger(3)
-			&& cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__mode")) == valueInteger(73)
-			&& cpu.getSystemGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__newindex")) == valueInteger(5)
-			&& cpu.getSystemGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__len")) == valueInteger(79),
+		require(NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("__index")) == valueInteger(3)
+			&& NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("__mode")) == valueInteger(73)
+			&& NativeGlobalBankReference::getSystemGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("__newindex")) == valueInteger(5)
+			&& NativeGlobalBankReference::getSystemGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("__len")) == valueInteger(79),
 			"stores changed only the two explicitly mapped namespace slots");
 		memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(state);
@@ -839,7 +842,7 @@ void resumesRootBanksBeforeTracing() {
 	constexpr std::string_view appendedName = "name registered after the global scan";
 	const auto appended = bmsx::test::StringPoolReference(cpu).intern(appendedName);
 	const u32 lastTarget = bmsx::test::allocateTableReference(cpu, bmsx::test::GC_STEP_WORDS, 0).address();
-	cpu.setGlobalByKey(last, valueTable(lastTarget));
+	NativeGlobalBankReference::setGlobalByKey(cpu, last, valueTable(lastTarget));
 	auto weak = bmsx::test::allocateTableReference(cpu, 1, 0), mode = bmsx::test::allocateTableReference(cpu);
 	mode.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	weak.setMetatableAddress(mode.address());
@@ -847,7 +850,7 @@ void resumesRootBanksBeforeTracing() {
 	weakTarget.setInteger(1, valueTable(child.address()));
 	child.setInteger(1, valueInteger(73));
 	weak.setInteger(1, valueTable(weakTarget.address()));
-	cpu.setGlobalByKey(weakRoot, valueTable(weak.address()));
+	NativeGlobalBankReference::setGlobalByKey(cpu, weakRoot, valueTable(weak.address()));
 	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const size_t work = advance();
@@ -858,15 +861,15 @@ void resumesRootBanksBeforeTracing() {
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
 		const u32 late = bmsx::test::allocateTableReference(cpu).address();
-		cpu.setGlobalByKey(first, valueTable(late));
+		NativeGlobalBankReference::setGlobalByKey(cpu, first, valueTable(late));
 		advance();
 		require(heap.phase() == bmsx::test::GcPhase::Mark && heap.isAlive(lastTarget) && heap.isAlive(late),
 			"resuming scans the suffix; the store has already forwarded the amended prefix");
 		for (int step = 0; heap.phase() != bmsx::test::GcPhase::Atomic && step < 30; ++step) advance();
 		require(heap.phase() == bmsx::test::GcPhase::Atomic && !heap.isAlive(weakTarget.address()) && !heap.isAlive(child.address()),
 			"the last weak value is still unmarked just before the final root pass");
-		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget.address()));
-		cpu.setGlobalByKey(appended, valueInteger(41));
+		NativeGlobalBankReference::setGlobalByKey(cpu, finalRoot, valueTable(weakTarget.address()));
+		NativeGlobalBankReference::setGlobalByKey(cpu, appended, valueInteger(41));
 		require(heap.isAlive(weakTarget.address()) && !heap.isAlive(child.address()),
 			"publishing a global only enqueues the new edge");
 		const auto stoppedState = cpu.captureRuntimeState();
@@ -879,7 +882,7 @@ void resumesRootBanksBeforeTracing() {
 			require(heap.tableRecordAddress(weakTarget.address()) == weakTarget.address()
 				&& weak.getInteger(1) == valueTable(weakTarget.address()) && heap.tableRecordAddress(child.address()) == child.address()
 				&& child.getInteger(1) == valueInteger(73), "the detached gray parent retains its white child before weak cleanup");
-			require(bmsx::test::StringPoolReference(cpu).find(appendedName) == appended && cpu.getGlobalByKey(appended) == valueInteger(41),
+			require(bmsx::test::StringPoolReference(cpu).find(appendedName) == appended && NativeGlobalBankReference::getGlobalByKey(cpu, appended) == valueInteger(41),
 				"a newly registered name is a String root even with a scalar Value");
 			return memory.captureSaveState().ram;
 		};
@@ -1334,7 +1337,7 @@ void resumesWeakTableRemark() {
 	auto& memory = machine.memory;
 	constexpr u32 count = bmsx::test::GC_STEP_WORDS + 256;
 	const auto globalKey = bmsx::test::StringPoolReference(cpu).intern("late remark global");
-	cpu.setGlobalByKey(globalKey, valueNil());
+	NativeGlobalBankReference::setGlobalByKey(cpu, globalKey, valueNil());
 	auto roots = bmsx::test::allocateTableReference(cpu, count, 0), changed = bmsx::test::allocateTableReference(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(roots.address()));
@@ -1374,7 +1377,7 @@ void resumesWeakTableRemark() {
 		require(!heap.isAlive(late.address()), "the intervening write is not marked eagerly");
 		auto global = bmsx::test::allocateTableReference(cpu, 1, 0), child = bmsx::test::allocateTableReference(cpu);
 		global.setInteger(1, valueTable(child.address()));
-		cpu.setGlobalByKey(globalKey, valueTable(global.address()));
+		NativeGlobalBankReference::setGlobalByKey(cpu, globalKey, valueTable(global.address()));
 		require(heap.isAlive(global.address()) && !heap.isAlive(child.address()), "the global queues its new parent during visits");
 		for (int step = 0; heap.active() && step < 100; ++step) advance();
 		require(!heap.active() && read(bmsx::test::GC_REMARK_VISIT_STATE) == 0u

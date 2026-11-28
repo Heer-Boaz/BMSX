@@ -11,6 +11,9 @@
 #include "spec/bmsx/model.h"
 #include "support/gc_heap_reference.h"
 #include "support/cpu_execution_budget.h"
+#include "support/global_bank_reference.h"
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -36,15 +39,15 @@ void restoreSuspended(Runtime& runtime, bool inspectFrame) {
 	require(cpu.isHaltedUntilIrq() && cpu.getFrameDepth() == depth && cpu.readFramePc(depth - 1) == pc,
 		"restore must recover the original parked activation");
 	if (!inspectFrame) {
-		const auto table = cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("checkpoint_table"));
-		const auto key = cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("checkpoint_key"));
+		const auto table = NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("checkpoint_table"));
+		const auto key = NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("checkpoint_key"));
 		require(TableRecord(cpu.memory(), valuePayload(table)).get(key) == valueNil(), "restore must not revive a deleted mapping");
 		return;
 	}
-	if (cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("fixture_inject_completion")) != valueBool(true)) return;
+	if (NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("fixture_inject_completion")) != valueBool(true)) return;
 	const auto argument = valueInteger(depth - 1);
 	const int exceptionDepth = cpu.readExceptionReturnFrameDepth();
-	cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("stopped_probe")), bmsx::test::GcHeap(cpu)), {&argument, 1});
+	cpu.beginCompletionCall(bmsx::test::asClosure(NativeGlobalBankReference::getGlobalByKey(cpu, *bmsx::test::StringPoolReference(cpu).find("stopped_probe")), bmsx::test::GcHeap(cpu)), {&argument, 1});
 	require(test::runCpuWithinBudget(cpu, 1000000, depth) == RunResult::Halted
 		&& !cpu.captureRuntimeState().hardHalted && cpu.readExceptionReturnFrameDepth() == exceptionDepth,
 		"the named completion call must finish without a fault");

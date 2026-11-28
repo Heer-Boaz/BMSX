@@ -7,6 +7,7 @@
 #include "rompack/image.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "support/global_bank_reference.h"
 
 #include <array>
 #include <chrono>
@@ -14,6 +15,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -85,11 +88,11 @@ int main(int argc, char** argv) {
 			if (runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) != 0) throw std::runtime_error("guest supervisor fault");
 		};
 		int bootSteps = 0;
-		while (cpu.getGlobalByKey(readyKey) != valueBool(true) || !cpu.isHaltedUntilIrq()) {
+		while (NativeGlobalBankReference::getGlobalByKey(cpu, readyKey) != valueBool(true) || !cpu.isHaltedUntilIrq()) {
 			if (++bootSteps > 1000) throw std::runtime_error("cart did not reach ready halt");
 			step();
 		}
-		cpu.setGlobalByKey(modeKey, valueString(strings.intern(mode)));
+		NativeGlobalBankReference::setGlobalByKey(cpu, modeKey, valueString(strings.intern(mode)));
 		for (int iteration = 1; iteration <= warmup + measured; ++iteration) {
 			const auto before = scheduler.diagnosticCpuTiming;
 			const auto cycleBefore = scheduler.nowCycles();
@@ -101,19 +104,19 @@ int main(int argc, char** argv) {
 			auto& r = records[iteration - 1];
 			r.beginMonotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
 				std::chrono::steady_clock::now().time_since_epoch()).count();
-			cpu.setGlobalByKey(requestedKey, valueFromNumber(iteration));
+			NativeGlobalBankReference::setGlobalByKey(cpu, requestedKey, valueInteger(iteration));
 			int steps = 0;
 			do {
 				if (++steps > 64) throw std::runtime_error("work unit exceeded 64 guest frames");
 				step();
-			} while (cpu.getGlobalByKey(completedKey) != valueFromNumber(iteration) || !cpu.isHaltedUntilIrq());
+			} while (NativeGlobalBankReference::getGlobalByKey(cpu, completedKey) != valueInteger(iteration) || !cpu.isHaltedUntilIrq());
 			r.endMonotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
 				std::chrono::steady_clock::now().time_since_epoch()).count();
 			const auto after = scheduler.diagnosticCpuTiming;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			compileAfter = cpu.readNativeCompilationProfile();
 #endif
-			if (cpu.getGlobalByKey(checksumKey) != valueFromNumber(4998675)) throw std::runtime_error("workload checksum mismatch");
+			if (NativeGlobalBankReference::getGlobalByKey(cpu, checksumKey) != valueInteger(4998675)) throw std::runtime_error("workload checksum mismatch");
 			r.cpu = {after.slices - before.slices, after.consumedCycles - before.consumedCycles,
 				after.wallNanoseconds - before.wallNanoseconds, after.threadNanoseconds - before.threadNanoseconds};
 			r.scheduledCycles = scheduler.nowCycles() - cycleBefore;

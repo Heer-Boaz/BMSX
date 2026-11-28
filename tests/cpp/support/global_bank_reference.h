@@ -4,6 +4,8 @@
 
 #include "machine/cpu/global_bank.h"
 
+namespace bmsx { class CPU; }
+
 namespace bmsx::test {
 
 class GcHeap;
@@ -11,6 +13,11 @@ class GcHeap;
 class NativeGlobalBankReference {
 public:
 	explicit NativeGlobalBankReference(GlobalBank& bank) : m_bank(bank) {}
+
+	static Value getSystemGlobalByKey(const CPU& cpu, StringId key);
+	static Value getGlobalByKey(const CPU& cpu, StringId key);
+	static void setGlobalByKey(CPU& cpu, StringId key, const Value& value);
+	static void setSystemGlobalByKey(CPU& cpu, StringId key, const Value& value);
 
 	static StringId name(const GlobalBank&, u32 slot);
 	static std::optional<u32> find(const GlobalBank&, StringId key);

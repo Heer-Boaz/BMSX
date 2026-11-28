@@ -29,7 +29,6 @@ import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua3
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_DIAGNOSTIC_OFFSET } from '../../helpers/native_heap/gc_heap';
 
 // These addresses deliberately overlap the stock BIOS's software state, not
 // the fixed CPU bank. This ROM uses its own format and never links stock code.
@@ -205,7 +204,7 @@ const modules = [['main', 'module<entry>\nreturn 0'], ['reset', reset],
 
 const dir = mkdtempSync(join(tmpdir(), 'bmsx-independent-firmware-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
 		const { linked } = buildBlua32Image({
 			domain: 'system', luaModules: modules, generatedLuaModules: [], loadAddress: 0x100,
@@ -226,7 +225,7 @@ try {
 		const raw = memory.ramData();
 		const allocatorOffset = allocator - RAM_BASE, collectorOffset = collector - RAM_BASE;
 		const globalOffset = globalValues - RAM_BASE, globalBytes = 5 * globalCapacity;
-		const diagnostics = CPU_FIXED_STACK_BASE - RAM_BASE + GC_DIAGNOSTIC_OFFSET;
+		const diagnostics = CPU_FIXED_STACK_BASE - RAM_BASE + 0x680;
 		assert.deepEqual(raw.subarray(allocatorOffset, allocatorOffset + 32), new Uint8Array(32));
 		assert.equal(memory.readRamRecordWord(collector), 0);
 		const rom = join(dir, `system-O${optLevel}.rom`), trace = join(dir, `trace-O${optLevel}.txt`);
@@ -342,7 +341,7 @@ try {
 		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 		assert.equal(hashBytes(raw, 0, raw.length), beforePublication);
 		commands.push(`+ ${rom}`);
-		observations.push('1 0 0 0 0');
+		observations.push('1 0 0');
 		applyRuntimeSaveState(runtime, midpoint);
 		commands.push('U');
 		assert.deepEqual(finish(), ending);

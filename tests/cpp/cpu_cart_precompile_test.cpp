@@ -17,11 +17,14 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -257,7 +260,7 @@ void coldExecPreservesGuestStateAndBanks() {
 				"prepared and ordinary cartridge execution retain exact state, cycles and device reads");
 		}
 		const auto key = bmsx::test::StringPoolReference(prepared.cpu()).intern("cartResult");
-		require(prepared.cpu().stringPool().toString(asStringId(prepared.cpu().getGlobalByKey(key))) == "chosen-slot",
+		require(prepared.cpu().stringPool().toString(asStringId(NativeGlobalBankReference::getGlobalByKey(prepared.cpu(), key))) == "chosen-slot",
 			"slot-one code and constants cannot be borrowed from the other installed cartridge");
 	}
 }

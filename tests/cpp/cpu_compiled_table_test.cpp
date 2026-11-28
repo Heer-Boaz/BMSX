@@ -19,12 +19,15 @@
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -1576,7 +1579,7 @@ void warmTableStoresCompleteTheirEffects() {
 		auto fields = TableRecord(cpu.memory(), valuePayload(registers.get(8)));
 		table.setInteger(1, valueNil());
 		const auto pressure = bmsx::test::allocateTableReference(cpu, 2 * bmsx::test::GC_STEP_WORDS, 0);
-		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("mark pressure"), valueTable(pressure.address()));
+		NativeGlobalBankReference::setGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("mark pressure"), valueTable(pressure.address()));
 		bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 		require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark
 			&& (machine->memory.readRamRecordByte(table.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3u

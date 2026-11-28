@@ -18,12 +18,15 @@
 #include "support/value_bank.h"
 #include "support/table_allocation_reference.h"
 #include "support/upvalue_store_reference.h"
+#include "support/global_bank_reference.h"
 
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+
+using bmsx::test::NativeGlobalBankReference;
 
 namespace {
 using namespace bmsx;
@@ -404,7 +407,7 @@ void hotGlobalBanks() {
 	const auto* block = page.nativeBlocks->entries[entry].get(); require(block && block->sourceWords == 8, "global transfers stay in one native block");
 #endif
 	for (auto* m : {&native, &scalar}) for (int i = 0; i < 257; ++i) {
-		m->cpu.setGlobalByKey(bmsx::test::StringPoolReference(m->cpu).intern("grown-" + std::to_string(i)), valueInteger(i));
+		NativeGlobalBankReference::setGlobalByKey(m->cpu, bmsx::test::StringPoolReference(m->cpu).intern("grown-" + std::to_string(i)), valueInteger(i));
 	}
 	int loopCycles = 0;
 	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
@@ -412,13 +415,13 @@ void hotGlobalBanks() {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; cpu.activeThread()->frameAtDepth(0)->registers.set(12, value);
 			cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
-			cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("shared"), value);
-			cpu.setSystemGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("shared"), valueInteger(73));
+			NativeGlobalBankReference::setGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("shared"), value);
+			NativeGlobalBankReference::setSystemGlobalByKey(cpu, bmsx::test::StringPoolReference(cpu).intern("shared"), valueInteger(73));
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
 		requireParity(native, scalar);
-		require(native.cpu.getSystemGlobalByKey(bmsx::test::StringPoolReference(native.cpu).intern("copied")) == value
-			&& native.cpu.getGlobalByKey(bmsx::test::StringPoolReference(native.cpu).intern("copied")) == valueInteger(73)
+		require(NativeGlobalBankReference::getSystemGlobalByKey(native.cpu, bmsx::test::StringPoolReference(native.cpu).intern("copied")) == value
+			&& NativeGlobalBankReference::getGlobalByKey(native.cpu, bmsx::test::StringPoolReference(native.cpu).intern("copied")) == valueInteger(73)
 			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 3, "grown global banks remain live, distinct and do not extend top on stores");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
