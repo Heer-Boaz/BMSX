@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -691,31 +692,32 @@ void typedLoopBoundaries() {
 void constantsGlobalsAndRestore() {
 	auto image = constantImage();
 	Number32Machine m(image);
-	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueFloatBits(0xffa54321));
-	m.cpu.setSystemGlobalByKey(*m.cpu.stringPool().find("system"), valueInteger(INT32_MIN));
+	bmsx::test::StringPoolReference strings(m.cpu);
+	m.cpu.setGlobalByKey(*strings.find("saved"), valueFloatBits(0xffa54321));
+	m.cpu.setSystemGlobalByKey(*strings.find("system"), valueInteger(INT32_MIN));
 	auto graph = bmsx::test::allocateTableReference(m.cpu), child = bmsx::test::allocateTableReference(m.cpu);
-	const auto self = m.cpu.stringPool().intern("self"), childKey = m.cpu.stringPool().intern("child");
+	const auto self = strings.intern("self"), childKey = strings.intern("child");
 	graph.setStringKey(self, valueTable(graph.address()));
 	graph.setStringKey(childKey, valueTable(child.address()));
 	child.setMetatableAddress(graph.address());
-	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("graph"), valueTable(graph.address()));
+	m.cpu.setGlobalByKey(*strings.find("graph"), valueTable(graph.address()));
 	const auto graphHash = graph.address(), childHash = child.address();
 	m.cpu.runUntilDepth(0, 1); // Stop after LOADK; retain the real active register graph.
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "Float constant preserves signaling NaN bits");
 	const auto state = m.cpu.captureRuntimeState();
 	const auto ram = m.memory.captureSaveState();
 	m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(8));
-	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueInteger(7));
+	m.cpu.setGlobalByKey(*strings.find("saved"), valueInteger(7));
 	for (int i = 0; i < 10; ++i)
 		bmsx::test::allocateTableReference(m.cpu);
 	m.memory.restoreSaveState(ram);
 	m.cpu.restoreRuntimeState(state);
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "frame restore preserves raw Float word");
-	require(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("saved")) == valueFloatBits(0xffa54321),
+	require(m.cpu.getGlobalByKey(*strings.find("saved")) == valueFloatBits(0xffa54321),
 		"compact global restore preserves raw Float word");
-	require(m.cpu.getSystemGlobalByKey(*m.cpu.stringPool().find("system")) == valueInteger(INT32_MIN),
+	require(m.cpu.getSystemGlobalByKey(*strings.find("system")) == valueInteger(INT32_MIN),
 		"system globals retain signed Integer identity");
-	auto restored = TableRecord(m.cpu.memory(), valuePayload(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph"))));
+	auto restored = TableRecord(m.cpu.memory(), valuePayload(m.cpu.getGlobalByKey(*strings.find("graph"))));
 	auto restoredChild = TableRecord(m.cpu.memory(), valuePayload(restored.getStringKey(childKey)));
 	require(restored.address() == graphHash && restoredChild.address() == childHash,
 		"heap restore preserves hash identities independently of payload ids");
@@ -735,12 +737,12 @@ void tableHeap() {
 	table.set(key, valueFloatBits(0xffa12345));
 	table.set(valueFloat(2.0f), valueInteger(9));
 	for (i32 i = 1; i <= 512; ++i)
-		table.setStringKey(cpu.stringPool().intern("field" + std::to_string(i)), valueInteger(i));
+		table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("field" + std::to_string(i)), valueInteger(i));
 	bmsx::test::GcHeap(cpu).collect(root);
 	require(table.get(key) == valueFloatBits(0xffa12345), "compact Table traces raw heap references");
 	require(table.getInteger(2) == valueInteger(9), "integral Float key normalizes into array");
 	for (i32 i = 1; i <= 512; ++i)
-		require(table.getStringKey(*cpu.stringPool().find("field" + std::to_string(i))) == valueInteger(i),
+		require(table.getStringKey(*bmsx::test::StringPoolReference(cpu).find("field" + std::to_string(i))) == valueInteger(i),
 			"compact hash growth retains entries");
 }
 } // namespace

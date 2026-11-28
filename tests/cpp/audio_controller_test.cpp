@@ -2,6 +2,7 @@
 #include "common/endian.h"
 #include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/biquad_filter.h"
@@ -63,7 +64,7 @@ struct AudioHarness {
 		, output()
 		, dma(memory, cpu, irq, scheduler)
 		, audio(memory, output, dma, irq, scheduler) {
-		require(cpu.heapAllocator().setFloor(bmsx::DYNAMIC_RAM_BASE + bmsx::HEAP_PAGE_SIZE),
+		require(bmsx::HeapAllocator(cpu.memory()).setFloor(bmsx::DYNAMIC_RAM_BASE + bmsx::HEAP_PAGE_SIZE),
 			"APU DMA transfer buffers occupy the first static RAM page");
 		memory.cartridgeController().connect(memory, irq, dma);
 		irq.reset();

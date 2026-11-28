@@ -21,16 +21,16 @@ namespace bmsx::test {
 // of this code is part of CPU reset or linked into a shipping core.
 inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd, CpuRuntimeState& state) {
 	auto& memory = cpu.memory();
-	auto& arena = cpu.heapAllocator();
+	HeapAllocator arena(memory);
 	const u32 management = arena.managementOffset();
 	const u32 floor = arena.floorOffset(staticEnd);
 	memory.setRamBusEnd(RAM_BASE + floor);
 	bmsx_dlmalloc_reset({memory.ramData(), arena.stateOffset(), memory.ramWriteWatches().groupData()},
 		floor, management);
-	cpu.luaHeap().setCollectionTarget(1024u * 1024u);
+	LuaHeap(cpu).setCollectionTarget(1024u * 1024u);
 
 	// Reference: native bootstrap before the reset-to-firmware cutover.
-	auto& strings = cpu.stringPool();
+	StringPoolReference strings(cpu);
 	const StringId index = strings.intern("__index");
 	const StringId newIndex = strings.intern("__newindex");
 	const StringId length = strings.intern("__len");
@@ -90,7 +90,7 @@ inline auto encodeManagedFixtureRom(Blua32TestImage image, u32 bssByteCount) -> 
 inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addresses, Blua32ExecutionBoot boot) {
 	const auto domain = boot.executionDomainId;
 	auto& memory = cpu.memory();
-	auto& strings = cpu.stringPool();
+	StringPoolReference strings(cpu);
 	Span<const u8> header, constants;
 	addresses.bindReadOnlyView(domain, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, header);
 	const auto field = [&](u32 offset) { return readLE32(header.data() + offset); };
@@ -109,8 +109,8 @@ inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addres
 	const u32 systemNames = field(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
 	const u32 bytes = 4u * (names + systemNames + stringCount);
 	if (bytes == 0u) return;
-	const u32 management = cpu.heapAllocator().managementOffset();
-	const u32 base = cpu.luaHeap().allocateRecord(bytes, false, 0u, 0u);
+	const u32 management = HeapAllocator(memory).managementOffset();
+	const u32 base = LuaHeap(cpu).allocateRecord(bytes, false, 0u, 0u);
 	const auto bindNames = [&](u32 table, u32 count, u32 namespaceOffset, u32 destination) {
 		if (count == 0u) return;
 		Span<const u8> records;

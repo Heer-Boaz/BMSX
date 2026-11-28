@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <unordered_set>
+#include "support/string_pool_reference.h"
 #include "machine/cpu/thread_record.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/history/ram_history.h"
@@ -35,7 +36,7 @@ static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
 		};
 	};
 	const auto interrupted = interruptedFrame();
-	cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), bmsx::test::GcHeap(cpu)));
+	cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("probe")), bmsx::test::GcHeap(cpu)));
 	for (int grant = 0; grant < 10000 && cpu.completionCallPending(); ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
 		if (fault && cpu.fixedInterruptActive() && cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_TRAP) break;
@@ -67,7 +68,7 @@ static void exerciseNestedHistory(bmsx::Runtime& runtime) {
 	RamHistory history;
 	RamHistory::PageMap initialPages, midPages, finalPages;
 	history.capture(memory, nullptr, initialPages);
-	const auto marker = *cpu.stringPool().find("nested_progress");
+	const auto marker = *bmsx::test::StringPoolReference(cpu).find("nested_progress");
 	const auto observe = [&] {
 		const int depth = cpu.getFrameDepth();
 		return std::tuple{cpu.activeThread()->address, depth, depth == 0 ? 0u : cpu.readFramePc(depth - 1),
@@ -156,7 +157,7 @@ int main(int argc, char** argv) {
 				if (test::runCpuWithinBudget(cpu, 500000) != RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
 				const int depth = cpu.getFrameDepth();
 				const auto pc = cpu.readFramePc(depth - 1);
-				cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("probe")), bmsx::test::GcHeap(cpu)));
+				cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("probe")), bmsx::test::GcHeap(cpu)));
 				auto toolingResult = RunResult::Yielded;
 				bool windowFault = false;
 				for (int grant = 0; grant < 10000 && toolingResult == RunResult::Yielded; ++grant) {
@@ -165,7 +166,7 @@ int main(int argc, char** argv) {
 				}
 				if (toolingResult != RunResult::Halted || !windowFault || cpu.readLuaFaultReasonWord() != 0
 					|| !cpu.isHaltedUntilIrq() || cpu.activeThread() != cpu.rootThread() || cpu.getFrameDepth() != depth
-					|| cpu.readFramePc(depth - 1) != pc || cpu.getGlobalByKey(*cpu.stringPool().find("entered")) != valueBool(true))
+					|| cpu.readFramePc(depth - 1) != pc || cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("entered")) != valueBool(true))
 					throw std::runtime_error("tooling must not consume the root HALT");
 				const auto bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 				runtime.rebootSystem();
@@ -176,7 +177,7 @@ int main(int argc, char** argv) {
 			auto result = RunResult::Yielded;
 			if (mode == "interrupted") {
 				bool admitted = false;
-				const auto ready = *cpu.stringPool().find("interrupt_ready");
+				const auto ready = *bmsx::test::StringPoolReference(cpu).find("interrupt_ready");
 				for (int grant = 0; grant < 20000 && result == RunResult::Yielded; ++grant) {
 					if (!admitted && cpu.activeThread() != cpu.rootThread() && cpu.getFrameDepth() != 0
 						&& !cpu.fixedInterruptActive() && cpu.getGlobalByKey(ready) == valueBool(true)) {
@@ -201,7 +202,7 @@ int main(int argc, char** argv) {
 				throw std::runtime_error("coroutine assertion failed");
 			}
 			if (suite) {
-				const auto value = cpu.getGlobalByKey(*cpu.stringPool().find("failed_thread"));
+				const auto value = cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("failed_thread"));
 				const u32 thread = valuePayload(value);
 				const auto& memory = cpu.memory();
 				if (!valueIsThread(value) || bmsx::test::GcHeap(cpu).threadRecordAddress(thread) != thread

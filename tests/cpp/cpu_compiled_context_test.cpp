@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -391,7 +393,7 @@ void hotGlobalBanks() {
 	image.globalNames = {"shared", "copied", "numeric"}; image.systemGlobalNames = image.globalNames;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		for (const auto* name : {"shared", "copied", "numeric"}) m->cpu.stringPool().intern(name);
+		for (const auto* name : {"shared", "copied", "numeric"}) bmsx::test::StringPoolReference(m->cpu).intern(name);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 1100);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -401,7 +403,7 @@ void hotGlobalBanks() {
 	const auto* block = page.nativeBlocks->entries[entry].get(); require(block && block->sourceWords == 8, "global transfers stay in one native block");
 #endif
 	for (auto* m : {&native, &scalar}) for (int i = 0; i < 257; ++i) {
-		m->cpu.setGlobalByKey(m->cpu.stringPool().intern("grown-" + std::to_string(i)), valueInteger(i));
+		m->cpu.setGlobalByKey(bmsx::test::StringPoolReference(m->cpu).intern("grown-" + std::to_string(i)), valueInteger(i));
 	}
 	int loopCycles = 0;
 	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
@@ -409,13 +411,13 @@ void hotGlobalBanks() {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; cpu.activeThread()->frameAtDepth(0)->registers.set(12, value);
 			cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Pc, m->rom.textAddress);
-			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), value);
-			cpu.setSystemGlobalByKey(cpu.stringPool().intern("shared"), valueInteger(73));
+			cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("shared"), value);
+			cpu.setSystemGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("shared"), valueInteger(73));
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
 		requireParity(native, scalar);
-		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied")) == value
-			&& native.cpu.getGlobalByKey(native.cpu.stringPool().intern("copied")) == valueInteger(73)
+		require(native.cpu.getSystemGlobalByKey(bmsx::test::StringPoolReference(native.cpu).intern("copied")) == value
+			&& native.cpu.getGlobalByKey(bmsx::test::StringPoolReference(native.cpu).intern("copied")) == valueInteger(73)
 			&& static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 3, "grown global banks remain live, distinct and do not extend top on stores");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -505,7 +507,7 @@ void hotGlobalWritesDeferTheirReferences() {
 	require(heap.phase() == bmsx::test::GcPhase::MarkAgain && !heap.isAlive(cart.address()) && !heap.isAlive(system.address())
 		&& !heap.isAlive(child.address()), "the table graphs are genuinely white after the initial global scan");
 	const auto slots = [&](u32 offset) {
-		const u32 descriptor = cpu.heapAllocator().managementOffset() + offset;
+		const u32 descriptor = bmsx::HeapAllocator(cpu.memory()).managementOffset() + offset;
 		const u32 payloads = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Values));
 		const u32 capacity = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Capacity));
 		return ValueSpan(machine.memory, payloads, payloads + 4u * capacity, capacity);
@@ -562,7 +564,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[0], {})),
+		valueString(bmsx::test::StringPoolReference(cpu).intern("context")), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[0], {})),
 		valueThread(cpu.activeThread()->address)};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETGL, 0, 0, 0, ContextBlock::Payload::bx(1)},
 		{OpCode::SETSYS, 0, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETSYS, 1, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::K1, 2},
@@ -748,7 +750,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);
 	frame.writeControl(FrameField::Closure, closure);
 	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
-	const auto control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const auto control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
 
@@ -797,7 +799,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	// The fixed form charges requested slots (also nil padding), never available slots.
 	// B=1 performs no copy and leaves top alone even when A is beyond capacity.
 	frame.writeControl(bmsx::FrameField::VarargBase, 14);
-	stack.set(14, valueString(machine.cpu.stringPool().intern("vararg"))); stack.set(15, valueFloatBits(0xffa12345));
+	stack.set(14, valueString(bmsx::test::StringPoolReference(machine.cpu).intern("vararg"))); stack.set(15, valueFloatBits(0xffa12345));
 	for (const int count : {0, 1, 5}) {
 		const u16 first = count ? 6 : 31;
 		ContextBlock fixed(machine, {{OpCode::VARARG, first, static_cast<i16>(count + 1)}});

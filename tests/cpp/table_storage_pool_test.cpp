@@ -1,3 +1,6 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -155,26 +158,27 @@ void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 	for (auto key : keys) tombstones.setInteger(key, valueInteger(17));
 	for (size_t i = 2; i < keys.size(); ++i) tombstones.setInteger(keys[i], valueNil());
 	for (size_t i = 0; i < 2; ++i) spare.setInteger(keys[i], valueInteger(17));
-	const auto used = cpu.luaHeap().usedBytes();
+	bmsx::LuaHeap budget(cpu);
+	const auto used = budget.usedBytes();
 	const auto before = tombstones.hashAddress();
 	tombstones.setInteger(collision, valueInteger(23));
 	spare.setInteger(collision, valueInteger(23));
 	require(tombstones.hashAddress() != before && tombstones.hashSlots() == 4u && spare.hashSlots() == 16u,
 		"a tombstone rebuild chooses a smaller hash reservation");
-	require(cpu.luaHeap().usedBytes() == used - 12u * 10u && tombstones.arrayCapacity() == spare.arrayCapacity(),
+	require(budget.usedBytes() == used - 12u * 10u && tombstones.arrayCapacity() == spare.arrayCapacity(),
 		"rebuild releases the discarded slots but keeps the array range");
 	for (auto key : {keys[0], keys[1], collision})
 		require(tombstones.getInteger(key) == spare.getInteger(key), "both physical layouts retain the same mappings");
 	tombstones.clear(); spare.clear();
 
-	const auto logical = cpu.luaHeap().usedBytes();
+	const auto logical = budget.usedBytes();
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 3);
 	const u32 backing = table.hashAddress();
 	for (size_t i = 0; i < 4; ++i) table.setInteger(keys[i], valueInteger(29));
-	require(table.hashSlots() == 4u && table.hashAddress() == backing && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
+	require(table.hashSlots() == 4u && table.hashAddress() == backing && budget.usedBytes() == logical + 32u + 40u,
 		"a three-slot request reserves and pays for all four slots");
 	table.setInteger(keys[0], valueNil());
-	require(cpu.luaHeap().usedBytes() == logical + 32u + 40u, "removal does not release reserved storage");
+	require(budget.usedBytes() == logical + 32u + 40u, "removal does not release reserved storage");
 	table.clear();
 }
 
@@ -192,7 +196,7 @@ void reservedHashSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 	const auto home = hashCanonicalTableKey(valueInteger(1)) & (keys.size() - 1u);
 	table.setInteger(keys[home], valueNil());
 	table.setInteger(keys[(home + 1u) & (keys.size() - 1u)], valueNil());
-	const auto used = cpu.luaHeap().usedBytes();
+	const auto used = bmsx::LuaHeap(cpu).usedBytes();
 	const auto saved = cpu.memory().captureSaveState();
 	for (bool replay : {false, true}) {
 		if (replay) cpu.memory().restoreSaveState(saved);
@@ -201,7 +205,7 @@ void reservedHashSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 			require(table.hashAddress() == backing && table.arrayCapacity() == 0 && table.hashSlots() == 4
 				&& table.getInteger(1) == valueInteger(29), "refill reuses its home and keeps the array range");
 			table.setInteger(1, valueNil());
-			require(cpu.luaHeap().usedBytes() == used, "inserts and deletes in existing slots leave the charge unchanged");
+			require(bmsx::LuaHeap(cpu).usedBytes() == used, "inserts and deletes in existing slots leave the charge unchanged");
 		}
 	}
 	table.clear();
@@ -265,9 +269,9 @@ int main() {
 		hashBudgetFollowsReservedSlots(cpu);
 		reservedHashSurvivesDeletionAndRestore(cpu);
 		mixedArrayMigrationPreservesRawValues(cpu);
-		const auto key = cpu.stringPool().intern("retired");
-		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-		const auto& arena = cpu.heapAllocator();
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("retired");
+		const auto before = std::pair{bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget()};
+		const bmsx::HeapAllocator arena(cpu.memory());
 		const u32 physicalBefore = arena.occupiedBytes();
 		auto first = bmsx::test::allocateTableReference(cpu, 3, 4);
 
@@ -281,7 +285,7 @@ int main() {
 			"the header and body are separate physical allocations");
 		first.setStringKey(key, valueBool(false));
 		first.clear();
-		require(cpu.luaHeap().usedBytes() == before.first + 32,
+		require(bmsx::LuaHeap(cpu).usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
 		require(arena.occupiedBytes() == physicalBefore + firstHeader, "clearing retires the first body");
 		auto second = bmsx::test::allocateTableReference(cpu, 2, 4);
@@ -298,10 +302,10 @@ int main() {
 		require(second.getStringKey(key) == valueInteger(73), "mixed array/hash growth preserves the hash entry");
 		second.clear();
 		first.clear();
-		require(cpu.luaHeap().usedBytes() == before.first + 64,
+		require(bmsx::LuaHeap(cpu).usedBytes() == before.first + 64,
 			"empty tables keep only their canonical headers, and release both bodies");
 		require(arena.occupiedBytes() == physicalBefore + firstHeader + secondHeader, "only the two physical headers remain");
-		require(cpu.luaHeap().collectionTarget() == before.second,
+		require(bmsx::LuaHeap(cpu).collectionTarget() == before.second,
 			"recycling does not reschedule guest collection");
 		std::cout << "Table guest storage tests passed\n";
 		return 0;

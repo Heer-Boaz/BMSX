@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -885,8 +886,8 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		auto table = bmsx::test::allocateTableReference(machine->cpu, 0, 2);
-		table.setStringKey(machine->cpu.stringPool().intern("stable"), valueInteger(22));
-		table.setStringKey(machine->cpu.stringPool().intern("result"), valueInteger(0));
+		table.setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("stable"), valueInteger(22));
+		table.setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("result"), valueInteger(0));
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers.set(1, valueTable(table.address())); frame.registers.set(5, valueInteger(address));
 		frame.registers.set(12, valueFloatBits(0x7f800000)); frame.registers.set(13, valueFloatBits(0x7f800000));

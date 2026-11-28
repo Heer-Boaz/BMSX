@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -23,11 +24,11 @@ void require(bool condition, const char* message) {
 void inspectStoredSlots(bmsx::CPU& cpu) {
 	auto table = bmsx::test::allocateTableReference(cpu, 8, 16);
 	auto child = bmsx::test::allocateTableReference(cpu);
-	const auto removed = bmsx::valueString(cpu.stringPool().intern("removed"));
+	const auto removed = bmsx::valueString(bmsx::test::StringPoolReference(cpu).intern("removed"));
 	table.setInteger(1, bmsx::valueFloatBits(0x80000000u));
 	table.setInteger(8, bmsx::valueBool(false));
 	table.set(bmsx::valueTable(child.address()), bmsx::valueTable(child.address()));
-	table.setStringKey(cpu.stringPool().intern("number"), bmsx::valueFloatBits(0xffc01234u));
+	table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("number"), bmsx::valueFloatBits(0xffc01234u));
 	table.set(bmsx::valueBool(false), bmsx::valueFloatBits(0x7f800000u));
 	table.set(removed, bmsx::valueInteger(17));
 	table.set(removed, bmsx::valueNil());

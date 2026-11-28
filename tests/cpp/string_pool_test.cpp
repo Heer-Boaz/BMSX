@@ -1,8 +1,9 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "common/hash_fnv.h"
-#include "machine/cpu/heap_allocator.h"
 #include "spec/blua32/image_format.h"
-#include "machine/cpu/lua_heap.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
@@ -42,7 +43,7 @@ struct PoolMachine {
 
 void indexBytesAcrossRestore() {
 	PoolMachine machine;
-	auto& pool = machine.cpu.stringPool();
+	bmsx::test::StringPoolReference pool(machine.cpu);
 	std::string ascii;
 	for (int code = 0; code < 256; ++code) ascii.push_back(static_cast<char>(code));
 	std::string unicode;
@@ -66,7 +67,7 @@ void indexBytesAcrossRestore() {
 
 void internComparesAllCandidateBytes() {
 	PoolMachine machine;
-	auto& pool = machine.cpu.stringPool();
+	bmsx::test::StringPoolReference pool(machine.cpu);
 	std::array<char, 1170> buffer;
 	for (size_t i = 0; i < buffer.size(); ++i) buffer[i] = static_cast<char>(i * 197u);
 	for (size_t length : {63, 64, 65, 255, 256, 257, 1153}) {
@@ -89,15 +90,15 @@ void internComparesAllCandidateBytes() {
 void borrowedSliceSurvivesEmergencyAllocation() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& heap = cpu.luaHeap();
-	auto& pool = cpu.stringPool();
+	bmsx::LuaHeap heap(cpu);
+	bmsx::test::StringPoolReference pool(cpu);
 	heap.setCollectionTarget(static_cast<u32>(heap.capacity()));
 	std::string input(128u * 1024u, 'x');
 	input.replace(4, 3, std::string("\xf7\0A", 3));
 	const auto source = pool.intern(input);
 	const std::string garbage(96u * 1024u, 'q');
 	const u32 disposable = pool.intern(garbage);
-	require(cpu.heapAllocator().setFloor(disposable & ~(HEAP_PAGE_SIZE - 1u)),
+	require(bmsx::HeapAllocator(cpu.memory()).setFloor(disposable & ~(HEAP_PAGE_SIZE - 1u)),
 		"the large disposable String sits at the lowest occupied allocation");
 	constexpr size_t start = 4, count = 92u * 1024u;
 	require(heap.usedBytes() + BLUA32_STRING_RECORD_HEADER_SIZE + count > heap.capacity(),
@@ -112,21 +113,21 @@ void borrowedSliceSurvivesEmergencyAllocation() {
 void reclaimUnreachableRecords() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	const std::string suffix(512, 'x');
 	size_t steadyBytes = 0;
 	for (int round = 0; round < 8; ++round) {
 		for (int index = 0; index < 128; ++index) pool.intern("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix);
 		bmsx::test::GcHeap(cpu).collect();
-		if (round == 0) steadyBytes = cpu.luaHeap().usedBytes();
-		require(cpu.luaHeap().usedBytes() == steadyBytes, "the heap returns to its steady bucket capacity");
+		if (round == 0) steadyBytes = bmsx::LuaHeap(cpu).usedBytes();
+		require(bmsx::LuaHeap(cpu).usedBytes() == steadyBytes, "the heap returns to its steady bucket capacity");
 		for (int index = 0; index < 128; ++index) require(!pool.find("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix), "unreachable String leaves its bucket");
 	}
 }
 
 void collectEmptyString() {
 	PoolMachine machine;
-	auto& pool = machine.cpu.stringPool();
+	bmsx::test::StringPoolReference pool(machine.cpu);
 	const auto empty = pool.intern("");
 	require(pool.intern("") == empty && pool.byteLength(empty) == 0u, "empty bytes have a canonical live String record");
 	bmsx::test::GcHeap(machine.cpu).collect();
@@ -135,7 +136,7 @@ void collectEmptyString() {
 
 void resumeMajorStringBucket() {
 	PoolMachine machine;
-	auto& pool = machine.cpu.stringPool();
+	bmsx::test::StringPoolReference pool(machine.cpu);
 	std::array<std::string, 7> names;
 	for (u32 candidate = 0, count = 0; count < names.size(); ++candidate) {
 		const auto name = "chain:" + std::to_string(candidate);
@@ -168,12 +169,12 @@ void resumeMajorStringBucket() {
 void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 8192;
 	auto roots = bmsx::test::allocateTableReference(cpu, capacity, 0);
 	cpu.setGlobalByKey(pool.intern("String growth root"), valueTable(roots.address()));
-	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const u32 metadata = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
 	const u32 count = capacity - read(8u);
 	const auto name = [](u32 index) { return "fill:" + std::to_string(index); };
@@ -185,7 +186,7 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
-		cpu.luaHeap().setCollectionTarget(0);
+		bmsx::LuaHeap(cpu).setCollectionTarget(0);
 		const auto added = pool.intern("growth crosses into Strings");
 		require((read(4u) & 0x7fffffffu) == capacity && bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Strings
 			&& read(0x38u) != 0u && read(0x3cu) > 0u,
@@ -205,10 +206,10 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 void shrinkStringDirectoryInPlaceAcrossRewind() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 2u * HEAP_PAGE_SIZE / sizeof(u32), half = capacity / 2u;
-	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const u32 metadata = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
 	for (u32 i = 0; read(4u) != capacity && i < capacity; ++i) pool.intern("shrink filler " + std::to_string(i));
 	require(read(4u) == capacity, "a full-size String directory has already been published");
@@ -245,14 +246,15 @@ void shrinkStringDirectoryInPlaceAcrossRewind() {
 			&& memory.readRamRecordWord(base + half * sizeof(u32)) == kept[1]
 			&& memory.readRamRecordWord(base + (half + 1u) * sizeof(u32)) == fresh[2],
 			"current-chain inserts go to the destination; untouched upper buckets still own their inserts");
-		const auto occupied = cpu.heapAllocator().occupiedBytes();
-		const auto oldChunk = cpu.heapAllocator().allocationBytes(base);
-		const auto charged = cpu.luaHeap().usedBytes();
+		bmsx::HeapAllocator arena(cpu.memory());
+		const auto occupied = arena.occupiedBytes();
+		const auto oldChunk = arena.allocationBytes(base);
+		const auto charged = bmsx::LuaHeap(cpu).usedBytes();
 		for (u32 step = 0; pool.sweeping() && step < capacity; ++step)
 			require(pool.sweepStep(1) == 1u, "drain and trim consume one unit at a time");
-		const auto newChunk = cpu.heapAllocator().allocationBytes(base);
+		const auto newChunk = arena.allocationBytes(base);
 		require(!pool.sweeping() && read(4u) == half && read(0u) == base && newChunk < oldChunk
-			&& occupied - cpu.heapAllocator().occupiedBytes() == oldChunk - newChunk && cpu.luaHeap().usedBytes() == charged,
+			&& occupied - arena.occupiedBytes() == oldChunk - newChunk && bmsx::LuaHeap(cpu).usedBytes() == charged,
 			"the retained prefix keeps its address and only the uncharged suffix returns to the allocator");
 		for (u32 i = 0; i < kept.size(); ++i)
 			require(pool.find(names[i]) == kept[i] && pool.find(names[i + kept.size()]) == fresh[i],
@@ -271,8 +273,8 @@ void shrinkStringDirectoryInPlaceAcrossRewind() {
 void stringDirectoryGrowthDoesNotForceCollection() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
-	auto& arena = cpu.heapAllocator();
+	bmsx::test::StringPoolReference pool(cpu);
+	bmsx::HeapAllocator arena(cpu.memory());
 	constexpr u32 capacity = 2048u;
 	const u32 metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return machine.memory.readRamRecordWord(metadata + field); };
@@ -301,12 +303,12 @@ void stringDirectoryGrowthDoesNotForceCollection() {
 void rehashCollisionAcrossSweepAndRewind() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 4096u;
 	auto roots = bmsx::test::allocateTableReference(cpu, 4, 0);
 	cpu.setGlobalByKey(pool.intern("collision rehash root"), valueTable(roots.address()));
-	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const u32 metadata = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
 	u32 candidate = 0;
 	const auto collision = [&]() {
@@ -326,15 +328,16 @@ void rehashCollisionAcrossSweepAndRewind() {
 	require(read(4u) == capacity, "the next distinct String starts the 4096-bucket growth");
 	const u32 oldBase = read(0u);
 	const auto trigger = collision();
-	const auto logicalBefore = cpu.luaHeap().usedBytes();
-	const auto physicalBefore = cpu.heapAllocator().occupiedBytes();
+	bmsx::LuaHeap budget(cpu);
+	const auto logicalBefore = budget.usedBytes();
+	const auto physicalBefore = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	const auto inserted = pool.intern(trigger);
 	const u32 insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(trigger.size());
 	const u32 nextBase = read(0x38u);
 	require(nextBase != 0u && read(0x3cu) == 1u, "the intern yields inside the first long bucket, not after it");
-	require(cpu.luaHeap().usedBytes() == logicalBefore + insertedBytes
-		&& cpu.heapAllocator().occupiedBytes() == physicalBefore + cpu.heapAllocator().allocationBytes(nextBase)
-			+ cpu.heapAllocator().allocationBytes(inserted),
+	require(budget.usedBytes() == logicalBefore + insertedBytes
+		&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == physicalBefore + bmsx::HeapAllocator(cpu.memory()).allocationBytes(nextBase)
+			+ bmsx::HeapAllocator(cpu.memory()).allocationBytes(inserted),
 		"the new directory is physically reserved without adding to the String's nominal charge");
 	const std::array survivors{memory.readRamRecordWord(oldBase), memory.readRamRecordWord(nextBase),
 		memory.readRamRecordWord(nextBase + 4u * capacity), inserted};
@@ -343,17 +346,17 @@ void rehashCollisionAcrossSweepAndRewind() {
 		roots.setInteger(index + 1u, valueString(survivors[index]));
 	}
 	const auto retained = [&](StringId id) { return std::find(survivors.begin(), survivors.end(), id) != survivors.end(); };
-	u32 logicalRelease = 0u, physicalRelease = cpu.heapAllocator().allocationBytes(oldBase);
+	u32 logicalRelease = 0u, physicalRelease = bmsx::HeapAllocator(cpu.memory()).allocationBytes(oldBase);
 	for (const auto& [text, id] : entries) {
 		require(pool.find(text) == id, "lookups preserve IDs in each directory");
 		if (!retained(id)) {
 			const u32 bytes = BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(text.size());
 			logicalRelease += bytes;
-			physicalRelease += cpu.heapAllocator().allocationBytes(id);
+			physicalRelease += bmsx::HeapAllocator(cpu.memory()).allocationBytes(id);
 		}
 	}
-	const auto usage = cpu.luaHeap().usedBytes();
-	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	const auto usage = budget.usedBytes();
+	const auto occupied = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	RamHistory archive;
 	RamHistory::PageMap checkpoint, collected;
 	archive.capture(memory, nullptr, checkpoint);
@@ -371,7 +374,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 			const auto found = pool.find(text);
 			require(retained(id) ? found == id : !found, "both directories sweep exactly their unmarked Strings");
 		}
-		require(cpu.luaHeap().usedBytes() == usage - logicalRelease && cpu.heapAllocator().occupiedBytes() == occupied - physicalRelease,
+		require(bmsx::LuaHeap(cpu).usedBytes() == usage - logicalRelease && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied - physicalRelease,
 			"retirement returns only the dead String charges and physically frees the old directory");
 		return memory.captureSaveState().ram;
 	};
@@ -384,19 +387,19 @@ void rehashCollisionAcrossSweepAndRewind() {
 
 void reclaimLongByteStrings() {
 	PoolMachine machine;
-	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
+	auto& cpu = machine.cpu; bmsx::test::StringPoolReference pool(cpu);
 	bmsx::test::GcHeap(cpu).collect();
-	const auto baseline = cpu.luaHeap().usedBytes();
-	const u32 physical = cpu.heapAllocator().occupiedBytes();
+	const auto baseline = bmsx::LuaHeap(cpu).usedBytes();
+	const u32 physical = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	std::string text;
 	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
 	const auto old = pool.intern(text);
 	const size_t bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.size();
-	require(cpu.luaHeap().usedBytes() == baseline + bytes, "logical charge includes the record header and payload, not chunk overhead");
-	require(cpu.heapAllocator().occupiedBytes() == physical + cpu.heapAllocator().allocationBytes(old), "physical diagnostics include the actual chunk");
+	require(bmsx::LuaHeap(cpu).usedBytes() == baseline + bytes, "logical charge includes the record header and payload, not chunk overhead");
+	require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == physical + bmsx::HeapAllocator(cpu.memory()).allocationBytes(old), "physical diagnostics include the actual chunk");
 	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
 	bmsx::test::GcHeap(cpu).collect();
-	require(cpu.luaHeap().usedBytes() == baseline && cpu.heapAllocator().occupiedBytes() == physical,
+	require(bmsx::LuaHeap(cpu).usedBytes() == baseline && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == physical,
 		"GC releases both the logical charge and the physical record");
 	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
 	const auto id = pool.intern(text);
@@ -408,40 +411,44 @@ void reclaimLongByteStrings() {
 void retainNestedMaterializationRoots() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
+	bmsx::test::GcHeap collector(cpu, &pool.localRoots());
 	StringId outerId = 0;
 	{
-		auto outer = bmsx::test::GcHeap(cpu).acquireLocalRoots();
+		pool.beginLocalRoots();
 		outerId = pool.intern("outer string");
 		{
-			auto inner = bmsx::test::GcHeap(cpu).acquireLocalRoots();
+			pool.beginLocalRoots();
 			const auto innerId = pool.intern("inner string");
-			bmsx::test::GcHeap(cpu).collect();
+			collector.collect();
 			require(pool.toString(outerId) == "outer string" && pool.toString(innerId) == "inner string", "nested scopes retain their own returned IDs");
+			pool.endLocalRoots();
 		}
-		bmsx::test::GcHeap(cpu).collect();
+		collector.collect();
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
-		auto table = bmsx::test::allocateTableReference(cpu);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 0, &pool.localRoots());
 		const auto key = pool.intern("nested key");
 		table.setStringKey(key, valueInteger(7));
-		bmsx::test::GcHeap(cpu).collect(valueTable(table.address()));
+		collector.collect(valueTable(table.address()));
 		require(table.getStringKey(key) == valueInteger(7), "the collector keeps explicit Values and scoped Strings");
+		pool.endLocalRoots();
 	}
-	bmsx::test::GcHeap(cpu).collect();
+	collector.collect();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
 }
 
 void replaySparseAllocationOrder() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
+	bmsx::test::GcHeap collector(cpu, &pool.localRoots());
 	pool.beginLocalRoots();
 	pool.intern("left anchor");
 	pool.beginLocalRoots();
 	for (const auto text : {"hole one", "hole two", "hole three"}) pool.intern(text);
 	pool.endLocalRoots();
 	pool.intern("right anchor");
-	bmsx::test::GcHeap(cpu).collect();
+	collector.collect();
 	pool.intern("partially reused");
 	pool.endLocalRoots();
 	const auto ram = machine.memory.captureSaveState();
@@ -455,7 +462,7 @@ void replaySparseAllocationOrder() {
 void reuseDeletedStringKeyId() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	const auto root = pool.intern("table root");
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
 	cpu.setGlobalByKey(root, valueTable(table.address()));
@@ -500,7 +507,7 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	CPU cpu(memory, irq, space);
 	test::seedManagedFixture(cpu, space);
 
-	auto& pool = cpu.stringPool();
+	bmsx::test::StringPoolReference pool(cpu);
 	const auto beforeCartCpu = cpu.captureRuntimeState();
 	const auto beforeCartMemory = memory.captureSaveState();
 	const StringId original = pool.intern(text);
@@ -560,16 +567,16 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");
 		auto closure = bmsx::test::asClosure(completion.get(0), bmsx::test::GcHeap(cpu));
 		const std::string text(4096, 'a');
-		const auto id = cpu.stringPool().intern(text);
+		const auto id = bmsx::test::StringPoolReference(cpu).intern(text);
 		const std::array args{valueString(id)};
 		if (finalPending) {
 			auto heap = bmsx::test::GcHeap(cpu);
 			for (int step = 0; !heap.finalMarkPending() && step < 30; ++step) bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 			require(heap.finalMarkPending(), "a final pass is pending when the host can enter an explicit call");
 		}
-		cpu.luaHeap().setCollectionTarget(0);
+		bmsx::LuaHeap(cpu).setCollectionTarget(0);
 		cpu.beginCompletionCall(closure, BuiltinArgsView(args.data(), args.size()));
-		require((!finalPending || !bmsx::test::GcHeap(cpu).finalMarkPending()) && cpu.stringPool().find(text) == id,
+		require((!finalPending || !bmsx::test::GcHeap(cpu).finalMarkPending()) && bmsx::test::StringPoolReference(cpu).find(text) == id,
 			"call entry roots its incoming argument before final marking and stack growth");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();

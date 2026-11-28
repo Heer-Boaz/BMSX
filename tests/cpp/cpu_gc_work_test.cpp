@@ -1,4 +1,7 @@
 #include "common/endian.h"
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/thread_record.h"
@@ -70,10 +73,10 @@ constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 6 + 
 
 void stringMarkWorkSurvivesCheckpoint() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto& strings = cpu.stringPool();
+	bmsx::test::StringPoolReference strings(cpu);
 	const auto first = strings.intern("mark-work-before-checkpoint");
 	const auto second = strings.intern("mark-work-after-checkpoint");
-	const auto workOffset = cpu.heapAllocator().managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
+	const auto workOffset = bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
 
 	strings.beginReachabilityEpoch();
 	strings.markReachable(first);
@@ -100,22 +103,22 @@ void stringMarkWorkSurvivesCheckpoint() {
 
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	const size_t logical = cpu.luaHeap().usedBytes();
-	const u32 physical = cpu.heapAllocator().occupiedBytes();
+	const size_t logical = bmsx::LuaHeap(cpu).usedBytes();
+	const u32 physical = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	constexpr u32 logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
-	cpu.luaHeap().setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
+	bmsx::LuaHeap(cpu).setCollectionTarget(static_cast<u32>(logical) + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	const auto hash = bmsx::test::allocateTableReference(cpu, 2, 3);
 	const auto array = bmsx::test::allocateTableReference(cpu, 512, 0);
 	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
-	require(cpu.luaHeap().usedBytes() == logical + logicalCharge, "chunk overhead is not charged to the language budget");
-	const auto& arena = cpu.heapAllocator();
+	require(bmsx::LuaHeap(cpu).usedBytes() == logical + logicalCharge, "chunk overhead is not charged to the language budget");
+	const bmsx::HeapAllocator arena(cpu.memory());
 	const auto hashBytes = arena.allocationBytes(hash.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(hash.hashAddress()) + arena.allocationBytes(hash.arrayAddress());
 	const auto arrayBytes = arena.allocationBytes(array.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(array.arrayAddress());
 	require(arena.occupiedBytes() == physical + hashBytes + arrayBytes && hashBytes + arrayBytes > logicalCharge,
 		"physical diagnostics add the live chunks, including allocator overhead");
 	bmsx::test::GcHeap(cpu).collect();
-	require(cpu.luaHeap().usedBytes() == logical && cpu.heapAllocator().occupiedBytes() == physical,
+	require(bmsx::LuaHeap(cpu).usedBytes() == logical && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == physical,
 		"reclamation returns the corresponding charges to both measurements");
 }
 
@@ -127,18 +130,19 @@ void tableReplacementAdmitsOnlyItsLogicalIncrease() {
 		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
 		const int residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 9 : 2;
 		table.setInteger(residentKey, valueInteger(100 + residentKey));
-		const auto logical = cpu.luaHeap().usedBytes();
-		const auto physical = cpu.heapAllocator().occupiedBytes();
-		const auto oldStorage = cpu.heapAllocator().allocationBytes(table.arrayAddress());
+		const auto logical = bmsx::LuaHeap(cpu).usedBytes();
+		bmsx::HeapAllocator arena(cpu.memory());
+		const auto physical = arena.occupiedBytes();
+		const auto oldStorage = arena.allocationBytes(table.arrayAddress());
 		const auto target = logical + (packArrayIntoHash ? 0u : 5u);
-		cpu.luaHeap().setCollectionTarget(target);
+		bmsx::LuaHeap(cpu).setCollectionTarget(target);
 		table.setInteger(trigger, valueInteger(73));
-		require(cpu.luaHeap().collectionTarget() == target && !bmsx::test::GcHeap(cpu).active(),
+		require(bmsx::LuaHeap(cpu).collectionTarget() == target && !bmsx::test::GcHeap(cpu).active(),
 			"a resize at the exact growth threshold must not assist collection for the outgoing layout");
-		require(cpu.luaHeap().usedBytes() == (packArrayIntoHash ? logical - 20u : logical + 5u),
+		require(bmsx::LuaHeap(cpu).usedBytes() == (packArrayIntoHash ? logical - 20u : logical + 5u),
 			"the budget commits the resulting capacities only");
-		const auto newStorage = cpu.heapAllocator().allocationBytes(packArrayIntoHash ? table.hashAddress() : table.arrayAddress());
-		require(cpu.heapAllocator().occupiedBytes() == physical - oldStorage + newStorage,
+		const auto newStorage = arena.allocationBytes(packArrayIntoHash ? table.hashAddress() : table.arrayAddress());
+		require(arena.occupiedBytes() == physical - oldStorage + newStorage,
 			"the owner physically retires the old layout");
 		require(table.getInteger(residentKey) == valueInteger(100 + residentKey), "redistribution preserves the existing mapping");
 		require(table.getInteger(trigger) == valueInteger(73), "the triggering mapping is written once");
@@ -149,7 +153,7 @@ void tableBackingRecoveryRetriesEachEpoch() {
 	enum class Pressure { Reclaimable, Floating, Unavailable, Explicit };
 	for (const auto pressure : {Pressure::Reclaimable, Pressure::Floating, Pressure::Unavailable, Pressure::Explicit}) {
 		Machine machine(image()); auto& cpu = machine.cpu;
-		auto gc = bmsx::test::GcHeap(cpu); auto& arena = cpu.heapAllocator();
+		auto gc = bmsx::test::GcHeap(cpu); bmsx::HeapAllocator arena(cpu.memory());
 		auto table = bmsx::test::allocateTableReference(cpu, 512, 0);
 		auto& frame = *cpu.rootThread()->currentFrame;
 		frame.registers.set(0, valueTable(table.address())); frame.setTop(1);
@@ -159,7 +163,7 @@ void tableBackingRecoveryRetriesEachEpoch() {
 		require(spare != 0u, "the pressure fixture reserves a live chunk");
 		while (arena.allocate(4088u, true) != 0u) {}
 		arena.free(spare);
-		require(arena.allocate(5 * 1024, true) == 0u && cpu.luaHeap().usedBytes() + 2560u < cpu.luaHeap().capacity(),
+		require(arena.allocate(5 * 1024, true) == 0u && bmsx::LuaHeap(cpu).usedBytes() + 2560u < bmsx::LuaHeap(cpu).capacity(),
 			"the replacement is admitted logically but its physical chunk cannot fit");
 
 		const u8 white = gc.white();
@@ -194,7 +198,7 @@ void assistPhysicalPressureAtTickReference(Machine& machine) {
 	auto& cpu = machine.cpu;
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
-	auto& arena = cpu.heapAllocator();
+	bmsx::HeapAllocator arena(cpu.memory());
 	const u32 control = arena.managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	if (heap.fullEpochs()) return;
 	const u32 occupied = arena.occupiedBytes();
@@ -222,7 +226,7 @@ void assistPhysicalPressureAtTickReference(Machine& machine) {
 
 void physicalPressurePacesLargeLiveHeap() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto heap = bmsx::test::GcHeap(cpu); auto& arena = cpu.heapAllocator();
+	auto heap = bmsx::test::GcHeap(cpu); bmsx::HeapAllocator arena(cpu.memory());
 	auto owner = bmsx::test::allocateTableReference(cpu, 512, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(owner.address())); frame.setTop(1);
@@ -287,7 +291,7 @@ void physicalPressurePacesLargeLiveHeap() {
 
 void physicalReservationsPayMarkWork() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto& heap = cpu.luaHeap(); auto gc = bmsx::test::GcHeap(cpu); auto& arena = cpu.heapAllocator();
+	bmsx::LuaHeap heap(cpu); auto gc = bmsx::test::GcHeap(cpu); bmsx::HeapAllocator arena(cpu.memory());
 	auto& frame = *cpu.rootThread()->currentFrame;
 	const u32 live = bmsx::test::allocateTableReference(cpu, 131072, 0).address();
 	frame.registers.set(0, valueTable(live)); frame.setTop(1);
@@ -321,7 +325,7 @@ void physicalReservationsPayMarkWork() {
 
 void physicalReservationsPaySweepWork(bmsx::test::GcPhase phase) {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto& heap = cpu.luaHeap(); auto gc = bmsx::test::GcHeap(cpu);
+	bmsx::LuaHeap heap(cpu); auto gc = bmsx::test::GcHeap(cpu);
 	constexpr int slots = 8192;
 	const auto beforeLive = heap.usedBytes();
 	auto live = bmsx::test::allocateTableReference(cpu, slots, 0);
@@ -335,7 +339,7 @@ void physicalReservationsPaySweepWork(bmsx::test::GcPhase phase) {
 	// each phase, without having to force a physical allocation failure.
 	for (int i = 0; i < 8192; ++i) {
 		if (phase == bmsx::test::GcPhase::Sweep) bmsx::test::allocateTableReference(cpu);
-		else cpu.stringPool().intern("unrooted-sweep-fixture-" + std::to_string(i));
+		else bmsx::test::StringPoolReference(cpu).intern("unrooted-sweep-fixture-" + std::to_string(i));
 	}
 	for (int steps = 0; gc.phase() != phase; ++steps) {
 		require(steps < 128, "reach the requested reclamation phase");
@@ -385,32 +389,33 @@ void physicalReservationsPaySweepWork(bmsx::test::GcPhase phase) {
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	require(cpu.luaHeap().usedBytes() == bootBytes, "the admitted pool is the literal canonical allocation sum, not host object sizes");
+	bmsx::LuaHeap budget(cpu);
+	require(budget.usedBytes() == bootBytes, "the admitted pool is the literal canonical allocation sum, not host object sizes");
 	cpu.instructionBudgetRemaining = 7;
 	require(bmsx::test::GcHeap(cpu).collect() == bootCollectionWork && cpu.instructionBudgetRemaining == 7,
 		"physical collection counts object passes, three root passes and String work without a cycle debit");
-	require(cpu.luaHeap().usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
+	require(budget.usedBytes() == bootBytes, "readonly ROM String bytes are not charged as allocated text");
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 2, 3).address())); //32+10+40=82 logical bytes.
-	frame.registers.set(1, valueString(cpu.stringPool().intern("é😀"))); //6 UTF8 bytes.
+	frame.registers.set(1, valueString(bmsx::test::StringPoolReference(cpu).intern("é😀"))); //6 UTF8 bytes.
 	frame.writeControl(bmsx::FrameField::Top, 2);
-	require(cpu.luaHeap().usedBytes() == bootBytes + 82 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
+	require(budget.usedBytes() == bootBytes + 82 + 22, "canonical reserved table capacity and UTF8 text bytes agree");
 	require(bmsx::test::GcHeap(cpu).collect() == bootCollectionWork + (9 + 2 + 8 + 1) + 2 + 2 * 3
-		&& cpu.instructionBudgetRemaining == 7 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
+		&& cpu.instructionBudgetRemaining == 7 && budget.usedBytes() == bootBytes + 82 + 22,
 		"table scans reserved slots; the String is marked and visited without reading its bytes");
-	const auto threshold = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+	const auto threshold = std::pair{bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget()};
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
 	bmsx::test::GcHeap(cpu).collect();
 	require(cpu.instructionBudgetRemaining == 123, "the explicit oracle collects without billing guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
+	require(cpu.instructionBudgetRemaining == 123 && budget.usedBytes() == bootBytes + 82 + 22,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
-	const u32 workAddress = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET + bmsx::test::GC_LAST_EPOCH_WORK;
+	const u32 workAddress = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET + bmsx::test::GC_LAST_EPOCH_WORK;
 	const auto beforeReset = machine.memory.readRamRecordWord(workAddress);
 	cpu.reset();
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22
+	require(cpu.instructionBudgetRemaining == 123 && budget.usedBytes() == bootBytes + 82 + 22
 		&& machine.memory.readRamRecordWord(workAddress) == beforeReset,
 		"reset installs the vector without collecting the previous frame's objects");
 	// Re-enter the managed reference state explicitly; raw reset has no collector.
@@ -420,7 +425,7 @@ void canonicalPoolAndRootRanges() {
 	released.registers.set(1, valueNil());
 	released.setTop(0);
 	bmsx::test::GcHeap(cpu).collect();
-	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
+	require(cpu.instructionBudgetRemaining == 123 && budget.usedBytes() == bootBytes,
 		"the reference collector reclaims the objects after their roots are gone");
 }
 
@@ -459,20 +464,20 @@ void collectorWorkIgnoresInactiveThreadFrames() {
 void logicalAdmissionFailure() {
 	Machine failure(image()); auto& cpu = failure.cpu;
 	const auto doomed = bmsx::test::allocateTableReference(cpu, 16384, 0).address();
-	const auto used = cpu.luaHeap().usedBytes();
+	const auto used = bmsx::LuaHeap(cpu).usedBytes();
 	cpu.instructionBudgetRemaining = 1;
 	for (bool active : {false, true}) {
 		if (active) bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
 		bool failed = false;
-		try { cpu.luaHeap().admit(cpu.luaHeap().capacity() + 1); }
+		try { bmsx::LuaHeap(cpu).admit(bmsx::LuaHeap(cpu).capacity() + 1); }
 		catch (const LuaOutOfMemorySignal&) { failed = true; }
-		require(failed && bmsx::test::GcHeap(cpu).active() == active && cpu.luaHeap().usedBytes() == used
+		require(failed && bmsx::test::GcHeap(cpu).active() == active && bmsx::LuaHeap(cpu).usedBytes() == used
 			&& bmsx::test::GcHeap(cpu).tableRecordAddress(doomed) == doomed, "an impossible charge leaves the current epoch untouched");
 	}
 	bool failed = false;
-	try { cpu.luaHeap().admit(cpu.luaHeap().capacity()); }
+	try { bmsx::LuaHeap(cpu).admit(bmsx::LuaHeap(cpu).capacity()); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
-	require(failed && cpu.instructionBudgetRemaining == 1 && cpu.luaHeap().usedBytes() == bootBytes
+	require(failed && cpu.instructionBudgetRemaining == 1 && bmsx::LuaHeap(cpu).usedBytes() == bootBytes
 		&& bmsx::test::GcHeap(cpu).tableRecordAddress(doomed) == 0u, "a capacity-sized request still attempts recovery");
 	cpu.runUntilDepth(0, 1);
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
@@ -492,14 +497,14 @@ void romLiteralsDoNotUseGuestRam() {
 	for (bool scalar : {false, true}) {
 		Machine machine(source, scalar), empty(bare, scalar);
 		auto& cpu = machine.cpu;
-		const auto occupied = empty.cpu.heapAllocator().occupiedBytes();
+		const auto occupied = bmsx::HeapAllocator(empty.cpu.memory()).occupiedBytes();
 		const u32 installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		require(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID)
 			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET) == 0u
 			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET) == 0u
 			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET) == 0u
-			&& cpu.luaHeap().usedBytes() == empty.cpu.luaHeap().usedBytes()
-			&& cpu.heapAllocator().occupiedBytes() == occupied, "numeric ROM literals have no guest binding allocation");
+			&& bmsx::LuaHeap(cpu).usedBytes() == bmsx::LuaHeap(empty.cpu).usedBytes()
+			&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied, "numeric ROM literals have no guest binding allocation");
 		const auto ram = machine.memory.captureSaveState();
 		const auto state = cpu.captureRuntimeState();
 		for (int replay = 0; replay < 2; ++replay) {
@@ -515,11 +520,11 @@ void romLiteralsDoNotUseGuestRam() {
 #endif
 			machine.memory.restoreSaveState(ram);
 			cpu.restoreRuntimeState(state);
-			require(machine.memory.captureSaveState().ram == ram.ram && cpu.heapAllocator().occupiedBytes() == occupied,
+			require(machine.memory.captureSaveState().ram == ram.ram && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied,
 				"restoring ROM literals writes no guest RAM and reserves no storage");
 		}
 		cpu.reset(); cpu.reset();
-		require(cpu.heapAllocator().occupiedBytes() == occupied, "reset still reserves no constant storage");
+		require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied, "reset still reserves no constant storage");
 
 		// Even re-installing the exact same buffer retires its decoded key.
 		auto* media = machine.rom.bytes.data();
@@ -547,7 +552,7 @@ void directStringOperandsFollowTheRestoredBank() {
 		Machine machine(source, scalar);
 		auto& cpu = machine.cpu;
 		auto& memory = machine.memory;
-		auto& strings = cpu.stringPool();
+		bmsx::test::StringPoolReference strings(cpu);
 		const auto descriptor = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		const u32 words = memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 		const std::array literalIds{*strings.find("literal before RAM"), *strings.find("__index"),
@@ -556,7 +561,7 @@ void directStringOperandsFollowTheRestoredBank() {
 			&& isRamStringId(literalIds[3]) && !isRamStringId(literalIds[4]), "the bank interleaves real ROM and RAM String ids");
 		for (u32 i = 0; i < literalIds.size(); ++i)
 			require(memory.readRamRecordWord(words + 4u * i) == literalIds[i], "every physical word is the literal's exact String id");
-		const u32 storage = test::firmwareImageStorageOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const u32 storage = test::firmwareImageStorageOffset(bmsx::HeapAllocator(cpu.memory()).managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 		require(memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_RAM_STRING_END_OFFSET) == 4u,
 			"the stock root frontier ends at the last RAM ordinal, not the RAM root count");
 		const auto state = cpu.captureRuntimeState();
@@ -610,7 +615,7 @@ void replacementUsesIndependentOperandPlanes() {
 		EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET};
 	std::array<u32, offsets.size()> installed{};
 	for (size_t lane = 0; lane < offsets.size(); ++lane) installed[lane] = memory.readRamRecordWord(binding + offsets[lane]);
-	const u32 storage = test::firmwareImageStorageOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const u32 storage = test::firmwareImageStorageOffset(bmsx::HeapAllocator(cpu.memory()).managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	require(memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_BASE_OFFSET) == installed[0]
 		&& memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_BYTES_OFFSET) == 20u,
 		"the test fixture begins with a single old firmware allocation");
@@ -618,15 +623,16 @@ void replacementUsesIndependentOperandPlanes() {
 	memory.installSystemRom(replacement.bytes);
 	for (size_t lane = 0; lane < offsets.size(); ++lane)
 		require(memory.readRamRecordWord(binding + offsets[lane]) == installed[lane], "mounting media does not rebind the operands");
-	cpu.setGlobalByKey(*cpu.stringPool().find("__index"), valueInteger(3));
-	cpu.setSystemGlobalByKey(*cpu.stringPool().find("__newindex"), valueInteger(5));
-	const std::array planes{cpu.luaHeap().allocateRecord(8u, false, 0u, 0u),
-		cpu.luaHeap().allocateRecord(8u, false, 0u, 0u), cpu.luaHeap().allocateRecord(12u, false, 0u, 0u)};
+	bmsx::test::StringPoolReference strings(cpu);
+	cpu.setGlobalByKey(*strings.find("__index"), valueInteger(3));
+	cpu.setSystemGlobalByKey(*strings.find("__newindex"), valueInteger(5));
+	const std::array planes{bmsx::LuaHeap(cpu).allocateRecord(8u, false, 0u, 0u),
+		bmsx::LuaHeap(cpu).allocateRecord(8u, false, 0u, 0u), bmsx::LuaHeap(cpu).allocateRecord(12u, false, 0u, 0u)};
 	require(planes[0] + 8u != planes[1] && planes[1] + 8u != planes[2],
 		"the operand tables have independent storage");
 	for (size_t lane = 0; lane < 2; ++lane)
 		memory.writeRamRecordPair(planes[lane], memory.readRamRecordWord(installed[lane] + 4u), memory.readRamRecordWord(installed[lane]));
-	const StringId id = cpu.stringPool().intern("separately published literal");
+	const StringId id = strings.intern("separately published literal");
 	for (u32 ordinal = 0; ordinal < 3u; ++ordinal) memory.writeRamRecordWord(planes[2] + ordinal * 4u, id);
 	for (size_t lane = 0; lane < offsets.size(); ++lane) memory.writeRamRecordWord(binding + offsets[lane], planes[lane]);
 
@@ -652,10 +658,10 @@ void replacementUsesIndependentOperandPlanes() {
 		const auto result = cpu.readCompletionValues();
 		require(result.size() == 3u && result.get(0) == valueInteger(73) && result.get(1) == valueInteger(79) && result.get(2) == valueString(id),
 			"each opcode consumes the selected map");
-		require(cpu.getGlobalByKey(*cpu.stringPool().find("__index")) == valueInteger(3)
-			&& cpu.getGlobalByKey(*cpu.stringPool().find("__mode")) == valueInteger(73)
-			&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("__newindex")) == valueInteger(5)
-			&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("__len")) == valueInteger(79),
+		require(cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__index")) == valueInteger(3)
+			&& cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__mode")) == valueInteger(73)
+			&& cpu.getSystemGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__newindex")) == valueInteger(5)
+			&& cpu.getSystemGlobalByKey(*bmsx::test::StringPoolReference(cpu).find("__len")) == valueInteger(79),
 			"stores changed only the two explicitly mapped namespace slots");
 		memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(state);
@@ -684,7 +690,7 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	bmsx::test::GcHeap(cpu).collect();
-	require(cpu.luaHeap().usedBytes() == bootBytes + (4 + 20) + (4 + 16) + 2 * 9,
+	require(bmsx::LuaHeap(cpu).usedBytes() == bootBytes + (4 + 20) + (4 + 16) + 2 * 9,
 		"each card charges its String bindings, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
 	// Only the two new globals add work to the initial root pass.
@@ -700,18 +706,18 @@ void allActivatedImagesAndUniqueGlobals() {
 void temporaryRootsAndUnreachablePool() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto table = bmsx::test::allocateTableReference(cpu); //32; retained only by the reserve temporary root.
-	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
-	const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+	const auto id = bmsx::test::StringPoolReference(cpu).intern("é😀"); //6; another temporary root.
+	const auto before = std::pair{bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget()};
 	require(before.first == bootBytes + 32 + 22, "precollection includes currently unreachable allocations");
-	cpu.luaHeap().setCollectionTarget(0);
+	bmsx::LuaHeap(cpu).setCollectionTarget(0);
 	cpu.instructionBudgetRemaining = 1;
-	cpu.luaHeap().admit(0, valueTable(table.address()), valueString(id));
-	require(cpu.instructionBudgetRemaining == 1 && cpu.luaHeap().usedBytes() == bootBytes + 32 + 22
+	bmsx::LuaHeap(cpu).admit(0, valueTable(table.address()), valueString(id));
+	require(cpu.instructionBudgetRemaining == 1 && bmsx::LuaHeap(cpu).usedBytes() == bootBytes + 32 + 22
 		&& bmsx::test::GcHeap(cpu).isAlive(table.address()) && cpu.stringPool().toString(id) == "é😀",
 		"all reserve temporary roots survive the first unbilled incremental pass");
 	while (bmsx::test::GcHeap(cpu).active()) bmsx::test::GcHeap(cpu).step(valueTable(table.address()), valueString(id), valueNil());
 	require(bmsx::test::GcHeap(cpu).collect() == bootCollectionWork + 2 && cpu.instructionBudgetRemaining == 1
-		&& cpu.luaHeap().usedBytes() == bootBytes,
+		&& bmsx::LuaHeap(cpu).usedBytes() == bootBytes,
 		"dead Table incurs one block visit, not another mark pass; its String incurs one visit, not a scan of its bytes");
 }
 
@@ -720,14 +726,14 @@ void incrementalStateAndBarriers() {
 	auto roots = bmsx::test::allocateTableReference(cpu, 1024, 0);
 	cpu.rootThread()->currentFrame->registers.set(0, valueTable(roots.address()));
 	cpu.rootThread()->currentFrame->writeControl(bmsx::FrameField::Top, 1);
-	const auto field = cpu.stringPool().intern("child");
+	const auto field = bmsx::test::StringPoolReference(cpu).intern("child");
 	for (int i = 1; i <= 1000; ++i) {
 		auto item = bmsx::test::allocateTableReference(cpu, 1, 1);
 		item.setStringKey(field, valueBool(false)); roots.setInteger(i, valueTable(item.address()));
 		auto dead = bmsx::test::allocateTableReference(cpu, 1, 0);
 		dead.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	}
-	for (int i = 0; i < 4200; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(16, 'x'));
+	for (int i = 0; i < 4200; ++i) bmsx::test::StringPoolReference(cpu).intern("dead-" + std::to_string(i) + std::string(16, 'x'));
 	auto target = bmsx::test::asReferenceTable(roots.getInteger(1000), bmsx::test::GcHeap(cpu));
 	require(bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()) >= bmsx::test::GC_STEP_WORDS
 		&& bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3,
@@ -768,7 +774,7 @@ void incrementalStateAndBarriers() {
 		"barriers preserve changed array, hash and metatable edges");
 	require(TableRecord(cpu.memory(), valuePayload(cpu.rootThread()->currentFrame->registers.get(1))).address() == bornId,
 		"an allocation born during sweep is retained");
-	require(!cpu.stringPool().find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
+	require(!bmsx::test::StringPoolReference(cpu).find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
 	bmsx::test::GcHeap(cpu).collect();
 	require(test::allocatedObjectRecords(cpu) == 1005,
 		"full collection retains root Thread, roots Table, 1000 children and three new live Tables");
@@ -799,7 +805,7 @@ void resumesCompletionRootBank() {
 		&& cpu.getFrameDepth() == 0 && cpu.readCompletionValues().size() == args.size()
 		&& cpu.readCompletionValues().get(args.size() - 1) == valueTable(target),
 		"VARARG and RET leave the real completion latch as the last table's only root");
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const int cycles = cpu.instructionBudgetRemaining;
 	require(advance() == bmsx::test::GC_STEP_WORDS && memory.readRamRecordWord(control + bmsx::test::GC_ROOT_CURSOR) != 0u
@@ -825,23 +831,23 @@ void resumesRootBanksBeforeTracing() {
 	auto& cpu = machine.cpu;
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
-	const auto first = cpu.stringPool().intern("global");
-	const auto weakRoot = cpu.stringPool().intern("root-0");
-	const auto finalRoot = cpu.stringPool().intern("root-1");
-	const auto last = cpu.stringPool().intern(program.globalNames.back());
+	const auto first = bmsx::test::StringPoolReference(cpu).intern("global");
+	const auto weakRoot = bmsx::test::StringPoolReference(cpu).intern("root-0");
+	const auto finalRoot = bmsx::test::StringPoolReference(cpu).intern("root-1");
+	const auto last = bmsx::test::StringPoolReference(cpu).intern(program.globalNames.back());
 	constexpr std::string_view appendedName = "name registered after the global scan";
-	const auto appended = cpu.stringPool().intern(appendedName);
+	const auto appended = bmsx::test::StringPoolReference(cpu).intern(appendedName);
 	const u32 lastTarget = bmsx::test::allocateTableReference(cpu, bmsx::test::GC_STEP_WORDS, 0).address();
 	cpu.setGlobalByKey(last, valueTable(lastTarget));
 	auto weak = bmsx::test::allocateTableReference(cpu, 1, 0), mode = bmsx::test::allocateTableReference(cpu);
-	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	mode.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	weak.setMetatableAddress(mode.address());
 	auto weakTarget = bmsx::test::allocateTableReference(cpu, 1, 0), child = bmsx::test::allocateTableReference(cpu, 1, 0);
 	weakTarget.setInteger(1, valueTable(child.address()));
 	child.setInteger(1, valueInteger(73));
 	weak.setInteger(1, valueTable(weakTarget.address()));
 	cpu.setGlobalByKey(weakRoot, valueTable(weak.address()));
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const size_t work = advance();
 	require(work >= bmsx::test::GC_STEP_WORDS && work <= bmsx::test::GC_STEP_WORDS + 4 && heap.phase() == bmsx::test::GcPhase::Mark
@@ -872,7 +878,7 @@ void resumesRootBanksBeforeTracing() {
 			require(heap.tableRecordAddress(weakTarget.address()) == weakTarget.address()
 				&& weak.getInteger(1) == valueTable(weakTarget.address()) && heap.tableRecordAddress(child.address()) == child.address()
 				&& child.getInteger(1) == valueInteger(73), "the detached gray parent retains its white child before weak cleanup");
-			require(cpu.stringPool().find(appendedName) == appended && cpu.getGlobalByKey(appended) == valueInteger(41),
+			require(bmsx::test::StringPoolReference(cpu).find(appendedName) == appended && cpu.getGlobalByKey(appended) == valueInteger(41),
 				"a newly registered name is a String root even with a scalar Value");
 			return memory.captureSaveState().ram;
 		};
@@ -922,7 +928,7 @@ void resumesLargeClosureCaptures() {
 	const u32 cell = ClosureRecord::captureAddress(memory, closure, 0);
 	require(!Upvalue::isOpen(memory, cell), "the test updates a genuinely closed cell");
 
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	require(advance() == bmsx::test::GC_STEP_WORDS && heap.phase() == bmsx::test::GcPhase::Mark
 		&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_RECORD) == closure,
@@ -997,7 +1003,7 @@ void resumesOpenThreadAfterClosingInstruction() {
 		frame.registers.set(3, valueClosure(record));
 		frame.setTop(4);
 	}
-	const u32 control = generated.cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(generated.cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto step = [](Machine& machine) { return bmsx::test::GcHeap(machine.cpu).step(valueNil(), valueNil(), valueNil()); };
 	const auto firstWork = step(generated);
 	require(step(scalar) == firstWork && firstWork >= bmsx::test::GC_STEP_WORDS && firstWork <= bmsx::test::GC_STEP_WORDS + 4
@@ -1056,7 +1062,7 @@ void resumesTableAfterPrimitiveDisplacement() {
 	Value key, value;
 	require(table.loadStoredEntry(count - 1, key, value) && key == valueInteger(victimKey),
 		"the real hash insertion placed the live edge at its unvisited high node");
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const auto work = advance();
 	require(work >= bmsx::test::GC_STEP_WORDS && work <= bmsx::test::GC_STEP_WORDS + 1
@@ -1086,11 +1092,11 @@ void weakKeysTraceStrongValues() {
 	auto& cpu = machine.cpu;
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	const auto modeKey = cpu.stringPool().intern("__mode");
+	const auto modeKey = bmsx::test::StringPoolReference(cpu).intern("__mode");
 	auto entries = bmsx::test::allocateTableReference(cpu), both = bmsx::test::allocateTableReference(cpu);
 	auto weakKeys = bmsx::test::allocateTableReference(cpu), weakBoth = bmsx::test::allocateTableReference(cpu);
-	weakKeys.setStringKey(modeKey, valueString(cpu.stringPool().intern("k")));
-	weakBoth.setStringKey(modeKey, valueString(cpu.stringPool().intern("kv")));
+	weakKeys.setStringKey(modeKey, valueString(bmsx::test::StringPoolReference(cpu).intern("k")));
+	weakBoth.setStringKey(modeKey, valueString(bmsx::test::StringPoolReference(cpu).intern("kv")));
 	entries.setMetatableAddress(weakKeys.address());
 	both.setMetatableAddress(weakBoth.address());
 	frame.registers.set(0, valueTable(entries.address()));
@@ -1121,7 +1127,7 @@ void weakKeysTraceStrongValues() {
 void weakHashClearingOnlyMarksSurvivingStrings() {
 	Machine machine(image(), true);
 	auto& cpu = machine.cpu;
-	auto& strings = cpu.stringPool();
+	bmsx::test::StringPoolReference strings(cpu);
 	auto weak = bmsx::test::allocateTableReference(cpu, 0, 8), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(weak.address())); frame.setTop(1);
@@ -1142,7 +1148,7 @@ void weakValuesSkipMarkingStorageWithoutStrongEdges() {
 		Machine machine(image(), true);
 		auto& cpu = machine.cpu;
 		auto heap = bmsx::test::GcHeap(cpu);
-		auto& strings = cpu.stringPool();
+		bmsx::test::StringPoolReference strings(cpu);
 		constexpr u32 slots = 2 * bmsx::test::GC_STEP_WORDS;
 		auto weak = bmsx::test::allocateTableReference(cpu, slots, bothWeak ? slots : 1u);
 		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
@@ -1181,9 +1187,9 @@ void incrementalSharedWeakMode() {
 	frame.registers.set(0, valueTable(roots.address()));
 	frame.writeControl(bmsx::FrameField::Top, 1);
 	for (int i = 1; i <= 1000; ++i) roots.setInteger(i, valueTable(bmsx::test::allocateTableReference(cpu).address()));
-	const auto modeKey = cpu.stringPool().intern("__mode");
+	const auto modeKey = bmsx::test::StringPoolReference(cpu).intern("__mode");
 	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
-	metatable.setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
+	metatable.setStringKey(modeKey, valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	auto weak = bmsx::test::asReferenceTable(roots.getInteger(1000), bmsx::test::GcHeap(cpu));
 	auto following = bmsx::test::asReferenceTable(roots.getInteger(999), bmsx::test::GcHeap(cpu));
 	weak.setMetatableAddress(metatable.address());
@@ -1193,7 +1199,7 @@ void incrementalSharedWeakMode() {
 	weak.setInteger(1, childValue);
 	bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 	const auto index = [](u32 address) { return (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT; };
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(weak.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
 		&& (machine.memory.readRamRecordByte(child.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == bmsx::test::GcHeap(cpu).white()
 		&& machine.memory.readRamRecordWord(control + bmsx::test::GC_WEAK_VISITS) == index(weak.address())
@@ -1228,7 +1234,7 @@ void resumesMetatableModeProbe() {
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 2 * bmsx::test::GC_STEP_WORDS;
-	const auto mode = cpu.stringPool().intern("__mode");
+	const auto mode = bmsx::test::StringPoolReference(cpu).intern("__mode");
 	const auto home = hashCanonicalTableKey(valueString(mode)) & (capacity - 1u);
 	auto target = bmsx::test::allocateTableReference(cpu, 1, 0), meta = bmsx::test::allocateTableReference(cpu, 0, capacity);
 	auto& frame = *cpu.rootThread()->currentFrame;
@@ -1238,11 +1244,11 @@ void resumesMetatableModeProbe() {
 	for (i32 key = -1, count = 0; count < static_cast<i32>(bmsx::test::GC_STEP_WORDS + 64); --key) {
 		if ((hashCanonicalTableKey(valueInteger(key)) & (capacity - 1u)) != home) continue;
 		meta.setInteger(key, valueInteger(1));
-		if (count++ == 0) meta.setStringKey(mode, valueString(cpu.stringPool().intern("kv")));
+		if (count++ == 0) meta.setStringKey(mode, valueString(bmsx::test::StringPoolReference(cpu).intern("kv")));
 	}
 	auto watched = bmsx::test::allocateTableReference(cpu);
 	target.setInteger(1, valueTable(watched.address()));
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	size_t inspected = 0;
@@ -1282,10 +1288,10 @@ void resumesFinalWeakCleanup() {
 	frame.registers.set(0, valueTable(weak.address()));
 	frame.registers.set(1, valueTable(strong.address()));
 	frame.setTop(2);
-	const auto mode = cpu.stringPool().intern("__mode");
+	const auto mode = bmsx::test::StringPoolReference(cpu).intern("__mode");
 	auto weakMeta = bmsx::test::allocateTableReference(cpu, 0, 1), strongMeta = bmsx::test::allocateTableReference(cpu, 0, 1);
-	weakMeta.setStringKey(mode, valueString(cpu.stringPool().intern("v")));
-	strongMeta.setStringKey(mode, valueString(cpu.stringPool().intern("very")));
+	weakMeta.setStringKey(mode, valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
+	strongMeta.setStringKey(mode, valueString(bmsx::test::StringPoolReference(cpu).intern("very")));
 	weak.setMetatableAddress(weakMeta.address());
 	strong.setMetatableAddress(strongMeta.address());
 	auto onlyStrong = bmsx::test::allocateTableReference(cpu), first = bmsx::test::allocateTableReference(cpu), last = bmsx::test::allocateTableReference(cpu);
@@ -1301,7 +1307,7 @@ void resumesFinalWeakCleanup() {
 		&& weak.getInteger(slots) == valueTable(last.address())
 		&& heap.tableRecordAddress(first.address()) == first.address() && cleared == bmsx::test::GC_STEP_WORDS,
 		"the final pass spends its reported quantum clearing only a prefix before object reclamation");
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	require(memory.readRamRecordWord(control + bmsx::test::GC_TRACE_RECORD) == weak.address(), "a weak slot frontier is present in RAM");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
@@ -1326,16 +1332,16 @@ void resumesWeakTableRemark() {
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
 	constexpr u32 count = bmsx::test::GC_STEP_WORDS + 256;
-	const auto globalKey = cpu.stringPool().intern("late remark global");
+	const auto globalKey = bmsx::test::StringPoolReference(cpu).intern("late remark global");
 	cpu.setGlobalByKey(globalKey, valueNil());
 	auto roots = bmsx::test::allocateTableReference(cpu, count, 0), changed = bmsx::test::allocateTableReference(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(roots.address()));
 	frame.registers.set(1, valueTable(changed.address()));
 	frame.setTop(2);
-	const auto modeKey = cpu.stringPool().intern("__mode");
+	const auto modeKey = bmsx::test::StringPoolReference(cpu).intern("__mode");
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-	meta.setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
+	meta.setStringKey(modeKey, valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	auto watcher = bmsx::test::allocateTableReference(cpu, 1, 0);
 	watcher.setMetatableAddress(meta.address());
 	roots.setInteger(count, valueTable(watcher.address()));
@@ -1346,7 +1352,7 @@ void resumesWeakTableRemark() {
 	}
 	auto watched = bmsx::test::allocateTableReference(cpu);
 	watcher.setInteger(1, valueTable(watched.address()));
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const u32 head = (watcher.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
@@ -1408,17 +1414,17 @@ void secondMarkPassAndCredit() {
 	frame.registers.set(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	frame.registers.set(2, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	frame.writeControl(bmsx::FrameField::Top, 3);
-	const auto before = cpu.luaHeap().usedBytes();
-	cpu.luaHeap().setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
+	const auto before = bmsx::LuaHeap(cpu).usedBytes();
+	bmsx::LuaHeap(cpu).setCollectionTarget(before); cpu.instructionBudgetRemaining = 0;
 	bmsx::test::allocateTableReference(cpu);
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
-	require(cpu.instructionBudgetRemaining == 0 && cpu.luaHeap().collectionTarget() == before + 1024
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	require(cpu.instructionBudgetRemaining == 0 && bmsx::LuaHeap(cpu).collectionTarget() == before + 1024
 		&& cpu.memory().readRamRecordWord(control + bmsx::test::GC_TRACE_RECORD) == valuePayload(frame.registers.get(0)),
 		"a small admission earns one baseline quantum of credit and does not debit the guest");
 	const auto firstCursor = cpu.memory().readRamRecordWord(control + bmsx::test::GC_TRACE_CURSOR);
 	bmsx::test::allocateTableReference(cpu, 3200, 0);
-	require(cpu.luaHeap().collectionTarget() == before + 1024 + 2 * bmsx::test::GC_STEP_WORDS
-		&& cpu.luaHeap().collectionTarget() < cpu.luaHeap().usedBytes()
+	require(bmsx::LuaHeap(cpu).collectionTarget() == before + 1024 + 2 * bmsx::test::GC_STEP_WORDS
+		&& bmsx::LuaHeap(cpu).collectionTarget() < bmsx::LuaHeap(cpu).usedBytes()
 		&& cpu.memory().readRamRecordWord(control + bmsx::test::GC_TRACE_CURSOR) == firstCursor + bmsx::test::GC_STEP_WORDS,
 		"a large admission spends at most one quantum and carries its unpaid debt");
 	u32 phases = 0;
@@ -1449,12 +1455,12 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 	auto table = bmsx::test::allocateTableReference(cpu, slots, grows ? 0 : 16);
 	auto pending = bmsx::test::allocateTableReference(cpu, slots);
 	const u32 key = bmsx::test::allocateTableReference(cpu).address(), value = bmsx::test::allocateTableReference(cpu).address();
-	const auto text = cpu.stringPool().intern("forward mark across a checkpoint");
+	const auto text = bmsx::test::StringPoolReference(cpu).intern("forward mark across a checkpoint");
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(table.address()));
 	frame.registers.set(1, valueTable(pending.address()));
 	frame.setTop(2);
-	const u32 control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto phase = [&](u32 offset) { return memory.readRamRecordWord(control + offset); };
 	const auto color = [&](u32 record) { return memory.readRamRecordByte(record + GC_COLOR_OFFSET) & GC_COLOR_MASK; };
 	const auto step = [&] { return heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 256u); };
@@ -1476,7 +1482,7 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 	table.setInteger(1, valueString(text));
 	require(color(table.address()) == 3u && phase(bmsx::test::GC_CHANGED_HEAD) == changed
 		&& heap.isAlive(key) && heap.isAlive(value), "both inserted hash edges go to the live trace, not a table rescan");
-	require(phase(bmsx::test::GC_EPOCH_WORK) == work + 1u && cpu.stringPool().takeMarkWork() == 0u,
+	require(phase(bmsx::test::GC_EPOCH_WORK) == work + 1u && bmsx::test::StringPoolReference(cpu).takeMarkWork() == 0u,
 		"a new String mark is credited before the host can take a checkpoint");
 	const auto snapshot = memory.captureSaveState();
 	const auto state = cpu.captureRuntimeState();
@@ -1486,7 +1492,7 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 		require(stoppedWork < slots, "the stopped pass does not revisit the large table");
 		while (heap.active()) step();
 		require(heap.tableRecordAddress(key) == key && heap.tableRecordAddress(value) == value
-			&& table.get(valueTable(key)) == valueTable(value) && cpu.stringPool().find("forward mark across a checkpoint") == text,
+			&& table.get(valueTable(key)) == valueTable(value) && bmsx::test::StringPoolReference(cpu).find("forward mark across a checkpoint") == text,
 			"all newly reached objects are retained");
 		return memory.captureSaveState().ram;
 	};
@@ -1498,31 +1504,32 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 
 void automaticAssistDefersScopedRoots() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
-	auto& strings = cpu.stringPool();
+	bmsx::test::StringPoolReference strings(cpu);
+	auto heap = bmsx::test::GcHeap(cpu, &strings.localRoots());
+	bmsx::LuaHeap budget(cpu, &strings.localRoots());
 	auto& frame = *cpu.rootThread()->currentFrame;
 	u32 published = 0u, temporary = 0u;
 	StringId publishedText = 0u, temporaryText = 0u;
 	std::string deadName;
 	{
-		auto scope = bmsx::test::GcHeap(cpu).acquireLocalRoots();
+		strings.beginLocalRoots();
 		for (u32 index = 0; index < bmsx::test::GC_STEP_WORDS + 64u; ++index) {
 			temporary = published;
 			temporaryText = publishedText;
-			published = bmsx::test::allocateTableReference(cpu).address();
+			published = bmsx::test::allocateTableReference(cpu, 0, 0, &strings.localRoots()).address();
 			publishedText = strings.intern("scoped-root-" + std::to_string(index));
 		}
 		const u8 oldEpoch = memory.readRamRecordByte(publishedText + 1u);
 		const auto assist = [&] {
-			cpu.luaHeap().setCollectionTarget(0);
-			cpu.luaHeap().admit(0);
+			budget.setCollectionTarget(0);
+			budget.admit(0);
 			require(heap.finalMarkPending() && !heap.isAlive(published),
 				"one assist reaches the safepoint without traversing the host Value scope");
 		};
 		assist();
 		require(memory.readRamRecordByte(publishedText + 1u) == oldEpoch, "the assist did not traverse the String scope");
-		cpu.luaHeap().collectRuntime(valueTable(published), valueTable(temporary));
+		budget.collectRuntime(valueTable(published), valueTable(temporary));
 		deadName = strings.toString(temporaryText);
 		require(heap.tableRecordAddress(temporary) == temporary && strings.find(deadName) == temporaryText,
 			"a synchronous collection visits the active host scope");
@@ -1531,9 +1538,10 @@ void automaticAssistDefersScopedRoots() {
 		frame.registers.set(0, valueTable(published));
 		frame.registers.set(1, valueString(publishedText));
 		frame.setTop(2);
+		strings.endLocalRoots();
 	}
 	for (int step = 0; heap.finalMarkPending() && step < 20; ++step) heap.stepFinalMark();
-	for (int step = 0; heap.active() && step < 20; ++step) bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
+	for (int step = 0; heap.active() && step < 20; ++step) heap.step(valueNil(), valueNil(), valueNil());
 	require(!heap.active() && heap.tableRecordAddress(published) == published
 		&& strings.find(strings.toString(publishedText)) == publishedText,
 		"final guest roots include the late publication");
@@ -1545,7 +1553,7 @@ void referenceExplicitAtomicOwnsOnePass() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto weak = bmsx::test::allocateTableReference(cpu, 2 * bmsx::test::GC_STEP_WORDS, 0), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	weak.setMetatableAddress(meta.address());
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(weak.address())); frame.setTop(1);
@@ -1563,7 +1571,7 @@ void referenceExplicitAtomicOwnsOnePass() {
 void collectUnattachedThreadRecord() {
 	Machine machine(image()); auto& cpu = machine.cpu; auto gc = bmsx::test::GcHeap(cpu); auto& memory = machine.memory;
 	const size_t baselineWork = gc.collect();
-	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
+	const size_t baselineBytes = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	const u32 address = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	constexpr u32 capacity = 64u;
 	test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), address, capacity, 0, valueNil());
@@ -1578,7 +1586,7 @@ void collectUnattachedThreadRecord() {
 	const u32 child = bmsx::test::allocateTableReference(cpu).address();
 	memory.writeRamRecordWord(block, child);
 	memory.writeRamRecordByte(block + capacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
-	const auto& arena = cpu.heapAllocator();
+	const bmsx::HeapAllocator arena(cpu.memory());
 	const size_t stackBytes = arena.allocationBytes(block);
 	const size_t bytes = stackBytes + arena.allocationBytes(address - GC_OBJECT_PREFIX) + arena.allocationBytes(layout.frameBlock);
 	const size_t childBytes = arena.allocationBytes(child - GC_OBJECT_PREFIX);
@@ -1618,7 +1626,7 @@ void collectUnattachedThreadRecord() {
 	require(deadWork == baselineWork + 2,
 		"removing the raw Thread root leaves a sweep visit for the Thread and for its table");
 	require(gc.threadRecordAddress(address) == 0u && gc.tableRecordAddress(child) == 0u
-		&& memory.readRamRecordByte(address) == 0u && cpu.heapAllocator().occupiedBytes() == baselineBytes,
+		&& memory.readRamRecordByte(address) == 0u && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == baselineBytes,
 		"reclamation releases the unviewed Thread header, its owned backing and its sole child");
 }
 
@@ -1644,12 +1652,12 @@ void sweepCoroutineRecord() {
 		return work;
 	};
 	const auto liveWork = sweep();
-	const auto occupied = cpu.heapAllocator().occupiedBytes();
+	const auto occupied = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 	require(gc.threadRecordAddress(address) == address, "reachable coroutine survives collection");
 	frame.registers.set(0, valueNil());
 	require(sweep() == liveWork, "a Thread has the same visit charge whether retained or released");
 	require(gc.threadRecordAddress(address) == 0u && cpu.memory().readRamRecordByte(address) == 0
-		&& cpu.heapAllocator().occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
+		&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied - bytes, "sweep frees both the coroutine slot and its owned stack");
 	require(sweep() + 1 == liveWork, "only the surviving Thread is visited at the next collection");
 }
 
@@ -1733,9 +1741,9 @@ void stackShrinkAndAdmission() {
 	do { bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); } while (bmsx::test::GcHeap(cpu).active());
 	require(thread->stackCapacity == 1024 && thread->stackOffset() == values,
 		"incremental collection reclaims objects without relocating a surviving stack");
-	const size_t before = cpu.luaHeap().usedBytes();
+	const size_t before = bmsx::LuaHeap(cpu).usedBytes();
 	bmsx::test::GcHeap(cpu).collect();
-	require(thread->stackCapacity == 512 && cpu.luaHeap().usedBytes() == before - 512 * THREAD_STACK_SLOT_BYTES,
+	require(thread->stackCapacity == 512 && bmsx::LuaHeap(cpu).usedBytes() == before - 512 * THREAD_STACK_SLOT_BYTES,
 		"sweep halves the cold stack and releases 512 logical Value slots");
 	frame.registers.set(0, valueInteger(456));
 	require(thread->stack.get(frame.stackBase()) == valueInteger(456), "frame register view is rebound by the Thread owner");
@@ -1749,9 +1757,9 @@ void stackShrinkAndAdmission() {
 	bmsx::test::GcHeap(cpu).collect();
 	require(thread->stackCapacity == 512, "all caller windows participate in the shrink hysteresis");
 	thread->leaveFrame(); frame.writeControl(bmsx::FrameField::StackCapacity, 8); thread->setStackTop(8);
-	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread->address);
+	bmsx::LuaHeap(cpu).collectRuntime(valueNil(), valueNil(), valueNil(), thread->address);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
-	cpu.luaHeap().setCollectionTarget(0);
+	bmsx::LuaHeap(cpu).setCollectionTarget(0);
 	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *thread, 2048);
 	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
@@ -1761,10 +1769,10 @@ void stackShrinkAndAdmission() {
 
 void weakTableAdmissionReplansAfterCollection() {
 	for (const bool reuseHome : {false, true}) {
-		Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.luaHeap();
+		Machine machine(image()); auto& cpu = machine.cpu; bmsx::LuaHeap heap(cpu);
 		constexpr u32 hash = 8;
 		auto weak = bmsx::test::allocateTableReference(cpu, 0, hash), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 		weak.setMetatableAddress(meta.address());
 		auto& frame = *cpu.rootThread()->currentFrame;
 		frame.registers.set(0, valueTable(weak.address()));
@@ -1787,7 +1795,7 @@ void weakTableAdmissionReplansAfterCollection() {
 		const auto storage = weak.hashAddress();
 		// The three positive keys would require four array slots as well as
 		// the present hash; the budget has no room for that projection.
-		cpu.memory().writeRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
+		cpu.memory().writeRamRecordWord(bmsx::HeapAllocator(cpu.memory()).managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(heap.capacity()));
 		weak.setInteger(incoming, valueInteger(incoming));
 		require(weak.arrayCapacity() == 0 && weak.hashSlots() == hash
 			&& (weak.hashAddress() == storage) == reuseHome,
@@ -1802,7 +1810,7 @@ void weakTableAdmissionReplansAfterCollection() {
 void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
-	auto& heap = cpu.luaHeap(); auto& memory = cpu.memory();
+	bmsx::LuaHeap heap(cpu); auto& memory = cpu.memory();
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
 	const u32 pc = frame.readControl(FrameField::Pc);
 	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
@@ -1828,7 +1836,7 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 
 void fullCollectionTrimsWithoutFreeBacking() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
+	auto& thread = *cpu.rootThread(); bmsx::HeapAllocator arena(cpu.memory());
 	auto& memory = cpu.memory(); auto& frame = *thread.currentFrame;
 	test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), thread.address, 64, 8, valueNil());
 	thread.bindStack();
@@ -1853,7 +1861,7 @@ void fullCollectionTrimsWithoutFreeBacking() {
 
 void valueStackGrowsWithOnlyTheIncrementFree() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
+	auto& thread = *cpu.rootThread(); bmsx::HeapAllocator arena(cpu.memory());
 	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), thread, 1536);
 	const auto base = ThreadRecord::read(cpu.memory(), thread.address, ThreadField::StackBlock);
 	while (arena.allocate(4096, true)) {}
@@ -1870,11 +1878,11 @@ void valueStackGrowsWithOnlyTheIncrementFree() {
 void failedThreadReplacementLeavesBothOwnedLanes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& frame = *thread.currentFrame;
-	auto& arena = cpu.heapAllocator(); auto& memory = cpu.memory();
+	bmsx::HeapAllocator arena(cpu.memory()); auto& memory = cpu.memory();
 	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
 	bmsx::test::GcHeap(cpu).collect();
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
-	const auto used = cpu.luaHeap().usedBytes();
+	const auto used = bmsx::LuaHeap(cpu).usedBytes();
 	constexpr u32 newValues = 128u, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = 2u * before.frameBytes();
 	const u32 available = arena.allocate(frameBytes, true);
@@ -1894,7 +1902,7 @@ void failedThreadReplacementLeavesBothOwnedLanes() {
 	require(failed && after.block == before.block && after.frameBlock == before.frameBlock
 		&& after.valueCapacity == before.valueCapacity && after.frameCapacity == before.frameCapacity
 		&& frame.registers.get(0) == valueInteger(73), "neither lane publishes if the second physical reservation fails");
-	require(cpu.luaHeap().usedBytes() == used && arena.occupiedBytes() == occupied,
+	require(bmsx::LuaHeap(cpu).usedBytes() == used && arena.occupiedBytes() == occupied,
 		"the failed request commits no charge and leaves no allocated destination");
 }
 
@@ -1915,7 +1923,7 @@ void highRetainedPacing() {
 		require(!bmsx::test::GcHeap(cpu).finalMarkPending(), "the stopped final pass drains in bounded quanta");
 	}
 	require(pauses >= 2, "retained data survives repeated automatically paced cycles");
-	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(retained.address()),
+	require(bmsx::LuaHeap(cpu).usedBytes() <= bmsx::LuaHeap(cpu).capacity() && frame.registers.get(0) == valueTable(retained.address()),
 		"retained pool and transient allocation coexist inside the physical capacity");
 }
 

@@ -1,3 +1,6 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -33,7 +36,7 @@ int instructionCharge(std::span<const DecodedInstruction> instructions) {
 }
 
 void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
-	const std::array keys{cpu.stringPool().intern("left"), cpu.stringPool().intern("right"), cpu.stringPool().intern("last")};
+	const std::array keys{bmsx::test::StringPoolReference(cpu).intern("left"), bmsx::test::StringPoolReference(cpu).intern("right"), bmsx::test::StringPoolReference(cpu).intern("last")};
 	std::array values{valueInteger(19), valueInteger(43), valueInteger(91)};
 	ValueSlots constants(keys.size());
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 4);
@@ -82,7 +85,7 @@ void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
 }
 
 void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
-	const auto x = cpu.stringPool().intern("x");
+	const auto x = bmsx::test::StringPoolReference(cpu).intern("x");
 	auto particle = bmsx::test::allocateTableReference(cpu, 0, 1);
 	ValueSlots constants(1); constants.set(0, valueString(x));
 	std::array<DecodedInstruction, 5> ops{};
@@ -146,9 +149,10 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 }
 
 void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
-	const StringId indexKey = cpu.stringPool().intern("__index");
+	bmsx::test::StringPoolReference strings(cpu);
+	const StringId indexKey = strings.intern("__index");
 	auto controls = test::fixtureTableControls(cpu);
-	const StringId key = cpu.stringPool().intern("inherited method");
+	const StringId key = strings.intern("inherited method");
 	auto root = bmsx::test::allocateTableReference(cpu, 3, 4), middle = bmsx::test::allocateTableReference(cpu, 0, 1), holder = bmsx::test::allocateTableReference(cpu, 2, 4);
 	root.setInteger(1, valueInteger(123));
 	auto firstMeta = bmsx::test::allocateTableReference(cpu, 0, 1), secondMeta = bmsx::test::allocateTableReference(cpu, 0, 1);
@@ -194,7 +198,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const auto home = root.beginStringProbe(key).node;
 	StringId neighbor = 0;
 	for (int i = 0; i < 64 && !neighbor; ++i) {
-		const auto candidate = cpu.stringPool().intern("colliding receiver key " + std::to_string(i));
+		const auto candidate = bmsx::test::StringPoolReference(cpu).intern("colliding receiver key " + std::to_string(i));
 		if (root.beginStringProbe(candidate).node == home) neighbor = candidate;
 	}
 	require(neighbor != 0u, "the receiver override must be displaced through a real hash link");
@@ -214,7 +218,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 
 	// A generated and already-trained GETFIELD consumes the live selector
 	// on each actual miss, independently of the stock GC workspace.
-	const auto replacement = cpu.stringPool().intern("firmware-authored __index");
+	const auto replacement = strings.intern("firmware-authored __index");
 	auto alternative = bmsx::test::allocateTableReference(cpu, 0, 2);
 	alternative.setStringKey(key, valueInteger(81));
 	firstMeta.setStringKey(replacement, valueTable(alternative.address()));
@@ -227,9 +231,9 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	holder.setStringKey(key, valueInteger(42));
 	read(valueInteger(42), 2);
 	for (int i = 0; i < 32; ++i) {
-		holder.setStringKey(cpu.stringPool().intern("holder rehash " + std::to_string(i)), valueInteger(i));
-		secondMeta.setStringKey(cpu.stringPool().intern("meta rehash " + std::to_string(i)), valueInteger(i));
-		root.setStringKey(cpu.stringPool().intern("receiver rehash " + std::to_string(i)), valueInteger(i));
+		holder.setStringKey(bmsx::test::StringPoolReference(cpu).intern("holder rehash " + std::to_string(i)), valueInteger(i));
+		secondMeta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("meta rehash " + std::to_string(i)), valueInteger(i));
+		root.setStringKey(bmsx::test::StringPoolReference(cpu).intern("receiver rehash " + std::to_string(i)), valueInteger(i));
 	}
 	read(valueInteger(42), 2);
 	// A live value at an intermediate table overrides the cached holder.
@@ -264,10 +268,10 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 }
 
 void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
-	const auto key = cpu.stringPool().intern("native read field");
-	const auto indexKey = cpu.stringPool().intern("__index");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("native read field");
+	const auto indexKey = bmsx::test::StringPoolReference(cpu).intern("__index");
 	auto controls = test::fixtureTableControls(cpu);
-	const auto other = cpu.stringPool().intern("other read field");
+	const auto other = bmsx::test::StringPoolReference(cpu).intern("other read field");
 	ValueSlots constants(1); constants.set(0, valueString(key));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
 		valueFloatBits(0xffa12345u), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueString(other), valueNil()};
@@ -301,15 +305,15 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 			registers.set(0, valueTable(table.address())); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
-			const auto heap = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+			const auto heap = std::pair{bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget()};
 			NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == NativeBlockExit::Continue && registers.get(destination) == value
 				&& registers.get(9) == values[3] && registers.get(10) == values[0],
 				"a missing or inherited field completes before the suffix, including aliased operands");
 			if (op == OpCode::SELF) require(registers.get(destination + 1) == valueTable(table.address()), "SELF retains its receiver before the read");
-			require(cpu.luaHeap().usedBytes() == heap.first
-				&& cpu.luaHeap().collectionTarget() == heap.second,
+			require(bmsx::LuaHeap(cpu).usedBytes() == heap.first
+				&& bmsx::LuaHeap(cpu).collectionTarget() == heap.second,
 				"read resolution changes neither tracked allocation nor collection thresholds");
 			require(state.remainingCycles == 100 - cycles - TABLE_INDEX_VISIT_CYCLES,
 				"the inherited read charges one visit");
@@ -317,7 +321,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 		for (int mutation = 0; mutation < 4; ++mutation) {
 			if (mutation == 0) block->sideExits[0].tableRead.standalone = table.setStringKey(key, values[0]);
 			if (mutation == 1) {
-				for (int i = 0; i != 64; ++i) table.setStringKey(cpu.stringPool().intern("read_rehash_" + std::to_string(i)), valueInteger(i));
+				for (int i = 0; i != 64; ++i) table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("read_rehash_" + std::to_string(i)), valueInteger(i));
 			}
 			if (mutation == 2) { table.setStringKey(key, valueNil()); parent.setStringKey(key, valueInteger(91)); }
 			if (mutation == 3) { meta.setStringKey(indexKey, valueBool(false)); }
@@ -419,13 +423,13 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 }
 
 void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
-	const auto key = cpu.stringPool().intern("bounded lookup");
-	const auto indexKey = cpu.stringPool().intern("__index");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("bounded lookup");
+	const auto indexKey = bmsx::test::StringPoolReference(cpu).intern("__index");
 	auto controls = test::fixtureTableControls(cpu);
 	const u32 home = hashCanonicalTableKey(valueString(key)) & 1u;
 	StringId collision = 0;
 	for (int i = 0; i < 64 && !collision; ++i) {
-		const auto candidate = cpu.stringPool().intern("bounded collision " + std::to_string(i));
+		const auto candidate = bmsx::test::StringPoolReference(cpu).intern("bounded collision " + std::to_string(i));
 		if ((hashCanonicalTableKey(valueString(candidate)) & 1u) == home) collision = candidate;
 	}
 	require(collision != 0u, "a real live chain shares the lookup home");
@@ -530,7 +534,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 }
 
 void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
-	const StringId key = cpu.stringPool().intern("native write field");
+	const StringId key = bmsx::test::StringPoolReference(cpu).intern("native write field");
 	ValueSlots constants(2); constants.set(0, valueString(key)); constants.set(1, valueFromTag(ValueTag::False, 37));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
 		valueFloatBits(0xffa12345u), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueString(key), valueNil()};
@@ -554,12 +558,12 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		const int cycles = instructionCharge(decoded);
 		auto block = test::compileNative(source, memory, cpu.stringPool());
 		auto parent = bmsx::test::allocateTableReference(cpu, 0, 1); parent.setStringKey(key, valueInteger(71));
-		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1); meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(parent.address()));
 		for (size_t n = 0; n < values.size(); ++n) {
 			auto table = bmsx::test::allocateTableReference(cpu, 0, 8); table.setMetatableAddress(meta.address());
 			// Different receiver layouts share this one prediction site.
 			for (size_t prior = 0; prior < n; ++prior)
-				table.setStringKey(cpu.stringPool().intern("prior_" + std::to_string(prior)), valueInteger(prior));
+				table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("prior_" + std::to_string(prior)), valueInteger(prior));
 			const auto previous = valueInteger(91);
 			for (const bool own : {false, true}) for (const Value value : {values[n], valueNil()}) {
 				block->sideExits[0].tableStore.standalone = table.setStringKey(key, own ? previous : valueNil());
@@ -597,7 +601,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 			"growth publishes the prefix roots without executing the suffix");
 
 		auto full = bmsx::test::allocateTableReference(cpu, 0, 1);
-		const auto resident = cpu.stringPool().intern("resident field");
+		const auto resident = bmsx::test::StringPoolReference(cpu).intern("resident field");
 		full.setStringKey(resident, valueInteger(71));
 		require(full.hashSlots() == 1 && full.hashFree() == 0, "the full hash still has a live free cursor");
 		const size_t header = full.address() & RAM_RECORD_WORD_MASK;
@@ -672,7 +676,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		if (generic) {
 			auto child = bmsx::test::allocateTableReference(cpu);
 			auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
-			metatable.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+			metatable.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 			table.setMetatableAddress(metatable.address());
 			model.setMetatableAddress(metatable.address());
 			table.setInteger(1, valueInteger(71));
@@ -717,9 +721,9 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 		test::seedManagedHeapFixture(cpu);
 		auto owner = field ? bmsx::test::allocateTableReference(cpu, 0, 1) : bmsx::test::allocateTableReference(cpu, 2, 0);
 		const Value child = field ? valueThread(bmsx::test::allocateThreadRecordReference(cpu, 0u)) : valueTable(bmsx::test::allocateTableReference(cpu).address());
-		const auto name = cpu.stringPool().intern("remark field");
+		const auto name = bmsx::test::StringPoolReference(cpu).intern("remark field");
 		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
-		const auto control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+		const auto control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 		memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
 		memory.writeRamRecordByte(owner.address() + GC_COLOR_OFFSET, 3u);
 		auto heap = bmsx::test::GcHeap(cpu);

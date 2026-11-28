@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -79,7 +80,7 @@ struct Machine {
 		r.set(7, valueInteger(-7)); r.set(8, valueInteger(-8)); r.set(9, valueInteger(-9));
 		r.set(12, cpu.createBuiltinFunction(id)); r.set(15, valueFloat(99.75f)); frame->writeControl(bmsx::FrameField::Top, 3);
 		if (id == BuiltinFunctionId::StringByte) {
-			r.set(13, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
+			r.set(13, mode == 2 ? valueInteger(17) : valueString(bmsx::test::StringPoolReference(cpu).intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(14, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
 			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169)
 				: (position == 2 || position == 2.9f) ? valueInteger(195) : valueNil();

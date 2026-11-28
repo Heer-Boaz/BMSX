@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
@@ -33,7 +34,7 @@ struct Harness {
  Harness():memory(MemoryInit{{system.data(),system.size()},test::cartridgeSlots(cart)},PSX_MACHINE_SPEC.ramBytes),
   irq(memory),execution(memory),cpu(memory,irq,execution),scheduler(cpu),dma(memory,cpu,irq,scheduler),
   gpu(memory,cpu,irq,scheduler,dma,PSX_MACHINE_SPEC.gxGpuVramBytes) {
-  require(cpu.heapAllocator().setFloor(Target + HEAP_PAGE_SIZE), "DMA fixtures occupy public static RAM");
+  require(bmsx::HeapAllocator(cpu.memory()).setFloor(Target + HEAP_PAGE_SIZE), "DMA fixtures occupy public static RAM");
   memory.cartridgeController().connect(memory,irq,dma);
   dma.reset();memory.cartridgeController().reset();gpu.reset();irq.reset();
   dma.setTiming(PSX_MACHINE_SPEC.dmaRamCyclesPerWord,PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,

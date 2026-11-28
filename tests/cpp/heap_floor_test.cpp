@@ -1,6 +1,8 @@
+#include "common/dlmalloc/dlmalloc.h"
 #include "common/endian.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/heap_allocator.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
@@ -89,11 +91,12 @@ void explicitRamEndPrecedesExecAndSurvivesRestore() {
 	machine.cpu.reset();
 	require(machine.memory.ramBusEnd() == DYNAMIC_RAM_BASE,
 		"cold reset does not expose any program RAM on the public bus before firmware selects an end");
-	require(machine.cpu.heapAllocator().occupiedBytes() == 0u,
+	require(bmsx::HeapAllocator(machine.cpu.memory()).occupiedBytes() == 0u,
 		"raw reset does not allocate language storage");
 	test::seedManagedFixture(machine.cpu, machine.addresses);
-	require(machine.cpu.heapAllocator().floorAddress() == systemFloor, "the admitted BIOS context maps its static extent");
-	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "the BIOS has the system heap extent");
+	require(bmsx::HeapAllocator(machine.cpu.memory()).floorAddress() == systemFloor, "the admitted BIOS context maps its static extent");
+	bmsx::LuaHeap budget(machine.cpu);
+	require(budget.capacity() == limit - systemFloor, "the BIOS has the system heap extent");
 	const auto savedMemory = machine.memory.captureSaveState();
 	const auto savedCpu = machine.cpu.captureRuntimeState();
 	require(machine.cpu.runUntilDepth(0, 100) == RunResult::Yielded, "RAM_END changes the aperture at its own boundary");
@@ -101,10 +104,10 @@ void explicitRamEndPrecedesExecAndSurvivesRestore() {
 	machine.cpu.runUntilDepth(0, 100);
 	require(machine.cpu.isCartridgeExecutionActive(), "EXEC entered the cartridge");
 	require(machine.memory.ramBusEnd() == cartFloor, "EXEC does not change the aperture");
-	require(machine.cpu.luaHeap().capacity() == limit - cartFloor, "the cartridge has its own heap extent");
+	require(budget.capacity() == limit - cartFloor, "the cartridge has its own heap extent");
 	machine.memory.restoreSaveState(savedMemory);
 	machine.cpu.restoreRuntimeState(savedCpu);
-	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "restore uses the floor from restored RAM");
+	require(budget.capacity() == limit - systemFloor, "restore uses the floor from restored RAM");
 }
 
 void instructionFetchFollowsTheLiveFloor() {
@@ -112,14 +115,15 @@ void instructionFetchFollowsTheLiveFloor() {
 	test::seedManagedFixture(machine.cpu, machine.addresses);
 	auto& cpu = machine.cpu;
 	auto& memory = machine.memory;
-	const u32 pc = cpu.heapAllocator().floorAddress();
+	bmsx::HeapAllocator arena(cpu.memory());
+	const u32 pc = arena.floorAddress();
 	const auto selectPc = [&](u32 address) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.system.functionAddresses[0], address);
 	};
 	std::array<u8, 2 * INSTRUCTION_BYTES> text{};
 	writeInstruction(text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-	require(cpu.heapAllocator().setFloor(pc + HEAP_PAGE_SIZE), "the test code occupies reserved static storage");
+	require(arena.setFloor(pc + HEAP_PAGE_SIZE), "the test code occupies reserved static storage");
 	memory.writeBytes(pc, text.data(), text.size());
 	selectPc(pc);
 	const int loop = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
@@ -132,7 +136,7 @@ void instructionFetchFollowsTheLiveFloor() {
 #endif
 	const auto saved = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
-	require(cpu.heapAllocator().setFloor(pc), "lowering the floor covers the old code page");
+	require(arena.setFloor(pc), "lowering the floor covers the old code page");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(!page.nativeBlocks, "the floor change retires cached code immediately");
 #endif
@@ -154,7 +158,7 @@ void instructionFetchFollowsTheLiveFloor() {
 	writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(text, 1, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	memory.writeBytes(pc - INSTRUCTION_BYTES, text.data(), text.size());
-	require(cpu.heapAllocator().setFloor(pc), "prepare the WIDE boundary after writing both instruction words");
+	require(arena.setFloor(pc), "prepare the WIDE boundary after writing both instruction words");
 	selectPc(pc - INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, 1);
 	require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR && cpu.readEpcWord() == pc - INSTRUCTION_BYTES,
@@ -164,7 +168,7 @@ void instructionFetchFollowsTheLiveFloor() {
 void execLeavesLiveChunksAndTheApertureUntouched() {
 	Machine machine = bootPair();
 	test::seedManagedFixture(machine.cpu, machine.addresses);
-	HeapAllocator& heap = machine.cpu.heapAllocator();
+	bmsx::HeapAllocator heap(machine.cpu.memory());
 	const u32 floor = heap.floorAddress();
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
 	u32 claimed;
@@ -183,7 +187,10 @@ void reclaimLargeChunkAcrossHistoryPages() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	HeapAllocator heap(memory);
 	constexpr u32 bytes = 400u * HEAP_PAGE_SIZE - 8;
-	heap.reset(RAM_BASE + heap.managementOffset() - 404u * HEAP_PAGE_SIZE);
+	const u32 floor = heap.managementOffset() - 404u * HEAP_PAGE_SIZE;
+	bmsx_dlmalloc_reset({memory.ramData(), heap.stateOffset(), memory.ramWriteWatches().groupData()},
+		floor, heap.managementOffset());
+	memory.setRamBusEnd(RAM_BASE + floor);
 	const u32 high = heap.allocate(2u * HEAP_PAGE_SIZE - 8u, true);
 	const u32 run = heap.allocate(bytes, false);
 	const u32 low = heap.allocate(4088u, true);

@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/geometry/xform2.h"
 #include "machine/devices/geometry/contracts.h"
 #include "machine/machine.h"
@@ -58,7 +59,7 @@ void testController(u32 count, bool abort) {
 	IdleInput input;
 	Machine machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
-	require(machine.cpu.heapAllocator().setFloor(bounds + 4u * IO_WORD_SIZE),
+	require(bmsx::HeapAllocator(machine.cpu.memory()).setFloor(bounds + 4u * IO_WORD_SIZE),
 		"GEO XFORM operands and bounds fit in public static RAM");
 	machine.geometryController.setTiming(PSX_CPU_FREQ_HZ, PSX_GEO_WORK_UNITS_PER_SEC);
 	const auto job = prepare(memory, count);

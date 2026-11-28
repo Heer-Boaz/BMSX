@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -55,7 +57,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		b.nmiReturnExceptionDomainWord, b.nonMaskableInterruptPending, b.hardHalted, b.haltedUntilIrqFrameDepth,
 		b.haltedUntilIrqThreadAddress, b.interruptEventPending, b.memoryWriteBlocked, b.memoryWriteBlockedAddress, b.yieldRequested), "all control words and latches agree");
 	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
-		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes(), "guest values, roots and allocation accounting agree");
+		&& bmsx::LuaHeap(native.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes(), "guest values, roots and allocation accounting agree");
 	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
 		"physical instruction boundaries and WIDE bodies agree");
 	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
@@ -254,8 +256,8 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a late unknown selector still hard-halts after the earlier guard succeeds");
 	}
 	requireParity(native, scalar);
@@ -270,7 +272,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	requireParity(native, scalar);
@@ -303,7 +305,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 			m->cpu.writeEpcWord(m->rom.textAddress + 18u * INSTRUCTION_BYTES);
 		}
 		if (op == OpCode::MTC0) m->cpu.activeThread()->firstFrame->registers.set(12, valueInteger(-1));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("returnStatus"), valueInteger(0));
 		// Clearing reset inhibit hands control back before the vector's RFE.
 		// That hardware boundary is distinct from the later rejected opcode.
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Yielded && m->cpu.getFrameDepth() == 2
@@ -340,8 +342,8 @@ void execReplacesFramesAfterNativeReturn() {
 	native.cpu.setNativeCompilationProfiling(true);
 #endif
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("next"), valueInteger(m->rom.functionAddresses[1]));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("start"), valueInteger(m->rom.functionAddresses[0]));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("next"), valueInteger(m->rom.functionAddresses[1]));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("start"), valueInteger(m->rom.functionAddresses[0]));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 800);
 	}
 	requireParity(native, scalar);
@@ -366,7 +368,7 @@ void execReplacesFramesAfterNativeReturn() {
 	require(generated, "the context-replacing EXEC is a real generated exit, even when the new frame has not fetched yet");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		for (const auto key : {"next", "start"}) m->cpu.setGlobalByKey(*m->cpu.stringPool().find(key), valueInteger(m->rom.functionAddresses[2]));
+		for (const auto key : {"next", "start"}) m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find(key), valueInteger(m->rom.functionAddresses[2]));
 		require(m->cpu.runUntilDepth(0, 4) == RunResult::Halted, "EXEC rejects non-static records without retaining an obsolete native frame");
 	}
 	requireParity(native, scalar);

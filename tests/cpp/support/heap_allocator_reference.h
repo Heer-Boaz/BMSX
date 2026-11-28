@@ -12,7 +12,7 @@ inline constexpr u32 HEAP_COLLECTION_TARGET_OFFSET = 0x340u;
 inline constexpr u32 HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0u;
 inline constexpr u32 HEAP_STRING_MARK_WORK_OFFSET = 0x3f4u;
 
-// Read-only view of the stock firmware arena. Mutators are test references.
+// Frozen allocator reference for the stock firmware arena.
 class HeapAllocator {
 public:
 	explicit HeapAllocator(Memory& memory);

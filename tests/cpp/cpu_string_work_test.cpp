@@ -1,4 +1,6 @@
 #include "common/hash_fnv.h"
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
@@ -48,8 +50,8 @@ void logicalStringWork(bool scalar, OpCode op) {
 		auto& frame = machine.restart();
 		const std::string right("a😀雪\0", 9);
 		const std::string left = repeat % 3 == 2 ? right : repeat % 3 == 1 ? "a😀雪" : "z😀雪";
-		frame.registers.set(1, valueString(machine.cpu.stringPool().intern(left)));
-		frame.registers.set(2, valueString(machine.cpu.stringPool().intern(right)));
+		frame.registers.set(1, valueString(bmsx::test::StringPoolReference(machine.cpu).intern(left)));
+		frame.registers.set(2, valueString(bmsx::test::StringPoolReference(machine.cpu).intern(right)));
 		machine.cpu.runUntilDepth(0, 1);
 		const int leftCount = static_cast<int>(left.size());
 		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
@@ -88,8 +90,8 @@ void grantedStringOrder(bool scalar, bool inclusive) {
 	}
 #endif
 	auto& frame = machine.restart();
-	const auto a = cpu.stringPool().intern(std::string(513, 'x'));
-	const auto b = cpu.stringPool().intern(std::string(512, 'x') + 'y');
+	const auto a = bmsx::test::StringPoolReference(cpu).intern(std::string(513, 'x'));
+	const auto b = bmsx::test::StringPoolReference(cpu).intern(std::string(512, 'x') + 'y');
 	frame.registers.set(1, valueString(a)); frame.registers.set(2, valueString(inclusive ? a : b)); frame.setTop(3);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(op)] + 7);
 	const auto anchor = cpu.captureRuntimeState();
@@ -133,7 +135,7 @@ void ramStringPorts() {
 	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
 	{
 		CpuMachine machine(image, true);
-		auto& pool = machine.cpu.stringPool();
+		bmsx::test::StringPoolReference pool(machine.cpu);
 		auto& memory = machine.memory;
 		const std::string bytes("wrapRAM!\0\xf7xyz", 13);
 		const u32 straight = pool.intern(bytes);
@@ -154,7 +156,7 @@ void ramStringPorts() {
 		require(pool.toString(doubled) == bytes + bytes && pool.intern(bytes + bytes) == doubled,
 			"a concatenation miss assembles both wrapped operands in order");
 		const auto prefix = pool.intern(bytes.substr(0, 5)), suffix = pool.intern(bytes.substr(5));
-		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		const u32 metadata = bmsx::HeapAllocator(machine.cpu.memory()).managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		const u32 count = memory.readRamRecordWord(metadata + 4u);
 		const u32 bucket = memory.readRamRecordWord(metadata) + 4u * (fnv1a32(bytes) & (count - 1u));
 		memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));

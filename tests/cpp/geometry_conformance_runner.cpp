@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/machine.h"
 #include "spec/bmsx/model.h"
 #include "support/cartridge_fixture.h"
@@ -21,7 +22,7 @@ int main(int argc, char** argv) {
 	bmsx::Machine machine(memory, idle, bmsx::PSX_MACHINE_SPEC);
 	bmsx::u32 fixtureRamEnd;
 	input >> fixtureRamEnd;
-	if (!machine.cpu.heapAllocator().setFloor(fixtureRamEnd))
+	if (!bmsx::HeapAllocator(machine.cpu.memory()).setFloor(fixtureRamEnd))
 		throw std::runtime_error("GEO vectors must own their mapped fixture RAM");
 	unsigned count;
 	while (input >> count) {

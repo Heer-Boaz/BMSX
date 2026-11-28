@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -186,7 +187,7 @@ std::vector<u8> mixedGrants() {
 		std::cout<<"mixed grant="<<grant<<" consumed="<<measured.consumed
 			<<" result="<<static_cast<int>(measured.result)<<'\n';
 	}
-	require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
+	require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*bmsx::test::StringPoolReference(generated.runtime.machine.cpu).find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
 	require(isNil(generated.frame().registers.get(8)),"an untaken CALL never changes its destination");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -233,7 +234,7 @@ void tableWrites() {
 		for(auto* fixture : {&generated,&scalar}) {
 			auto& cpu=fixture->runtime.machine.cpu;
 			auto table=bmsx::test::allocateTableReference(cpu, 0,2);
-			table.setStringKey(cpu.stringPool().intern("field"),valueInteger(11));
+			table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("field"),valueInteger(11));
 			fixture->frame().registers.set(0, valueTable(table.address())); fixture->frame().registers.set(2, valueInteger(73));
 		}
 		runPair(generated,scalar,32); // Bind the real generated field-cache fast path.
@@ -253,7 +254,7 @@ void tableWrites() {
 #endif
 #endif
 		if(route==2) require(generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"invalid table target actually enters the language-fault boundary");
-		else require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
+		else require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*bmsx::test::StringPoolReference(generated.runtime.machine.cpu).find("field"))==valueInteger(73),
 			"both field fast and growth paths perform the actual write");
 	}
 }

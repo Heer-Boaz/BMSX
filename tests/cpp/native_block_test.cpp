@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "support/gc_heap_reference.h"
 #include "support/native_region_fixture.h"
@@ -298,7 +300,7 @@ void residentValuesCrossInternalComparisonBranches() {
 		NativeBlockSource{instructions.subspan(5, 5)}};
 	const std::array constants{valueInteger(1)};
 	const auto constantsBank = test::valueBank(constants);
-	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
+	const auto alpha = valueString(bmsx::test::StringPoolReference(cpu).intern("alpha")), omega = valueString(bmsx::test::StringPoolReference(cpu).intern("omega"));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueFloat(-0.0),
 		valueFloatBits(0x7fc0002au)};
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
@@ -359,7 +361,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(6)}, NativeBlockSource{source.subspan(6)}};
 	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(bmsx::test::allocateTableReference(cpu).address()),
-		valueFloat(-0.0), valueString(cpu.stringPool().intern("register permutation")), valueInteger(73), valueInteger(2), valueInteger(4)};
+		valueFloat(-0.0), valueString(bmsx::test::StringPoolReference(cpu).intern("register permutation")), valueInteger(73), valueInteger(2), valueInteger(4)};
 	const auto constantsBank = test::valueBank(constants);
 	const std::array<std::array<int, 4>, 3> permutations{{{3, 2, 1, 0}, {1, 2, 3, 0}, {2, 0, 3, 1}}};
 	for (const auto& permutation : permutations) for (bool helper : {false, true}) {
@@ -387,7 +389,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 		// An external entry admits its own register tags; it never inherits
 		// the predecessor's values just because their types match.
 		const std::array incoming{valueFromTag(ValueTag::False, 81), constants[1],
-			valueFloat(6.25f), valueString(cpu.stringPool().intern("cold entry"))};
+			valueFloat(6.25f), valueString(bmsx::test::StringPoolReference(cpu).intern("cold entry"))};
 		ValueSlots registers(10);
 		for (int i = 0; i < 4; ++i) registers.set(i, incoming[i]);
 		NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = 6};
@@ -540,7 +542,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3)},
 		NativeBlockSource{source.subspan(18, 4)}, NativeBlockSource{source.subspan(22)}};
 	const std::array constants{valueInteger(2), valueInteger(3), valueFromTag(ValueTag::False, 57),
-		valueTable(bmsx::test::allocateTableReference(cpu).address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
+		valueTable(bmsx::test::allocateTableReference(cpu).address()), valueFloat(-0.0), valueString(bmsx::test::StringPoolReference(cpu).intern("diamond register"))};
 	const auto constantsBank = test::valueBank(constants);
 	for (const bool helper : {false, true}) for (const bool bypassHelper : {false, true}) {
 		decoded[17].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
@@ -741,7 +743,7 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 
 void comparisonDatapathsRespectEveryValueKind() {
 	NativeBlockRunState nativeRunState;
-	auto& strings = cpu.stringPool();
+	bmsx::test::StringPoolReference strings(cpu);
 	auto heap = bmsx::test::GcHeap(cpu);
 	const u32 firstClosure = test::allocateClosureRecordReference(heap, 0);
 	ClosureRecord::initialize(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
@@ -778,7 +780,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 			const std::array pool{left, right};
 			const auto poolBank = test::valueBank(pool);
 			auto registers = test::valueBank(pool);
-			auto block = test::compileNative(source, memory, strings);
+			auto block = test::compileNative(source, memory, cpu.stringPool());
 			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
 				&& test::matchesValues(registers.view(), pool) && exit->registerTop == 0 && exit->cycles == 1
@@ -1307,7 +1309,7 @@ void typedCallExitPublishesPrefix() {
 void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 	const std::array constants{valueFromTag(ValueTag::False, 37), valueFloat(-0.0),
 		valueFromTag(ValueTag::Nil, 19), valueTable(bmsx::test::allocateTableReference(cpu).address()),
-		valueString(cpu.stringPool().intern("field")), valueInteger(5), valueInteger(2)};
+		valueString(bmsx::test::StringPoolReference(cpu).intern("field")), valueInteger(5), valueInteger(2)};
 	const auto constantsBank = test::valueBank(constants);
 	for (bool calling : {false, true}) for (int definitions = 0; definitions <= 4; ++definitions) {
 		for (auto terminal : {OpCode::JMP, OpCode::GETFIELD, OpCode::LOAD_MEM}) {
@@ -1351,8 +1353,8 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 }
 
 void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
-	const auto x = cpu.stringPool().intern("two-field x");
-	const auto y = cpu.stringPool().intern("two-field y");
+	const auto x = bmsx::test::StringPoolReference(cpu).intern("two-field x");
+	const auto y = bmsx::test::StringPoolReference(cpu).intern("two-field y");
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
 	int xSlot = table.setStringKey(x, valueFloat(1.5f));
 	const int ySlot = table.setStringKey(y, valueInteger(2));
@@ -1408,8 +1410,8 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 }
 
 void reusedFieldAddressHonorsEachSite() {
-	const auto key = cpu.stringPool().intern("reused field");
-	const auto alternate = cpu.stringPool().intern("alternate field");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("reused field");
+	const auto alternate = bmsx::test::StringPoolReference(cpu).intern("alternate field");
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
 	int slot = table.setStringKey(key, valueInteger(13));
 	const int alternateSlot = table.setStringKey(alternate, valueInteger(29));
@@ -1458,7 +1460,7 @@ void reusedFieldAddressHonorsEachSite() {
 int main() {
 	try {
 		test::seedManagedHeapFixture(cpu);
-		require(cpu.heapAllocator().setFloor(DYNAMIC_RAM_BASE + 0x85000u), "native datapath buffers occupy public static RAM");
+		require(bmsx::HeapAllocator(cpu.memory()).setFloor(DYNAMIC_RAM_BASE + 0x85000u), "native datapath buffers occupy public static RAM");
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();

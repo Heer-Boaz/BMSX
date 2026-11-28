@@ -1,5 +1,7 @@
 #include "spec/bmsx/io.h"
 #include "spec/blua32/cop0.h"
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "spec/blua32/image_format.h"
@@ -275,7 +277,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		systemImage.startupFunctionIndex = SYSTEM_CP0_FUNCTION;
 		CpuTestMachine machine(std::move(systemImage), makeSupervisorCartImage(), std::nullopt, CpuTestMachine::Context::ResetBank);
 		require(machine.cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS
-			&& machine.cpu.heapAllocator().occupiedBytes() == 0u, "a pre-instruction System IRQ needs only the reset bank");
+			&& bmsx::HeapAllocator(machine.cpu.memory()).occupiedBytes() == 0u, "a pre-instruction System IRQ needs only the reset bank");
 		machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 		machine.irq.raise(bmsx::IRQ_VBLANK);
 		require(machine.cpu.enterPendingInterrupt(), "supervisor IRQ enters");
@@ -316,7 +318,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 		{"irq"},
 		{"irq"}
 	));
-	const bmsx::StringId irqKey = machine.cpu.stringPool().intern("irq");
+	const bmsx::StringId irqKey = bmsx::test::StringPoolReference(machine.cpu).intern("irq");
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueInteger(11));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(22));
 
@@ -325,7 +327,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	);
 	const auto savedRam = machine.memory.captureSaveState();
 	const auto saved = machine.cpu.captureRuntimeState();
-	const auto management = machine.cpu.heapAllocator().managementOffset();
+	const auto management = bmsx::HeapAllocator(machine.cpu.memory()).managementOffset();
 	const auto systemBank = management + bmsx::SYSTEM_GLOBAL_BANK_OFFSET, ordinaryBank = management + bmsx::GLOBAL_BANK_OFFSET;
 	const auto count = static_cast<bmsx::u32>(bmsx::GlobalBankField::Count);
 	const auto values = static_cast<bmsx::u32>(bmsx::GlobalBankField::Values);

@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "support/string_pool_reference.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -255,7 +256,7 @@ void coldExecPreservesGuestStateAndBanks() {
 				== encodeRuntimeSaveState(captureRuntimeSaveState(ordinary.runtime)) && prepared.reads == ordinary.reads,
 				"prepared and ordinary cartridge execution retain exact state, cycles and device reads");
 		}
-		const auto key = prepared.cpu().stringPool().intern("cartResult");
+		const auto key = bmsx::test::StringPoolReference(prepared.cpu()).intern("cartResult");
 		require(prepared.cpu().stringPool().toString(asStringId(prepared.cpu().getGlobalByKey(key))) == "chosen-slot",
 			"slot-one code and constants cannot be borrowed from the other installed cartridge");
 	}
@@ -339,10 +340,10 @@ void coldExecRecordsNumericFieldFeedback() {
 		auto holder = inherited ? bmsx::test::allocateTableReference(cpu, 0, 1) : receiver;
 		if (inherited) {
 			auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-			meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
+			meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(holder.address()));
 			receiver.setMetatableAddress(meta.address());
 		}
-		const auto key = cpu.stringPool().intern("x");
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("x");
 		holder.setStringKey(key, valueFloat(4.0f));
 		frame.registers.set(0, valueTable(receiver.address()));
 		frame.registers.set(1, valueFloat(0.5f));

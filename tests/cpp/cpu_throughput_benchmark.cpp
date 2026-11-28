@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include "support/string_pool_reference.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
@@ -230,17 +231,17 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		frame.setTop(1);
 	}
 	if (workload == Workload::Globals) {
-		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1));
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
+		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1));
+		cpu.setSystemGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
 	}
 	if (workload == Workload::FieldMiss) {
 		auto table = bmsx::test::allocateTableReference(cpu, 0, 64);
 		registers.set(0, valueTable(table.address()));
 		cpu.activeThread()->currentFrame->setTop(1);
-		const auto field = cpu.stringPool().intern("field");
+		const auto field = bmsx::test::StringPoolReference(cpu).intern("field");
 		const int home = table.beginStringProbe(field).node;
 		for (int n = 0, added = 0; added < fieldNodes; ++n) {
-			const auto key = cpu.stringPool().intern("field_" + std::to_string(n));
+			const auto key = bmsx::test::StringPoolReference(cpu).intern("field_" + std::to_string(n));
 			if (table.beginStringProbe(key).node != home) continue;
 			table.setStringKey(key, valueInteger(++added));
 		}
@@ -252,7 +253,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	const bool inherited = workload == Workload::FieldHitInheritedHome;
 	const bool fieldHit = inherited || workload == Workload::FieldHitStableSlot || workload == Workload::FieldHitAlternatingSlot;
 	if (fieldHit) {
-		const auto field = cpu.stringPool().intern("field");
+		const auto field = bmsx::test::StringPoolReference(cpu).intern("field");
 		int slots[2];
 		for (int i = 0; i < 2; ++i) {
 			const int capacity = inherited ? 0 : std::max(64, fieldNodes) * (i == 1 && workload == Workload::FieldHitAlternatingSlot ? 2 : 1);
@@ -263,7 +264,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 				auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 				table.setMetatableAddress(meta.address());
 				auto parent = bmsx::test::allocateTableReference(cpu, 0, 1);
-				meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+				meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(parent.address()));
 				parent.setStringKey(field, valueInteger(i + 1));
 				continue;
 			}
@@ -280,7 +281,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 					if ((hashCanonicalTableKey(key) & (capacity - 1u)) != static_cast<u32>(home)) continue;
 					table.set(key, valueBool(false));
 				} else {
-					const auto key = cpu.stringPool().intern("field_" + std::to_string(n++));
+					const auto key = bmsx::test::StringPoolReference(cpu).intern("field_" + std::to_string(n++));
 					if (table.beginStringProbe(key).node != home) continue;
 					table.setStringKey(key, valueBool(false));
 				}
@@ -299,10 +300,10 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		auto table = bmsx::test::allocateTableReference(cpu, 8, 1);
 		registers.set(0, valueTable(table.address()));
 		for (int index = 1; index <= 8; ++index) table.setInteger(index, valueInteger(index));
-		table.setStringKey(cpu.stringPool().intern("field"), valueInteger(1));
+		table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("field"), valueInteger(1));
 	} else if (workload == Workload::Builtin) {
 		registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
-		registers.set(1, valueString(cpu.stringPool().intern(std::string(1024, 'x'))));
+		registers.set(1, valueString(bmsx::test::StringPoolReference(cpu).intern(std::string(1024, 'x'))));
 		registers.set(2, valueInteger(1024));
 	} else if (workload == Workload::Ram) {
 		registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x100));

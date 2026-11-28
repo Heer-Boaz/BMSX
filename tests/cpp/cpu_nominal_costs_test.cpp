@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
@@ -144,7 +145,7 @@ void reservedOpcode10ChargesBeforeDispatch() {
 			regs.set(0, valueInteger(17)); regs.set(1, valueInteger(2)); regs.set(2, valueInteger(3));
 			m->cpu.activeThread()->currentFrame->setTop(3);
 		}
-		const u32 before = generated.cpu.heapAllocator().occupiedBytes();
+		const u32 before = bmsx::HeapAllocator(generated.cpu.memory()).occupiedBytes();
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 				&& generated.cpu.instructionBudgetRemaining == 1 - 2
 				&& generated.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
@@ -153,7 +154,7 @@ void reservedOpcode10ChargesBeforeDispatch() {
 		require(generated.cpu.readFrameRegister(0, 0) == valueInteger(17)
 				&& generated.cpu.readFrameRegister(0, 1) == valueInteger(2)
 				&& generated.cpu.readFrameRegister(0, 2) == valueInteger(3)
-				&& generated.cpu.heapAllocator().occupiedBytes() == before,
+				&& bmsx::HeapAllocator(generated.cpu.memory()).occupiedBytes() == before,
 			"the reserved gate changes neither the caller window nor the arena");
 	}
 }

@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
@@ -79,7 +80,7 @@ struct Machine {
 	void builtin(bool invalid = false) {
 		auto& frame = *cpu.rootThread()->currentFrame;
 		frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
-		frame.registers.set(1, invalid ? valueInteger(17) : valueString(cpu.stringPool().intern("Az")));
+		frame.registers.set(1, invalid ? valueInteger(17) : valueString(bmsx::test::StringPoolReference(cpu).intern("Az")));
 		frame.registers.set(2, valueInteger(2));
 		frame.writeControl(bmsx::FrameField::Top, 3);
 	}
@@ -191,7 +192,7 @@ void warmClosureAndSnapshot() {
 	const auto before = generated.cpu.nativeGateProfile();
 #endif
 	parity(generated, scalar, loopCycles);
-	require(generated.cpu.readFramePc(0) == rom.textAddress && generated.cpu.getGlobalByKey(generated.cpu.stringPool().intern("marker")) == valueInteger(1),
+	require(generated.cpu.readFramePc(0) == rom.textAddress && generated.cpu.getGlobalByKey(bmsx::test::StringPoolReference(generated.cpu).intern("marker")) == valueInteger(1),
 		"the actual second closure iteration reaches its guest marker and loop boundary");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& after = generated.cpu.nativeGateProfile();

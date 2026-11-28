@@ -1,4 +1,6 @@
 #include "common/endian.h"
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "support/gc_heap_reference.h"
@@ -87,7 +89,7 @@ void capturedClosureRequiresFirmware() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		if (!scalar) cpu.prepareSystemNativeCode();
 #endif
-		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		const auto occupied = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 		const u32 open = parent.readControl(FrameField::OpenHead), pc = parent.readControl(FrameField::Pc);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected CLOSURE consumes the short grant without running its handler");
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
@@ -95,7 +97,7 @@ void capturedClosureRequiresFirmware() {
 		require(parent.registers.get(2) == valueInteger(91), "the rejected CLOSURE does not write its destination");
 		require(parent.readControl(FrameField::OpenHead) == open,
 			"the missing firmware cannot execute an alternative captured allocation path");
-		require(cpu.heapAllocator().occupiedBytes() == occupied, "capture rejection allocates neither a closure nor captured cells");
+		require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied, "capture rejection allocates neither a closure nor captured cells");
 	}
 }
 
@@ -129,8 +131,8 @@ void nativeFieldGuardsAndRawSlotAccess() {
 	NativeBlockRunState nativeRunState;
 	CpuMachine machine(returnImage());
 	auto controls = test::fixtureTableControls(machine.cpu);
-	const StringId key = machine.cpu.stringPool().intern("native-field");
-	const StringId other = machine.cpu.stringPool().intern("other-field");
+	const StringId key = bmsx::test::StringPoolReference(machine.cpu).intern("native-field");
+	const StringId other = bmsx::test::StringPoolReference(machine.cpu).intern("other-field");
 	auto table = bmsx::test::allocateTableReference(machine.cpu, 0, 2);
 	int slot = table.setStringKey(key, valueInteger(1));
 	const int otherSlot = table.setStringKey(other, valueInteger(2));
@@ -231,7 +233,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		auto table = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 		frame.registers.set(0, valueTable(table.address())); frame.registers.set(1, valueInteger(1));
-		table.setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
+		table.setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("field"), valueInteger(0));
 		const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
@@ -254,7 +256,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		"the warmed read and arithmetic have no internal transfer before the field write");
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		bmsx::test::asReferenceTable(frame.registers.get(0), bmsx::test::GcHeap(machine->cpu)).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
+		bmsx::test::asReferenceTable(frame.registers.get(0), bmsx::test::GcHeap(machine->cpu)).setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("field"), valueInteger(0));
 		frame.registers.set(4, valueInteger(0));
 	}
 	auto controls = test::fixtureTableControls(native.cpu);
@@ -280,7 +282,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 			"native field exits retain exact guest cycle and WIDE prefix/body publication");
 		require(native.cpu.readFrameRegister(0, 4) == scalar.cpu.readFrameRegister(0, 4), "native field results agree with scalar dispatch");
 	}
-	const auto key = native.cpu.stringPool().intern("field");
+	const auto key = bmsx::test::StringPoolReference(native.cpu).intern("field");
 	for (const bool inherited : {false, true}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
@@ -289,7 +291,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 				auto parent = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 				parent.setStringKey(key, valueInteger(40));
 				auto meta = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
-				meta.setStringKey(machine->cpu.stringPool().intern("__index"), valueTable(parent.address()));
+				meta.setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("__index"), valueTable(parent.address()));
 				table.setMetatableAddress(meta.address());
 				table.setStringKey(key, valueNil());
 			} else table.setStringKey(key, valueFloat(40.25f));
@@ -327,7 +329,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	CpuMachine machine(image);
 	auto table = bmsx::test::allocateTableReference(machine.cpu, 0, 1);
 	machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueTable(table.address()));
-	const StringId key = machine.cpu.stringPool().intern("field");
+	const StringId key = bmsx::test::StringPoolReference(machine.cpu).intern("field");
 	table.setStringKey(key, valueInteger(1));
 	machine.cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8)
 		* (BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)]));
@@ -898,7 +900,7 @@ void stringBytePositions() {
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 			registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
-			registers.set(1, valueString(cpu.stringPool().intern(testCase.source)));
+			registers.set(1, valueString(bmsx::test::StringPoolReference(cpu).intern(testCase.source)));
 			registers.set(2, testCase.position);
 			require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "string.byte executes in both dispatch modes");
 			if (testCase.faults) require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
@@ -1066,7 +1068,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 		if (!scalar) cpu.prepareSystemNativeCode();
 #endif
 		const u32 pc = frame.readControl(FrameField::Pc);
-		const u32 allocationBefore = cpu.heapAllocator().occupiedBytes();
+		const u32 allocationBefore = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 1;
 		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded, "the current grant stops on the rejected operand");
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
@@ -1074,7 +1076,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
 			+ (op == OpCode::LOAD_MEM_D ? F64_ACCESS_EXTRA_CYCLES : 0);
 		require(cpu.instructionBudgetRemaining == 1 - cycles && frame.registers.get(0) == valueInteger(1)
-			&& cpu.heapAllocator().occupiedBytes() == allocationBefore, "the fault follows its charged prefix and precedes other effects");
+			&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == allocationBefore, "the fault follows its charged prefix and precedes other effects");
 	}
 }
 
@@ -1126,12 +1128,12 @@ void functionReservationIsAdmittedBeforeActivation() {
 		const u32 pc = cpu.readFramePc(0);
 		cpu.runUntilDepth(0, 1);
 		require(valueIsClosure(cpu.readFrameRegister(0, 0)), "binding a prototype does not reserve its activation");
-		const u32 occupied = cpu.heapAllocator().occupiedBytes();
+		const u32 occupied = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 		cpu.runUntilDepth(0, 1);
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 			&& cpu.readEpcWord() == pc + 2 * INSTRUCTION_BYTES && cpu.getFrameDepth() == 2,
 			"an impossible raw frame reservation raises OOM at CALL without entering its target");
-		require(cpu.heapAllocator().occupiedBytes() == occupied && cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
+		require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied && cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 			"an unplaceable frame does not allocate or charge formal copies");
 	}
 }
@@ -1185,7 +1187,7 @@ void returnRangesSurviveCallerStackGrowth() {
 			cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(table.address()));
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
 			CallFrame& callee = *cpu.activeThread()->frameAtDepth(1);
-			const Value samples[] = {valueFloatBits(0x80000000u), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(table.address())};
+			const Value samples[] = {valueFloatBits(0x80000000u), valueNil(), valueBool(false), valueString(bmsx::test::StringPoolReference(cpu).intern("result")), valueTable(table.address())};
 			for (int i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
 			callee.writeControl(bmsx::FrameField::Top, 5 + produced);
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted && cpu.getFrameDepth() == 1, "RET stops before the caller continuation");
@@ -1212,7 +1214,7 @@ void builtinReturnRangesSurviveDestinationGrowth() {
 		auto& cpu = machine.cpu;
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		auto table = bmsx::test::allocateTableReference(cpu, 1, 0);
-		const Value text = valueString(cpu.stringPool().intern("result"));
+		const Value text = valueString(bmsx::test::StringPoolReference(cpu).intern("result"));
 		if (kind == 2) table.setInteger(1, text);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(0, valueInteger(91)); registers.set(1, valueBool(true));
@@ -1315,7 +1317,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded
 			&& cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
 			&& cpu.readEpcWord() == CART_MMIO_BASE && cpu.readBadAddressWord() == CART_MMIO_BASE
-			&& memory.readBusFaultSequence() == faultSequence && cpu.heapAllocator().occupiedBytes() == 0u,
+			&& memory.readBusFaultSequence() == faultSequence && bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == 0u,
 			"the raw reset bank cannot drive an instruction fetch outside System ROM");
 
 		test::seedManagedFixture(cpu, addresses);

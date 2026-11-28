@@ -1,5 +1,5 @@
 #include "common/dlmalloc/dlmalloc.h"
-#include "machine/cpu/heap_allocator.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"

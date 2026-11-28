@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/execution_image.h"
@@ -256,7 +257,7 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 	test::seedManagedFixture(cpu, runtime.machine.executionAddressSpace);
 	auto& scheduler = runtime.frameScheduler;
 	auto heap = bmsx::test::GcHeap(cpu);
-	auto& arena = cpu.heapAllocator();
+	bmsx::HeapAllocator arena(cpu.memory());
 	auto retained = bmsx::test::allocateTableReference(cpu, 16384, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(retained.address())); frame.setTop(1);

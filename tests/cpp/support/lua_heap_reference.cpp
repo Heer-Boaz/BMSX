@@ -1,4 +1,4 @@
-#include "machine/cpu/lua_heap.h"
+#include "lua_heap_reference.h"
 
 #include <algorithm>
 
@@ -24,6 +24,23 @@ constexpr size_t GC_ASSIST_MIN_WORDS = 512;
 void stressHeapAllocation(LuaHeap& heap);
 #endif
 
+LuaHeap::LuaHeap(CPU& cpu, test::LocalStringRoots* roots)
+	: m_cpu(cpu), m_arena(cpu.memory()), m_roots(roots)
+	, m_targetAddress(m_arena.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET)
+	, m_occupiedAddress(m_arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET) {}
+
+u32 LuaHeap::collectionTarget() const {
+	return m_cpu.memory().readRamRecordWord(m_targetAddress);
+}
+
+size_t LuaHeap::usedBytes() const {
+	return m_cpu.memory().readRamRecordWord(m_occupiedAddress);
+}
+
+size_t LuaHeap::capacity() const {
+	return m_arena.capacityBytes();
+}
+
 void LuaHeap::setCollectionTarget(u32 bytes) {
 	m_cpu.memory().writeRamRecordWord(m_targetAddress, bytes);
 }
@@ -33,7 +50,7 @@ i32 LuaHeap::allocationDebt(size_t byteCount) const noexcept {
 	if (nextBytes > capacity()) return -1;
 	const u32 target = collectionTarget();
 	if (nextBytes <= target
-		|| GcHeap(m_cpu).phase() >= GcPhase::Atomic)
+		|| GcHeap(m_cpu, m_roots).phase() >= GcPhase::Atomic)
 		return 0;
 	return static_cast<i32>(nextBytes - target);
 }
@@ -48,7 +65,7 @@ size_t LuaHeap::logicalAssistAllowance(size_t debt, bool pressure) {
 }
 
 void LuaHeap::creditLogicalAssist(size_t byteCount, size_t debt, bool pressure, size_t work) {
-	if (!work || !GcHeap(m_cpu).active()) return;
+	if (!work || !GcHeap(m_cpu, m_roots).active()) return;
 	if (pressure) {
 		setCollectionTarget(usedBytes() + GC_ASSIST_BYTES * std::min(work, GC_STEP_WORDS) / GC_STEP_WORDS);
 	} else {
@@ -77,7 +94,7 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 	if (debt > 0) {
 		const bool pressure = logicalAssistPressure(byteCount);
 		const size_t words = logicalAssistAllowance(debt, pressure);
-		const size_t work = GcHeap(m_cpu).assistAllocation(root0, root1, root2, growingThread, words, sourceBudget);
+		const size_t work = GcHeap(m_cpu, m_roots).assistAllocation(root0, root1, root2, growingThread, words, sourceBudget);
 		creditLogicalAssist(byteCount, debt, pressure, work);
 	}
 	return true;
@@ -93,32 +110,31 @@ LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1,
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	if (!prepareFixedAllocation(byteCount, root0, root1, root2, growingThread)) {
 		do {
-			recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2, growingThread);
+			recovery = GcHeap(m_cpu, m_roots).recoverAllocation(recovery, root0, root1, root2, growingThread);
 		} while (usedBytes() + byteCount > capacity());
 	}
 	return recovery;
 }
 
 void LuaHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread) {
-	GcHeap heap(m_cpu);
+	GcHeap heap(m_cpu, m_roots);
 	if (GcHeap::pacedPhase(heap.phase()))
 		heap.assistBeforeReservation(requested, root0, root1, root2, growingThread);
 }
 
 u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField) {
 	const u32 prefix = object ? GC_OBJECT_PREFIX : 0u;
-	auto& arena = m_cpu.heapAllocator();
-	const u32 block = arena.allocate(bytes + prefix, !object);
+	const u32 block = m_arena.allocate(bytes + prefix, !object);
 	if (!block) return 0u;
-	const u32 backing = backingBytes ? arena.allocate(backingBytes, true) : 0u;
+	const u32 backing = backingBytes ? m_arena.allocate(backingBytes, true) : 0u;
 	if (backingBytes && !backing) {
-		arena.free(block);
+		m_arena.free(block);
 		return 0u;
 	}
-	const u32 second = secondBytes ? arena.allocate(secondBytes, true) : 0u;
+	const u32 second = secondBytes ? m_arena.allocate(secondBytes, true) : 0u;
 	if (secondBytes && !second) {
-		if (backing) arena.free(backing);
-		arena.free(block);
+		if (backing) m_arena.free(backing);
+		m_arena.free(block);
 		return 0u;
 	}
 	const u32 address = block + prefix;
@@ -139,7 +155,7 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backin
 	auto recovery = *admission;
 	for (;;) {
 		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField)) return address;
-		recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2);
+		recovery = GcHeap(m_cpu, m_roots).recoverAllocation(recovery, root0, root1, root2);
 	}
 }
 
@@ -163,13 +179,13 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	auto recovery = logicalBytes != 0u ? admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery::CurrentOrFresh;
 	assistBeforeReservation(bytes, root0, root1, root2, growingThread);
 	for (;;) {
-		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
-		recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2, growingThread);
+		if (const u32 block = m_arena.allocate(bytes, true)) return block;
+		recovery = GcHeap(m_cpu, m_roots).recoverAllocation(recovery, root0, root1, root2, growingThread);
 	}
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {
-	GcHeap heap(m_cpu);
+	GcHeap heap(m_cpu, m_roots);
 	heap.chargeCollectionWork(heap.collect(root0, root1, root2, growingThread));
 }
 
@@ -179,7 +195,7 @@ void LuaHeap::accountAllocation(u32 bytes) {
 }
 
 void LuaHeap::releaseRecord(u32 address, u32 bytes) {
-	m_cpu.heapAllocator().free(address);
+	m_arena.free(address);
 	auto& memory = m_cpu.memory();
 	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - bytes);
 }
@@ -190,7 +206,7 @@ void LuaHeap::releaseObject(u32 address, u32 bytes) {
 }
 
 void LuaHeap::replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes) {
-	if (oldAddress != 0u) m_cpu.heapAllocator().free(oldAddress);
+	if (oldAddress != 0u) m_arena.free(oldAddress);
 	resizeRecordCharge(oldBytes, newBytes);
 }
 

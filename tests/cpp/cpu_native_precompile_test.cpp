@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -148,7 +149,7 @@ void replacementLeavesRetainedCoroutinesAndClosuresToThePublisher() {
 			machine.memory.restoreSaveState(ram);
 			cpu.restoreRuntimeState(state);
 		}
-		const u32 floor = cpu.heapAllocator().floorAddress();
+		const u32 floor = bmsx::HeapAllocator(cpu.memory()).floorAddress();
 		const u32 continuation = machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc));
 		auto replacement = rom.bytes;
 		writeInstruction(replacement, rom.textAddress / INSTRUCTION_BYTES + 5u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -159,7 +160,7 @@ void replacementLeavesRetainedCoroutinesAndClosuresToThePublisher() {
 		const auto* imageView = cpu.rootThread()->currentFrame->executionImage;
 		require(!imageView->admitsFunctionPc(rom.functionAddresses[1], continuation)
 			&& machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc)) == continuation
-			&& cpu.heapAllocator().floorAddress() == floor,
+			&& bmsx::HeapAllocator(cpu.memory()).floorAddress() == floor,
 			"raw ROM publication sees the new WIDE suffix without rewriting the suspended coroutine or aperture");
 		machine.memory.installSystemRom(rom.bytes);
 		cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());

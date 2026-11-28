@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
@@ -36,7 +37,7 @@ struct Harness {
 	Harness() : memory(MemoryInit{{system.data(), system.size()}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), execution(memory), cpu(memory, irq, execution), scheduler(cpu), dma(memory, cpu, irq, scheduler),
 		gpu(memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes) {
-		require(cpu.heapAllocator().setFloor(DmaPacket + HEAP_PAGE_SIZE), "GPU timeline DMA uses public static RAM");
+		require(bmsx::HeapAllocator(cpu.memory()).setFloor(DmaPacket + HEAP_PAGE_SIZE), "GPU timeline DMA uses public static RAM");
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset(); memory.cartridgeController().reset(); gpu.reset(); irq.reset();
 		dma.setTiming(1, 40, 1, 1, 0, 0);

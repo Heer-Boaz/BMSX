@@ -1,9 +1,9 @@
-#include "machine/cpu/string_pool.h"
+#include "string_pool_reference.h"
 
+#include "common/bytes_equal.h"
 #include "common/endian.h"
 #include "common/hash_fnv.h"
-#include "machine/cpu/heap_allocator.h"
-#include "machine/cpu/lua_heap.h"
+#include "machine/cpu/cpu.h"
 #include "machine/cpu/value.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/image_format.h"
@@ -12,8 +12,9 @@
 #include <bit>
 #include <cstring>
 
-namespace bmsx {
+namespace bmsx::test {
 namespace {
+constexpr u8 STRING_GC_EPOCH_MASK = 1u;
 constexpr u32 SWEEP = 0x10;
 constexpr u32 SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34;
 constexpr u32 SWEEP_REHASH = 0x80000000u;
@@ -23,14 +24,138 @@ constexpr u32 MIN_SHRINK_BUCKETS = 2u * HEAP_PAGE_SIZE / sizeof(u32);
 constexpr size_t INTERN_REHASH_WORK = 64;
 }
 
-void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
+StringPoolReference::StringPoolReference(CPU& cpu, LocalStringRoots* roots)
+	: StringPool(cpu.memory()), m_externalRoots(roots), m_arena(m_memory), m_heap(cpu, &localRoots())
+	, m_metadata(m_arena.managementOffset() + HEAP_STRING_METADATA_OFFSET)
+	, m_markWorkOffset(m_arena.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET) {}
 
-void StringPool::clearRomTables() {
+u32 StringPoolReference::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
+
+bool StringPoolReference::InternKey::consumeEqual(ByteSpan& candidate, std::string_view prefix) {
+	auto& [first, wrapped] = candidate;
+	const size_t n = std::min(first.size(), prefix.size());
+	if (n) {
+		if (!bytesEqual(first.data(), prefix.data(), n)) return false;
+		first.remove_prefix(n);
+		prefix.remove_prefix(n);
+	}
+	if (!prefix.empty()) {
+		if (!bytesEqual(wrapped.data(), prefix.data(), prefix.size())) return false;
+		wrapped.remove_prefix(prefix.size());
+	}
+	return true;
+}
+
+bool StringPoolReference::InternKey::matches(ByteSpan candidate) const {
+	if (!consumeEqual(candidate, head)) return false;
+	for (const auto part : tail) if (!consumeEqual(candidate, part)) return false;
+	return true;
+}
+
+Span<const u8> StringPoolReference::bindRomStringHeader(u32 address, u32 cartridgeSlot) const {
+	Span<const u8> header;
+	if ((address & (BLUA32_STRING_RECORD_ALIGNMENT - 1u)) != 0u
+		|| !m_memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE, cartridgeSlot, header)
+		|| readLE32(header.data()) != (BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String header is invalid.");
+	}
+	return header;
+}
+
+std::string_view StringPoolReference::bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const {
+	if (length == 0u) return {};
+	Span<const u8> record;
+	if (length > CART_ROM_SIZE - BLUA32_STRING_RECORD_HEADER_SIZE
+		|| !m_memory.bindRomByteView(address, BLUA32_STRING_RECORD_HEADER_SIZE + length, cartridgeSlot, record)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 ROM String is truncated.");
+	}
+	return {reinterpret_cast<const char*>(record.data() + BLUA32_STRING_RECORD_HEADER_SIZE), length};
+}
+
+u32 StringPoolReference::lookupRamChain(u32 bucket, u32 hash, const InternKey& bytes) const {
+	u32 record = m_memory.readRamRecordWord(bucket);
+	if (record == 0u) return 0;
+	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
+	while (record != 0u && remaining-- != 0u) {
+		if (m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) == hash
+			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.length) {
+			if (bytes.matches(readBytes(record, 0, bytes.length))) return record;
+		}
+		record = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+	}
+	return 0;
+}
+
+u32 StringPoolReference::lookupRam(u32 hash, const InternKey& bytes) const {
+	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
+	if (count == 0u) return 0u;
+	const u32 index = hash & (count - 1u);
+	if ((control & (RAM_BUCKET_REHASH | RAM_BUCKET_SHRINK)) != 0u) {
+		const u32 ready = metadata(REHASH_READY);
+		if ((control & RAM_BUCKET_REHASH) != 0u) {
+			if (index < ready) {
+				const u32 bucket = metadata(REHASH_BASE) + 4u * (hash & (2u * count - 1u));
+				if (const u32 found = lookupRamChain(bucket, hash, bytes)) return found;
+				if (index + 1u < ready) return 0u;
+			}
+		} else {
+			const u32 half = count / 2u, ordinal = index - half;
+			if (index >= half && ordinal <= ready) {
+				const u32 base = metadata(BUCKETS);
+				const u32 found = lookupRamChain(base + 4u * ordinal, hash, bytes);
+				if (found != 0u || ordinal < ready) return found;
+				return lookupRamChain(base + 4u * index, hash, bytes);
+			}
+		}
+	}
+	return lookupRamChain(metadata(BUCKETS) + 4u * index, hash, bytes);
+}
+
+u32 StringPoolReference::lookupRom(u32 directory, u32 hash, const InternKey& bytes) const {
+	const u32 table = ROM_TABLES + 8u * directory;
+	const u32 count = metadata(table + 4u);
+	if (count == 0u) return 0;
+	u32 record = readWord(metadata(table), 4u * (hash & (count - 1u)));
+	if (record == 0u) return 0;
+	// The directory owner, not the backing of the directory or preceding
+	// record, selects the socket for every absolute cartridge reference.
+	const u32 cartridgeSlot = directory == 2u ? 1u : 0u;
+	const auto* cart = m_memory.cartridgeController().romStorage(cartridgeSlot);
+	const size_t available = m_memory.systemRomStorage().size() + (cart ? cart->size() : 0u);
+	size_t remaining = available / BLUA32_STRING_RECORD_HEADER_SIZE;
+	while (record != 0u) {
+		if (remaining-- == 0u) throw BMSX_RUNTIME_ERROR("BLua32 ROM String chain is invalid.");
+		const auto header = bindRomStringHeader(record, cartridgeSlot);
+		const u32 length = readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET);
+		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.length
+			&& bytes.matches({bindRomStringBytes(record, cartridgeSlot, length), {}})) return romStringId(record, cartridgeSlot);
+		record = readLE32(header.data() + BLUA32_STRING_NEXT_OFFSET);
+	}
+	return 0;
+}
+
+u32 StringPoolReference::lookup(u32 hash, const InternKey& bytes) const {
+	if (const u32 match = lookupRam(hash, bytes)) return match;
+	if (const u32 match = lookupRom(0u, hash, bytes)) return match;
+	const u32 first = metadata(FIRST_CART);
+	if (first == 0) return 0;
+	if (const u32 match = lookupRom(first, hash, bytes)) return match;
+	return lookupRom(3u - first, hash, bytes);
+}
+
+std::optional<StringId> StringPoolReference::find(std::string_view value) const {
+	const u32 id = lookup(fnv1a32(value), {value, {}, value.size()});
+	return id == 0 ? std::nullopt : std::optional<StringId>(id);
+}
+
+void StringPoolReference::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
+
+void StringPoolReference::clearRomTables() {
 	writeMetadata(FIRST_CART, 0);
 	for (u32 field = ROM_TABLES; field < ROM_TABLES + 24; field += 4) writeMetadata(field, 0);
 }
 
-void StringPool::activateRomTable(ExecutionDomainId domain, u32 address, u32 count) {
+void StringPoolReference::activateRomTable(ExecutionDomainId domain, u32 address, u32 count) {
 	// External image section, not allocator-owned RAM.
 	const u32 cartridgeSlot = domain == 1 ? 1u : 0u;
 	Span<const u8> directory;
@@ -45,7 +170,7 @@ void StringPool::activateRomTable(ExecutionDomainId domain, u32 address, u32 cou
 	if (table != 0 && metadata(FIRST_CART) == 0) writeMetadata(FIRST_CART, table);
 }
 
-StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
+StringId StringPoolReference::resolveImageRecord(ExecutionDomainId domain, u32 address) {
 	const u32 cartridgeSlot = domain == 1 ? 1u : 0u;
 	const auto header = bindRomStringHeader(address, cartridgeSlot);
 	const u32 hash = readLE32(header.data() + BLUA32_STRING_HASH_OFFSET);
@@ -54,7 +179,7 @@ StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
 	throw BMSX_RUNTIME_ERROR("BLua32 ROM String is missing from its bucket.");
 }
 
-size_t StringPool::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
+size_t StringPoolReference::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
 	const u32 oldBase = metadata(BUCKETS), count = 2u * oldCount;
 	u32 ready = metadata(REHASH_READY);
 	size_t work = 0;
@@ -89,7 +214,7 @@ size_t StringPool::rehashStep(u32 oldCount, u32 nextBase, size_t allowance) {
 	return work;
 }
 
-size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
+size_t StringPoolReference::shrinkStep(u32 oldCount, size_t allowance) {
 	const u32 base = metadata(BUCKETS), half = oldCount / 2u;
 	const u32 start = metadata(REHASH_READY);
 	u32 ready = start;
@@ -116,16 +241,16 @@ size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
 	return work;
 }
 
-StringId StringPool::intern(std::string_view value) {
+StringId StringPoolReference::intern(std::string_view value) {
 	return intern(value, fnv1a32(value));
 }
 
-StringId StringPool::intern(std::string_view value, u32 hash) {
+StringId StringPoolReference::intern(std::string_view value, u32 hash) {
 	if (const auto match = lookup(hash, {value, {}, value.size()})) return retain(match);
 	return insert({value, {}}, hash, 0u);
 }
 
-StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
+StringId StringPoolReference::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 	Value root = valueNil();
 	if (source != 0u) {
 		// Retain the borrow in the current sweep as well as a new collection.
@@ -189,7 +314,7 @@ StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 	return retain(id);
 }
 
-bool StringPool::mark(StringId id) {
+bool StringPoolReference::mark(StringId id) {
 	if (!isRamStringId(id)) return false;
 	const u32 markByte = id + 1u;
 	const u8 epoch = static_cast<u8>(metadata(EPOCH) & STRING_GC_EPOCH_MASK);
@@ -198,43 +323,48 @@ bool StringPool::mark(StringId id) {
 	return true;
 }
 
-StringId StringPool::retain(StringId id) {
+StringId StringPoolReference::retain(StringId id) {
 	mark(id);
-	if (!m_localRootBases.empty()) m_localRoots.push_back(id);
+	auto& [ids, bases] = localRoots();
+	if (!bases.empty()) ids.push_back(id);
 	return id;
 }
-void StringPool::beginLocalRoots() { m_localRootBases.push_back(m_localRoots.size()); }
-void StringPool::endLocalRoots() {
-	m_localRoots.resize(m_localRootBases.back());
-	m_localRootBases.pop_back();
+void StringPoolReference::beginLocalRoots() {
+	auto& [ids, bases] = localRoots();
+	bases.push_back(ids.size());
+}
+void StringPoolReference::endLocalRoots() {
+	auto& [ids, bases] = localRoots();
+	ids.resize(bases.back());
+	bases.pop_back();
 }
 
-void StringPool::beginReachabilityEpoch() { writeMetadata(EPOCH, metadata(EPOCH) ^ 1u); }
+void StringPoolReference::beginReachabilityEpoch() { writeMetadata(EPOCH, metadata(EPOCH) ^ 1u); }
 
-void StringPool::markReachable(StringId id) {
+void StringPoolReference::markReachable(StringId id) {
 	if (mark(id)) m_memory.writeRamRecordWord(m_markWorkOffset, m_memory.readRamRecordWord(m_markWorkOffset) + 1u);
 }
 
-void StringPool::markLocalRoots() { for (StringId id : m_localRoots) markReachable(id); }
+void StringPoolReference::markLocalRoots() { for (StringId id : localRoots().ids) markReachable(id); }
 
-size_t StringPool::takeMarkWork() {
+size_t StringPoolReference::takeMarkWork() {
 	const u32 work = m_memory.readRamRecordWord(m_markWorkOffset);
 	if (work != 0u) m_memory.writeRamRecordWord(m_markWorkOffset, 0u);
 	return work;
 }
 
-void StringPool::resumeMarkWork(u32 work) {
+void StringPoolReference::resumeMarkWork(u32 work) {
 	if (work != 0u || m_memory.readRamRecordWord(m_markWorkOffset) != 0u) m_memory.writeRamRecordWord(m_markWorkOffset, work);
 }
 
-void StringPool::beginSweep() {
+void StringPoolReference::beginSweep() {
 	const u32 ready = metadata(REHASH_READY);
 	writeMetadata(SWEEP, std::max(1u, ready));
 	m_memory.writeRamRecordPair(m_metadata + SWEEP_LINK, 0u, 0u);
 }
-bool StringPool::sweeping() const { return metadata(SWEEP) != 0; }
+bool StringPoolReference::sweeping() const { return metadata(SWEEP) != 0; }
 
-u32 StringPool::estimateSweepWork() const {
+u32 StringPoolReference::estimateSweepWork() const {
 	const u32 control = metadata(CAPACITY);
 	const u32 count = control & RAM_BUCKET_EXTENT_MASK;
 	const u32 records = metadata(USED);
@@ -243,7 +373,7 @@ u32 StringPool::estimateSweepWork() const {
 	return count >= MIN_SHRINK_BUCKETS ? count + count / 2u + 2u * records + 1u : count + records;
 }
 
-size_t StringPool::sweepStep(size_t allowance) {
+size_t StringPoolReference::sweepStep(size_t allowance) {
 	const u32 cursor = metadata(SWEEP), control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 	if (cursor == SWEEP_SHRINK) return shrinkStep(count, allowance);
 	const u32 nextBase = (control & RAM_BUCKET_REHASH) != 0u ? metadata(REHASH_BASE) : 0u;
@@ -310,4 +440,4 @@ size_t StringPool::sweepStep(size_t allowance) {
 	return work;
 }
 
-} // namespace bmsx
+} // namespace bmsx::test

@@ -5,11 +5,11 @@
 #include <utility>
 
 #include "machine/cpu/gc_object.h"
-#include "machine/cpu/heap_allocator.h"
+#include "heap_allocator_reference.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
-#include "machine/cpu/lua_heap.h"
-#include "machine/cpu/string_pool.h"
+#include "lua_heap_reference.h"
+#include "string_pool_reference.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -80,30 +80,18 @@ inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
 class GcHeap {
 public:
-	class LocalRootsScope {
-	public:
-		explicit LocalRootsScope(StringPool& strings);
-		LocalRootsScope(LocalRootsScope&& other) noexcept;
-		~LocalRootsScope();
-		LocalRootsScope(const LocalRootsScope&) = delete;
-		LocalRootsScope& operator=(const LocalRootsScope&) = delete;
-
-	private:
-		StringPool* m_strings;
-	};
-
-	explicit GcHeap(CPU& cpu);
+	explicit GcHeap(CPU& cpu, LocalStringRoots* roots = nullptr);
+	GcHeap(const GcHeap& other) : GcHeap(other.m_cpu, other.m_roots) {}
 	// The oracle borrows the machine and its existing RAM; it holds no GC state.
-	LuaHeap& budget;
+	LuaHeap budget;
 	Memory& memory;
-	HeapAllocator& arena;
+	HeapAllocator arena;
 	u32 diagnosticOffset(GcDiagnosticField field) const {
 		return arena.managementOffset() + GC_DIAGNOSTIC_OFFSET + static_cast<u32>(field);
 	}
 	u32 diagnosticWord(GcDiagnosticField field) const {
 		return memory.readRamRecordWord(diagnosticOffset(field));
 	}
-	LocalRootsScope acquireLocalRoots();
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;
@@ -232,8 +220,9 @@ private:
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
 	CPU& m_cpu;
+	LocalStringRoots* m_roots;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
-	StringPool& m_stringPool;
+	StringPoolReference m_stringPool;
 	const u32 m_controlOffset;
 };
 

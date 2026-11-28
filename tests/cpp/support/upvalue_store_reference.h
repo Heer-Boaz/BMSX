@@ -16,8 +16,8 @@ inline void storeUpvalueReference(CPU& cpu, u32 address, Value value) {
 		if (heap.phase() == GcPhase::MarkAgain) {
 			heap.markValue(value);
 			// MarkAgain only credits the current epoch.
-			if (const auto work = cpu.stringPool().takeMarkWork()) {
-				const u32 offset = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK;
+			if (const auto work = StringPoolReference(cpu).takeMarkWork()) {
+				const u32 offset = heap.arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK;
 				memory.writeRamRecordWord(offset, heap.epochWork() + static_cast<u32>(work));
 			}
 		} else {

@@ -293,8 +293,6 @@ add_library(bmsx_core STATIC
 	machine/cpu/closure.cpp
 	machine/cpu/upvalue.cpp
 	machine/cpu/global_bank.cpp
-	machine/cpu/heap_allocator.cpp
-	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
 	machine/execution_address_space.cpp

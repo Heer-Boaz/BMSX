@@ -1,3 +1,4 @@
+#include "support/lua_heap_reference.h"
 #include "support/cpu_execution_parity.h"
 #include "machine/devices/gx/gte.h"
 #include "spec/bmsx/io.h"
@@ -379,7 +380,7 @@ void testCommandObservationPreservesCpu() {
 	for (auto* harness : {&baseline, &observed}) require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "observed CPU program completes normally");
 	require(position.observations == 1 && instructionObservations == 1, "device observer preserves CPU instruction observer");
 	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining, "observed CPU cycle budget matches baseline");
-	require(observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed guest heap matches baseline");
+	require(bmsx::LuaHeap(observed.cpu).usedBytes() == bmsx::LuaHeap(baseline.cpu).usedBytes(), "observed guest heap matches baseline");
 	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
 	require((actual == expected && bmsx::test::sameLanguageRam(observed.cpu, baseline.cpu)), "observed CPU heap and register snapshot matches baseline");
 	require(actual.lastPc == expected.lastPc && actual.lastExecutionDomainId == expected.lastExecutionDomainId
@@ -749,7 +750,7 @@ void testPlusObservationPreservesCpuInterlock() {
 			&& trace.records[index].deadline == deadlines[index], "PLUS observed interlock cycle sequence matches hardware schedule");
 	}
 	require(observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining
-		&& observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes(), "observed CPU budget and heap match baseline");
+		&& bmsx::LuaHeap(observed.cpu).usedBytes() == bmsx::LuaHeap(baseline.cpu).usedBytes(), "observed CPU budget and heap match baseline");
 	const auto actual = observed.cpu.captureRuntimeState(), expected = baseline.cpu.captureRuntimeState();
 	require((actual == expected && bmsx::test::sameLanguageRam(observed.cpu, baseline.cpu))
 		&& actual.lastPc == expected.lastPc && actual.completionValues == expected.completionValues,

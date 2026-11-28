@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "support/gc_heap_reference.h"
@@ -111,7 +112,7 @@ void methodReceivers() {
 					Value base = kind == 1 ? valueInteger(-1) : kind == 2 ? valueFloatBits(0xffa12345) : valueBool(false);
 					if (kind == 0) {
 						auto table = bmsx::test::allocateTableReference(machine->cpu);
-						table.setStringKey(machine->cpu.stringPool().intern("method"), valueInteger(77));
+						table.setStringKey(bmsx::test::StringPoolReference(machine->cpu).intern("method"), valueInteger(77));
 						base = valueTable(table.address());
 					}
 					auto registers = machine->cpu.activeThread()->currentFrame->registers;
@@ -190,7 +191,7 @@ void lengths() {
 			for (auto* m : {&native, &scalar}) {
 				Value value;
 				if (kind == 0)
-					value = valueString(m->cpu.stringPool().intern("A\xf0\x9f\x98\x80\xe2\x82\xac"));
+					value = valueString(bmsx::test::StringPoolReference(m->cpu).intern("A\xf0\x9f\x98\x80\xe2\x82\xac"));
 				else if (kind == 1 || kind == 2) {
 					auto table = bmsx::test::allocateTableReference(m->cpu, 8, 8);
 					for (int i = 1; i <= (kind == 1 ? 8 : 20); ++i)
@@ -243,7 +244,7 @@ u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
 										: machine.cpu.readCompletionValues().get(0),
 		bmsx::test::GcHeap(machine.cpu));
 	machine.cpu.setGlobalByKey(
-		*machine.cpu.stringPool().find("saved"), valueClosure(closure));
+		*bmsx::test::StringPoolReference(machine.cpu).find("saved"), valueClosure(closure));
 	machine.cpu.beginCompletionCall(closure);
 	return closure;
 }

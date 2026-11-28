@@ -1,3 +1,5 @@
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/gx/gpu.h"
 #include "common/endian.h"
 #include "machine/devices/gx/gpu_local_memory.h"
@@ -66,7 +68,7 @@ struct GpuHarness {
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes) {
-		require(cpu.heapAllocator().setFloor(bmsx::DYNAMIC_RAM_BASE + 0x6000u),
+		require(bmsx::HeapAllocator(cpu.memory()).setFloor(bmsx::DYNAMIC_RAM_BASE + 0x6000u),
 			"GX-GPU DMA packets occupy public static RAM");
 		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
@@ -254,7 +256,7 @@ void testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma() {
 			&& actual.pendingCommandTargetCount == expected.pendingCommandTargetCount && actual.drawModeWord == expected.drawModeWord,
 			"GPU observer leaves saved VRAM, ingress, registers and timing identical");
 		require(observed.scheduler.currentNowCycles() == baseline.scheduler.currentNowCycles() && observed.scheduler.nextDeadline() == baseline.scheduler.nextDeadline()
-			&& observed.cpu.luaHeap().usedBytes() == baseline.cpu.luaHeap().usedBytes()
+			&& bmsx::LuaHeap(observed.cpu).usedBytes() == bmsx::LuaHeap(baseline.cpu).usedBytes()
 			&& observed.cpu.instructionBudgetRemaining == baseline.cpu.instructionBudgetRemaining, "GPU observer leaves cycles, scheduler and guest heap unchanged");
 		if (dma) require(log.events == cpuEvents, "CPU and DMA packet ingress produce identical observed operations");
 		else cpuEvents = log.events;

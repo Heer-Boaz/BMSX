@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/dma/controller.h"
@@ -111,8 +112,9 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	require(restoredString == valueString(local | 0x80000000u),
 		"the restored slot-one constant still carries its published String ID");
 	const StringId slotOneId = asStringId(restoredString);
-	const auto slice = bmsx::test::StringSliceReference::intern(cpu.stringPool(), slotOneId, 5u, 4u);
-	require(cpu.stringPool().toString(slice) == "one!" && cpu.stringPool().find("one!") == slice
+	bmsx::test::StringPoolReference strings(cpu);
+	const auto slice = bmsx::test::StringSliceReference::intern(strings, slotOneId, 5u, 4u);
+	require(cpu.stringPool().toString(slice) == "one!" && strings.find("one!") == slice
 		&& cpu.stringPool().byteAt(slotOneId, 8u) == '!',
 		"same-media restore preserves the exact published String and its physically backed final byte");
 
@@ -121,7 +123,6 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 		catch (const std::runtime_error& error) { require(error.what() == message, "the ROM owner reports the failed boundary"); return; }
 		throw std::runtime_error("the ROM owner admitted unbacked input");
 	};
-	auto& strings = cpu.stringPool();
 	rejects([&] { strings.activateRomTable(1, RAM_BASE, 1); }, "BLua32 String bucket table is invalid.");
 	require(strings.find("slot-one!") == (local | 0x80000000u), "failed directory admission does not replace the index");
 	rejects([&] { strings.resolveImageRecord(1, RAM_BASE); }, "BLua32 ROM String header is invalid.");
@@ -233,7 +234,7 @@ struct Machine {
 		}
 		throw std::runtime_error("the real system callee reaches its RET boundary");
 	}
-	Value global(const char* name) { return cpu.getGlobalByKey(cpu.stringPool().intern(name)); }
+	Value global(const char* name) { return cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern(name)); }
 	void completedMarkers() {
 		require(global("systemMarker") == valueInteger(303) && global("cartMarker") == valueInteger(303 + 101 * (slot + 1))
 			&& global("cartSystemMarker") == valueInteger(606 + 101 * (slot + 1)),
@@ -318,7 +319,7 @@ void irqInSystemCallee(const Images& images, u32 slot) {
 		test::runCpuParity(generated.cpu, scalar.cpu, grant); parity(generated, scalar);
 		if (generated.cpu.isHaltedUntilIrq()) break;
 	}
-	const auto key = generated.cpu.stringPool().intern("irqSeen");
+	const auto key = bmsx::test::StringPoolReference(generated.cpu).intern("irqSeen");
 	require(generated.cpu.getSystemGlobalByKey(key) == valueInteger(1), "IRQ in a user-mode BIOS callee uses the program socket's vector");
 	generated.completedMarkers(); scalar.completedMarkers();
 }

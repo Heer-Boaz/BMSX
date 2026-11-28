@@ -9,13 +9,14 @@ namespace bmsx::test {
 
 // The former native constructor, retained as a RAM/allocation oracle.
 // Scoped consumers pass their roots explicitly to the collection under test.
-inline NativeTableReference allocateTableReference(CPU& cpu, int arraySize = 0, int hashSize = 0) {
+inline NativeTableReference allocateTableReference(CPU& cpu, int arraySize = 0, int hashSize = 0,
+	LocalStringRoots* roots = nullptr) {
 	const size_t hash = NativeTableReference::hashCapacity(hashSize);
-	const u32 address = cpu.luaHeap().allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
+	GcHeap heap(cpu, roots);
+	const u32 address = heap.budget.allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
 		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(),
 		NativeTableReference::HEADER_CHARGE + NativeTableReference::allocationCharge(arraySize, hash),
 		LuaAllocationMode::Direct, TableRecord::hashStorageBytes(hash), static_cast<u32>(TableHeader::HashStorage));
-	GcHeap heap(cpu);
 	auto& memory = heap.memory;
 	NativeTableReference table(heap, address);
 	const u32 kind = static_cast<u32>(ValueTag::Table) | (static_cast<u32>(heap.white()) << 8u)

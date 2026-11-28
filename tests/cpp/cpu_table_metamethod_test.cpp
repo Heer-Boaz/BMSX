@@ -1,3 +1,6 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
@@ -80,7 +83,7 @@ void rawKeysAndReadForwarding() {
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			if (invalidForward) meta.setStringKey(m->cpu.stringPool().intern("__index"), valueBool(false));
+			if (invalidForward) meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__index"), valueBool(false));
 			root.setMetatableAddress(meta.address());
 			auto r = m->cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(root.address())); r.set(1, key); r.set(8, valueInteger(57));
@@ -104,7 +107,7 @@ void rawGetDistinguishesExplicitKeysFromMissingArguments() {
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(BuiltinFunctionId::Error));
+			meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__index"), m->cpu.createBuiltinFunction(BuiltinFunctionId::Error));
 			root.setMetatableAddress(meta.address());
 			auto* frame = m->cpu.activeThread()->currentFrame;
 			frame->registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::RawGet));
@@ -132,8 +135,8 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1), methods = bmsx::test::allocateTableReference(cpu, 0, 1), methodsMeta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		const auto index = cpu.stringPool().intern("__index");
-		const Value forwarded = valueString(cpu.stringPool().intern("proxy"));
+		const auto index = bmsx::test::StringPoolReference(cpu).intern("__index");
+		const Value forwarded = valueString(bmsx::test::StringPoolReference(cpu).intern("proxy"));
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
 		methodsMeta.setStringKey(index, m->bindHandler()); methods.setMetatableAddress(methodsMeta.address());
 		auto state = cpu.captureRuntimeState();
@@ -159,7 +162,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		auto r = cpu.activeThread()->currentFrame->registers;
-		bmsx::test::asReferenceTable(r.get(3), bmsx::test::GcHeap(cpu)).setStringKey(cpu.stringPool().intern("__index"), r.get(2));
+		bmsx::test::asReferenceTable(r.get(3), bmsx::test::GcHeap(cpu)).setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), r.get(2));
 		r.set(0, r.get(4));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -175,16 +178,16 @@ void stringIndexUsesTheRestoredControlWord() {
 	auto& cpu = machine.cpu;
 	auto gc = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
-	const u32 head = cpu.heapAllocator().managementOffset() + bmsx::test::GC_DIAGNOSTIC_OFFSET;
+	const u32 head = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::GC_DIAGNOSTIC_OFFSET;
 	const u32 tag = head + static_cast<u32>(bmsx::test::GcDiagnosticField::StringIndexTag);
 	const u32 word = head + static_cast<u32>(bmsx::test::GcDiagnosticField::StringIndexWord);
 	auto methods = bmsx::test::allocateTableReference(cpu, 0, 1);
-	const auto key = cpu.stringPool().intern("watched-method");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("watched-method");
 	methods.setStringKey(key, valueInteger(73));
 	memory.writeRamRecordWord(tag, static_cast<u32>(ValueTag::Table));
 	memory.writeRamRecordWord(word, methods.address());
 	auto* frame = cpu.activeThread()->currentFrame;
-	frame->registers.set(0, valueString(cpu.stringPool().intern("receiver")));
+	frame->registers.set(0, valueString(bmsx::test::StringPoolReference(cpu).intern("receiver")));
 	frame->registers.set(1, valueString(key));
 	frame->extendTop(2);
 
@@ -215,8 +218,8 @@ void tableValuedNewIndexAndOwnOverwrite() {
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto own = bmsx::test::allocateTableReference(m->cpu, 4, 2), holder = bmsx::test::allocateTableReference(m->cpu, 4, 2), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			const Value key = op == OpCode::SETI ? valueInteger(2) : valueString(m->cpu.stringPool().intern("field"));
-			meta.setStringKey(m->cpu.stringPool().intern("__newindex"), valueTable(holder.address()));
+			const Value key = op == OpCode::SETI ? valueInteger(2) : valueString(bmsx::test::StringPoolReference(m->cpu).intern("field"));
+			meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__newindex"), valueTable(holder.address()));
 			own.setMetatableAddress(meta.address());
 			own.set(key, valueBool(false));
 			auto r = m->cpu.activeThread()->currentFrame->registers;
@@ -245,7 +248,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 	Machine generated(program, false), scalar(program, true);
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
-		auto& strings = cpu.stringPool();
+		bmsx::test::StringPoolReference strings(cpu);
 		const auto field = *strings.find("field"), newIndex = strings.intern("__newindex");
 		auto own = bmsx::test::allocateTableReference(cpu, 1, 2), holder = bmsx::test::allocateTableReference(cpu, 1, 2);
 		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1), holderMeta = bmsx::test::allocateTableReference(cpu, 0, 2);
@@ -287,7 +290,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 		return page.words[(m.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].tableCacheSlot();
 	};
 	auto& cpu = generated.cpu;
-	const auto field = *cpu.stringPool().find("field");
+	const auto field = *bmsx::test::StringPoolReference(cpu).find("field");
 	auto own = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
 	auto holder = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 3)));
 	const Value negativeZero = valueFloatBits(0x80000000u), rawNaN = valueFloatBits(0xffc01234u);
@@ -316,7 +319,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& lane = m->cpu;
 		bmsx::test::asReferenceTable(lane.readFrameRegister(0, 4), bmsx::test::GcHeap(lane))
-			.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, 0));
+			.setStringKey(bmsx::test::StringPoolReference(lane).intern("__newindex"), lane.readFrameRegister(0, 0));
 	}
 	assign(rawNaN, 1);
 	require(holder.getStringKey(field) == rawNaN && isNil(own.getStringKey(field))
@@ -341,11 +344,11 @@ void coldFieldAssignmentPublishesItsFrontierOnce() {
 	Machine machine(program, true); // Skip precompilation; enter ordinary scalar dispatch.
 	auto& cpu = machine.cpu;
 	cpu.setExecutionHook({});
-	cpu.luaHeap().setCollectionTarget(static_cast<u32>(cpu.luaHeap().capacity()));
+	bmsx::LuaHeap(cpu).setCollectionTarget(static_cast<u32>(bmsx::LuaHeap(cpu).capacity()));
 	const Value method = machine.bindHandler();
 	auto root = bmsx::test::allocateTableReference(cpu, 1, 0);
 	root.setInteger(1, valueInteger(17));
-	const auto field = *cpu.stringPool().find("field");
+	const auto field = *bmsx::test::StringPoolReference(cpu).find("field");
 	const unsigned storePc = machine.rom.textAddress + INSTRUCTION_BYTES;
 	const unsigned successor = machine.rom.textAddress + program.next * INSTRUCTION_BYTES;
 	const int throughStore = cycles(OpCode::K1) + cycles(OpCode::SETFIELD);
@@ -369,7 +372,7 @@ void coldFieldAssignmentPublishesItsFrontierOnce() {
 		"the first own insertion reserves its requested hash storage without touching the array");
 	const u32 storage = root.hashAddress();
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-	meta.setStringKey(cpu.stringPool().intern("__newindex"), method);
+	meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__newindex"), method);
 	root.setMetatableAddress(meta.address());
 	start(valueInteger(29));
 	require(cpu.runUntilDepth(0, throughStore) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
@@ -404,9 +407,9 @@ void callableNewIndexDiscardsAllResults() {
 		for (auto* m : {&generated, &scalar}) {
 			const Value method = m->bindHandler();
 			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			const auto field = m->cpu.stringPool().intern("field");
+			const auto field = bmsx::test::StringPoolReference(m->cpu).intern("field");
 			root.setStringKey(field, valueBool(false));
-			meta.setStringKey(m->cpu.stringPool().intern("__newindex"), method);
+			meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__newindex"), method);
 			root.setMetatableAddress(meta.address());
 			auto* frame = m->cpu.activeThread()->currentFrame;
 			frame->registers.set(0, valueTable(root.address())); frame->registers.set(1, key);
@@ -424,7 +427,7 @@ void callableNewIndexDiscardsAllResults() {
 		const auto table = TableRecord(generated.cpu.memory(), valuePayload(caller->registers.get(0)));
 		require(generated.cpu.getFrameDepth() == 1 && generated.cpu.instructionBudgetRemaining == 0
 			&& caller->readControl(FrameField::Top) == 0x4900000bu && caller->registers.get(1) == key
-			&& caller->registers.get(8) == valueInteger(57) && table.getStringKey(generated.cpu.stringPool().intern("field")) == valueInteger(73),
+			&& caller->registers.get(8) == valueInteger(57) && table.getStringKey(bmsx::test::StringPoolReference(generated.cpu).intern("field")) == valueInteger(73),
 			"assignment returns no registers or receiving charge, while the handler's own mutation commits");
 	}
 }
@@ -439,7 +442,7 @@ void tableLengthAllowsOrdinaryMetamethodResult() {
 	for (auto* m : {&generated, &scalar}) {
 		const Value method = m->bindHandler();
 		auto root = bmsx::test::allocateTableReference(m->cpu, 4, 0), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-		meta.setStringKey(m->cpu.stringPool().intern("__len"), method);
+		meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__len"), method);
 		root.setInteger(1, valueInteger(27)); root.setMetatableAddress(meta.address());
 		auto* frame = m->cpu.activeThread()->currentFrame;
 		frame->registers.set(0, valueTable(root.address())); frame->registers.set(8, valueInteger(-1));

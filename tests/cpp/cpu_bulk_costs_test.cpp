@@ -1,4 +1,5 @@
 #include "common/utf8.h"
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -48,7 +49,7 @@ void hostGrantScratch(bool scalar) {
  DeviceScheduler scheduler(cpu); scheduler.setNowCycles(73);
  auto* frame = cpu.activeThread()->frameAtDepth(0);
  auto table = bmsx::test::allocateTableReference(cpu);
- const Value key = valueString(cpu.stringPool().intern("field"));
+ const Value key = valueString(bmsx::test::StringPoolReference(cpu).intern("field"));
  frame->registers.set(0, valueTable(table.address())); frame->registers.set(1, key); frame->registers.set(2, valueInteger(91)); frame->writeControl(bmsx::FrameField::Top, 3);
  cpu.instructionBudgetRemaining = 29; table.set(key, valueInteger(37));
  if (cpu.instructionBudgetRemaining != 29 || scheduler.currentNowCycles() != 73)
@@ -128,7 +129,7 @@ int main() {
 
    auto hash = bmsx::test::allocateTableReference(cpu, 0, 8);
    for (int index = 0; index < 8; ++index)
-    hash.setStringKey(cpu.stringPool().intern("next-" + std::to_string(index)), valueInteger(index + 10));
+    hash.setStringKey(bmsx::test::StringPoolReference(cpu).intern("next-" + std::to_string(index)), valueInteger(index + 10));
    std::array<Value, 8> keys{}, values{};
    for (size_t slot = 0; slot < keys.size(); ++slot) {
     if (!hash.loadStoredEntry(slot, keys[slot], values[slot])) throw std::runtime_error("NEXT fixture fills every reserved hash node");
@@ -159,7 +160,7 @@ int main() {
    test::seedManagedFixture(cpu, addresses);
    if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
    std::array<StringId, 16> keys{};
-   for (size_t i = 0; i < keys.size(); ++i) keys[i] = cpu.stringPool().intern("growth-" + std::to_string(i));
+   for (size_t i = 0; i < keys.size(); ++i) keys[i] = bmsx::test::StringPoolReference(cpu).intern("growth-" + std::to_string(i));
    auto* frame = cpu.activeThread()->frameAtDepth(0);
    frame->registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 0, 16).address()));
    frame->registers.set(1, valueString(keys[0]));

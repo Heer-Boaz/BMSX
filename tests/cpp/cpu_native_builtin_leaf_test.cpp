@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
@@ -78,19 +79,19 @@ struct Machine {
 		require(asBuiltinFunctionId(r.get(0)) == id, "the actual runtime callee carries its raw builtin ID");
 		r.set(12, valueFloat(99.75f)); r.set(11, valueInteger(MARKER_ADDRESS)); frame->writeControl(bmsx::FrameField::Top, 3);
 		if (id == BuiltinFunctionId::StringByte) {
-			r.set(1, mode == 2 ? valueInteger(17) : valueString(cpu.stringPool().intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
+			r.set(1, mode == 2 ? valueInteger(17) : valueString(bmsx::test::StringPoolReference(cpu).intern(std::string("A\xc3\xa9\xf0\x9f\x98\x80\0Z", 9))));
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
 			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169) : position == 2 ? valueInteger(195) : valueNil();
 		} else {
 			target.emplace(bmsx::test::allocateTableReference(cpu, 0, 1)); meta.emplace(bmsx::test::allocateTableReference(cpu, 0, 1));
-			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
+			meta->setStringKey(bmsx::test::StringPoolReference(cpu).intern("field"), valueInteger(71));
 			target->setMetatableAddress(meta->address());
-			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(target->address()));
+			cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("target"), valueTable(target->address()));
 			r.set(1, mode == 3 ? valueInteger(17) : valueTable(target->address()));
 			r.set(2, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));
 			expected = id == BuiltinFunctionId::GetMetatable ? valueTable(meta->address()) : valueTable(target->address());
 			if (id == BuiltinFunctionId::RawGet) {
-				const Value key = valueString(cpu.stringPool().intern("field"));
+				const Value key = valueString(bmsx::test::StringPoolReference(cpu).intern("field"));
 				if (!mode) target->set(key, valueBool(false));
 				r.set(2, key);
 				expected = mode ? valueNil() : valueBool(false);

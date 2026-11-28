@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "common/endian.h"
@@ -191,7 +193,7 @@ void inactiveFrameMetadata() {
 	require((before == reference && bmsx::test::sameLanguageRam(generated.cpu, scalar.cpu)),
 		"inactive activation bits are not part of the checkpoint value graph");
 	bmsx::test::GcHeap(generated.cpu).collect(); bmsx::test::GcHeap(scalar.cpu).collect();
-	require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes(),
+	require(bmsx::LuaHeap(generated.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes(),
 		"inactive closure and register pointers do not retain their retired table or closure");
 	for (auto* machine : {&generated, &scalar}) {
 		auto& cpu = machine->cpu;
@@ -376,7 +378,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	require(static_cast<size_t>(calleeBase + initializedExtent + (alias ? 0 : 1)) <= thread->stackCapacity,
 		"raw formals and a following sentinel remain inside the retained allocation");
 	for (int i = 0; i < (vararg ? args : 0) + initializedExtent; ++i) thread->stack.set(base + 1 + i, valueInteger(63));
-	const std::array<Value, 5> payloads{valueInteger(99), valueString(machine.cpu.stringPool().intern("native-call-payload")),
+	const std::array<Value, 5> payloads{valueInteger(99), valueString(bmsx::test::StringPoolReference(machine.cpu).intern("native-call-payload")),
 		valueFloatBits(0xffa12345), valueBool(true), valueFloatBits(0x80000000)};
 	for (int index = 0; index < args; ++index) caller->registers.set(base + 1 + index, payloads[index]);
 
@@ -386,7 +388,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		// changing the reserved frame or native call target.
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 	}
-	const auto marker = machine.cpu.stringPool().intern("nativeCallMarker");
+	const auto marker = bmsx::test::StringPoolReference(machine.cpu).intern("nativeCallMarker");
 	machine.cpu.setGlobalByKey(marker, valueBool(false));
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
 	auto* calleePage = lookup.find(calleePc, 0);
@@ -1062,7 +1064,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* caller = callee->previous;
 	auto closure = callee->closureAddress();
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
-		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
+		valueString(bmsx::test::StringPoolReference(machine.cpu).intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
 	for (int index = 0; index < produced; ++index) callee->registers.set(1 + index, payloads[index]);
 	callee->writeControl(FrameField::Top, 0xab000000u | static_cast<u32>(1 + produced));
 	callee->writeControl(FrameField::ReturnBase, 0xc0000000u | static_cast<u32>(base));
@@ -1073,7 +1075,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	std::array<Value, callerCapacity> callerBeforeReturn;
 	for (size_t index = 0; index < callerBeforeReturn.size(); ++index)
 		callerBeforeReturn[index] = caller->registers.get(index);
-	const auto marker = machine.cpu.stringPool().intern("nativeReturnMarker");
+	const auto marker = bmsx::test::StringPoolReference(machine.cpu).intern("nativeReturnMarker");
 	machine.cpu.setGlobalByKey(marker, valueNil());
 	const auto& lookup = *caller->executionImage->nativeCodeLookup;
 	auto* continuation = lookup.find(caller->readControl(bmsx::FrameField::Pc), 0);
@@ -1188,7 +1190,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		require(thread->stackCapacity >= 40, "an actual earlier call retained backing beyond the smaller raw frame reservation");
 		for (size_t i = thread->stackTop(); i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
-			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
+			valueString(bmsx::test::StringPoolReference(machine->cpu).intern("frame-argument")), valueInteger(99)};
 		for (int index = 0; index < args; ++index) caller->registers.set(base + 1 + index, alias ? valueInteger(71 + index) : payloads[index]);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
 	}
@@ -1203,7 +1205,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 			&& callee->stackCapacity() == capacity && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && callee->varargCount() == count && callee->readControl(FrameField::ArgumentCount) == static_cast<u32>(args),
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
-			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
+			valueString(bmsx::test::StringPoolReference(machine->cpu).intern("frame-argument")), valueInteger(99)};
 		for (int index = 0; index < params; ++index) require(callee->registers.get(index)
 			== (index < args ? alias ? valueInteger(71 + index) : payloads[index] : valueNil()),
 			"supplied raw arguments survive and missing fixed formals are nil, inside the owned formal reservation");
@@ -1221,7 +1223,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* caller = thread->currentFrame;
 		for (size_t i = thread->stackTop(); i < thread->stackCapacity; ++i) thread->stack.set(i, valueInteger(63));
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
-			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
+			valueString(bmsx::test::StringPoolReference(machine->cpu).intern("frame-argument")), valueInteger(99)};
 		machine->cpu.beginCompletionCall(bmsx::test::asClosure(caller->registers.get(6), bmsx::test::GcHeap(machine->cpu)), BuiltinArgsView(payloads.data(), args));
 		auto* callee = thread->currentFrame;
 		require(callee->stackCapacity() == std::max({maxStack, params, 1}) && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && callee->hasControlFlag(FRAME_COMPLETION),
@@ -1251,14 +1253,14 @@ void returnGrowthCollection() {
 		while (machine.cpu.activeThread()->frameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 		auto* caller = machine.cpu.activeThread()->firstFrame;
 		auto* callee = machine.cpu.activeThread()->currentFrame;
-		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
+		const Value result = valueString(bmsx::test::StringPoolReference(machine.cpu).intern("retained-only-by-returning-frame"));
 		callee->registers.set(0, result);
 		callee->writeControl(bmsx::FrameField::Top, 1);
-		const auto heap = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
-		machine.cpu.luaHeap().setCollectionTarget(heap.first);
+		const auto heap = std::pair{bmsx::LuaHeap(machine.cpu).usedBytes(), bmsx::LuaHeap(machine.cpu).collectionTarget()};
+		bmsx::LuaHeap(machine.cpu).setCollectionTarget(heap.first);
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
 		require(bmsx::test::GcHeap(machine.cpu).active(), "return window growth triggers an allocation assist");
-		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
+		require(bmsx::test::StringPoolReference(machine.cpu).find("retained-only-by-returning-frame") == asStringId(result)
 			&& caller->registers.get(0) == result && caller->stackCapacity() == 64 && static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == 62,
 			"return values remain rooted across collection and caller/callee window relocation");
 		for (int index = 1; index < 62; ++index) require(caller->registers.get(index) == valueNil(), "missing fixed returns are nil");
@@ -1424,9 +1426,10 @@ void weakCanonicalClosuresAndStaticEntry() {
 		machine.cpu.runUntilDepth(0, 1);
 		require(machine.cpu.readFrameRegister(0, 0) == lastBeforeSweep,
 			"reindexing the dense bucket preserves the current closure identity");
-		const size_t bytesBefore = machine.cpu.luaHeap().usedBytes();
+		bmsx::LuaHeap budget(machine.cpu);
+		const size_t bytesBefore = budget.usedBytes();
 		bmsx::test::GcHeap(machine.cpu).collect();
-		require(countVersions() == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
+		require(countVersions() == 1 && budget.usedBytes() < bytesBefore,
 			"guest GC removes unreachable record versions from the weak index and heap");
 		const auto last = bmsx::test::asClosure(machine.cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(machine.cpu));
 		require(machine.cpu.readClosureBinding(last).entry.maxStack == 64, "the live closure survives guest GC");
@@ -1436,10 +1439,10 @@ void weakCanonicalClosuresAndStaticEntry() {
 			"retiring other versions preserves the surviving singleton's lookup");
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
-		const auto pressure = std::pair{machine.cpu.luaHeap().usedBytes(), machine.cpu.luaHeap().collectionTarget()};
-		machine.cpu.luaHeap().setCollectionTarget(pressure.first + 32);
+		const auto pressure = std::pair{bmsx::LuaHeap(machine.cpu).usedBytes(), bmsx::LuaHeap(machine.cpu).collectionTarget()};
+		budget.setCollectionTarget(pressure.first + 32);
 		machine.cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, record);
-		require(machine.cpu.luaHeap().collectionTarget() > pressure.first + 32,
+		require(budget.collectionTarget() > pressure.first + 32,
 			"callee stack growth collected while admitting a freshly created canonical closure");
 		const auto direct = machine.cpu.activeThread()->currentFrame->closureAddress();
 		require(machine.cpu.readClosureBinding(direct).recordUpvalueCount == 3 && ClosureRecord::captureCount(machine.cpu.memory(), direct) == 0,
@@ -1620,8 +1623,8 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 16u * INSTRUCTION_BYTES);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		const auto heap = std::pair{machine->cpu.luaHeap().usedBytes(), machine->cpu.luaHeap().collectionTarget()};
-		machine->cpu.luaHeap().setCollectionTarget(heap.first);
+		const auto heap = std::pair{bmsx::LuaHeap(machine->cpu).usedBytes(), bmsx::LuaHeap(machine->cpu).collectionTarget()};
+		bmsx::LuaHeap(machine->cpu).setCollectionTarget(heap.first);
 		require(machine->cpu.runUntilDepth(0, callPrefix + 6) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth() == 1
@@ -1806,7 +1809,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 		target->nativeCode[(targetPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]
 			= alternate->nativeCode[(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		cpu.runUntilDepth(0, 100);
-		require(cpu.getGlobalByKey(cpu.stringPool().intern("rawBindingMarker")) == valueInteger(73)
+		require(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("rawBindingMarker")) == valueInteger(73)
 			&& cpu.getFrameDepth() == 2, "native CALL reads the live raw binding and enters its independently redirected native target without general VM dispatch");
 		return;
 	}

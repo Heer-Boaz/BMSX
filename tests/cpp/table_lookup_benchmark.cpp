@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -35,7 +36,7 @@ struct Fixture {
 	Fixture() {
 		size_t count = 0;
 		for (size_t n = 0; count < KeyCount * 2; ++n) {
-			const auto key = cpu.stringPool().intern("field_" + std::to_string(n));
+			const auto key = bmsx::test::StringPoolReference(cpu).intern("field_" + std::to_string(n));
 			if ((hashCanonicalTableKey(valueString(key)) & 63u) != 0u) continue;
 			(count < KeyCount ? keys[count] : missing[count - KeyCount]) = key;
 			++count;
@@ -48,7 +49,7 @@ struct Fixture {
 				table.setStringKey(keys[k], valueInteger(k + 1));
 			}
 		}
-		indexKey = cpu.stringPool().intern("__index");
+		indexKey = bmsx::test::StringPoolReference(cpu).intern("__index");
 		inherited = tables[0];
 		for (int depth = 0; depth < 4; ++depth) {
 			auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);

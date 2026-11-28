@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/devices/irq/controller.h"
@@ -185,7 +186,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	bmsx::test::GcHeap(cpu).collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	require(valueIsTable(cpu.activeThread()->currentFrame->registers.get(2)), "an open capture owns its slot even above lowered top");
 	cpu.setExecutionHook({}); cpu.runUntilDepth(0, 100);
-	auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("read")), bmsx::test::GcHeap(cpu));
+	auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("read")), bmsx::test::GcHeap(cpu));
 	cpu.beginCompletionCall(closure); cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");

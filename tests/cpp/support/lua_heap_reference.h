@@ -3,20 +3,19 @@
 #include <cstddef>
 #include <optional>
 
-#include "common/primitives.h"
+#include "heap_allocator_reference.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {
 
 class CPU;
-struct Thread;
-enum class ThreadField : u32;
+namespace test { struct LocalStringRoots; }
 enum class LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted };
 enum class LuaAllocationMode { Direct, Scheduled, Retry };
 
 class LuaHeap {
 public:
-	explicit LuaHeap(CPU& cpu);
+	explicit LuaHeap(CPU& cpu, test::LocalStringRoots* roots = nullptr);
 
 	// Admit the logical bytes without publishing the reservation.
 	LuaAllocationRecovery admit(
@@ -68,6 +67,8 @@ private:
 	static constexpr size_t MIN_COLLECTION_BYTES = 1024 * 1024;
 
 	CPU& m_cpu;
+	HeapAllocator m_arena;
+	test::LocalStringRoots* m_roots;
 	const u32 m_targetAddress;
 	const u32 m_occupiedAddress;
 };

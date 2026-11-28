@@ -1,4 +1,5 @@
 #include "common/float32.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/common/numeric.h"
 #include "machine/machine.h"
 #include "machine/devices/geometry/overlap2d.h"
@@ -116,7 +117,7 @@ int main() {
 		Machine machine(memory, input, PSX_MACHINE_SPEC);
 		machine.resetDevices();
 		machine.scheduler.reset();
-		require(machine.cpu.heapAllocator().setFloor(summary + GEO_OVERLAP2D_SUMMARY_BYTES),
+		require(bmsx::HeapAllocator(machine.cpu.memory()).setFloor(summary + GEO_OVERLAP2D_SUMMARY_BYTES),
 			"GEO contact records and summary fit in public static RAM");
 		const auto job = writeCase(memory);
 		memory.writeMappedWord(IO_GEO_SRC0, job.src0);
@@ -195,7 +196,7 @@ int main() {
 		machine.resetDevices();
 		machine.scheduler.reset();
 		const u32 workspace = summary + 0x100;
-		require(machine.cpu.heapAllocator().setFloor(workspace + 256), "indexed workspace in static RAM");
+		require(bmsx::HeapAllocator(machine.cpu.memory()).setFloor(workspace + 256), "indexed workspace in static RAM");
 		const auto job = writeCase(memory);
 		memory.writeMappedWord(IO_GEO_SRC0, instances);
 		memory.writeMappedWord(IO_GEO_STRIDE0, job.stride0);

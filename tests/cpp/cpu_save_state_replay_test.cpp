@@ -1,3 +1,6 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
@@ -143,10 +146,11 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		if (table) {
 			auto weak = bmsx::test::allocateTableReference(cpu, 1, 0);
 			auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
-			mode.setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
+			bmsx::test::StringPoolReference strings(cpu);
+			mode.setStringKey(strings.intern("__mode"), bmsx::valueString(strings.intern("v")));
 			weak.setMetatableAddress(mode.address());
 			weak.setInteger(1, cpu.readFrameRegister(0, 0));
-			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(weak.address()));
+			cpu.setGlobalByKey(strings.intern("weak"), bmsx::valueTable(weak.address()));
 			bmsx::test::GcHeap(cpu).collect();
 			require(weak.getInteger(1) == cpu.readFrameRegister(0, 0), "live caller locals remain heap roots across calls");
 		}
@@ -160,7 +164,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		const auto values = cpu.readCompletionValues();
 		require(values.size() == 1u, "explicit RET returns its reserved register");
 		if (!table) require(values.get(0) == bmsx::valueInteger(1), "numeric register survives restore");
-		else require(values.get(0) == bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(cpu.stringPool().intern("weak")))).getInteger(1), "reference identity survives restore");
+		else require(values.get(0) == bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("weak")))).getInteger(1), "reference identity survives restore");
 	}
 }
 
@@ -243,17 +247,18 @@ void inspectOpenAndClosedClosure() {
 void replayWeakCollectionSchedule() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
-	const auto weakKey = cpu.stringPool().intern("weak");
+	const auto weakKey = bmsx::test::StringPoolReference(cpu).intern("weak");
 	auto weak = bmsx::test::allocateTableReference(cpu, 1, 0);
 	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
-	metatable.setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
+	metatable.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__mode"), bmsx::valueString(bmsx::test::StringPoolReference(cpu).intern("v")));
 	weak.setMetatableAddress(metatable.address());
 	weak.setInteger(1, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak.address()));
 	for (int index = 0; index < 17; ++index) bmsx::test::allocateTableReference(cpu, 256, 0);
 	const auto savedRam = cpu.memory().captureSaveState();
 	const auto anchor = cpu.captureRuntimeState();
-	const auto anchorBytes = cpu.luaHeap().usedBytes();
+	bmsx::LuaHeap budget(cpu);
+	const auto anchorBytes = budget.usedBytes();
 
 	const auto allocateUntilCollected = [&]() {
 		auto current = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(weakKey)));
@@ -267,18 +272,18 @@ void replayWeakCollectionSchedule() {
 	const int expectedCount = allocateUntilCollected();
 	const auto expected = cpu.captureRuntimeState();
 	const auto expectedRam = cpu.memory().captureSaveState();
-	const auto expectedBytes = cpu.luaHeap().usedBytes();
-	const auto expectedTarget = cpu.luaHeap().collectionTarget();
+	const auto expectedBytes = budget.usedBytes();
+	const auto expectedTarget = budget.collectionTarget();
 	for (int pass = 0; pass < 3; ++pass) {
 
 		cpu.memory().restoreSaveState(savedRam);
 		cpu.restoreRuntimeState(anchor);
-		require(cpu.luaHeap().usedBytes() == anchorBytes, "unreachable allocation debt survives restore");
+		require(bmsx::LuaHeap(cpu).usedBytes() == anchorBytes, "unreachable allocation debt survives restore");
 		require(allocateUntilCollected() == expectedCount, "collection must happen after the same allocation");
 		const auto actual = cpu.captureRuntimeState();
 		require(actual == expected && cpu.memory().captureSaveState().ram == expectedRam.ram, "GC replay retains allocator state and every RAM record");
-		require(cpu.luaHeap().usedBytes() == expectedBytes, "GC recomputes actual live bytes after restore");
-		require(cpu.luaHeap().collectionTarget() == expectedTarget, "next GC threshold matches");
+		require(bmsx::LuaHeap(cpu).usedBytes() == expectedBytes, "GC recomputes actual live bytes after restore");
+		require(bmsx::LuaHeap(cpu).collectionTarget() == expectedTarget, "next GC threshold matches");
 	}
 }
 
@@ -363,7 +368,7 @@ void capturePreservesGlobalRegisters() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
-	const auto key = cpu.stringPool().intern("answer");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("answer");
 	require(cpu.getGlobalByKey(key) == bmsx::valueInteger(1), "SETGL writes the named owner");
 	const auto ram = cpu.memory().captureSaveState();
 	const auto snapshot = cpu.captureRuntimeState();
@@ -401,7 +406,7 @@ void restoreHardHalt() {
 void saveLayoutDoesNotScaleWithHeapObjects() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
-	const auto key = cpu.stringPool().intern("graph");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("graph");
 	cpu.setGlobalByKey(key, bmsx::valueNil()); // Keep the same global-bank extent.
 	const size_t emptySize = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)).size();
 	auto root = bmsx::test::allocateTableReference(cpu, 1024, 0);
@@ -431,7 +436,7 @@ void saveLayoutDoesNotScaleWithHeapObjects() {
 void preserveSnapshotValueBits() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
-	const auto key = cpu.stringPool().intern("values");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("values");
 	const std::array values{
 		bmsx::valueInteger(0), bmsx::valueInteger(INT32_MIN), bmsx::valueInteger(INT32_MAX),
 		bmsx::valueFloatBits(0x80000000u), bmsx::valueFloat(0.0f), bmsx::valueFloat(1.25f),
@@ -439,7 +444,7 @@ void preserveSnapshotValueBits() {
 		bmsx::valueFloatBits(0x7f800000u), bmsx::valueFloatBits(0xff800000u),
 		bmsx::valueFloatBits(1u), bmsx::valueFloatBits(0x7f7fffffu),
 		bmsx::valueBool(false), bmsx::valueBool(true),
-		bmsx::valueString(cpu.stringPool().intern("saved")),
+		bmsx::valueString(bmsx::test::StringPoolReference(cpu).intern("saved")),
 		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::Next), bmsx::valueNil(),
 	};
 	auto table = bmsx::test::allocateTableReference(cpu, values.size(), 0);
@@ -456,7 +461,7 @@ void preserveSnapshotValueBits() {
 void preserveDeepGraph() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
-	const auto key = cpu.stringPool().intern("deep");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("deep");
 	auto root = bmsx::test::allocateTableReference(cpu, 1, 0);
 	cpu.setGlobalByKey(key, bmsx::valueTable(root.address()));
 	bmsx::u32 tail = root.address();
@@ -481,42 +486,42 @@ void preserveDynamicGlobalRegisters() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto count = cpu.globalSlotCount();
-	const auto capacity = cpu.heapAllocator().managementOffset() + bmsx::GLOBAL_BANK_OFFSET + static_cast<bmsx::u32>(bmsx::GlobalBankField::Capacity);
+	const auto capacity = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::GLOBAL_BANK_OFFSET + static_cast<bmsx::u32>(bmsx::GlobalBankField::Capacity);
 	bool grewBank = false;
 	for (int index = 0; index < 257; ++index) {
-		const auto key = cpu.stringPool().intern("dynamic" + std::to_string(index));
-		const auto logical = cpu.luaHeap().usedBytes();
-		const auto physical = cpu.heapAllocator().occupiedBytes();
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("dynamic" + std::to_string(index));
+		const auto logical = bmsx::LuaHeap(cpu).usedBytes();
+		const auto physical = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
 		const auto previous = cpu.memory().readRamRecordWord(capacity);
 		cpu.setGlobalByKey(key, bmsx::valueInteger(index));
-		require(cpu.luaHeap().usedBytes() == logical + 9u, "every newly registered name costs nine bytes");
+		require(bmsx::LuaHeap(cpu).usedBytes() == logical + 9u, "every newly registered name costs nine bytes");
 		if (cpu.memory().readRamRecordWord(capacity) != previous) {
 			grewBank = true;
-			require(cpu.heapAllocator().occupiedBytes() > physical, "the physical index reserve grows separately");
-		} else require(cpu.heapAllocator().occupiedBytes() == physical, "growing membership need not grow the reserve");
+			require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() > physical, "the physical index reserve grows separately");
+		} else require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == physical, "growing membership need not grow the reserve");
 	}
 	require(grewBank, "the names cross an actual capacity boundary");
-	const auto key = cpu.stringPool().intern("held");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("held");
 	auto object = bmsx::test::allocateTableReference(cpu, 1, 0);
 	object.setInteger(1, bmsx::valueInteger(42));
 	cpu.setGlobalByKey(key, bmsx::valueTable(object.address()));
-	const auto nilKey = cpu.stringPool().intern("nil-name");
+	const auto nilKey = bmsx::test::StringPoolReference(cpu).intern("nil-name");
 	cpu.setGlobalByKey(nilKey, bmsx::valueNil());
 	bmsx::test::GcHeap(cpu).collect();
 
 	const auto ram = cpu.memory().captureSaveState();
 	const auto state = cpu.captureRuntimeState();
-	const auto usage = cpu.luaHeap().usedBytes();
+	const auto usage = bmsx::LuaHeap(cpu).usedBytes();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
-	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
+	cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("future"), bmsx::valueInteger(100));
 	bmsx::test::GcHeap(cpu).collect();
 
 	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
-	require(cpu.luaHeap().usedBytes() == usage, "restore retains logical occupancy, not capacity-derived accounting");
+	require(bmsx::LuaHeap(cpu).usedBytes() == usage, "restore retains logical occupancy, not capacity-derived accounting");
 	require(cpu.globalSlotCount() == count + 259, "dynamic register membership restores exactly");
 	for (int index = 0; index < 257; ++index) {
-		require(cpu.getGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index))) == bmsx::valueInteger(index),
+		require(cpu.getGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("dynamic" + std::to_string(index))) == bmsx::valueInteger(index),
 			"growth and restore preserve every global register");
 	}
 	require(bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(key))).getInteger(1) == bmsx::valueInteger(42), "dynamic global is a heap root");

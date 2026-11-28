@@ -27,8 +27,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/global_bank.h"
-#include "machine/cpu/heap_allocator.h"
-#include "machine/cpu/lua_heap.h"
+#include "machine/cpu/string_pool.h"
 #include "spec/blua32/instruction_format.h"
 #include "machine/cpu/execution_image.h"
 #include "spec/blua32/cop0.h"
@@ -192,10 +191,6 @@ public:
 	MappedBusSignals readExecutionBusSignals() const { return m_executionBusSignals; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
-	LuaHeap& luaHeap() { return m_luaHeap; }
-	const LuaHeap& luaHeap() const { return m_luaHeap; }
-	HeapAllocator& heapAllocator() { return m_heapAllocator; }
-	const HeapAllocator& heapAllocator() const { return m_heapAllocator; }
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const DiagnosticExecutionProfile& diagnosticExecutionProfile() const { return m_diagnosticExecutionProfile; }
 #endif
@@ -298,7 +293,6 @@ public:
 private:
 	friend class BuiltinResultsScratchScope;
 	friend class test::GcHeap;
-	friend class LuaHeap;
 	using RunUntilDepthEntry = RunResult (*)(CPU&, int, int);
 	enum class GrantAdmission : u8 { Admitted, Halted, RequestedYield, OutOfCycles };
 
@@ -539,8 +533,6 @@ private:
 	ExecutionAddressSpace& m_executionAddressSpace;
 	Span<const u8> m_executionReadView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
-	HeapAllocator m_heapAllocator;
-	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
 	Thread m_rootView;
 	Thread m_irqView;

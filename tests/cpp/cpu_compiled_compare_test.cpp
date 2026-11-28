@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -62,8 +63,8 @@ void genericPredicatesAndStringChargeAgree() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto& registers = cpu.activeThread()->currentFrame->registers;
-		const auto a = valueString(cpu.stringPool().intern("aa"));
-		const auto b = valueString(cpu.stringPool().intern("aaa"));
+		const auto a = valueString(bmsx::test::StringPoolReference(cpu).intern("aa"));
+		const auto b = valueString(bmsx::test::StringPoolReference(cpu).intern("aaa"));
 		const std::array cases{
 			Comparison{valueInteger(16777216), valueFloat(16777216.0f), {true, false, true}},
 			Comparison{valueFloat(16777216.0f), valueInteger(16777217), {false, true, true}},
@@ -157,7 +158,7 @@ void equalityConsumesOnlyRelevantValuePlanes() {
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		const Value str = valueString(cpu.stringPool().intern("identity"));
+		const Value str = valueString(bmsx::test::StringPoolReference(cpu).intern("identity"));
 		const std::array known{valueNil(), valueBool(false), valueBool(true), str};
 		for (unsigned fn = 0; fn < image.functions.size(); ++fn) {
 			const u32 pc = machine->rom.textAddress + fn * 4 * INSTRUCTION_BYTES;
@@ -170,7 +171,7 @@ void equalityConsumesOnlyRelevantValuePlanes() {
 			}
 #endif
 			for (Value other : {valueFromTag(ValueTag::Nil, 17), valueFromTag(ValueTag::True, 42),
-				valueFromTag(ValueTag::False, 9), str, valueString(cpu.stringPool().intern("different")),
+				valueFromTag(ValueTag::False, 9), str, valueString(bmsx::test::StringPoolReference(cpu).intern("different")),
 				valueInteger(valuePayload(str)), valueFloatBits(BLUA32_FLOAT_NAN)}) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[fn], pc);
 				cpu.activeThread()->currentFrame->registers.set(0, other);
@@ -212,8 +213,8 @@ void stringOrderingKeepsResidentValuesAndExactFrontiers() {
 #endif
 		for (auto* machine : {&native, &scalar}) {
 			auto& registers = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-			registers.set(0, valueString(machine->cpu.stringPool().intern("mz")));
-			registers.set(1, valueString(machine->cpu.stringPool().intern("my")));
+			registers.set(0, valueString(bmsx::test::StringPoolReference(machine->cpu).intern("mz")));
+			registers.set(1, valueString(bmsx::test::StringPoolReference(machine->cpu).intern("my")));
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
 			"the String comparison consumes both bytes and exhausts the grant");
@@ -264,7 +265,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, domain,
 				domain == SYSTEM_EXECUTION_DOMAIN_ID ? machine->rom.functionAddresses[0] : cart.functionAddresses[0], DYNAMIC_RAM_BASE);
-			machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("same-slot")));
+			machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(bmsx::test::StringPoolReference(machine->cpu).intern("same-slot")));
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 1024);
 		const auto& frame = *native.cpu.activeThread()->currentFrame;
@@ -286,7 +287,7 @@ void numericRkComparisonsBelongToTheirExecutionImage() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.installSystemRom(replacement.bytes);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("same-slot")));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(bmsx::test::StringPoolReference(machine->cpu).intern("same-slot")));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4);
 	require(native.cpu.activeThread()->currentFrame->registers.get(1) == valueBool(false),
@@ -627,8 +628,8 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 					for (auto* machine : {&native, &scalar}) {
 						auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 						if (strings) {
-							const auto left = machine->cpu.stringPool().intern(expected ? "aaaaaa" : "zzzzzz");
-							const auto right = machine->cpu.stringPool().intern(op == OpCode::EQ && expected ? "aaaaaa" : "mmmmmm");
+							const auto left = bmsx::test::StringPoolReference(machine->cpu).intern(expected ? "aaaaaa" : "zzzzzz");
+							const auto right = bmsx::test::StringPoolReference(machine->cpu).intern(op == OpCode::EQ && expected ? "aaaaaa" : "mmmmmm");
 							r.set(0, valueString(left)); r.set(2, valueString(right));
 						} else {
 							r.set(0, valueInteger(op == OpCode::EQ ? (expected ? 7 : 6) : (expected ? 6 : 8)));

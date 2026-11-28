@@ -4,6 +4,8 @@
 #include "spec/blua32/opcode.h"
 #include "spec/gx/pcrtc.h"
 #include "spec/gx/gp0.h"
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/gx/gte.h"
@@ -339,7 +341,7 @@ struct ExternalClosureFixture {
 		require(cpu.runUntilDepth(0, publicationCycles) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
 			const bmsx::StringId name =
-				cpu.stringPool().intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]);
+				bmsx::test::StringPoolReference(cpu).intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]);
 			closures[index] = bmsx::test::asClosure(cpu.getGlobalByKey(name), bmsx::test::GcHeap(cpu));
 		}
 	}
@@ -705,7 +707,7 @@ void testRuntimeSystemRebootBoundary() {
 	auto& cpu = machine.cpu;
 	auto& memory = machine.memory;
 	require(cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS
-		&& cpu.heapAllocator().occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
+		&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
 	auto controlled = cpu.captureRuntimeState();
 	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd, controlled);
@@ -771,8 +773,8 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 	bmsx::CPU& singleCpu = single.runtime.machine.cpu;
 	bmsx::CPU& dualCpu = dual.runtime.machine.cpu;
 	require(
-		singleCpu.stringPool().intern("post-boot-probe")
-			== dualCpu.stringPool().intern("post-boot-probe"),
+		bmsx::test::StringPoolReference(singleCpu).intern("post-boot-probe")
+			== bmsx::test::StringPoolReference(dualCpu).intern("post-boot-probe"),
 		"an unexecuted second cartridge does not allocate guest string ids"
 	);
 	require(
@@ -799,9 +801,9 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
 	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
-		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
+		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 	const bmsx::StringId publishedValueName =
-		cpu.stringPool().intern(TEST_CARTRIDGE_VALUE_GLOBAL);
+		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_VALUE_GLOBAL);
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system reset firmware enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
@@ -809,8 +811,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	bmsx::u32 slot0Closure = bmsx::test::asClosure(slot0ClosureValue, bmsx::test::GcHeap(cpu));
 	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "slot 0 closure binds its execution domain");
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(111), "slot 0 startup executes its published closure");
-	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
-	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
+	const bmsx::StringId savedClosureName = bmsx::test::StringPoolReference(cpu).intern("saved_closure");
+	const bmsx::StringId closureTableName = bmsx::test::StringPoolReference(cpu).intern("closure_table");
 	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(slot0ClosureValue, bmsx::valueInteger(77));
 	cpu.setGlobalByKey(savedClosureName, slot0ClosureValue);
@@ -899,7 +901,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
 	const bmsx::StringId publishedClosureName =
-		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
+		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
 	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the first non-static closure");
@@ -914,9 +916,9 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	require(firstClosure != secondClosure, "non-static closure creation retains object identity");
 	require(cpu.readClosureBinding(firstClosure) == cpu.readClosureBinding(secondClosure), "distinct non-static closures retain the same published function binding");
 
-	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
-	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
-	const bmsx::StringId tableName = cpu.stringPool().intern("closure_table");
+	const bmsx::StringId firstName = bmsx::test::StringPoolReference(cpu).intern("first_closure");
+	const bmsx::StringId secondName = bmsx::test::StringPoolReference(cpu).intern("second_closure");
+	const bmsx::StringId tableName = bmsx::test::StringPoolReference(cpu).intern("closure_table");
 	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(firstClosureValue, bmsx::valueInteger(11));
 	closureTable.set(secondClosureValue, bmsx::valueInteger(22));
@@ -957,7 +959,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
 	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
-		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
+		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
 	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 0 publishes the dynamic closure");
@@ -972,9 +974,9 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	require(dynamicClosure != canonicalClosure, "mixed cartridge closure modes retain distinct object identities");
 	require(cpu.readClosureBinding(dynamicClosure).functionAddress == cpu.readClosureBinding(canonicalClosure).functionAddress, "mixed cartridge closure modes share one raw address");
 
-	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
-	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");
-	const bmsx::StringId tableName = cpu.stringPool().intern("mixed_closure_table");
+	const bmsx::StringId dynamicName = bmsx::test::StringPoolReference(cpu).intern("dynamic_closure");
+	const bmsx::StringId canonicalName = bmsx::test::StringPoolReference(cpu).intern("canonical_closure");
+	const bmsx::StringId tableName = bmsx::test::StringPoolReference(cpu).intern("mixed_closure_table");
 	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(dynamicClosureValue, bmsx::valueInteger(11));
 	closureTable.set(canonicalClosureValue, bmsx::valueInteger(22));
@@ -1032,7 +1034,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
-	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
+	const bmsx::StringId closureKey = bmsx::test::StringPoolReference(cpu).intern("completion_call");
 	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
 	const bmsx::Value argument = bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address());
@@ -1094,7 +1096,7 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
-	const bmsx::StringId closureKey = cpu.stringPool().intern("held_completion_call");
+	const bmsx::StringId closureKey = bmsx::test::StringPoolReference(cpu).intern("held_completion_call");
 	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
 	runtime.machine.scheduler.reset();
@@ -1286,7 +1288,7 @@ void testGeoDmaSameCycleRuntimeRestore() {
 	auto& machine = runtime.machine;
 	auto& memory = machine.memory;
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
-	memory.setRamBusEnd(bmsx::RAM_BASE + machine.cpu.heapAllocator().floorOffset(boot.staticEnd));
+	memory.setRamBusEnd(bmsx::RAM_BASE + bmsx::HeapAllocator(machine.cpu.memory()).floorOffset(boot.staticEnd));
 	for (bmsx::u32 i = 0; i < 10u; ++i) {
 		const bmsx::u32 record = records + i * bmsx::GEO_XFORM2_RECORD_BYTES;
 		for (bmsx::u32 offset = 0; offset < bmsx::GEO_XFORM2_RECORD_BYTES; offset += 4u) memory.writeU32(record + offset, 0);

@@ -14,30 +14,10 @@
 
 namespace bmsx::test {
 
-GcHeap::GcHeap(CPU& cpu)
-	: budget(cpu.luaHeap()), memory(cpu.memory()), arena(cpu.heapAllocator())
-	, m_cpu(cpu), m_stringPool(cpu.stringPool())
+GcHeap::GcHeap(CPU& cpu, LocalStringRoots* roots)
+	: budget(cpu, roots), memory(cpu.memory()), arena(memory)
+	, m_cpu(cpu), m_roots(roots), m_stringPool(cpu, roots)
 	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
-
-GcHeap::LocalRootsScope::LocalRootsScope(StringPool& strings)
-	: m_strings(&strings) {
-	strings.beginLocalRoots();
-}
-
-GcHeap::LocalRootsScope::LocalRootsScope(LocalRootsScope&& other) noexcept
-	: m_strings(other.m_strings) {
-	other.m_strings = nullptr;
-}
-
-GcHeap::LocalRootsScope::~LocalRootsScope() {
-	if (m_strings) {
-		m_strings->endLocalRoots();
-	}
-}
-
-GcHeap::LocalRootsScope GcHeap::acquireLocalRoots() {
-	return LocalRootsScope(m_stringPool);
-}
 
 void GcHeap::writeBarrier(u32 address, u32 link) {
 	if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);

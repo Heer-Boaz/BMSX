@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
@@ -115,7 +117,7 @@ void fixedReadContinuation() {
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
-		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+		&& bmsx::LuaHeap(native.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes() && bmsx::LuaHeap(native.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 		"the complete value graph, allocation roots and heap accounting agree");
 	require(std::tie(a.statusWord, a.causeWord, a.epcWord, a.badAddressWord, a.luaFaultReasonWord, a.exceptionDomainWord,
 		a.nmiReturnCauseWord, a.nmiReturnEpcWord, a.nmiReturnBadAddressWord, a.nmiReturnLuaFaultReasonWord,
@@ -176,7 +178,7 @@ void closurePrototypeBusFault() {
 	CpuMachine native(image), scalar(image, true); constexpr u32 bad = 0xdead0000u;
 	for (auto* m : {&native, &scalar}) {
 		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1]));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("target"), valueInteger(m->rom.functionAddresses[1]));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -189,7 +191,7 @@ void closurePrototypeBusFault() {
 		"the actual hot register-address path retains its WIDE destination");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(bad));
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("target"), valueInteger(bad));
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(256, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 	}
@@ -220,7 +222,7 @@ void closureAddressAlias(int source) {
 		m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + m->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 		test::seedTestMappedClosure(m->cpu, DYNAMIC_RAM_BASE);
 		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
+		m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -234,7 +236,7 @@ void closureAddressAlias(int source) {
 	for (u32 address : {DYNAMIC_RAM_BASE, native.rom.functionAddresses[1], DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE, native.rom.functionAddresses[1]}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(address));
+			m->cpu.setGlobalByKey(*bmsx::test::StringPoolReference(m->cpu).find("target"), valueInteger(address));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
 		require(native.cpu.readClosureBinding(bmsx::test::asClosure(native.cpu.readFrameRegister(0, source), bmsx::test::GcHeap(native.cpu))).functionAddress == address, "the full source address is sampled before its slot is replaced");

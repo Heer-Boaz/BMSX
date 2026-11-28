@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -79,7 +81,7 @@ void sameSnapshot(const CpuRuntimeState& a, const CpuRuntimeState& b) {
 		"complete guest graphs and instruction/fault boundaries match");
 }
 Value keyFor(CPU& cpu, KeyKind kind) {
-	return kind == KeyKind::String ? valueString(cpu.stringPool().intern("field"))
+	return kind == KeyKind::String ? valueString(bmsx::test::StringPoolReference(cpu).intern("field"))
 		: kind == KeyKind::Integer ? valueInteger(1) : valueBool(false);
 }
 bmsx::test::NativeTableReference makeChain(CPU& cpu, bmsx::test::NativeTableReference root, int depth, Value key, Value value) {
@@ -87,7 +89,7 @@ bmsx::test::NativeTableReference makeChain(CPU& cpu, bmsx::test::NativeTableRefe
 	const bmsx::test::GcHeap heap(cpu);
 	for (int i = 1; i < depth; ++i) {
 		auto next = bmsx::test::allocateTableReference(cpu, 2, 2); auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(next.address())); bmsx::test::NativeTableReference(heap, current).setMetatableAddress(meta.address());
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(next.address())); bmsx::test::NativeTableReference(heap, current).setMetatableAddress(meta.address());
 		current = next.address();
 	}
 	bmsx::test::NativeTableReference tail(heap, current);
@@ -96,7 +98,7 @@ bmsx::test::NativeTableReference makeChain(CPU& cpu, bmsx::test::NativeTableRefe
 }
 void cycle(CPU& cpu, bmsx::test::NativeTableReference root) {
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-	meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(root.address())); root.setMetatableAddress(meta.address());
+	meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(root.address())); root.setMetatableAddress(meta.address());
 }
 
 void grantsAndRestore() {
@@ -110,7 +112,7 @@ void grantsAndRestore() {
 			if (depth == 1) cycle(m->cpu, root);
 			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(root.address())); r.set(1, key);
 		}
-		const auto heap = generated.cpu.luaHeap().usedBytes();
+		const auto heap = bmsx::LuaHeap(generated.cpu).usedBytes();
 		for (int grant = 0; grant <= total; ++grant) {
 			for (auto* m : {&generated, &scalar}) {
 				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
@@ -139,12 +141,12 @@ void grantsAndRestore() {
 				"aliased result, following marker and SELF receiver publish at their actual instruction boundaries");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
-			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
-				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+			require(bmsx::LuaHeap(generated.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes()
+				&& bmsx::LuaHeap(generated.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 				"physical allocator and pacing words agree");
 		}
 		// Reusing a prototype result may repair slot hints, never change its price.
-		require(generated.cpu.luaHeap().usedBytes() == heap, "lookups do not allocate guest storage");
+		require(bmsx::LuaHeap(generated.cpu).usedBytes() == heap, "lookups do not allocate guest storage");
 		for (auto* m : {&generated, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			const auto ram = m->memory.captureSaveState();
@@ -165,12 +167,12 @@ void exhaustedStringChainCharges() {
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
 			auto root = bmsx::test::allocateTableReference(cpu, 0, capacity);
-			auto key = cpu.stringPool().intern("field");
+			auto key = bmsx::test::StringPoolReference(cpu).intern("field");
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(root.address())); r.set(1, valueString(key));
 			const auto home = root.beginStringProbe(key).node;
 			for (int n = 0, placed = 0; placed < 8; ++n) {
-				const auto candidate = cpu.stringPool().intern("chain" + std::to_string(n));
+				const auto candidate = bmsx::test::StringPoolReference(cpu).intern("chain" + std::to_string(n));
 				if (root.beginStringProbe(candidate).node != home) continue;
 				const int slot = root.setStringKey(candidate, valueInteger(++placed));
 				if (placed == 4) {
@@ -200,7 +202,7 @@ void exhaustedStringChainCharges() {
 			cycle(cpu, root);
 			// Close the actual tail link onto home. Only the visit bound,
 			// not a negative link, can terminate this raw RAM chain.
-			const auto key = cpu.stringPool().intern("field");
+			const auto key = bmsx::test::StringPoolReference(cpu).intern("field");
 			auto probe = root.beginStringProbe(key);
 			const int home = probe.node;
 			root.advanceStringProbe(key, probe, 7);
@@ -281,7 +283,7 @@ void directIndexMemberWork() {
 			auto& cpu = m->cpu;
 			auto receiver = bmsx::test::allocateTableReference(cpu), meta = bmsx::test::allocateTableReference(cpu, 0, 128), parent = bmsx::test::allocateTableReference(cpu, 2, 1);
 			const auto key = keyFor(cpu, kind);
-			const auto method = valueString(cpu.stringPool().intern("__index"));
+			const auto method = valueString(bmsx::test::StringPoolReference(cpu).intern("__index"));
 			const u32 home = hashCanonicalTableKey(method) & 127u;
 			receiver.setMetatableAddress(meta.address());
 			parent.set(key, valueBool(false));
@@ -315,7 +317,7 @@ void directIndexMemberWork() {
 				auto& cpu = m->cpu;
 				const auto receiver = cpu.readFrameRegister(0, 0);
 				auto root = TableRecord(cpu.memory(), valuePayload(receiver));
-				bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
+				bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), receiver);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			}
 			test::runCpuParity(generated.cpu, scalar.cpu, 3);
@@ -333,7 +335,7 @@ void periodicIndexChainKeepsThePartialTail() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		const std::array roots{bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu)};
-		const auto method = valueString(cpu.stringPool().intern("__index")), key = keyFor(cpu, KeyKind::String);
+		const auto method = valueString(bmsx::test::StringPoolReference(cpu).intern("__index")), key = keyFor(cpu, KeyKind::String);
 		const u32 home = hashCanonicalTableKey(method) & 127u;
 		for (size_t i = 0; i < roots.size(); ++i) {
 			auto meta = bmsx::test::allocateTableReference(cpu, 0, 128);
@@ -379,9 +381,10 @@ void selectorWriteReachesTheNativeInheritedProbeInTheSameGrant() {
 		auto meta = bmsx::test::allocateTableReference(cpu, 0, 2);
 		auto original = bmsx::test::allocateTableReference(cpu, 0, 1);
 		auto replacement = bmsx::test::allocateTableReference(cpu, 0, 1);
-		const auto key = cpu.stringPool().intern("field");
-		const auto first = cpu.stringPool().intern("__index");
-		const auto other = cpu.stringPool().intern("authored lookup operand");
+		bmsx::test::StringPoolReference strings(cpu);
+		const auto key = strings.intern("field");
+		const auto first = strings.intern("__index");
+		const auto other = strings.intern("authored lookup operand");
 		original.setStringKey(key, valueInteger(41));
 		replacement.setStringKey(key, valueInteger(73));
 		meta.setStringKey(first, valueTable(original.address()));
@@ -427,8 +430,8 @@ void faultsOnce() {
 			"fault leaves destination and following marker intact but retains SELF receiver");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
-			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
-				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+			require(bmsx::LuaHeap(generated.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes()
+				&& bmsx::LuaHeap(generated.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 				"physical allocator and pacing words agree");
 	}
 }
@@ -492,7 +495,7 @@ void warmedOneHopUsesLiveMappings() {
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
 			auto root = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
-			bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
+			bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), cpu.readFrameRegister(0, 2));
 		}
 		check(valueInteger(107), 8);
 		for (auto* m : machines) {
@@ -530,7 +533,7 @@ void callableIndexUsesARealDetachedActivation() {
 			auto receiver = makeChain(cpu, root, 2, key, valueNil());
 			frame->registers.set(2, valueTable(receiver.address()));
 			auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-			meta.setStringKey(cpu.stringPool().intern("__index"), frame->registers.get(3));
+			meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), frame->registers.get(3));
 			receiver.setMetatableAddress(meta.address());
 			frame->registers.set(8, valueInteger(57)); frame->registers.set(9, valueInteger(99));
 		}
@@ -586,7 +589,7 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 		Program program(OpCode::SELF, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::GetMetatable));
+			meta.setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::GetMetatable));
 			root.setMetatableAddress(meta.address());
 			auto* frame = m->cpu.activeThread()->currentFrame;
 			frame->registers.set(0, valueTable(root.address())); frame->registers.set(8, valueInteger(57));
@@ -632,7 +635,7 @@ void suspendedIndexRestoresItsPlacement() {
 		auto& cpu = m->cpu;
 		const u32 entry = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[1], {});
 		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueClosure(entry));
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueClosure(entry));
 		root.setMetatableAddress(meta.address());
 		auto* thread = cpu.rootThread();
 		test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), thread->address, 32u, 4u, valueClosure(entry));
@@ -680,7 +683,7 @@ void stringReceiver() {
 			state.stringIndexTableWord = installed.address();
 			cpu.restoreRuntimeState(state);
 			auto r = cpu.activeThread()->currentFrame->registers;
-			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
+			r.set(0, valueString(bmsx::test::StringPoolReference(cpu).intern("receiver"))); r.set(8, valueInteger(57));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		generated.cpu.prepareSystemNativeCode();
@@ -691,12 +694,13 @@ void stringReceiver() {
 			"String dispatch's first installed Table is covered by base; only two inherited targets add16");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
-			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
-				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+			bmsx::LuaHeap budget(generated.cpu);
+			require(budget.usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes()
+				&& budget.collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
 			TableRecord installed(m->cpu.memory(), m->cpu.captureRuntimeState().stringIndexTableWord);
-			bmsx::test::NativeTableReference(bmsx::test::GcHeap(m->cpu), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
+			bmsx::test::NativeTableReference(bmsx::test::GcHeap(m->cpu), installed.metatableAddress()).setStringKey(bmsx::test::StringPoolReference(m->cpu).intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
 		}
@@ -709,8 +713,8 @@ void stringReceiver() {
 			"the updated String lookup resumes its receiving window, publishes its extent, and charges the marker once");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
-			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
-				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+			require(budget.usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes()
+				&& budget.collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 				"physical allocator and pacing words agree");
 	}
 }

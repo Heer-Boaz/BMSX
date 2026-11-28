@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -78,15 +80,15 @@ void lengthReadRepairsBoundaryCache() {
 	Program program(false);
 	for (const auto test:cases) {
 		Machine m(program,true); auto table=makeTable(m.cpu,test.kind); m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(table.address()));
-		const auto before=m.cpu.captureRuntimeState(); const auto bytes=m.cpu.luaHeap().usedBytes();
+		const auto before=m.cpu.captureRuntimeState(); const auto bytes=bmsx::LuaHeap(m.cpu).usedBytes();
 		for (int repeat=0;repeat<3;++repeat) {
 			require(TableRecord::length(&table)==test.boundary,"raw host query retains its Number-returning contract");
 		}
 		sameSnapshot(m.cpu.captureRuntimeState(),before);
-		require(table.lengthHint()==static_cast<u32>(test.boundary) && m.cpu.luaHeap().usedBytes()==bytes, "length caches its boundary without allocating");
+		require(table.lengthHint()==static_cast<u32>(test.boundary) && bmsx::LuaHeap(m.cpu).usedBytes()==bytes, "length caches its boundary without allocating");
 	}
 	Machine m(program,true);auto table=makeTable(m.cpu,Kind::Descending);require(table.lengthHint()==1,"descending writes retain seed1");
-	for (int i=0;i<300;++i) table.setStringKey(m.cpu.stringPool().intern("key"+std::to_string(i)),valueBool(true));
+	for (int i=0;i<300;++i) table.setStringKey(bmsx::test::StringPoolReference(m.cpu).intern("key"+std::to_string(i)),valueBool(true));
 	require(table.lengthHint()==1&&TableRecord::length(&table)==4096,"redistribution retains the sequence boundary");
 	table.setInteger(4097,valueBool(false));require(table.lengthHint()==4097,"an adjacent append advances the cached boundary");
 	table.setInteger(4097,valueNil());require(table.lengthHint()==4096,"deleting the boundary retreats the hint");
@@ -105,7 +107,7 @@ void everyGrant() {
 		require(page&&page->nativeBlocks->entries[(generated.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES],"real generated LEN region is published");
 #endif
 		const std::array charges{2,2,3,8,2,2};int total=0;for (int n:charges)total+=n;
-		const auto heap=generated.cpu.luaHeap().usedBytes();
+		const auto heap=bmsx::LuaHeap(generated.cpu).usedBytes();
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
 				m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
@@ -120,18 +122,18 @@ void everyGrant() {
 				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
-			require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes()
-				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+			require(bmsx::LuaHeap(generated.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes()
+				&& bmsx::LuaHeap(generated.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 				"physical allocator and pacing words agree");
 		}
-		require(generated.cpu.luaHeap().usedBytes()==heap,"length performs no guest allocation");
+		require(bmsx::LuaHeap(generated.cpu).usedBytes()==heap,"length performs no guest allocation");
 		for (auto* m:{&generated,&scalar}) {
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
 			const auto ram = m->memory.captureSaveState();
 			const auto before=m->cpu.captureRuntimeState();m->cpu.runUntilDepth(0,5);const auto after=m->cpu.captureRuntimeState();const int debt=m->cpu.instructionBudgetRemaining;
 			m->memory.restoreSaveState(ram);
 			m->cpu.restoreRuntimeState(before);m->cpu.runUntilDepth(0,5);require(m->cpu.instructionBudgetRemaining==debt,"restored table repeats the same fixed charge");sameSnapshot(m->cpu.captureRuntimeState(),after);
-			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueString(m->cpu.stringPool().intern("é😀\0"sv)));
+			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueString(bmsx::test::StringPoolReference(m->cpu).intern("é😀\0"sv)));
 			m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);m->cpu.runUntilDepth(0,5);
 			require(m->cpu.instructionBudgetRemaining==-2&&m->cpu.readFrameRegister(0,6)==valueInteger(7),"String LEN uses the same fixed charge");
 			r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueBool(true));r.set(8, valueNil());

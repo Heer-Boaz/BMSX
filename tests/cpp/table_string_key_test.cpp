@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -25,7 +26,7 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
 	std::array<std::array<StringId, 2>, 8> keys{};
 	for (int i = 10; i < 90; ++i) {
-		const auto key = cpu.stringPool().intern("table-home-key-" + std::to_string(i));
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("table-home-key-" + std::to_string(i));
 		const auto home = (key >> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT) & 7u;
 		require(table.beginStringProbe(key).node == static_cast<int>(home),
 			"an aligned String record supplies its identity bits, not zero byte-offset bits");
@@ -63,7 +64,7 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	table.setStringKey(collided, valueNil());
 	StringId missing;
 	for (int i = 0;; ++i) {
-		missing = cpu.stringPool().intern("missing-table-home-" + std::to_string(i));
+		missing = bmsx::test::StringPoolReference(cpu).intern("missing-table-home-" + std::to_string(i));
 		if (table.beginStringProbe(missing).node == 0) break;
 	}
 	for (const auto key : {collided, missing}) {
@@ -85,7 +86,7 @@ void collisionAndMutationParity(CPU& cpu) {
 	std::array<StringId, 16> keys{};
 	size_t count = 0;
 	for (size_t n = 0; count < keys.size(); ++n) {
-		const auto key = cpu.stringPool().intern("collision_" + std::to_string(n));
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("collision_" + std::to_string(n));
 		if ((hashCanonicalTableKey(valueString(key)) & 31u) == 0u) keys[count++] = key;
 	}
 	auto generic = bmsx::test::allocateTableReference(cpu, 0, 4);
@@ -153,7 +154,7 @@ void collisionAndMutationParity(CPU& cpu) {
 		&& chain.getStringKey(keys[1]) == valueInteger(33) && isNil(chain.getStringKey(keys[0])),
 		"a real miss can reuse the home without breaking its live link");
 
-	const auto newIndex = cpu.stringPool().intern("__newindex");
+	const auto newIndex = bmsx::test::StringPoolReference(cpu).intern("__newindex");
 	auto source = bmsx::test::allocateTableReference(cpu, 0, 2), holder = bmsx::test::allocateTableReference(cpu, 1, 2);
 	auto sourceMeta = bmsx::test::allocateTableReference(cpu, 0, 1), holderMeta = bmsx::test::allocateTableReference(cpu, 0, 2);
 	const int sourceSlot = source.setStringKey(keys[0], valueInteger(11));
@@ -228,8 +229,9 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 }
 
 void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
-	const auto newIndex = cpu.stringPool().intern("__newindex");
-	const auto field = cpu.stringPool().intern("unwritten");
+	bmsx::test::StringPoolReference strings(cpu);
+	const auto newIndex = strings.intern("__newindex");
+	const auto field = strings.intern("unwritten");
 	auto target = bmsx::test::allocateTableReference(cpu);
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	target.setMetatableAddress(meta.address());
@@ -257,7 +259,7 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 		"raw nil deletion removes the method for integer assignments");
 
 	auto weakMode = bmsx::test::allocateTableReference(cpu, 0, 1);
-	weakMode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
+	weakMode.setStringKey(strings.intern("__mode"), valueString(strings.intern("v")));
 	meta.setMetatableAddress(weakMode.address());
 	auto forwarding = bmsx::test::allocateTableReference(cpu);
 	meta.set(valueString(newIndex), valueTable(forwarding.address()));
@@ -339,7 +341,7 @@ void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
 
 void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 	auto table = bmsx::test::allocateTableReference(cpu, 0, 1);
-	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
+	const auto present = bmsx::test::StringPoolReference(cpu).intern("full"), missing = bmsx::test::StringPoolReference(cpu).intern("new");
 	table.setStringKey(present, valueInteger(73));
 	require(table.hashFree() == 0,
 		"a direct main-bucket insertion has not searched the only free-slot candidate");
@@ -357,8 +359,8 @@ void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 }
 
 void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
-	const auto key = cpu.stringPool().intern("field");
-	const auto indexKey = cpu.stringPool().intern("__index");
+	const auto key = bmsx::test::StringPoolReference(cpu).intern("field");
+	const auto indexKey = bmsx::test::StringPoolReference(cpu).intern("__index");
 	auto parent = bmsx::test::allocateTableReference(cpu, 0, 2);
 	parent.setStringKey(key, valueBool(false));
 	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);

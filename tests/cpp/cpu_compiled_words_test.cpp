@@ -1,3 +1,4 @@
+#include "support/lua_heap_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/cpu/jit/limits.h"
@@ -48,7 +49,7 @@ struct CpuMachine {
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require((a == b && bmsx::test::sameLanguageRam(native.cpu, scalar.cpu))
-		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+		&& bmsx::LuaHeap(native.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes() && bmsx::LuaHeap(native.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 		"the complete value graph, allocation roots and heap accounting agree");
 	require(std::tie(a.statusWord, a.causeWord, a.epcWord, a.badAddressWord, a.luaFaultReasonWord, a.exceptionDomainWord,
 		a.nmiReturnCauseWord, a.nmiReturnEpcWord, a.nmiReturnBadAddressWord, a.nmiReturnLuaFaultReasonWord,

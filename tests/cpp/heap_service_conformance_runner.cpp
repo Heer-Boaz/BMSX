@@ -6,6 +6,9 @@
 #include <string_view>
 #include <vector>
 
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/errors.h"
 #include "machine/runtime/history/ram_history.h"
@@ -53,6 +56,9 @@ int main(int argc, char** argv) {
 		auto& cpu = runtime.machine.cpu;
 		bmsx::test::GcHeap collector(cpu);
 		auto& memory = runtime.machine.memory;
+		HeapAllocator arena(memory);
+		LuaHeap heapBudget(cpu);
+		bmsx::test::StringPoolReference strings(cpu);
 		auto& scheduler = runtime.machine.scheduler;
 		std::vector<std::vector<u8>> replacementRoms;
 		RuntimeSaveState saved;
@@ -65,7 +71,7 @@ int main(int argc, char** argv) {
 					u32 source, first, bytes;
 					trace >> source >> first >> bytes;
 					try {
-						const u32 id = bmsx::test::StringSliceReference::intern(cpu.stringPool(), source, first, bytes);
+						const u32 id = bmsx::test::StringSliceReference::intern(strings, source, first, bytes);
 						std::cout << id << '\n';
 					} catch (const LuaOutOfMemorySignal&) {
 						std::cout << "0\n";
@@ -96,9 +102,9 @@ int main(int argc, char** argv) {
 							const u32 base = memory.readRamRecordWord(address);
 							if (base == 0) continue;
 							memory.writeRamRecordWord(address, 0); // Native releaseImageData exchanges this before the free.
-							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + 4));
+							heapBudget.releaseRecord(base, memory.readRamRecordWord(address + 4));
 						}
-						cpu.stringPool().clearRomTables();
+						strings.clearRomTables();
 					} else throw std::runtime_error("Expected native namespace or image retirement");
 					break;
 				}
@@ -117,8 +123,8 @@ int main(int argc, char** argv) {
 					trace >> cycles >> mode;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.fixedInterruptActive() << ' ' << cpu.heapAllocator().occupiedBytes()
-						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< cpu.fixedInterruptActive() << ' ' << arena.occupiedBytes()
+						<< ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'g':
@@ -128,7 +134,7 @@ int main(int argc, char** argv) {
 					const auto result = scheduler.runCpuSlice(target, cycles,
 						op == 'n' ? cpu.rootThread()->address : 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'L': {
@@ -137,7 +143,7 @@ int main(int argc, char** argv) {
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
 						<< collector.fullEpochs()
-						<< ' ' << static_cast<int>(collector.phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< ' ' << static_cast<int>(collector.phase()) << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'j': {
@@ -163,20 +169,20 @@ int main(int argc, char** argv) {
 				case 'b': {
 					std::string seed;
 					trace >> seed;
-					std::cout << cpu.stringPool().intern(seed) << '\n';
+					std::cout << strings.intern(seed) << '\n';
 					break;
 				}
 				case 'm': {
 					u32 tag, payload, queue;
 					trace >> tag >> payload >> queue;
 					const bool marked = collector.markValue(valueFromTag(static_cast<ValueTag>(tag), payload), queue);
-					std::cout << marked << ' ' << cpu.stringPool().takeMarkWork() << '\n';
+					std::cout << marked << ' ' << strings.takeMarkWork() << '\n';
 					break;
 				}
 				case 'f': {
 					std::string name;
 					trace >> name;
-					const auto key = cpu.stringPool().intern(name);
+					const auto key = strings.intern(name);
 					const auto value = cpu.getGlobalByKey(key);
 					cpu.setGlobalByKey(key, valueNil());
 					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
@@ -252,8 +258,8 @@ int main(int argc, char** argv) {
 						admitted = false;
 					}
 					std::cout << admitted << ' ' << budget - cpu.instructionBudgetRemaining << ' ' << scheduler.nowCycles() - cycle
-						<< ' ' << static_cast<int>(collector.phase()) << ' ' << cpu.heapAllocator().occupiedBytes()
-						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< ' ' << static_cast<int>(collector.phase()) << ' ' << arena.occupiedBytes()
+						<< ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'G': {
@@ -272,7 +278,7 @@ int main(int argc, char** argv) {
 						else throw;
 					}
 					std::cout << admission << ' ' << budget - cpu.instructionBudgetRemaining << ' ' << scheduler.nowCycles() - cycle
-						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< ' ' << arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'D': {
@@ -282,7 +288,7 @@ int main(int argc, char** argv) {
 					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles, cpu.rootThread()->address);
 					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
 						<< ' ' << cpu.fixedInterruptActive() << ' '
-						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'K': {
@@ -345,7 +351,7 @@ int main(int argc, char** argv) {
 					std::cout << result << ' ' << (scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
 						<< ' ' << cpu.fixedInterruptActive()
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
-						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< ' ' << arena.occupiedBytes() << ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'v': {
@@ -370,13 +376,13 @@ int main(int argc, char** argv) {
 				case 'A': {
 					u32 bytes;
 					trace >> bytes;
-					std::cout << cpu.heapAllocator().allocate(bytes, true) << '\n';
+					std::cout << arena.allocate(bytes, true) << '\n';
 					break;
 				}
 				case 'V': {
 					u32 address;
 					trace >> address;
-					cpu.heapAllocator().free(address);
+					arena.free(address);
 					break;
 				}
 				case 'c': {
@@ -617,8 +623,8 @@ int main(int argc, char** argv) {
 					}
 					const bool dirty = memory.ramWriteWatches().historyPageDirty(0, memory.ramByteCount() >> MAPPED_PAGE_BYTE_SHIFT);
 					memory.ramWriteWatches().disarmHistoryWrites();
-					std::cout << published << ' ' << blocked << ' ' << dirty << ' ' << cpu.heapAllocator().occupiedBytes()
-						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
+					std::cout << published << ' ' << blocked << ' ' << dirty << ' ' << arena.occupiedBytes()
+						<< ' ' << heapBudget.usedBytes() << '\n';
 					break;
 				}
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,

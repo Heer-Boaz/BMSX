@@ -49,8 +49,8 @@ inline void waitForNativeEntry(CPU& cpu, const DecodedInstructionPage& page, u32
 #endif
 
 inline bool sameLanguageRam(CPU& left, CPU& right) {
-	const u32 floor = left.heapAllocator().floorAddress();
-	if (floor != right.heapAllocator().floorAddress()) return false;
+	const u32 floor = left.memory().ramBusEnd();
+	if (floor != right.memory().ramBusEnd()) return false;
 	const size_t offset = floor - RAM_BASE;
 	return std::memcmp(left.memory().ramData() + offset, right.memory().ramData() + offset,
 		left.memory().ramByteCount() - offset) == 0;
@@ -61,8 +61,8 @@ inline bool sameLanguageRam(CPU& left, CPU& right) {
 // frame prefix, layout/allocator metadata and both Value lanes.
 inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 	if (sameLanguageRam(left, right)) return true;
-	const u32 floor = left.heapAllocator().floorAddress();
-	if (floor != right.heapAllocator().floorAddress()) return false;
+	const u32 floor = left.memory().ramBusEnd();
+	if (floor != right.memory().ramBusEnd()) return false;
 	struct InactiveFrames {
 		Memory& memory;
 		std::vector<std::pair<u32, u32>> spans;

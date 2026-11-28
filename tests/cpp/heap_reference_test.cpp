@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "support/gc_heap_reference.h"
 #include "support/cpu_execution_parity.h"
@@ -189,7 +191,7 @@ void closedCellLivesInRam() {
 	Machine machine; auto& cpu = machine.cpu; auto heap = bmsx::test::GcHeap(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	auto closure = bmsx::test::asClosure(frame.registers.get(1), heap);
-	const u32 key = cpu.stringPool().intern("saved_capture");
+	const u32 key = bmsx::test::StringPoolReference(cpu).intern("saved_capture");
 	cpu.setGlobalByKey(key, frame.registers.get(1));
 	const u32 address = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(heap.cellRecordAddress(address) == address, "capture is an issued allocator record");
@@ -230,12 +232,13 @@ void closedCellLivesInRam() {
 	require(ClosureRecord::captureAddress(cpu.memory(), closure, 0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"restore retains the saved capture address and word");
 	bmsx::test::GcHeap(cpu).collect();
-	const auto occupied = cpu.heapAllocator().occupiedBytes();
-	const auto closureBytes = cpu.heapAllocator().allocationBytes(closure - GC_OBJECT_PREFIX);
-	const auto cellBytes = cpu.heapAllocator().allocationBytes(address - GC_OBJECT_PREFIX);
+	bmsx::HeapAllocator arena(cpu.memory());
+	const auto occupied = arena.occupiedBytes();
+	const auto closureBytes = arena.allocationBytes(closure - GC_OBJECT_PREFIX);
+	const auto cellBytes = arena.allocationBytes(address - GC_OBJECT_PREFIX);
 	cpu.setGlobalByKey(key, valueNil());
 	bmsx::test::GcHeap(cpu).collect();
-	require(cpu.heapAllocator().occupiedBytes() == occupied - closureBytes - cellBytes,
+	require(arena.occupiedBytes() == occupied - closureBytes - cellBytes,
 		"collection releases both raw records");
 	require(heap.cellRecordAddress(address) == 0u && memory.readRamRecordByte(address) == 0u,
 		"the freed capture has no live record header");

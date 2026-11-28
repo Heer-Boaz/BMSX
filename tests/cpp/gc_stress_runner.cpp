@@ -1,3 +1,5 @@
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
 #include "support/gc_heap_reference.h"
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/upvalue.h"
@@ -57,7 +59,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	using namespace bmsx;
 	bmsx::test::GcHeap collector(cpu);
 	auto& memory = cpu.memory();
-	const auto global = [&](std::string_view name) { return cpu.getGlobalByKey(*cpu.stringPool().find(name)); };
+	const auto global = [&](std::string_view name) { return cpu.getGlobalByKey(*bmsx::test::StringPoolReference(cpu).find(name)); };
 	runPressureStage(cpu);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (compiled) for (std::string_view name : {"assign", "change"}) {
@@ -75,7 +77,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	const u32 cell = ClosureRecord::captureAddress(memory, valuePayload(global("change")), 0u);
 	require(!Upvalue::isOpen(memory, cell), "the mutation targets an actual closed cell");
 	cpu.clearHaltUntilIrq(); runPressureStage(cpu);
-	const auto childKey = *cpu.stringPool().find("child"), textKey = *cpu.stringPool().find("text");
+	const auto childKey = *bmsx::test::StringPoolReference(cpu).find("child"), textKey = *bmsx::test::StringPoolReference(cpu).find("text");
 	const u32 owner = valuePayload(global("owner")), arrayOwner = valuePayload(global("array_owner"));
 	const Value child = TableRecord(cpu.memory(), owner).getStringKey(childKey);
 	const Value text = TableRecord(cpu.memory(), owner).getStringKey(textKey);
@@ -84,9 +86,9 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	const auto observe = [&] {
 		const int depth = cpu.getFrameDepth();
 		return std::tuple{depth, cpu.readFramePc(depth - 1), global("pressure"),
-			cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget(),
+			bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget(),
 			collector.phase(),
-			cpu.stringPool().find("pressure-retired:é😀:37")};
+			bmsx::test::StringPoolReference(cpu).find("pressure-retired:é😀:37")};
 	};
 	const auto parked = observe();
 	const auto state = cpu.captureRuntimeState();
@@ -98,8 +100,8 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 			&& TableRecord(cpu.memory(), owner).getStringKey(textKey) == text, "field edges retain the exact addresses");
 		require(TableRecord(cpu.memory(), arrayOwner).getInteger(1) == arrayChild && Upvalue::load(memory, cell) == cellChild,
 			"independent array and closed-cell edges retain their exact children");
-		require(cpu.stringPool().find("pressure-live:é😀:37") == textId, "the canonical String survives in place");
-		require(!cpu.stringPool().find("pressure-retired:é😀:37"), "the unreachable String is unlinked and retired");
+		require(bmsx::test::StringPoolReference(cpu).find("pressure-live:é😀:37") == textId, "the canonical String survives in place");
+		require(!bmsx::test::StringPoolReference(cpu).find("pressure-retired:é😀:37"), "the unreachable String is unlinked and retired");
 	};
 	cpu.clearHaltUntilIrq();
 	require(runPressureStage(cpu) > 0, "ordinary allocation advances to scheduled final marking");

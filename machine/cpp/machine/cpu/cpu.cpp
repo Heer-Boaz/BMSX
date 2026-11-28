@@ -65,9 +65,7 @@ CPU::CPU(
 	: m_memory(memory)
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
-	, m_heapAllocator(memory)
-	, m_luaHeap(*this)
-	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
+	, m_stringPool(memory)
 	, m_rootView(memory)
 	, m_irqView(memory)
 	, m_transferViews{Thread{memory}, Thread{memory}}

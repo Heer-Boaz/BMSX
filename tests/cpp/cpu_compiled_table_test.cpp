@@ -1,4 +1,7 @@
 #include "common/utf8.h"
+#include "support/string_pool_reference.h"
+#include "support/lua_heap_reference.h"
+#include "support/heap_allocator_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/jit/runtime/block.h"
@@ -54,7 +57,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		"table operations retain exact execution and exception boundaries");
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
 	require((left == right && bmsx::test::sameActiveLanguageRam(a, b))
-		&& native.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes() && native.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
+		&& bmsx::LuaHeap(native.cpu).usedBytes() == bmsx::LuaHeap(scalar.cpu).usedBytes() && bmsx::LuaHeap(native.cpu).collectionTarget() == bmsx::LuaHeap(scalar.cpu).collectionTarget(),
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
 	require(first.frameDepth() == second.frameDepth() && first.stackTop() == second.stackTop(), "frame extents agree");
@@ -91,10 +94,10 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 			}
 			for (auto* machine : {&native, &scalar}) {
 				auto& cpu = machine->cpu;
-				const auto key = cpu.stringPool().intern("continue own miss");
+				const auto key = bmsx::test::StringPoolReference(cpu).intern("continue own miss");
 				auto root = bmsx::test::allocateTableReference(cpu, 0, 4);
 				root.setStringKey(key, valueInteger(93));
-				root.setStringKey(cpu.stringPool().intern("second own read"), valueInteger(39));
+				root.setStringKey(bmsx::test::StringPoolReference(cpu).intern("second own read"), valueInteger(39));
 				cpu.activeThread()->currentFrame->registers.set(0, valueTable(root.address()));
 				cpu.activeThread()->currentFrame->registers.set(1, valueString(key));
 			}
@@ -107,8 +110,8 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				"a real own hit trains the existing decoded slot");
 			for (auto* machine : {&native, &scalar}) {
 				auto& cpu = machine->cpu;
-				const auto key = cpu.stringPool().intern("continue own miss");
-				const auto index = cpu.stringPool().intern("__index");
+				const auto key = bmsx::test::StringPoolReference(cpu).intern("continue own miss");
+				const auto index = bmsx::test::StringPoolReference(cpu).intern("__index");
 				auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0,0), bmsx::test::GcHeap(cpu));
 				auto meta = bmsx::test::allocateTableReference(cpu, 0,1), holder = bmsx::test::allocateTableReference(cpu, 0,1);
 				root.setStringKey(key, valueNil());
@@ -197,7 +200,7 @@ void stringReadChainBoundaries() {
 		CpuMachine native(image), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu;
-			const auto key = cpu.stringPool().intern("chain field"), indexKey = cpu.stringPool().intern("__index");
+			const auto key = bmsx::test::StringPoolReference(cpu).intern("chain field"), indexKey = bmsx::test::StringPoolReference(cpu).intern("__index");
 			auto root = bmsx::test::allocateTableReference(cpu, 0, 1);
 			const bmsx::test::GcHeap heap(cpu);
 			u32 current = root.address();
@@ -211,13 +214,13 @@ void stringReadChainBoundaries() {
 				root.setMetatableAddress(bmsx::test::allocateTableReference(cpu, 0, 1).address());
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
-			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
+			const auto before = std::pair{bmsx::LuaHeap(cpu).usedBytes(), bmsx::LuaHeap(cpu).collectionTarget()};
 			root.resolveStringIndex(key, indexKey, scratch);
 			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
 				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the table resolver preserves nil/false and the exact 32-table chain bound");
-			require(cpu.luaHeap().usedBytes() == before.first
-				&& cpu.luaHeap().collectionTarget() == before.second,
+			require(bmsx::LuaHeap(cpu).usedBytes() == before.first
+				&& bmsx::LuaHeap(cpu).collectionTarget() == before.second,
 				"the resolver performs no tracked allocation or collection work");
 			auto& frame = *cpu.activeThread()->frameAtDepth(0);
 			frame.registers.set(1, valueString(key)); frame.registers.set(9, valueTable(root.address())); frame.registers.set(8, valueInteger(73));
@@ -269,8 +272,8 @@ void genericArraysAndHashKeys() {
 	const auto region = block->region;
 #endif
 	for (auto* m : {&native, &scalar}) m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-	const auto field = native.cpu.stringPool().intern("field"), valueText = native.cpu.stringPool().intern("value");
-	require(field == scalar.cpu.stringPool().intern("field") && valueText == scalar.cpu.stringPool().intern("value"), "matching runtime string ids");
+	const auto field = bmsx::test::StringPoolReference(native.cpu).intern("field"), valueText = bmsx::test::StringPoolReference(native.cpu).intern("value");
+	require(field == bmsx::test::StringPoolReference(scalar.cpu).intern("field") && valueText == bmsx::test::StringPoolReference(scalar.cpu).intern("value"), "matching runtime string ids");
 	const std::array keys{valueInteger(1), valueInteger(2), valueInteger(4), valueInteger(5), valueInteger(0), valueFloat(-0.f),
 		valueInteger(-7), valueFloat(1.f), valueFloat(1.5f), valueInteger(INT32_MAX), valueInteger(16777217), valueFloat(16777216.f), valueFloat(0x1p31f), valueFloat(0x1p32f),
 		valueFloat(std::numeric_limits<float>::infinity()), valueFloat(-std::numeric_limits<float>::infinity()),
@@ -401,7 +404,7 @@ void nativeTypedIndexRechecksAnExternalEntry() {
 		auto& lane = machine->cpu;
 		lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], bodyPc);
 		auto registers = lane.activeThread()->currentFrame->registers;
-		registers.set(1, valueString(lane.stringPool().intern("external")));
+		registers.set(1, valueString(bmsx::test::StringPoolReference(lane).intern("external")));
 		registers.set(2, valueInteger(89));
 	}
 	test::runCpuParity(cpu, scalar.cpu, body);
@@ -421,7 +424,7 @@ void inheritedArrayReads(bool generic) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto own = bmsx::test::allocateTableReference(cpu, 2), parent = bmsx::test::allocateTableReference(cpu, 2), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		parent.setInteger(1, valueInteger(73)); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address())); own.setMetatableAddress(meta.address());
+		parent.setInteger(1, valueInteger(73)); meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(parent.address())); own.setMetatableAddress(meta.address());
 		auto& r = cpu.activeThread()->frameAtDepth(0)->registers; r.set(0, valueTable(own.address())); r.set(1, valueInteger(1)); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
 	for (const Value value : {valueBool(false), valueInteger(0), valueNil(), valueBool(true), valueInteger(19), valueNil()}) {
@@ -459,7 +462,7 @@ void boundaryLengthAndUtf8() {
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 3, 2, 4);
 	CpuMachine textNative(image), textScalar(image, true);
 	for (auto* m : {&textNative, &textScalar}) {
-		m->cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueString(m->cpu.stringPool().intern(std::string_view("A\xc3\xa9\xe9\x9b\xaa\0\xf0\x9f\x98\x80", 11))));
+		m->cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueString(bmsx::test::StringPoolReference(m->cpu).intern(std::string_view("A\xc3\xa9\xe9\x9b\xaa\0\xf0\x9f\x98\x80", 11))));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 	requireParity(textNative, textScalar);
@@ -477,10 +480,10 @@ void selfAndNilFaults() {
 	image.constants = {std::string("method")}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto table = bmsx::test::allocateTableReference(cpu, 0, 1); table.setStringKey(cpu.stringPool().intern("method"), valueInteger(73));
+		auto& cpu = m->cpu; auto table = bmsx::test::allocateTableReference(cpu, 0, 1); table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("method"), valueInteger(73));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(9, valueTable(table.address())); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
-		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1); table.setStringKey(cpu.stringPool().intern("method"), valueNil());
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(table.address())); table.setMetatableAddress(meta.address());
+		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1); table.setStringKey(bmsx::test::StringPoolReference(cpu).intern("method"), valueNil());
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(table.address())); table.setMetatableAddress(meta.address());
 		cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -541,17 +544,18 @@ void methodCallReturnsOriginalReceiver() {
 		auto& cpu = machine->cpu;
 		auto& r = cpu.activeThread()->currentFrame->registers;
 		auto obj = bmsx::test::allocateTableReference(cpu, 0, 4); auto parent = bmsx::test::allocateTableReference(cpu, 0, 1); auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		parent.setStringKey(*cpu.stringPool().find("method"), r.get(0));
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+		bmsx::test::StringPoolReference strings(cpu);
+		parent.setStringKey(*strings.find("method"), r.get(0));
+		meta.setStringKey(strings.intern("__index"), valueTable(parent.address()));
 		obj.setMetatableAddress(meta.address());
-		obj.setStringKey(*cpu.stringPool().find("fromParent"), inherited);
-		obj.setStringKey(*cpu.stringPool().find("fromOwn"), overridden);
+		obj.setStringKey(*strings.find("fromParent"), inherited);
+		obj.setStringKey(*strings.find("fromOwn"), overridden);
 		r.set(2, valueTable(obj.address()));
 	}
 	for (const bool step : {false, true}) for (const bool own : {false, true, false}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu; auto& r = cpu.activeThread()->currentFrame->registers;
-			bmsx::test::asReferenceTable(r.get(2), bmsx::test::GcHeap(cpu)).setStringKey(*cpu.stringPool().find("method"), own ? r.get(1) : valueNil());
+			bmsx::test::asReferenceTable(r.get(2), bmsx::test::GcHeap(cpu)).setStringKey(*bmsx::test::StringPoolReference(cpu).find("method"), own ? r.get(1) : valueNil());
 			r.set(4, r.get(2)); r.set(3, valueNil());
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 4 * INSTRUCTION_BYTES);
 		}
@@ -758,21 +762,21 @@ void hashGrowthKeepsReservedArray() {
 	CpuMachine machine(image, true);
 	auto& cpu = machine.cpu;
 	auto mixed = bmsx::test::allocateTableReference(cpu, 8, 0), identity = bmsx::test::allocateTableReference(cpu);
-	const auto text = cpu.stringPool().intern("hash only");
+	const auto text = bmsx::test::StringPoolReference(cpu).intern("hash only");
 	const std::array keys{valueString(text), valueInteger(-1), valueFloat(0.5f), valueTable(identity.address())};
-	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto bytes = bmsx::LuaHeap(cpu).usedBytes();
 	const auto retained = valueFloatBits(0xffc01234u);
 	mixed.setInteger(8, retained);
 	for (size_t i = 0; i < keys.size(); ++i) {
 		mixed.set(keys[i], valueInteger(static_cast<i32>(i)));
 		require(mixed.arrayCapacity() == 8 && mixed.getInteger(8) == retained
-			&& cpu.luaHeap().usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, bmsx::test::NativeTableReference::hashCapacity(static_cast<int>(i + 1u))),
+			&& bmsx::LuaHeap(cpu).usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, bmsx::test::NativeTableReference::hashCapacity(static_cast<int>(i + 1u))),
 			"a non-array key never repartitions a sparse reserved array");
 	}
 	for (i32 slot = 1; slot < 8; ++slot) mixed.setInteger(slot, valueInteger(slot));
 	mixed.set(valueFloat(9.f), retained);
 	require(mixed.arrayCapacity() == 16 && mixed.hashSlots() == 4 && mixed.getInteger(9) == retained
-		&& cpu.luaHeap().usedBytes() == bytes + 4u * 10u + 8u * 5u,
+		&& bmsx::LuaHeap(cpu).usedBytes() == bytes + 4u * 10u + 8u * 5u,
 		"a canonical positive integer crossing the same frontier can still grow the array");
 	for (size_t i = 0; i < keys.size(); ++i)
 		require(mixed.get(keys[i]) == valueInteger(static_cast<i32>(i)), "array growth retains all ordinary hash keys");
@@ -793,7 +797,7 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 		auto& cpu = machine->cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto table = bmsx::test::allocateTableReference(cpu, 0, 1);
-		table.setStringKey(*cpu.stringPool().find("x"), valueInteger(10));
+		table.setStringKey(*bmsx::test::StringPoolReference(cpu).find("x"), valueInteger(10));
 		frame.registers.set(6, valueTable(table.address())); frame.registers.set(1, valueInteger(0));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 640);
@@ -812,13 +816,13 @@ void observedArithmeticResumesAtItsOwnInstruction() {
 			auto& cpu = machine->cpu;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 			auto& frame = *cpu.activeThread()->frameAtDepth(0);
-			bmsx::test::asReferenceTable(frame.registers.get(6), bmsx::test::GcHeap(cpu)).setStringKey(*cpu.stringPool().find("x"), valueInteger(10));
+			bmsx::test::asReferenceTable(frame.registers.get(6), bmsx::test::GcHeap(cpu)).setStringKey(*bmsx::test::StringPoolReference(cpu).find("x"), valueInteger(10));
 			frame.registers.set(1, step); frame.registers.set(8, valueInteger(73)); frame.registers.set(10, valueNil());
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		auto& cpu = native.cpu;
 		const auto table = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 6)));
-		const auto x = table.getStringKey(*cpu.stringPool().find("x"));
+		const auto x = table.getStringKey(*bmsx::test::StringPoolReference(cpu).find("x"));
 		if (step == valueBool(false)) {
 			require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 				&& cpu.readEpcWord() == native.rom.textAddress + 2u * INSTRUCTION_BYTES
@@ -852,11 +856,11 @@ void contradictoryOwnFieldProofRetiresItsSource() {
 	const int arithmeticCharge = BASE_CYCLES[static_cast<u8>(OpCode::SUB)];
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		const auto key = *cpu.stringPool().find("observed field");
+		const auto key = *bmsx::test::StringPoolReference(cpu).find("observed field");
 		auto receiver = bmsx::test::allocateTableReference(cpu, 0, 1), forwarded = bmsx::test::allocateTableReference(cpu, 0, 1);
 		auto holder = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		holder.setStringKey(key, valueFloat(12.5f));
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(holder.address()));
 		forwarded.setMetatableAddress(meta.address());
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(0, valueTable(receiver.address())); registers.set(1, valueInteger(2));
@@ -867,7 +871,7 @@ void contradictoryOwnFieldProofRetiresItsSource() {
 			auto& cpu = machine->cpu;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 			auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
-			bmsx::test::asReferenceTable(registers.get(6), bmsx::test::GcHeap(cpu)).setStringKey(*cpu.stringPool().find("observed field"), field);
+			bmsx::test::asReferenceTable(registers.get(6), bmsx::test::GcHeap(cpu)).setStringKey(*bmsx::test::StringPoolReference(cpu).find("observed field"), field);
 			registers.set(0, registers.get(forwarded ? 2 : 6));
 			registers.set(4, valueInteger(73)); registers.set(5, valueInteger(99));
 		}
@@ -944,7 +948,7 @@ void nativeStorePublishesReferenceAndResolvedSlot(OpCode op) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu;
-		const auto key = cpu.stringPool().intern("field");
+		const auto key = bmsx::test::StringPoolReference(cpu).intern("field");
 		auto receiver = bmsx::test::allocateTableReference(cpu, array ? 1 : 0, array ? 0 : 1);
 		receiver.set(array ? valueInteger(1) : valueString(key), valueInteger(11));
 		auto& r = cpu.activeThread()->currentFrame->registers;
@@ -983,7 +987,7 @@ void nativeStorePublishesReferenceAndResolvedSlot(OpCode op) {
 	requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu;
-		const Value key = array ? valueInteger(1) : valueString(*cpu.stringPool().find("field"));
+		const Value key = array ? valueInteger(1) : valueString(*bmsx::test::StringPoolReference(cpu).find("field"));
 		const auto& vector = *cpu.activeThread()->currentFrame;
 		require(cpu.fixedInterruptActive() && cpu.readCauseWord() == CPU_CAUSE_CODE_STORAGE_WINDOW
 			&& cpu.readEpcWord() == m->rom.textAddress + 2 * INSTRUCTION_BYTES,
@@ -1013,8 +1017,8 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 		auto& cpu = machine->cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
-		table.setStringKey(*cpu.stringPool().find("read"), valueInteger(73));
-		table.setStringKey(*cpu.stringPool().find("write"), valueInteger(5));
+		table.setStringKey(*bmsx::test::StringPoolReference(cpu).find("read"), valueInteger(73));
+		table.setStringKey(*bmsx::test::StringPoolReference(cpu).find("write"), valueInteger(5));
 		frame.registers.set(0, valueTable(table.address()));
 		frame.registers.set(2, valueInteger(41));
 		frame.setTop(3);
@@ -1033,8 +1037,8 @@ void nativeFieldOperationsLearnTheDecodedSite() {
 	requireParity(prepared, scalar);
 	const auto table = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
 	int readSlot = -1, writeSlot = -1;
-	require(table.getStringKeyCached(*cpu.stringPool().find("read"), readSlot) == valueInteger(73)
-		&& table.getStringKeyCached(*cpu.stringPool().find("write"), writeSlot) == valueInteger(41)
+	require(table.getStringKeyCached(*bmsx::test::StringPoolReference(cpu).find("read"), readSlot) == valueInteger(73)
+		&& table.getStringKeyCached(*bmsx::test::StringPoolReference(cpu).find("write"), writeSlot) == valueInteger(41)
 		&& readSlot >= 0 && writeSlot >= 0, "the actual own record contains both live values");
 	require(page.words[word].tableCacheSlot() == readSlot && page.words[word + 1].tableCacheSlot() == writeSlot,
 		"successful native lookups train the same source slots used by scalar execution and compilation");
@@ -1066,12 +1070,12 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 	int linkedSlot = -1;
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		const auto key = *cpu.stringPool().find("changing own slot");
+		const auto key = *bmsx::test::StringPoolReference(cpu).find("changing own slot");
 		auto linked = bmsx::test::allocateTableReference(cpu, 3, 4), singleton = bmsx::test::allocateTableReference(cpu, 2, 1), missing = bmsx::test::allocateTableReference(cpu, 0, 1);
 		const auto home = linked.beginStringProbe(key).node;
 		StringId collider = 0;
 		for (int i = 0; i < 64 && !collider; ++i) {
-			const auto candidate = cpu.stringPool().intern("colliding field " + std::to_string(i));
+			const auto candidate = bmsx::test::StringPoolReference(cpu).intern("colliding field " + std::to_string(i));
 			if (linked.beginStringProbe(candidate).node == home) collider = candidate;
 		}
 		require(collider && linked.setStringKey(collider, valueInteger(19)) == home,
@@ -1086,7 +1090,7 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 		frame.registers.set(6, valueTable(singleton.address()));
 		frame.registers.set(7, valueTable(missing.address()));
 		frame.setTop(8);
-		cpu.stringPool().intern("table");
+		bmsx::test::StringPoolReference(cpu).intern("table");
 	}
 
 	auto& cpu = native.cpu;
@@ -1143,7 +1147,7 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 		auto& owner = machine->cpu;
 		auto receiver = bmsx::test::asReferenceTable(owner.readFrameRegister(0, 7), bmsx::test::GcHeap(owner));
 		auto meta = bmsx::test::allocateTableReference(owner, 0, 1);
-		meta.setStringKey(owner.stringPool().intern("__index"), owner.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
+		meta.setStringKey(bmsx::test::StringPoolReference(owner).intern("__index"), owner.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
 		receiver.setMetatableAddress(meta.address());
 	}
 	read(7, valueTable(TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 7))).metatableAddress()), 3, linkedSlot);
@@ -1170,7 +1174,7 @@ void coldRepeatedFieldsRecompileTheirSource() {
 		auto& cpu = machine->cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto table = bmsx::test::allocateTableReference(cpu, 0, 1);
-		table.setStringKey(*cpu.stringPool().find("field"), valueInteger(41));
+		table.setStringKey(*bmsx::test::StringPoolReference(cpu).find("field"), valueInteger(41));
 		frame.registers.set(0, valueTable(table.address()));
 		frame.registers.set(5, valueInteger(73));
 		frame.setTop(6);
@@ -1225,8 +1229,8 @@ void warmInheritedFieldReadsKeepTheirFrame() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto receiver = bmsx::test::allocateTableReference(cpu), meta = bmsx::test::allocateTableReference(cpu, 0, 1), holder = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
-		holder.setStringKey(*cpu.stringPool().find("inherited word"), valueInteger(41));
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(holder.address()));
+		holder.setStringKey(*bmsx::test::StringPoolReference(cpu).find("inherited word"), valueInteger(41));
 		receiver.setMetatableAddress(meta.address());
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(0, valueTable(receiver.address()));
@@ -1286,8 +1290,8 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
-		const auto key = *cpu.stringPool().find("inherited collision field");
-		const auto index = cpu.stringPool().intern("__index");
+		const auto key = *bmsx::test::StringPoolReference(cpu).find("inherited collision field");
+		const auto index = bmsx::test::StringPoolReference(cpu).intern("__index");
 		auto receiver = bmsx::test::allocateTableReference(cpu, 2, 4), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		auto holder = bmsx::test::allocateTableReference(cpu, 0, 1), newHolder = bmsx::test::allocateTableReference(cpu, 0, 1);
 		holder.setStringKey(key, valueInteger(41));
@@ -1299,7 +1303,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 		std::array<StringId, 2> colliders;
 		size_t found = 0;
 		for (unsigned n = 0; n < 64 && found < colliders.size(); ++n) {
-			const auto candidate = cpu.stringPool().intern("receiver collider " + std::to_string(n));
+			const auto candidate = bmsx::test::StringPoolReference(cpu).intern("receiver collider " + std::to_string(n));
 			if (receiver.beginStringProbe(candidate).node == home) colliders[found++] = candidate;
 		}
 		require(found == colliders.size(), "distinct interned keys have the same current receiver home as the field");
@@ -1350,7 +1354,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 	for (const Value own : {valueInteger(97), valueNil()}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu;
-			const auto key = *cpu.stringPool().find("inherited collision field");
+			const auto key = *bmsx::test::StringPoolReference(cpu).find("inherited collision field");
 			const auto registers = cpu.activeThread()->currentFrame->registers;
 			auto receiver = bmsx::test::asReferenceTable(registers.get(0), bmsx::test::GcHeap(cpu));
 			const auto storage = receiver.hashAddress();
@@ -1364,7 +1368,7 @@ void warmInheritedFieldReadsProveCollisionChainAbsence() {
 				require(priorVisits > 1 && liveProbe.value == valueInteger(97)
 					&& receiver.advanceStringProbe(key, probe, probe.remaining) == priorVisits && isNil(probe.value),
 					"deletion leaves the matched non-home key with a nil value in the chain");
-				bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), receiver.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), registers.get(1));
+				bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), receiver.metatableAddress()).setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), registers.get(1));
 			}
 			require(receiver.hashAddress() == storage && receiver.hashSlots() == 4, "shadow updates keep the same receiver storage");
 		}
@@ -1422,9 +1426,9 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 	require(test::runCpuParity(cpu, scalar.cpu, 100) == RunResult::Halted, "boot retains both verified closures");
 	for (auto* machine : {&native, &scalar}) {
 		auto& owner = machine->cpu;
-		const auto index = owner.stringPool().intern("__index");
+		const auto index = bmsx::test::StringPoolReference(owner).intern("__index");
 		auto leaf = bmsx::test::allocateTableReference(owner, 0, 1);
-		leaf.setStringKey(*owner.stringPool().find("nested inherited field"), valueInteger(41));
+		leaf.setStringKey(*bmsx::test::StringPoolReference(owner).find("nested inherited field"), valueInteger(41));
 		u32 holder = leaf.address();
 		// Resolve two live table hops before returning across both pending calls.
 		for (int depth = 0; depth < 2; ++depth) {
@@ -1552,7 +1556,7 @@ void warmTableStoresCompleteTheirEffects() {
 		registers.set(1, valueInteger(29));
 		registers.set(2, valueInteger(1));
 		auto fields = bmsx::test::allocateTableReference(cpu, 0, 1);
-		fields.setStringKey(*cpu.stringPool().find("retained"), valueInteger(73));
+		fields.setStringKey(*bmsx::test::StringPoolReference(cpu).find("retained"), valueInteger(73));
 		registers.set(8, valueTable(fields.address()));
 	}
 	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded,
@@ -1571,7 +1575,7 @@ void warmTableStoresCompleteTheirEffects() {
 		auto fields = TableRecord(cpu.memory(), valuePayload(registers.get(8)));
 		table.setInteger(1, valueNil());
 		const auto pressure = bmsx::test::allocateTableReference(cpu, 2 * bmsx::test::GC_STEP_WORDS, 0);
-		cpu.setGlobalByKey(cpu.stringPool().intern("mark pressure"), valueTable(pressure.address()));
+		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("mark pressure"), valueTable(pressure.address()));
 		bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 		require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark
 			&& (machine->memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u
@@ -1597,7 +1601,7 @@ void warmTableStoresCompleteTheirEffects() {
 		&& table.lengthHint() == 1 && table.getInteger(1) == child
 		&& (native.memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
 		"the stores append, retreat, then append and requeue the black owner for its new edge");
-	require(registers.get(9) == child && fields.getStringKey(*native.cpu.stringPool().find("retained")) == child
+	require(registers.get(9) == child && fields.getStringKey(*bmsx::test::StringPoolReference(native.cpu).find("retained")) == child
 		&& (native.memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
 		"the predicted own field uses the same native collector effect");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1636,7 +1640,7 @@ void negativeIntegerKeysUseHashStorage() {
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto table = bmsx::test::allocateTableReference(cpu, 1, 1), child = bmsx::test::allocateTableReference(cpu), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		table.setInteger(1, valueInteger(61));
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(table.address()));
+		meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__index"), valueTable(table.address()));
 		child.setMetatableAddress(meta.address());
 		frame.registers.set(0, valueTable(table.address())); frame.registers.set(1, valueInteger(1));
 		frame.registers.set(2, valueInteger(89)); frame.registers.set(5, valueTable(child.address()));
@@ -1751,7 +1755,7 @@ void nativeDynamicHashProbeReturnsLiveValuesWithinTheGrant() {
 		auto receiver = bmsx::test::asReferenceTable(lane.readFrameRegister(0, 0), bmsx::test::GcHeap(lane));
 		auto meta = bmsx::test::allocateTableReference(lane, 0, 1), holder = bmsx::test::allocateTableReference(lane, 0, 1);
 		holder.set(lane.readFrameRegister(0, 7), valueInteger(107));
-		meta.setStringKey(lane.stringPool().intern("__index"), valueTable(holder.address()));
+		meta.setStringKey(bmsx::test::StringPoolReference(lane).intern("__index"), valueTable(holder.address()));
 		receiver.setMetatableAddress(meta.address());
 	}
 	read(valueInteger(INT32_MIN), indexed);
@@ -1864,7 +1868,8 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	const Value inserted = cpu.readFrameRegister(0, keysSlot + 3), grows = cpu.readFrameRegister(0, keysSlot + 4);
 	const Value raw = valueFloatBits(0x7fc01234u);
 	const u32 storage = receiver.hashAddress();
-	const auto bytes = cpu.luaHeap().usedBytes();
+	bmsx::LuaHeap budget(cpu);
+	const auto bytes = budget.usedBytes();
 	const auto charge = bmsx::test::NativeTableReference::allocationCharge(0, 1);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteIndex)].entries;
@@ -1873,7 +1878,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	start(keysSlot + 3, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, prefix) == RunResult::Yielded
 		&& cpu.readFramePc(0) == storePc && isNil(receiver.get(inserted))
-		&& cpu.luaHeap().usedBytes() == bytes,
+		&& budget.usedBytes() == bytes,
 		"an exhausted prefix cannot enter the store or charge its mapping");
 	requireParity(native, scalar);
 	start(keysSlot + 3, raw);
@@ -1884,14 +1889,14 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		"an exact grant commits the WIDE store without executing its successor");
 	require(receiver.get(inserted) == raw && receiver.getInteger(1) == valueInteger(61)
 		&& receiver.get(cpu.readFrameRegister(0, keysSlot)) == valueInteger(21)
-		&& receiver.hashAddress() == storage && cpu.luaHeap().usedBytes() == bytes,
+		&& receiver.hashAddress() == storage && budget.usedBytes() == bytes,
 		"colliding identities remain distinct and insertion reuses paid-for storage");
 	requireParity(native, scalar);
 	start(keysSlot + 3, grows);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
 		&& cpu.readFrameRegister(0, 9) == grows && cpu.readFrameRegister(0, 11) == valueInteger(39)
-		&& receiver.get(inserted) == grows && cpu.luaHeap().usedBytes() == bytes,
+		&& receiver.get(inserted) == grows && budget.usedBytes() == bytes,
 		"a live overwrite at full occupancy returns to the generated suffix, preserving both prefix values");
 	require(page.nativeBlocks->entries[word].get() == installed, "the complete grant reuses the warmed executable");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1902,7 +1907,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	start(keysSlot + 4, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& receiver.hashSlots() == 8 && receiver.get(grows) == raw && receiver.get(inserted) == grows
-		&& cpu.luaHeap().usedBytes() == bytes + 4 * charge
+		&& budget.usedBytes() == bytes + 4 * charge
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
 		"a full table grows and continues with the live native registers");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -1911,7 +1916,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	requireParity(native, scalar);
 	start(keysSlot + 3, valueNil());
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
-		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && cpu.luaHeap().usedBytes() == bytes + 4 * charge,
+		&& isNil(receiver.get(inserted)) && receiver.get(grows) == raw && budget.usedBytes() == bytes + 4 * charge,
 		"a nil value removes the colliding mapping without releasing its reserved slot");
 	start(keysSlot + 3, valueNil());
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
@@ -1927,7 +1932,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 		auto& thread = *lane.activeThread();
 		test::reserveReferenceThreadFrame(bmsx::test::GcHeap(lane), thread, thread.stackTop() + methodArgs);
 		const auto meta = TableRecord(lane.memory(), valuePayload(lane.readFrameRegister(0, receiverSlot))).metatableAddress();
-		bmsx::test::NativeTableReference(bmsx::test::GcHeap(lane), meta).setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
+		bmsx::test::NativeTableReference(bmsx::test::GcHeap(lane), meta).setStringKey(bmsx::test::StringPoolReference(lane).intern("__newindex"), lane.readFrameRegister(0, methodSlot));
 	}
 	start(keysSlot + 3, raw);
 	// An implicit call copies its three arguments from outside the shared stack.
@@ -2028,7 +2033,7 @@ void nativeArrayStoresFollowHistorySessions() {
 #endif
 	auto meta = bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), table.metatableAddress());
 	auto destination = bmsx::test::allocateTableReference(cpu, 1, 0);
-	meta.setStringKey(cpu.stringPool().intern("__newindex"), valueTable(destination.address()));
+	meta.setStringKey(bmsx::test::StringPoolReference(cpu).intern("__newindex"), valueTable(destination.address()));
 	table.setInteger(1, valueNil());
 	require(cpu.runUntilDepth(0, grant + TABLE_INDEX_VISIT_CYCLES) == RunResult::Yielded
 		&& cpu.readFramePc(0) == pc && isNil(table.getInteger(1)) && destination.getInteger(1) == valueInteger(101),
@@ -2090,7 +2095,7 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 	require(dynamic.arrayCapacity() == 1 && dynamic.lengthHint() == 1
 		&& immediate.arrayCapacity() == 1 && immediate.lengthHint() == 1 && signedHash.hashSlots() == 1,
 		"the two array parts and the negative-key hash start full");
-	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto bytes = bmsx::LuaHeap(cpu).usedBytes();
 	const auto delta = 2 * (bmsx::test::NativeTableReference::allocationCharge(2, 0) - bmsx::test::NativeTableReference::allocationCharge(1, 0))
 		+ bmsx::test::NativeTableReference::allocationCharge(1, 2) - bmsx::test::NativeTableReference::allocationCharge(1, 1);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -2111,7 +2116,7 @@ void nativeIntegerGrowthReturnsWithinTheGrant() {
 	}
 	require(signedHash.arrayCapacity() == 1 && signedHash.hashSlots() == 2 && signedHash.lengthHint() == 1
 		&& signedHash.getInteger(1) == retained && signedHash.getInteger(-1) == valueInteger(73)
-		&& signedHash.getInteger(negativeKey) == appended && cpu.luaHeap().usedBytes() == bytes + delta,
+		&& signedHash.getInteger(negativeKey) == appended && bmsx::LuaHeap(cpu).usedBytes() == bytes + delta,
 		"a signed out-of-array key grows only the hash and charges only the resulting logical storage");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& after = cpu.nativeGateProfile().exits;
@@ -2173,7 +2178,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto& frame = *lane.activeThread()->currentFrame;
-		auto& strings = lane.stringPool();
+		bmsx::test::StringPoolReference strings(lane);
 		const auto field = *strings.find("retained field");
 		auto warm = bmsx::test::allocateTableReference(lane, 1, 4), spare = bmsx::test::allocateTableReference(lane, 1, 0), full = bmsx::test::allocateTableReference(lane, 1, 1);
 		auto meta = bmsx::test::allocateTableReference(lane, 0, 2);
@@ -2227,7 +2232,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	require(originalSlot >= 0, "the first receiver trained the actual store site");
 	requireParity(native, scalar);
 
-	const auto field = *cpu.stringPool().find("retained field");
+	const auto field = *bmsx::test::StringPoolReference(cpu).find("retained field");
 	auto warm = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, warmSlot)));
 	auto spare = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, spareSlot)));
 	auto full = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, fullSlot)));
@@ -2235,7 +2240,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	const auto charge = bmsx::test::NativeTableReference::allocationCharge(0, grownHash) - bmsx::test::NativeTableReference::allocationCharge(0, 1);
 	const Value raw = valueFloatBits(0x7fc01234u);
 	const auto initialStorage = spare.hashAddress();
-	const auto initialBytes = cpu.luaHeap().usedBytes();
+	const auto initialBytes = bmsx::LuaHeap(cpu).usedBytes();
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& writeExits = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::WriteField)].entries;
 	const auto warmExits = writeExits;
@@ -2246,7 +2251,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == pc + 6 * INSTRUCTION_BYTES
 		&& isNil(cpu.readFrameRegister(0, 9)) && cpu.readFrameRegister(0, 11) == valueInteger(39)
 		&& prediction == -1 && spare.hashAddress() == initialStorage && spare.hashFree() == freeBeforeMiss
-		&& cpu.luaHeap().usedBytes() == initialBytes,
+		&& bmsx::LuaHeap(cpu).usedBytes() == initialBytes,
 		"nil to a missing field returns as a no-op when the metatable has no __newindex");
 	TableLookupResult absent;
 	spare.resolveStringAssignment(field, cpu.captureRuntimeState().tableAssignKeyWord, absent);
@@ -2262,7 +2267,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		"the exact WIDE grant commits the field without executing the suffix");
 	int insertedSlot = -1;
 	require(spare.getStringKeyCached(field, insertedSlot) == raw && prediction == insertedSlot && prediction != originalSlot
-		&& spare.hashAddress() == initialStorage && cpu.luaHeap().usedBytes() == initialBytes
+		&& spare.hashAddress() == initialStorage && bmsx::LuaHeap(cpu).usedBytes() == initialBytes
 		&& spare.getInteger(1) == valueInteger(61),
 		"absent __newindex allows a colliding own insertion and trains its actual slot without touching the array");
 	requireParity(native, scalar);
@@ -2270,7 +2275,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto meta = bmsx::test::asReferenceTable(lane.readFrameRegister(0, metaSlot), bmsx::test::GcHeap(lane));
-		meta.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
+		meta.setStringKey(bmsx::test::StringPoolReference(lane).intern("__newindex"), lane.readFrameRegister(0, methodSlot));
 		bmsx::test::asReferenceTable(lane.readFrameRegister(0, warmSlot), bmsx::test::GcHeap(lane)).setMetatableAddress(meta.address());
 	}
 	start(warmSlot, raw);
@@ -2283,12 +2288,12 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	requireParity(native, scalar);
 
 	const auto warmStorage = warm.hashAddress();
-	const auto beforeOwnDelete = cpu.luaHeap().usedBytes();
+	const auto beforeOwnDelete = bmsx::LuaHeap(cpu).usedBytes();
 	start(warmSlot, valueNil());
 	require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 1 && cpu.readFramePc(0) == suffixPc
 		&& prediction == -1 && isNil(warm.getStringKey(field)) && warm.getInteger(1) == valueInteger(61)
-		&& warm.hashAddress() == warmStorage && cpu.luaHeap().usedBytes() == beforeOwnDelete,
+		&& warm.hashAddress() == warmStorage && bmsx::LuaHeap(cpu).usedBytes() == beforeOwnDelete,
 		"a live own field deletes before callable __newindex and clears the prediction");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeExits == warmExits, "warm insert, overwrite, nil no-op and deletion all return without WriteField");
@@ -2298,7 +2303,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	start(fullSlot, raw);
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& full.hashSlots() == grownHash && full.getStringKey(field) == raw
-		&& full.getStringKey(*cpu.stringPool().find("resident field")) == valueInteger(31)
+		&& full.getStringKey(*bmsx::test::StringPoolReference(cpu).find("resident field")) == valueInteger(31)
 		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39),
 		"a full hash grows and returns with the live native prefix");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -2309,12 +2314,12 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	require(full.getStringKeyCached(field, grownSlot) == raw && prediction == grownSlot,
 		"feedback names the slot in the new storage, not the retired body");
 	const auto fullStorage = full.hashAddress();
-	const auto beforeFullDelete = cpu.luaHeap().usedBytes();
+	const auto beforeFullDelete = bmsx::LuaHeap(cpu).usedBytes();
 	for (int attempt = 0; attempt < 2; ++attempt) {
 		start(fullSlot, valueNil());
 		require(test::runCpuParity(cpu, scalar.cpu, throughStore) == RunResult::Yielded
 			&& prediction == -1 && isNil(full.getStringKey(field)) && full.getInteger(1) == valueInteger(61)
-			&& full.hashAddress() == fullStorage && cpu.luaHeap().usedBytes() == beforeFullDelete
+			&& full.hashAddress() == fullStorage && bmsx::LuaHeap(cpu).usedBytes() == beforeFullDelete
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == suffixPc,
 			"nil pays no further storage or mapping charge after deleting this field once");
 		requireParity(native, scalar);
@@ -2375,7 +2380,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		auto& lane = machine->cpu;
 		bmsx::test::asReferenceTable(lane.readFrameRegister(0, fullSlot), bmsx::test::GcHeap(lane)).setStringKey(field, raw);
 	}
-	const auto beforeKnownDelete = cpu.luaHeap().usedBytes();
+	const auto beforeKnownDelete = bmsx::LuaHeap(cpu).usedBytes();
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto beforeKnownNil = writeExits;
 #endif
@@ -2384,7 +2389,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		require(test::runCpuParity(cpu, scalar.cpu, nilThroughSuffix) == RunResult::Yielded
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == nilPc + 4 * INSTRUCTION_BYTES
 			&& isNil(cpu.readFrameRegister(0, 9)) && isNil(full.getStringKey(field))
-			&& cpu.luaHeap().usedBytes() == beforeKnownDelete && *nilExit->tableStore.decoded == -1,
+			&& bmsx::LuaHeap(cpu).usedBytes() == beforeKnownDelete && *nilExit->tableStore.decoded == -1,
 			"known nil deletes once, then returns from an absent mapping with the same exact charge and suffix");
 		requireParity(native, scalar);
 	}
@@ -2394,24 +2399,24 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto receiver = bmsx::test::allocateTableReference(lane, 0, 1);
-		receiver.setStringKey(*lane.stringPool().find("resident field"), valueInteger(37));
+		receiver.setStringKey(*bmsx::test::StringPoolReference(lane).find("resident field"), valueInteger(37));
 		lane.activeThread()->currentFrame->registers.set(fullSlot, valueTable(receiver.address()));
-		lane.luaHeap().setCollectionTarget(static_cast<u32>(lane.luaHeap().usedBytes()));
+		bmsx::LuaHeap(lane).setCollectionTarget(static_cast<u32>(bmsx::LuaHeap(lane).usedBytes()));
 	}
 	start(fullSlot, raw);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto beforeAssist = writeExits;
 #endif
 	auto underPressure = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, fullSlot)));
-	const auto beforePressure = cpu.luaHeap().usedBytes();
+	const auto beforePressure = bmsx::LuaHeap(cpu).usedBytes();
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& underPressure.hashSlots() == grownHash && underPressure.getStringKey(field) == raw
-		&& cpu.luaHeap().usedBytes() == beforePressure + charge && cpu.instructionBudgetRemaining < 0
+		&& bmsx::LuaHeap(cpu).usedBytes() == beforePressure + charge && cpu.instructionBudgetRemaining < 0
 		&& cpu.readFramePc(0) == suffixPc && cpu.readFrameRegister(0, 9) == valueInteger(-9),
 		"the assisted store publishes once and exhausts the grant before its suffix");
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix - throughStore) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.readFrameRegister(0, 9) == raw
-		&& cpu.readFrameRegister(0, 11) == valueInteger(39) && cpu.luaHeap().usedBytes() == beforePressure + charge,
+		&& cpu.readFrameRegister(0, 11) == valueInteger(39) && bmsx::LuaHeap(cpu).usedBytes() == beforePressure + charge,
 		"the next grant runs the two live moves without replaying the allocation");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeExits == beforeAssist + 1, "pressure still publishes the activation before collecting");
@@ -2421,9 +2426,9 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		for (auto* machine : {&native, &scalar}) {
 			auto& lane = machine->cpu;
 			auto destination = bmsx::test::allocateTableReference(lane, 0, 1);
-			destination.setStringKey(*lane.stringPool().find("resident field"), valueInteger(41));
+			destination.setStringKey(*bmsx::test::StringPoolReference(lane).find("resident field"), valueInteger(41));
 			auto metatable = bmsx::test::allocateTableReference(lane, 0, 1);
-			metatable.setStringKey(lane.stringPool().intern("__newindex"), valueTable(destination.address()));
+			metatable.setStringKey(bmsx::test::StringPoolReference(lane).intern("__newindex"), valueTable(destination.address()));
 			auto receiver = bmsx::test::allocateTableReference(lane);
 			receiver.setMetatableAddress(metatable.address());
 			auto regs = lane.activeThread()->currentFrame->registers;
@@ -2465,12 +2470,12 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 
 	CpuMachine native(image), scalar(image, true);
 	auto& cpu = native.cpu;
-	const auto resident = *cpu.stringPool().find("dynamic resident"), growth = *cpu.stringPool().find("dynamic growth");
+	const auto resident = *bmsx::test::StringPoolReference(cpu).find("dynamic resident"), growth = *bmsx::test::StringPoolReference(cpu).find("dynamic growth");
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto& frame = *lane.activeThread()->currentFrame;
 		auto meta = bmsx::test::allocateTableReference(lane, 0, 1);
-		meta.setStringKey(*lane.stringPool().find("unrelated metatable field"), valueInteger(41));
+		meta.setStringKey(*bmsx::test::StringPoolReference(lane).find("unrelated metatable field"), valueInteger(41));
 		for (const int slot : {ordinary, pressure}) {
 			auto table = bmsx::test::allocateTableReference(lane, 1, 1);
 			table.setInteger(1, valueInteger(61));
@@ -2496,7 +2501,7 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 		const int grant = throughStore + assistCycles + (suffix ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)] : 0);
 		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "dynamic store consumes its grant");
 		const int paid = table == pressure ? static_cast<int>(cpu.memory().readRamRecordWord(
-			cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET + bmsx::test::GC_PACE_PAID)) : 0;
+			bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET + bmsx::test::GC_PACE_PAID)) : 0;
 		require((table != pressure || paid > 0) && cpu.instructionBudgetRemaining == assistCycles - bmsx::test::GC_WORK_WORD_CYCLES * paid
 			&& cpu.readFramePc(0) == pc + (suffix ? 4u : 3u) * INSTRUCTION_BYTES
 			&& cpu.readCurrentInstructionPc() == pc + (suffix ? 3u : 1u) * INSTRUCTION_BYTES
@@ -2522,20 +2527,20 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 	auto table = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, ordinary)));
 	const auto storage = table.hashAddress();
 	const auto free = table.hashFree();
-	const auto bytes = cpu.luaHeap().usedBytes();
+	const auto bytes = bmsx::LuaHeap(cpu).usedBytes();
 	run(ordinary, growth, valueNil(), true);
 	require(isNil(table.getStringKey(growth)) && table.hashSlots() == 1 && table.hashAddress() == storage
-		&& table.hashFree() == free && cpu.luaHeap().usedBytes() == bytes,
+		&& table.hashFree() == free && bmsx::LuaHeap(cpu).usedBytes() == bytes,
 		"nil to a different absent key is a no-op with a metatable but no __newindex");
 	const auto raw = valueFloatBits(0x7fc01234u);
 	run(ordinary, growth, raw, false);
 	require(table.getStringKey(growth) == raw && table.getStringKey(resident) == valueBool(false)
 		&& table.hashSlots() == 2 && table.hashAddress() != storage && table.getInteger(1) == valueInteger(61)
-		&& cpu.luaHeap().usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, 1),
+		&& bmsx::LuaHeap(cpu).usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, 1),
 		"the changed dynamic key grows full own storage and preserves both earlier mappings");
 	run(ordinary, resident, valueInteger(39), true);
 	require(table.getStringKey(resident) == valueInteger(39) && table.getStringKey(growth) == raw
-		&& cpu.luaHeap().usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, 1),
+		&& bmsx::LuaHeap(cpu).usedBytes() == bytes + bmsx::test::NativeTableReference::allocationCharge(0, 1),
 		"switching back to the earlier String key changes only the selected own mapping");
 	const u32 nilPc = pc + nilEntry * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {
@@ -2546,18 +2551,18 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 	}
 	const int nilGrant = BASE_CYCLES[static_cast<u8>(OpCode::KNIL)] + BASE_CYCLES[static_cast<u8>(OpCode::SETT)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
-	const auto beforeDelete = cpu.luaHeap().usedBytes();
+	const auto beforeDelete = bmsx::LuaHeap(cpu).usedBytes();
 	require(test::runCpuParity(cpu, scalar.cpu, nilGrant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
 		&& cpu.readFramePc(0) == nilPc + 4u * INSTRUCTION_BYTES && isNil(cpu.readFrameRegister(0, 4))
 		&& isNil(table.getStringKey(growth)) && table.getStringKey(resident) == valueInteger(39)
-		&& cpu.luaHeap().usedBytes() == beforeDelete,
+		&& bmsx::LuaHeap(cpu).usedBytes() == beforeDelete,
 		"a proven nil still passes the live String key to the returning delete");
 	requireParity(native, scalar);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeIndex == warmExits, "ordinary dynamic String misses, growth and overwrite stay in the native body");
 #endif
 	for (auto* machine : {&native, &scalar})
-		machine->cpu.luaHeap().setCollectionTarget(static_cast<u32>(machine->cpu.luaHeap().usedBytes()));
+		bmsx::LuaHeap(machine->cpu).setCollectionTarget(static_cast<u32>(bmsx::LuaHeap(machine->cpu).usedBytes()));
 	run(pressure, growth, raw, false);
 	auto pressured = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, pressure)));
 	require(pressured.hashSlots() == 2 && pressured.getStringKey(growth) == raw && pressured.getStringKey(resident) == valueBool(false),

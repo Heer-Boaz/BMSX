@@ -1,5 +1,6 @@
 #include "common/mmap_file.h"
 #include "cartridge_media.h"
+#include "support/string_pool_reference.h"
 #include "support/gc_heap_reference.h"
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
@@ -56,11 +57,12 @@ int main(int argc, char** argv) {
 		cpu.setNativeCompilationProfiling(true);
 #endif
 		runtime.boot();
-		const auto readyKey = cpu.stringPool().intern("rebuild_ready");
-		const auto modeKey = cpu.stringPool().intern("rebuild_mode");
-		const auto requestedKey = cpu.stringPool().intern("rebuild_requested");
-		const auto completedKey = cpu.stringPool().intern("rebuild_completed");
-		const auto checksumKey = cpu.stringPool().intern("rebuild_checksum");
+		bmsx::test::StringPoolReference strings(cpu);
+		const auto readyKey = strings.intern("rebuild_ready");
+		const auto modeKey = strings.intern("rebuild_mode");
+		const auto requestedKey = strings.intern("rebuild_requested");
+		const auto completedKey = strings.intern("rebuild_completed");
+		const auto checksumKey = strings.intern("rebuild_checksum");
 
 		// Actual BIOS/cart scheduling and device advancement. This workload never
 		// reads rendered pixels: retire command-only output, rejecting readback.
@@ -87,7 +89,7 @@ int main(int argc, char** argv) {
 			if (++bootSteps > 1000) throw std::runtime_error("cart did not reach ready halt");
 			step();
 		}
-		cpu.setGlobalByKey(modeKey, valueString(cpu.stringPool().intern(mode)));
+		cpu.setGlobalByKey(modeKey, valueString(strings.intern(mode)));
 		for (int iteration = 1; iteration <= warmup + measured; ++iteration) {
 			const auto before = scheduler.diagnosticCpuTiming;
 			const auto cycleBefore = scheduler.nowCycles();

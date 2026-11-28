@@ -1,3 +1,4 @@
+#include "support/heap_allocator_reference.h"
 #include "machine/devices/geometry/sat2.h"
 #include "machine/machine.h"
 #include "machine/devices/geometry/contracts.h"
@@ -29,7 +30,7 @@ void testController(bool abort) {
 	machine.resetDevices(); machine.scheduler.reset();
 	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	const u32 record = (DYNAMIC_RAM_BASE + 0x10000u), descriptors = record + 0x100u, vertices = record + 0x200u, result = record + 0x400u;
-	require(machine.cpu.heapAllocator().setFloor(result + GEO_SAT2_RESULT_BYTES),
+	require(bmsx::HeapAllocator(machine.cpu.memory()).setFloor(result + GEO_SAT2_RESULT_BYTES),
 		"GEO SAT operands and result occupy public static RAM");
 	const std::array<u32, 5> pair = {0u, 0u, 0u, 1u, 0u};
 	const std::array<u32, 8> desc = {1u, 4u, 0u, 0u, 1u, 4u, 32u, 0u};

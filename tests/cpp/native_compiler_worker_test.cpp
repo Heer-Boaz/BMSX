@@ -1,3 +1,4 @@
+#include "support/string_pool_reference.h"
 #include "machine/cpu/jit/worker.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
@@ -447,7 +448,7 @@ void imageReplacementRetiresBorrowedConstants() {
 	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, changed, test::RAM_CODE_FIXTURE_BYTES);
 	CpuMachine generated(image, false), reference(image, true);
 	for (auto* machine : {&generated, &reference})
-		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(machine->cpu.stringPool().intern("replacement")));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueString(bmsx::test::StringPoolReference(machine->cpu).intern("replacement")));
 	for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {
 		require(step < NATIVE_BLOCK_COMPILATION_THRESHOLD * 8, "the old constant pool is captured by a pending compilation");
 		test::runCpuParity(generated.cpu, reference.cpu, 1);

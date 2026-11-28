@@ -31,15 +31,15 @@ inline void initializeReferenceThread(GcHeap& heap, u32 address, u32 valueBlock,
 }
 
 inline u32 allocateThreadRecordReference(CPU& cpu, u32 entry) {
-	auto& budget = cpu.luaHeap();
 	GcHeap gc(cpu);
+	auto& budget = gc.budget;
 	constexpr u32 valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
 	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
 	auto recovery = budget.admit(charged, root);
 	if (GcHeap::pacedPhase(gc.phase())) gc.assistBeforeReservation(charged + GC_OBJECT_PREFIX, root);
-	auto& arena = cpu.heapAllocator();
+	auto& arena = gc.arena;
 	for (;;) {
 		if (const u32 block = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false)) {
 			if (const u32 values = arena.allocate(valueBytes, true)) {
