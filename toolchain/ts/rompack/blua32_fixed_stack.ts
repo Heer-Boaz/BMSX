@@ -2,7 +2,6 @@ import {
 	COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR,
 	COP0_TABLE_LOOKUP_KEY, COP0_STRING_INDEX_TABLE, cop0FieldImplemented,
 } from '../../../machine/ts/spec/blua32/cop0';
-import { MAX_THREAD_VALUE_SLOTS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_FUNCTION_CODE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, RegisterJumpMode, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -87,19 +86,19 @@ export function deriveBlua32FixedStack(
 		return 0;
 	}
 
-	function measure(index: number, borrowed = false, entryLink?: number): FixedStackFootprint {
-		const key = `${index}:${borrowed}:${entryLink}`;
+	function measure(index: number, entryLink?: number): FixedStackFootprint {
+		const key = `${index}:${entryLink}`;
 		const known = visited.get(key);
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
 		// A proved physical entry already supplies the bounded register window.
 		// The source signature only controls ordinary CALL/direct entry.
-		const ordinary = !borrowed && entryLink === undefined;
+		const ordinary = entryLink === undefined;
 		if (!fn.staticClosure || fn.upvalues.length !== 0 || (ordinary && fn.isVararg))
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static${ordinary ? ', fixed-arity' : ''} and capture-free.`);
 		ancestors.add(index);
-		const frameWidth = Math.max(borrowed ? 0 : 1, fn.numParams, fn.maxStack);
+		const frameWidth = Math.max(1, fn.numParams, fn.maxStack);
 		let valueSlots = frameWidth, frames = 1, firstClobbered = frameWidth;
 		// Index facts by physical backing, not by the current register basis.
 		// A linked software branch changes neither the backing nor its depth.
@@ -191,7 +190,7 @@ export function deriveBlua32FixedStack(
 						continue;
 					}
 					const callee = functionByEntry.get(target) ?? reject('no finite local target or linked entry');
-					const below = measure(callee, false, link);
+					const below = measure(callee, link);
 					if (below.valueSlots > width) reject('linked entry exceeds the admitted frame');
 					clobbered = Math.max(clobbered, below.valueSlots);
 					clobberedFrom = Math.min(clobberedFrom, below.firstClobbered);
@@ -214,13 +213,10 @@ export function deriveBlua32FixedStack(
 				continue;
 			}
 			let reads = OPCODE_SCALAR_REGISTER_READS[op];
-			if (op === OpCode.MOV && (c === ValueMoveKind.ReadTop || c === ValueMoveKind.SetTopImmediate)
-				|| op === OpCode.JREG && c === RegisterJumpMode.LeaveWindow)
+			if (op === OpCode.MOV && (c === ValueMoveKind.ReadTop || c === ValueMoveKind.SetTopImmediate))
 				reads = 0;
 			else if (op === OpCode.MOV && c === ValueMoveKind.WriteIndexed)
 				reads = REGISTER_OPERAND_A | REGISTER_OPERAND_B;
-			else if (op === OpCode.JREG && c === RegisterJumpMode.LeaveWindowFromRegister)
-				reads = REGISTER_OPERAND_B;
 			const rk = OPCODE_RK_OPERANDS[op];
 			const rb = (rk & RK_OPERAND_B) !== 0 ? signExtend(b, rkBitsB) : b;
 			const rc = (rk & RK_OPERAND_C) !== 0 ? signExtend(c, rkBitsC) : c;
@@ -258,7 +254,6 @@ export function deriveBlua32FixedStack(
 					if (branches !== null) for (const register of branches.keys()) if (register >= basis + a) branches.delete(register);
 					break;
 				case OpCode.RET:
-					if (borrowed) reject('a borrowed window may not return through CALL');
 					if (entryLink !== undefined || basis !== 0) reject('register link has not returned to the owning frame');
 					if (boundary?.exceptionVectors.has(index))
 						reject('exception vector ends with RFE or an exception transfer');
@@ -354,42 +349,6 @@ export function deriveBlua32FixedStack(
 					if (branches !== null) for (let register = a; register < a + b; ++register) branches.delete(basis + register);
 					break;
 				case OpCode.JREG: {
-					if (c === RegisterJumpMode.LeaveWindow || c === RegisterJumpMode.LeaveWindowFromRegister) {
-						if (!borrowed || entryLink !== undefined || basis !== 0 || (c === RegisterJumpMode.LeaveWindow && b > width))
-							reject('requires an active borrowed window and a contained frontier');
-						continue;
-					}
-					if (c === RegisterJumpMode.EnterWindow || c === RegisterJumpMode.EnterBankWindow) {
-						const endControl = b + (c === RegisterJumpMode.EnterBankWindow ? 3 : 2);
-						if (endControl >= width) reject('window controls exceed the owning register window');
-						if (c === RegisterJumpMode.EnterBankWindow) {
-							const banks = rawWords(basis + endControl);
-							if (banks?.length !== 1 || banks[0] !== 0xffffffff)
-								reject('fixed System window may not change execution bank');
-						}
-						const targets = rawWords(basis + a), bases = rawWords(basis + b);
-						const capacities = rawWords(basis + b + 1), tops = rawWords(basis + b + 2);
-						if (targets === undefined || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
-							reject('no fixed window with finite targets');
-						const base = bases![0], capacity = capacities![0], top = tops![0];
-						if (base > width || top > Math.min(capacity, width - base))
-							reject('initialized prefix exceeds the owning register window');
-						firstClobbered = Math.min(firstClobbered, basis + base);
-						for (const address of targets!) {
-							const target = functionByEntry.get(address) ?? reject('window target is not an entry instruction');
-							const child = image.functions[target];
-							if (Math.max(child.numParams, child.maxStack) > capacity)
-								reject('target footprint exceeds the lent register window');
-							const below = measure(target, true);
-							const end = basis + base + Math.max(capacity, below.valueSlots);
-							if (end > MAX_THREAD_VALUE_SLOTS) reject('window exceeds the physical register extent');
-							valueSlots = Math.max(valueSlots, end);
-							frames = Math.max(frames, 1 + below.frames);
-						}
-						registers.fill(0, base);
-						for (const register of branches!.keys()) if (register >= basis + base) branches!.delete(register);
-						break;
-					}
 					if (c > RegisterJumpMode.Link || (c === RegisterJumpMode.Link && b >= width))
 						reject('requires a legal register jump within the function record');
 					const targets = branches!.get(basis + a) ?? reject('no finite local target set');

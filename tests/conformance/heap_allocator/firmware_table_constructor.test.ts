@@ -87,16 +87,16 @@ test('stock load lowers constructors and captured functions with TS/native parit
 	const receiver = systemImage.functions[systemSymbols.metadata.functionIds.indexOf(
 		'module:kernel/heap_control_call/module/static:kernel__heap_control_call__receive',
 	)];
-	let enters = 0, leaves = 0;
+	let calls = 0, returns = 0;
 	for (let pc = receiver.codeAddress; pc < receiver.codeAddress + receiver.codeByteCount;) {
 		const op = decodeBlua32InstructionAtPc(systemImage.textBytes, systemImage.header.textAddress, pc);
 		assert.notEqual(op.op, OpCode.CALL);
 		assert.notEqual(op.op, OpCode.RET);
-		if (op.op === OpCode.JREG && op.c === RegisterJumpMode.EnterWindow) ++enters;
-		if (op.op === OpCode.JREG && op.c === RegisterJumpMode.LeaveWindow) ++leaves;
+		if (op.op === OpCode.JAL || op.op === OpCode.JREG && op.c === RegisterJumpMode.Link) ++calls;
+		if (op.op === OpCode.JREG && op.c === RegisterJumpMode.Jump) ++returns;
 		pc = op.pc + INSTRUCTION_BYTES;
 	}
-	assert.ok(enters > 0 && leaves > 0, 'the actual constructor handler enters and leaves ordinary software windows');
+	assert.ok(calls > 0 && returns > 0, 'the actual constructor handler calls and returns via ordinary jumps');
 	const system = join(output, 'system.rom'), cart = join(output, 'cart.rom'), trace = join(output, 'trace');
 	writeFileSync(system, images.systemRomBytes);
 	writeFileSync(cart, images.cartRomBytes);

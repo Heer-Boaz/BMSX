@@ -82,7 +82,7 @@ export function planSoftwareCodeWords(cpu: CPU, target: HotResumeRevision, threa
 			if (blua32SlotLiveAtPc(call.targetLiveWordRanges, next.functions[newFunction].codeAddress, nextPc)) --liveTargets;
 		if (liveTargets !== 0) return false;
 		if (oldFrame?.entry !== true)
-			return newFrame?.entry !== true && (physicalFunction < 0 || oldFunction === physicalFunction);
+			return newFrame?.entry !== true && oldFunction === physicalFunction;
 		if (newFrame?.entry !== true) return false;
 
 		const link = linkSlotAtWord(oldFrame, oldWord);

@@ -13,10 +13,10 @@ import { valueInteger, valuePayload, valueTag } from '../../../machine/ts/machin
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_BAD_ADDRESS, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, RegisterJumpMode, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -202,7 +202,7 @@ for (const unaligned of [false, true]) test(unaligned
 
 	if (unaligned) return;
 	// The full decoded C field is the mode, not just the instruction body's low bits.
-	for (const [wideC, c, extension] of [[0, RegisterJumpMode.EnterBankWindow + 1, 0], [0, 1, 1], [1, 1, 0]]) {
+	for (const [wideC, c, extension] of [[0, 2, 0], [0, 3, 0], [0, 4, 0], [0, 5, 0], [0, 1, 1], [1, 1, 0]]) {
 		const invalid = rom.slice(), index = issue / INSTRUCTION_BYTES;
 		writeInstruction(invalid, index, OpCode.WIDE, 0, 0, wideC);
 		writeInstruction(invalid, index + 1, OpCode.JREG, 0, 0, c, extension);
@@ -212,5 +212,34 @@ for (const unaligned of [false, true]) test(unaligned
 		writeFileSync(program, invalid);
 		assert.throws(() => execFileSync(native, [program, trace, state], { stdio: 'pipe', encoding: 'utf8' }),
 			/register jump has an invalid mode/);
+	}
+
+	// Code without a verified TEXT directory still receives the architectural
+	// reserved-instruction exception at the prefix and does not write its link.
+	const raw = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(raw, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(raw, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(raw, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(raw, 4, OpCode.RFE, 0, 0, 0);
+	for (const mode of [2, 3, 4, 5]) {
+		writeInstruction(raw, 2, OpCode.JREG, 0, 0, mode);
+		const invalid = linkRawTestSystemBlua32({ text: raw, verifiedControlFlow: false, exceptionFunctionIndex: 1,
+			functions: [{ firstWord: 0, wordCount: 4, maxStack: 1 }, { firstWord: 4, wordCount: 1 }] });
+		const machine = new Runtime({ systemRomBytes: invalid.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: CpuExecutionBackend.Interpreter }, input);
+		machine.boot();
+		const { cpu, scheduler, memory } = machine.machine;
+		const rows = [OpCode.K1, OpCode.JREG].map(op => {
+			const outcome = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+			assert.equal(outcome, RunResult.Yielded);
+			assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[op]);
+			return `${outcome} ${1 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} -1`;
+		});
+		const issuer = invalid.image.functions[0].codeAddress + INSTRUCTION_BYTES;
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		assert.equal(cpu.readEpcWord(), issuer);
+		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(1));
+		writeFileSync(program, invalid.romBytes);
+		replay(['E 1', 'E 1', 'Z'], [...rows, `${CPU_CAUSE_CODE_RESERVED_INSTRUCTION} 0 ${issuer}`]);
 	}
 });

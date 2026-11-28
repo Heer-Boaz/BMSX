@@ -46,27 +46,6 @@ void CallFrame::initializeControl(const FrameEntryControl& entry) {
 	writeFrameControl(*this, [&](auto&& write) { entry.writeWords(write); });
 }
 
-void CallFrame::initializeWindow(u32 pc, u32 issuePc, ExecutionDomainId domain, u32 base, u32 width, u32 top) {
-	m_registerBase = 0;
-	registers = thread->stack.subspan(base, width);
-	writeFrameControl(*this, [&](auto&& write) {
-		write(FrameField::Function, 0u);
-		write(FrameField::CallSite, issuePc);
-		write(FrameField::OpenHead, 0u);
-		write(FrameField::RegisterBase, 0u);
-		write(FrameField::Flags, frameBankWord(domain));
-		write(FrameField::Pc, pc);
-		write(FrameField::VarargBase, base);
-		write(FrameField::ArgumentCount, 0u);
-		write(FrameField::ReturnBase, 0u);
-		write(FrameField::ReturnCount, 0u);
-		write(FrameField::Top, top);
-		write(FrameField::Closure, 0u);
-		write(FrameField::StackBase, base);
-		write(FrameField::StackCapacity, width);
-	});
-}
-
 void CallFrame::setRegisterBase(i32 base, i32 width) {
 	writeControl(FrameField::RegisterBase, static_cast<u32>(base));
 	m_registerBase = base;

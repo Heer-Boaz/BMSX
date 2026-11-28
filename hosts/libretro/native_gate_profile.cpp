@@ -39,17 +39,11 @@ NativeGateProfileFrame::~NativeGateProfileFrame() {
 	const u64 resumes = after.builtinResumes - m_before.builtinResumes;
 	const u64 stops = after.builtinStops - m_before.builtinStops;
 	const u64 directJumps = after.directRegisterJumpResumes - m_before.directRegisterJumpResumes;
-	const u64 directWindows = after.directWindowTransferResumes - m_before.directWindowTransferResumes;
-	const u64 dispatches = total.entries - directJumps - directWindows;
-	const auto& enter = after.windowEnterFallbacks;
-	const auto& oldEnter = m_before.windowEnterFallbacks;
-	const auto& leave = after.windowLeaveFallbacks;
-	const auto& oldLeave = m_before.windowLeaveFallbacks;
+	const u64 dispatches = total.entries - directJumps;
 	// Logging is outside the measured core interval. These are event counts,
 	// not estimates of time spent in helpers or generated instructions.
 	m_log(RETRO_LOG_INFO,
-		"[BMSX][native-gate-profile] retro_run_index=%llu begin_monotonic_ns=%llu end_monotonic_ns=%llu cpu_present=%u dispatch_entries=%llu native_resumes=%llu null_returns=%llu dispatch_exceptions=%llu builtin_attempts=%llu builtin_declines=%llu builtin_resumes=%llu builtin_stops=%llu unique_handling=%llu raw_cpp_entries=%llu direct_register_jumps=%llu direct_window_transfers=%llu"
-		" window_enter_budget=%llu window_enter_pending_call=%llu window_enter_other=%llu window_leave_budget=%llu window_leave_pending_call=%llu window_leave_other=%llu\n",
+		"[BMSX][native-gate-profile] retro_run_index=%llu begin_monotonic_ns=%llu end_monotonic_ns=%llu cpu_present=%u dispatch_entries=%llu native_resumes=%llu null_returns=%llu dispatch_exceptions=%llu builtin_attempts=%llu builtin_declines=%llu builtin_resumes=%llu builtin_stops=%llu unique_handling=%llu raw_cpp_entries=%llu direct_register_jumps=%llu\n",
 		static_cast<unsigned long long>(m_index), static_cast<unsigned long long>(m_start),
 		static_cast<unsigned long long>(end), static_cast<unsigned>(m_cpu != nullptr),
 		static_cast<unsigned long long>(dispatches), static_cast<unsigned long long>(total.resumes),
@@ -58,13 +52,7 @@ NativeGateProfileFrame::~NativeGateProfileFrame() {
 		static_cast<unsigned long long>(resumes), static_cast<unsigned long long>(stops),
 		static_cast<unsigned long long>(total.entries + resumes + stops),
 		static_cast<unsigned long long>(dispatches + attempts),
-		static_cast<unsigned long long>(directJumps), static_cast<unsigned long long>(directWindows),
-		static_cast<unsigned long long>(enter.budget - oldEnter.budget),
-		static_cast<unsigned long long>(enter.pendingCall - oldEnter.pendingCall),
-		static_cast<unsigned long long>(enter.other - oldEnter.other),
-		static_cast<unsigned long long>(leave.budget - oldLeave.budget),
-		static_cast<unsigned long long>(leave.pendingCall - oldLeave.pendingCall),
-		static_cast<unsigned long long>(leave.other - oldLeave.other));
+		static_cast<unsigned long long>(directJumps));
 	for (size_t kind = 0; kind < after.exits.size(); ++kind) {
 		const auto& before = m_before.exits[kind];
 		const auto& current = after.exits[kind];

@@ -21,8 +21,7 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::CALL: case OpCode::SVC:
 			return 0;
 		case OpCode::JREG:
-			return row.c == 0 ? static_cast<u16>(row.a + 1)
-				: row.c == 1 ? static_cast<u16>(std::max<int>(row.a, row.b) + 1) : 0;
+			return static_cast<u16>(row.c == static_cast<int>(RegisterJumpMode::Link) ? std::max<int>(row.a, row.b) + 1 : row.a + 1);
 		case OpCode::ITERN:
 			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
@@ -175,12 +174,13 @@ void CPU::decodeInstructionWords(
 				decoded.setBx(usesDisp ? ext : decodedBx);
 				break;
 		}
-		if (rawC > static_cast<u32>(MemoryAccessKind::Value)
-			&& ((static_cast<OpCode>(op) == OpCode::LOAD_MEM && rawC != static_cast<u32>(MemoryAccessKind::ContextWord))
-				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
-				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
-				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
-			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedMemory);
+		if ((op == static_cast<u8>(OpCode::JREG) && rawC > static_cast<u32>(RegisterJumpMode::Link))
+			|| (rawC > static_cast<u32>(MemoryAccessKind::Value)
+				&& ((static_cast<OpCode>(op) == OpCode::LOAD_MEM && rawC != static_cast<u32>(MemoryAccessKind::ContextWord))
+					|| static_cast<OpCode>(op) == OpCode::STORE_MEM
+					|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
+					|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D))) {
+			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedInstruction);
 		} else if (invalidImageOperand) {
 			// Fault only on dispatch, retaining the original width and charge.
 			decoded.op = static_cast<u8>(DecodedDispatchOp::InvalidImageOperand);

@@ -102,10 +102,10 @@ test('linked lexical ROM functions stay in cartridge socket 1 with ordinary data
 	assert.deepEqual(materializeCpuCompletionValues(cpu), walkerResult);
 });
 
-test('ordinary nonrecursive lexical calls enter and leave borrowed physical windows', () => {
+test('ordinary nonrecursive lexical calls use linked jumps in the enclosing window', () => {
 	// Keep both actual bodies above the inlining threshold.
 	const mixing = Array.from({ length: 40 }, (_, i) => `x = ((x ~ ${i + 3}) * 7 + ${i}) & 0xffff`).join('\n');
-	const path = 'lexical/borrowed';
+	const path = 'lexical/linked';
 	const linked = linkManagedTestSystem(`
 local function mix(x)
 	${mixing}
@@ -124,14 +124,14 @@ return result
 		const index = symbols.metadata.functionIds.indexOf(`module:${path}/entry/local:${name}`);
 		assert.notEqual(index, -1);
 		assert.equal(layout.functions[index].upvalues.length, 0);
+		assert.equal(symbols.metadata.softwareFramesByFunction[index]?.entry, true);
 		let enters = 0, leaves = 0;
 		for (const pc of indexBlua32FunctionInstructions(layout, index)) {
 			const { op, c } = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
 			assert.notEqual(op, OpCode.CALL, `${name} does not launch a language call`);
 			assert.notEqual(op, OpCode.RET, `${name} does not return through the language ABI`);
-			if (op !== OpCode.JREG) continue;
-			if (c === RegisterJumpMode.EnterWindow) ++enters;
-			if (c === RegisterJumpMode.LeaveWindow || c === RegisterJumpMode.LeaveWindowFromRegister) ++leaves;
+			if (op === OpCode.JAL) ++enters;
+			if (op === OpCode.JREG && c === RegisterJumpMode.Jump) ++leaves;
 		}
 		assert.equal(enters, name === 'apply' ? 1 : 0);
 		assert.equal(leaves, 1);
@@ -139,10 +139,9 @@ return result
 	const entry = symbols.metadata.functionIds.indexOf(`module:${path}/entry`);
 	assert.notEqual(entry, -1);
 	assert.ok(indexBlua32FunctionInstructions(layout, entry).some(pc => {
-		const { op, c } = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
-		return op === OpCode.JREG && c === RegisterJumpMode.EnterWindow;
-	}), 'the ordinary entry calls apply through a borrowed window');
-	const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }, CpuExecutionBackend.JavaScript);
+		return decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc).op === OpCode.JAL;
+	}), 'the ordinary entry calls apply through a linked jump');
+	const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }, CpuExecutionBackend.Interpreter);
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(63_995)]);
 });

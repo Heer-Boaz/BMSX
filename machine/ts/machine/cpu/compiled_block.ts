@@ -56,7 +56,6 @@ export const enum CompiledBlockExit {
 	StringOrder,
 	IndirectJump,
 	InstructionAddressFault,
-	RegisterWindowJump,
 	ReservedInstruction,
 }
 
@@ -170,7 +169,7 @@ emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
 	if (op === OpCode.MOV && c > ValueMoveKind.ReadBase || op === OpCode.JMP && a !== 0
-		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.EnterBankWindow) return false;
+		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.Link) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -279,7 +278,6 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
 		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
-		const windowJump = op === OpCode.JREG && page.c[word] > RegisterJumpMode.Link;
 		const moveKind = page.c[word];
 		const windowMove = op === OpCode.MOV && moveKind >= ValueMoveKind.ReadTop && moveKind <= ValueMoveKind.SetTop;
 		if (windowMove) {
@@ -290,7 +288,7 @@ export function emitJavaScriptBlock(
 			resetsRegisterTop = false;
 		}
 		const sideExit = windowMove && moveKind !== ValueMoveKind.ReadTop ? CompiledBlockExit.ReservedInstruction
-			: windowJump || (control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]))
+			: control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word])
 				? undefined : sideExitKinds[op];
 		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
@@ -330,10 +328,8 @@ export function emitJavaScriptBlock(
 		} else if (op === OpCode.JAL) {
 			source.push(registers.writeInteger(page.a[word], `${pc}`));
 		} else if (op === OpCode.JREG) {
-			if (!windowJump) {
-				source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
-				if (page.c[word] === RegisterJumpMode.Link) source.push(registers.writeInteger(page.b[word], `${pc}`));
-			}
+			source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
+			if (page.c[word] === RegisterJumpMode.Link) source.push(registers.writeInteger(page.b[word], `${pc}`));
 		} else if (load || store || words) {
 			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
@@ -378,7 +374,7 @@ export function emitJavaScriptBlock(
 	switch (finalOp) {
 		case OpCode.HALT: terminalExit = CompiledBlockExit.Halt; break;
 		case OpCode.JREG:
-			terminalExit = page.c[finalWord] > RegisterJumpMode.Link ? CompiledBlockExit.RegisterWindowJump : CompiledBlockExit.IndirectJump;
+			terminalExit = CompiledBlockExit.IndirectJump;
 			break;
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;

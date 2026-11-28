@@ -1322,84 +1322,6 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
 	}
 }
 
-bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode mode) {
-	auto& thread = *frame.thread;
-	const bool selectsBank = mode == RegisterJumpMode::EnterBankWindow;
-	if (mode == RegisterJumpMode::EnterWindow || selectsBank) {
-		const auto& registers = frame.registers;
-		if (!registers.containsRange(a, 1)) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		const u32 target = registers.payload(a);
-		if ((target & (INSTRUCTION_BYTES - 1u)) != 0u) {
-			enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
-			return false;
-		}
-		if (!registers.containsRange(b, selectsBank ? 4 : 3)) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		auto domain = m_activeExecutionDomainId;
-		auto* image = frame.executionImage;
-		if (selectsBank) {
-			const u32 bank = registers.payload(b + 3);
-			domain = toSignedWord(bank);
-			if (domain != m_activeExecutionDomainId) {
-				// The window selects media, not privilege. Supervisor can
-				// hand off to untrusted software only by leaving that mode.
-				if (bank + 1u >= EXECUTION_DOMAIN_COUNT || !isUserMode() || resetBankSelected()
-					|| !(image = executionImageForDomain(domain))) {
-					enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-					return false;
-				}
-			}
-		}
-		const u32 offset = registers.payload(b);
-		const u32 width = registers.payload(b + 1);
-		const u32 top = registers.payload(b + 2);
-		const auto capacity = registers.size();
-		if (offset > capacity || top > capacity - offset || top > width) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		const u32 base = frame.stackBase() + offset;
-		const u32 end = base + width;
-		if (end < base || end > MAX_THREAD_VALUE_SLOTS) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		if (!thread.frameSpaceFits(end)) {
-			if (resetBankSelected()) enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			else enterRegisterWindowException(frame, end, static_cast<u32>(thread.frameDepth()) + 2u, OpCode::JREG, a);
-			return false;
-		}
-		auto* child = thread.acquireFrame();
-		child->executionImage = image;
-		child->initializeWindow(target, m_currentInstructionPc, domain, base, width, top);
-		thread.setStackTop(static_cast<i32>(end));
-		thread.enterFrame(child);
-		if (selectsBank && domain != m_activeExecutionDomainId) latchActiveExecutionImage(domain, image);
-		return true;
-	}
-	CallFrame* const parent = frame.previous;
-	if (parent == nullptr || frame.hasControlFlag(FRAME_EXCEPTION)
-		|| (mode == RegisterJumpMode::LeaveWindowFromRegister && b >= frame.registers.size())) {
-		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return false;
-	}
-	const u32 frontier = mode == RegisterJumpMode::LeaveWindowFromRegister ? frame.registers.payload(b) : b;
-	const u32 top = static_cast<u32>(frame.stackBase()) + frontier - static_cast<u32>(parent->stackBase());
-	if (frontier > frame.registers.size() || top > parent->registers.size()) {
-		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return false;
-	}
-	thread.leaveFrame();
-	parent->setTop(static_cast<i32>(top));
-	resumeFrameBank();
-	return true;
-}
-
 void CPU::enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress) {
 	m_cop0Words[COP0_BAD_ADDRESS] = payloadAddress;
 	const std::array arguments{value, valueInteger(static_cast<i32>(tagAddress))};
@@ -1833,7 +1755,7 @@ dispatch_instruction:
 			}
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
-				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
+				case static_cast<u8>(DecodedDispatchOp::ReservedInstruction):
 					PUBLISH_SCALAR_FRONTIER();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
@@ -1911,7 +1833,7 @@ dispatch_instruction:
 					goto dispatch_native_block;
 				}
 #endif
-				DISPATCH_INTERNAL(ReservedMemory)
+				DISPATCH_INTERNAL(ReservedInstruction)
 					PUBLISH_SCALAR_FRONTIER();
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();

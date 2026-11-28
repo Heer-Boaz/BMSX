@@ -40,11 +40,8 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 	assert.equal(compiledBlockSupports(OpCode.WIDE, 0, 0), false);
 	assert.equal(compiledBlockSupports(OpCode.JMP, 1, 0), false);
 	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0, 0), true, `opcode ${op}`);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterWindow), true);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindow), true);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindowFromRegister), true);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterBankWindow), true);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterBankWindow + 1), false);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.Link), true);
+	for (const mode of [2, 3, 4, 5]) assert.equal(compiledBlockSupports(OpCode.JREG, 0, mode), false);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.SetTop), true);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.Payload), true);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.ReadBase), true);
@@ -120,71 +117,8 @@ test('generated code follows JREG across immutable ROM extents without activatin
 	assert.ok(entry, 'the worker can be published independently of the caller activation');
 });
 
-test('generated JREG window transfers share the physical lanes and leave the parked successor', () => {
-	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
-	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
-	writeInstruction(text, 2, OpCode.K1, 1, 0, 0);
-	writeInstruction(text, 3, OpCode.JREG, 63, 2, RegisterJumpMode.LeaveWindow);
-	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
-	const rom = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
-		functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }, { firstWord: 2, wordCount: 2, maxStack: 4 },
-			{ firstWord: 4, wordCount: 2 }], exceptionFunctionIndex: 2 });
-	const [caller, child] = rom.image.functions;
-	const js = createTestSystemCpu(rom, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(rom, CpuExecutionBackend.Interpreter).cpu;
-	const successor = caller.codeAddress + INSTRUCTION_BYTES;
-	const sentinel = valueFloatBits(0x7fc00001);
-	for (let visit = 0; visit < 14; ++visit) {
-		for (const cpu of [js, scalar]) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, caller.address, caller.codeAddress);
-			const frame = cpu.rootThread.frameAtDepth(0);
-			frame.top = 8;
-			frame.registers.setInteger(0, child.codeAddress);
-			frame.registers.setInteger(1, 4);
-			frame.registers.setInteger(2, 4);
-			frame.registers.setInteger(3, visit === 13 ? 5 : 2);
-			frame.registers.set(4, sentinel);
-		}
-		runCpuParity(js, scalar, 1); assertParity(js, scalar);
-		assert.equal(js.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.JREG]);
-		const parent = js.rootThread.frameAtDepth(0);
-		assert.equal(parent.registers.get(4), sentinel);
-		if (visit === 13) {
-			assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			assert.equal(parent.pc, caller.codeAddress);
-			assert.equal(parent.top, 8);
-			break;
-		}
-		assert.equal(parent.pc, successor);
-		assert.equal(js.getFrameDepth(), 2);
-		const window = js.rootThread.frameAtDepth(1);
-		assert.equal(window.functionAddress, 0);
-		assert.equal(window.pc, child.codeAddress);
-		assert.equal(window.stackBase, parent.stackBase + 4);
-		assert.equal(window.registers.get(0), sentinel);
-		assert.equal(window.top, 2);
-		const grant = BASE_CYCLES[OpCode.K1] + 1;
-		runCpuParity(js, scalar, grant); assertParity(js, scalar);
-		assert.equal(js.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.JREG]);
-		assert.equal(js.getFrameDepth(), 1);
-		assert.equal(parent.pc, successor);
-		assert.equal(parent.top, 6);
-		assert.equal(parent.registers.get(4), sentinel);
-		assert.equal(parent.registers.get(5), valueInteger(1));
-	}
-	const image = js.rootThread.frameAtDepth(0).executionImage;
-	for (const pc of [caller.codeAddress, child.codeAddress]) {
-		const page = image.compiledCodeLookup?.find(pc, 0);
-		const entry = page?.compiledBlocks?.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
-		assert.equal(entry?.terminal.exit, CompiledBlockExit.RegisterWindowJump, 'the warmed route uses the generated transfer boundary');
-	}
-});
-
-test('generated indexed moves and indirect window leave publish the exact tagged frontier', () => {
+test('generated indexed moves publish the exact tagged frontier', () => {
 	const instructions: [OpCode, number, number, number][] = [
-		[OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow], [OpCode.RET, 0, 1, 0],
 		[OpCode.KTRUE, 3, 0, 0],
 		[OpCode.MOV, 4, 1, ValueMoveKind.ReadIndexed],
 		[OpCode.MOV, 2, 63, ValueMoveKind.ReadTop],
@@ -193,55 +127,44 @@ test('generated indexed moves and indirect window leave publish the exact tagged
 		[OpCode.MOV, 63, 2, ValueMoveKind.SetTop],
 		[OpCode.MOV, 1, 63, ValueMoveKind.ReadTop],
 		[OpCode.MOV, 4, 0, ValueMoveKind.Payload],
-		[OpCode.JREG, 63, 1, RegisterJumpMode.LeaveWindowFromRegister],
-		[OpCode.HALT, 0, 0, 0], [OpCode.RFE, 0, 0, 0],
+		[OpCode.JMP, 0, 0, 0], [OpCode.RET, 0, 1, 0],
+		[OpCode.RFE, 0, 0, 0],
 	];
 	const text = new Uint8Array(instructions.length * INSTRUCTION_BYTES);
 	for (const [i, instruction] of instructions.entries()) writeInstruction(text, i, ...instruction);
 	const rom = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
-		functions: [{ firstWord: 0, wordCount: 2, maxStack: 12 }, { firstWord: 2, wordCount: 9, maxStack: 8 },
-			{ firstWord: 11, wordCount: 2 }], exceptionFunctionIndex: 2 });
-	const [caller, child, handler] = rom.image.functions;
+		functions: [{ firstWord: 0, wordCount: 10, maxStack: 8 }, { firstWord: 10, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const [caller, handler] = rom.image.functions;
 	const js = createTestSystemCpu(rom, CpuExecutionBackend.JavaScript).cpu;
 	const scalar = createTestSystemCpu(rom, CpuExecutionBackend.Interpreter).cpu;
 	const sentinel = valueFloatBits(0x7fc00019);
-	const grant = instructions.slice(2, 11).reduce((cycles, [op]) => cycles + BASE_CYCLES[op], -1);
+	const grant = instructions.slice(0, 9).reduce((cycles, [op]) => cycles + BASE_CYCLES[op], -1);
 	for (let visit = 0; visit <= 14; ++visit) {
 		for (const cpu of [js, scalar]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, caller.address, caller.codeAddress);
 			const frame = cpu.rootThread.frameAtDepth(0);
-			frame.top = 6;
-			frame.registers.setInteger(0, child.codeAddress);
-			frame.registers.setInteger(1, 4);
-			frame.registers.setInteger(2, 8);
-			frame.registers.setInteger(3, 2);
-			frame.registers.set(4, sentinel);
-			frame.registers.set(5, valueFloatBits(visit === 14 ? 0xffffffff : 3));
+			frame.top = 2;
+			frame.registers.clear(6, 2);
+			frame.registers.set(0, sentinel);
+			frame.registers.set(1, valueFloatBits(visit === 14 ? 0xffffffff : 3));
 		}
-		runCpuParity(js, scalar, 1);
-		assert.equal(js.getFrameDepth(), 2);
-		runCpuParity(js, scalar, grant);
+		runCpuParity(js, scalar, visit === 14 ? BASE_CYCLES[OpCode.KTRUE] + 1 : grant);
 		assertParity(js, scalar);
-		const parent = js.rootThread.frameAtDepth(0);
+		const frame = js.rootThread.frameAtDepth(0);
 		if (visit === 14) {
 			assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			assert.equal(js.readEpcWord(), child.codeAddress + INSTRUCTION_BYTES);
-			assert.equal(js.readFramePc(2), handler.codeAddress + INSTRUCTION_BYTES);
-			assert.equal(js.rootThread.frameAtDepth(1).top, 4);
-			assert.equal(parent.registers.get(7), valueBool(true));
+			assert.equal(js.readEpcWord(), caller.codeAddress + INSTRUCTION_BYTES);
+			assert.equal(js.readFramePc(1), handler.codeAddress);
+			assert.equal(frame.top, 4);
+			assert.equal(frame.registers.get(3), valueBool(true));
 			break;
 		}
 		assert.equal(js.getFrameDepth(), 1);
-		assert.equal(parent.pc, caller.codeAddress + INSTRUCTION_BYTES);
-		assert.equal(parent.top, 9, 'the indirect leave accepts the frontier saved before writing its result');
-		assert.deepEqual([5, 6, 7, 8, 10].map(i => parent.registers.get(i)),
+		assert.equal(frame.pc, caller.codeAddress + 9 * INSTRUCTION_BYTES);
+		assert.equal(frame.top, 5);
+		assert.deepEqual([1, 2, 3, 4, 6].map(i => frame.registers.get(i)),
 			[valueInteger(5), valueInteger(5), sentinel, valueInteger(0x7fc00019), sentinel]);
 	}
-	const frame = js.rootThread.frameAtDepth(0);
-	const page = frame.executionImage.compiledCodeLookup?.find(child.codeAddress, 0);
-	const entry = page?.compiledBlocks?.entries[(child.codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
-	assert.equal(entry?.terminal.exit, CompiledBlockExit.RegisterWindowJump);
-	assert.equal(entry?.sourceWords, 9, 'one generated segment retires all the window moves');
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

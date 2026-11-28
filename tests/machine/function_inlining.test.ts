@@ -6,8 +6,6 @@ import { test } from 'node:test';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES, RegisterJumpMode } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../machine/ts/spec/blua32/cop0';
-import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type { CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
@@ -154,7 +152,7 @@ return x, y, init_order
 	}
 });
 
-test('fixed-word division shares one linked register-window body and returns both words', () => {
+test('fixed-word division links one ordinary jump body and returns both words', () => {
 	const source = `
 local words<const> = require('kernel/word_arithmetic')
 local first_high, first_low = words.divide_words_by_word(3, 0xfeedcafe, 5)
@@ -176,15 +174,15 @@ return first_high, first_low, second_high, second_low
 		let enterPc = 0;
 		for (let pc = caller.codeAddress; pc < caller.codeAddress + caller.codeByteCount;) {
 			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
-			if (row.op === OpCode.JREG && row.c === RegisterJumpMode.EnterWindow && enters++ === 0) enterPc = pc;
+			if (row.op === OpCode.JAL) {
+				assert.equal(row.pc + INSTRUCTION_BYTES + row.sbx * INSTRUCTION_BYTES, callee.codeAddress);
+				if (enters++ === 0) enterPc = pc;
+			}
 			pc = row.pc + INSTRUCTION_BYTES;
 		}
 		for (let pc = callee.codeAddress; pc < callee.codeAddress + callee.codeByteCount;) {
 			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
-			if (row.op === OpCode.JREG && row.c === RegisterJumpMode.LeaveWindow) {
-				assert.equal(row.b, 2);
-				++returns;
-			}
+			if (row.op === OpCode.JREG && row.c === RegisterJumpMode.Jump) ++returns;
 			if (row.op === OpCode.RET) ++legacyReturns;
 			pc = row.pc + INSTRUCTION_BYTES;
 		}
@@ -194,22 +192,16 @@ return first_high, first_low, second_high, second_low
 		const small = 0x80000009n / 7n;
 		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
 		if (level === 3) {
-			// Retain the exception spare but omit storage for another window.
-			// The ordinary CPU extent fault must retry the issuing raw jump.
 			cpu.setExecutionHook((_domain, pc) => pc === enterPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			for (let grant = 0; grant < 32 && cpu.activeThread.currentFrame?.pc !== enterPc; ++grant)
 				cpu.runUntilDepth(0, 32768);
 			cpu.setExecutionHook(null, 0, 0);
 			const thread = cpu.activeThread, frame = thread.currentFrame!;
 			assert.equal(frame.pc, enterPc);
-			const depth = thread.frameDepth, capacity = thread.address + ThreadField.FrameCapacity;
-			const oldWord = cpu.memory.readRamRecordWord(capacity);
-			cpu.memory.writeRamRecordWord(capacity, (oldWord & ~THREAD_CONTROL_COUNT_MASK) | (depth + 1));
-			thread.bindStack(true);
+			const depth = thread.frameDepth;
 			cpu.runUntilDepth(0, 1);
-			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
-			assert.equal(cpu.readEpcWord(), enterPc);
-			assert.equal(frame.pc, enterPc);
+			assert.equal(frame.pc, callee.codeAddress);
+			assert.equal(frame.functionAddress, caller.address);
 			assert.equal(thread.frameDepth, depth);
 		}
 		runGuestToHalt(cpu, 4_194_304);

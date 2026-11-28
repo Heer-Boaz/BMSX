@@ -4,7 +4,6 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
-#include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
@@ -40,7 +39,6 @@ enum class NativeBlockExit : u8 {
 	IterateTable,
 	SupervisorCall,
 	RegisterJump,
-	RegisterWindowTransfer,
 	ReservedInstruction,
 	Count,
 };
@@ -83,7 +81,6 @@ union NativeExitOperands {
 	struct Control { u16 slot, field; } control;
 	struct SupervisorCall { u16 source, width; } supervisorCall;
 	struct RegisterJump { u16 target; i16 link; } registerJump;
-	struct RegisterWindowTransfer { u16 a, b; RegisterJumpMode mode; } registerWindowTransfer;
 	struct Upvalue { u16 slot, capture; } upvalue;
 	struct Global { u32 index; u16 slot; } global;
 };

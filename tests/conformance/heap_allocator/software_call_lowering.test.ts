@@ -394,6 +394,10 @@ local actual<const> = function(prefix, ...)
 	local a, b, c = ...
 	return blua32.argument_count(), prefix, a, b, c
 end
+local alternate<const> = function(prefix, ...)
+	local a, b, c = ...
+	return blua32.argument_count(), prefix + 100, a, b, c
+end
 local forward<const> = function(prefix, ...)
 	return prefix, ...
 end
@@ -407,7 +411,7 @@ local suffix<const> = function(prefix, ...)
 	return blua32.argument_suffix(1)
 end
 local count<const> = function() return *evaluations end
-return { produce = produce, collect = collect, actual = actual, forward = forward, relay = relay,
+return { produce = produce, collect = collect, actual = actual, alternate = alternate, forward = forward, relay = relay,
 	relay_exact = relay_exact, suffix = suffix, count = count }
 `;
 	const main = `
@@ -424,9 +428,16 @@ local nt, at, bt, dt, et = probe.relay(11)
 local nx, ax, bx, dx, ex = probe.relay_exact(81, false, nil, 7)
 local ss, ts, us = probe.suffix(22, false, nil, 9)
 local os, ps = probe.suffix(93)
+local selected_count, selected_prefix, selected_value
+for k = 1, 2 do
+	local first = k == 1;
+	local n, p, a = (first and probe.actual or probe.alternate)(40 + k, probe.produce(k - 1, k))
+	selected_count, selected_prefix, selected_value = n, p, a
+end
 return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d1, e1,
 	n3, a3, b3, d3, e3, nf, af, bf, df, ef, fs, gs, hs, nr, ar, br, dr, er, nt, at, bt, dt, et,
 	nx, ax, bx, dx, ex, ss, ts, us, os, ps, probe.count(),
+	selected_count, selected_prefix, selected_value,
 	probe.forward(38, false, nil)
 `;
 	const z = valueNil(), f = valueBool(false), v = valueInteger;
@@ -441,7 +452,7 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 		v(4), v(8), f, z, v(4),
 		v(1), v(11), z, z, z,
 		v(4), v(81), f, z, v(7),
-		z, v(9), z, z, z, v(5), v(38), f, z,
+		z, v(9), z, z, z, v(7), v(2), v(142), f, v(38), f, z,
 	];
 	const original = linkManagedTestSystem(main, 0, [{ path, source: program }]);
 	const { cpu: oracle } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(original) });
@@ -450,10 +461,11 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 
 	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }]);
 	const { layout, symbols } = linked;
-	for (const name of ['__produce', '__collect', '__actual', '__forward', '__relay', '__relay_exact', '__suffix', '/entry']) {
+	for (const name of ['__produce', '__collect', '__actual', '__alternate', '__forward', '__relay', '__relay_exact', '__suffix', '/entry']) {
 		const idx = symbols.metadata.functionIds.findIndex(id => id.endsWith(name) && (name !== '/entry' || id === 'module:main/entry'));
 		assert.notEqual(idx, -1, name);
 		const fn = layout.functions[idx];
+		if (name !== '/entry') assert.equal(symbols.metadata.softwareFramesByFunction[idx]?.entry, true, name);
 		let transfers = 0, immediateTop = 0, registerTop = 0;
 		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
 			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
@@ -461,7 +473,11 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 			assert.notEqual(row.op, OpCode.VARARG, name);
 			assert.notEqual(row.op, OpCode.ARGC, name);
 			if (name !== '/entry') assert.notEqual(row.op, OpCode.RET, name);
-			if (row.op === OpCode.JREG) ++transfers;
+			if (row.op === OpCode.JREG) {
+				assert.ok(row.c === RegisterJumpMode.Jump || row.c === RegisterJumpMode.Link, name);
+				++transfers;
+			}
+			if (row.op === OpCode.JAL) ++transfers;
 			if (row.op === OpCode.MOV && row.c === ValueMoveKind.SetTopImmediate) ++immediateTop;
 			if (row.op === OpCode.MOV && row.c === ValueMoveKind.SetTop) ++registerTop;
 			pc = row.pc + INSTRUCTION_BYTES;
@@ -469,13 +485,20 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 		assert.ok(transfers > 0, name);
 		if (name === '__relay') assert.equal(registerTop, 1, 'the forwarded tuple has a runtime count');
 		if (name === '__relay_exact') {
-			assert.equal(immediateTop, 1, 'the proven count uses one immediate frontier update');
+			assert.equal(immediateTop, 2, 'exact open input and exact returned count each publish their frontier once');
 			assert.equal(registerTop, 0);
 		}
 	}
+	const caller = symbols.metadata.functionIds.indexOf('module:main/entry');
+	const choice = symbols.metadata.softwareFramesByFunction[caller]!.calls.find(call => call.targetFunctions.length === 2)!;
+	const jump = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress,
+		layout.functions[caller].codeAddress + choice.wordOffset * INSTRUCTION_BYTES);
+	assert.equal(jump.op, OpCode.JREG);
+	assert.equal(jump.c, RegisterJumpMode.Link);
+	assert.ok(choice.targetLiveWordRanges.length > 0, 'the raw target survives the open argument producer and count setup');
 	const systemRomBytes = writeTestBlua32Rom(linked);
 	const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
-		cpuExecutionBackend: CpuExecutionBackend.JavaScript },
+		cpuExecutionBackend: CpuExecutionBackend.Interpreter },
 		{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
 	runtime.boot();
 	const { cpu, scheduler, memory } = runtime.machine;

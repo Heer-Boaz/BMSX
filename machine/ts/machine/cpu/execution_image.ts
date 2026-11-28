@@ -60,7 +60,7 @@ export const enum DecodedDispatchOp {
 	FusedAddShl = OPCODE_COUNT + 1,
 	FusedShrBxor = OPCODE_COUNT + 2,
 	Observe = OPCODE_COUNT + 3,
-	ReservedMemory = OPCODE_COUNT + 4,
+	ReservedInstruction = OPCODE_COUNT + 4,
 	CompiledWarm = OPCODE_COUNT + 5,
 	Compiled = OPCODE_COUNT + 6,
 	InvalidImageOperand = OPCODE_COUNT + 7,
@@ -153,7 +153,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			if (op === OpCode.JREG) {
 				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
 					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
-				if (mode > RegisterJumpMode.EnterBankWindow) throw new Error('BLua32 register jump has an invalid mode.');
+				if (mode > RegisterJumpMode.Link) throw new Error('BLua32 register jump has an invalid mode.');
 			}
 			if (op !== OpCode.JMP && op !== OpCode.JAL && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
@@ -288,8 +288,8 @@ export class RomCallBindings {
 
 export function decodedInstructionBaseCycles(page: DecodedInstructionPage, word: number): number {
 	const op = page.ops[word];
-	if (op === DecodedDispatchOp.InvalidImageOperand) return BASE_CYCLES[(page.bodyWords[word] >>> 18) & 0x3f];
-	if (op === DecodedDispatchOp.ReservedMemory) return BASE_CYCLES[OpCode.LOAD_MEM];
+	if (op === DecodedDispatchOp.InvalidImageOperand || op === DecodedDispatchOp.ReservedInstruction)
+		return BASE_CYCLES[instructionOpcode(page.bodyWords[word])];
 	return BASE_CYCLES[op];
 }
 
@@ -317,7 +317,6 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		case OpCode.CALL:
 			return 0;
 		case OpCode.JREG:
-			// Window transfers admit their operands in architectural fault order.
 			return c === RegisterJumpMode.Jump ? a + 1 : c === RegisterJumpMode.Link ? Math.max(a, b) + 1 : 0;
 		case OpCode.RET:
 			// Register returns admit only the range consumed by the receiver.

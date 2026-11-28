@@ -149,16 +149,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	auto& gateProfile = cpu.m_nativeGateProfile.exits[static_cast<size_t>(exit->exit)];
 	++gateProfile.entries;
-	if (exit->exit == NativeBlockExit::RegisterWindowTransfer) {
-		// Both generated gates check these in order, before the physical
-		// transfer. Sample the pending frontier before publication clears it.
-		const auto mode = exit->operands.registerWindowTransfer.mode;
-		auto& fallback = mode == RegisterJumpMode::EnterWindow || mode == RegisterJumpMode::EnterBankWindow
-			? cpu.m_nativeGateProfile.windowEnterFallbacks : cpu.m_nativeGateProfile.windowLeaveFallbacks;
-		if (state.remainingCycles <= 0) ++fallback.budget;
-		else if (run->firstPendingFrame) ++fallback.pendingCall;
-		else ++fallback.other;
-	}
 #endif
 	CallFrame* frame = state.frame;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
@@ -245,12 +235,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::Return: {
 			const auto& returned = exit->operands.returned;
 			transition = cpu.executeReturn(*frame, returned.first, returned.produced)
-				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
-			break;
-		}
-		case NativeBlockExit::RegisterWindowTransfer: {
-			const auto [a, b, mode] = exit->operands.registerWindowTransfer;
-			transition = cpu.executeWindowTransfer(*frame, a, b, mode)
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
 		}

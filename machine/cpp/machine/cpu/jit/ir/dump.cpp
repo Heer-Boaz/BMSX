@@ -21,10 +21,6 @@ struct OperationName {
 	const char* operator()(const NativeReplay&) const { return "replay"; }
 	const char* operator()(const NativeJump& op) const { return op.link < 0 ? "jump" : "jump-link"; }
 	const char* operator()(const NativeRegisterJump&) const { return "register-jump"; }
-	const char* operator()(const NativeRegisterWindowTransfer& op) const {
-		if (op.mode == RegisterJumpMode::EnterBankWindow) return "window-enter-bank";
-		return op.mode == RegisterJumpMode::EnterWindow ? "window-enter" : "window-leave";
-	}
 	const char* operator()(const NativeHalt&) const { return "halt"; }
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeSupervisorCall&) const { return "supervisor-call"; }

@@ -15,17 +15,9 @@ struct NativeGateExitProfile {
 	u64 exceptions = 0;
 };
 
-struct NativeWindowTransferFallbackProfile {
-	u64 budget = 0;
-	u64 pendingCall = 0;
-	u64 other = 0;
-};
-
 struct NativeGateProfile {
 	std::array<NativeGateExitProfile, static_cast<size_t>(NativeBlockExit::Count)> exits{};
-	NativeWindowTransferFallbackProfile windowEnterFallbacks, windowLeaveFallbacks;
 	u64 directRegisterJumpResumes = 0;
-	u64 directWindowTransferResumes = 0;
 	u64 builtinAttempts = 0;
 	u64 builtinDeclines = 0;
 	u64 builtinResumes = 0;
@@ -39,7 +31,7 @@ inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"ReadInteger", "WriteInteger", "Length", "ControlFault",
 	"ExceptionReturn",
 	"WriteWords", "WriteControl", "WriteGlobal", "WriteSystemGlobal", "ReadUpvalue", "IterateTable",
-	"SupervisorCall", "RegisterJump", "RegisterWindowTransfer", "ReservedInstruction",
+	"SupervisorCall", "RegisterJump", "ReservedInstruction",
 });
 static_assert(NATIVE_GATE_EXIT_NAMES.size() == static_cast<size_t>(NativeBlockExit::Count));
 

@@ -14,8 +14,8 @@ namespace bmsx {
 namespace {
 // Valid only when NativeBlockAbi::pinnedRam; on ARMv7 S4 is a cached word register.
 constexpr sljit_s32 PINNED_RAM = SLJIT_S4;
-} // namespace
 
+// R2 carries the raw PC; R3 receives the resident code entry.
 std::array<sljit_jump*, 5> emitResidentCodeAtPc(sljit_compiler* c) {
 	constexpr auto state = NativeBlockAbi::state;
 	constexpr auto ptrShift = std::countr_zero(sizeof(void*));
@@ -40,7 +40,6 @@ std::array<sljit_jump*, 5> emitResidentCodeAtPc(sljit_compiler* c) {
 	return {unaligned, outside, noGroup, noPage, noCode};
 }
 
-namespace {
 sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, sljit_uw retire) {
 	constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
 	constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
@@ -188,9 +187,6 @@ NativeBlockGate::NativeBlockGate() {
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
 	auto* registerJumpEntry = emitRegisterJumpGate(compiler, returned, SLJIT_FUNC_ADDR(&CPU::retireNativeRegisterJump));
-	auto* enterWindowEntry = emitWindowEnter(compiler, bindWindow, cold);
-	auto* leaveWindowEntry = emitWindowLeave(compiler, bindWindow, cold, false);
-	auto* leaveWindowFromRegisterEntry = emitWindowLeave(compiler, bindWindow, cold, true);
 	auto* stringProbe = emitStringReadProbe(compiler);
 	auto* ownSlot = emitOwnStringSlotProbe(compiler);
 	auto* indexProbe = emitIndexReadProbe(compiler);
@@ -208,9 +204,6 @@ NativeBlockGate::NativeBlockGate() {
 	publishSegment = reinterpret_cast<void*>(sljit_get_label_addr(publish));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leave));
 	registerJump = reinterpret_cast<void*>(sljit_get_label_addr(registerJumpEntry));
-	enterWindow = reinterpret_cast<void*>(sljit_get_label_addr(enterWindowEntry));
-	leaveWindow = reinterpret_cast<void*>(sljit_get_label_addr(leaveWindowEntry));
-	leaveWindowFromRegister = reinterpret_cast<void*>(sljit_get_label_addr(leaveWindowFromRegisterEntry));
 	stringReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(stringProbe));
 	ownStringSlotProbe = reinterpret_cast<void*>(sljit_get_label_addr(ownSlot));
 	indexReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(indexProbe));
@@ -226,8 +219,6 @@ NativeBlockGate::NativeBlockGate() {
 		sljit_get_label_abs_addr(cold), sljit_get_label_abs_addr(declined), sljit_get_label_abs_addr(callEntry),
 		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(nativeReturn), sljit_get_label_abs_addr(fixedResidentCall),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave), sljit_get_label_abs_addr(registerJumpEntry),
-		sljit_get_label_abs_addr(enterWindowEntry), sljit_get_label_abs_addr(leaveWindowEntry),
-		sljit_get_label_abs_addr(leaveWindowFromRegisterEntry),
 		sljit_get_label_abs_addr(stringProbe), sljit_get_label_abs_addr(ownSlot),
 		sljit_get_label_abs_addr(indexProbe), sljit_get_label_abs_addr(lengthProbe), sljit_get_label_abs_addr(iteratorScan),
 		start + sljit_get_generated_code_size(compiler)
@@ -237,7 +228,6 @@ NativeBlockGate::NativeBlockGate() {
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
 		"bmsx_native_gate_ret", "bmsx_native_gate_native_return", "bmsx_native_gate_fixed_resident_call",
 		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_gate_register_jump",
-		"bmsx_native_gate_enter_window", "bmsx_native_gate_leave_window", "bmsx_native_gate_leave_window_from_register",
 		"bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
 		"bmsx_native_index_read_probe", "bmsx_native_table_length_probe", "bmsx_native_table_iterator_scan"
 	};

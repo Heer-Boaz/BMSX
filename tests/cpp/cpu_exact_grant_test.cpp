@@ -544,6 +544,49 @@ void compileRegisterJumpReceiver() {
 #endif
 }
 
+void reservedRegisterJumpModes() {
+	const auto jreg = static_cast<u8>(OpCode::JREG);
+	for (const u32 mode : {2u, 3u, 4u, 5u, 1u << BASE_OPERAND_BC_BITS}) {
+		const bool wide = mode > MAX_LOW_OPERAND;
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(3u * INSTRUCTION_BYTES);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 2},
+			{.firstWord = 2, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		if (wide) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 1);
+		writeInstruction(image.text, wide ? 1u : 0u, jreg, 63, 1, wide ? 0 : static_cast<u8>(mode));
+		bool rejected = false;
+		try {
+			Machine immutable(image, true);
+		} catch (const std::runtime_error&) {
+			rejected = true;
+		}
+		require(rejected, "an immutable image cannot publish a reserved register-jump mode");
+
+		image.mappedCode = true;
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			cpu.rootThread()->currentFrame->registers.set(1, valueInteger(17));
+		}
+		auto& cpu = native.cpu;
+		require(test::runCpuParity(cpu, scalar.cpu, 1) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[jreg]
+			&& cpu.readEpcWord() == DYNAMIC_RAM_BASE
+			&& cpu.lastPc == DYNAMIC_RAM_BASE + (wide ? INSTRUCTION_BYTES : 0u)
+			&& (cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
+			&& cpu.rootThread()->frameDepth() == 1
+			&& cpu.rootThread()->currentFrame->registers.get(1) == valueInteger(17)
+			&& test::sameLanguageRam(cpu, scalar.cpu),
+			"a reserved mapped JREG faults before reading operands, linking, or creating a frame");
+	}
+}
+
 void exactFramelessLeafGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	constexpr int width = 11, marker = 10;
@@ -720,120 +763,6 @@ void exactRebasedLeafGrant() {
 			"only the spent grant reaches the dispatcher; no basis or call helper runs");
 	}
 #endif
-#endif
-}
-
-void exactBorrowedWindowGrant(bool registerFrontier, bool extended) {
-	constexpr auto open = static_cast<u8>(RegisterJumpMode::EnterWindow);
-	const auto close = static_cast<u8>(registerFrontier ? RegisterJumpMode::LeaveWindowFromRegister : RegisterJumpMode::LeaveWindow);
-	constexpr int parentWidth = 11;
-	constexpr int childOffset = 2;
-	constexpr int extendedRegister = parentWidth - childOffset;
-	const int sum = extended ? extendedRegister : 1;
-	const int width = extended ? extendedRegister + 1 : registerFrontier ? 3 : 2;
-	test::Blua32TestImage image;
-	image.mappedCode = false;
-	image.text.resize(10u * INSTRUCTION_BYTES);
-	image.functions = {{.firstWord = 0, .wordCount = 10, .maxStack = parentWidth}};
-	// Install leaf and continuation entries independently of the window
-	// transition, which samples its target from a raw register.
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 10, 0, 5);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMPIF), 9, 0, 1);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JREG), 6, 7, open);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::KSMI), 4, 0, 31);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), sum, 0, 1);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::MOV), 1, sum, 0);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::KTRUE), 0, 0, 0);
-	writeInstruction(image.text, 9, static_cast<u8>(OpCode::JREG), 63, 2, close);
-	Machine native(image, false), scalar(image, true);
-	for (auto* machine : {&native, &scalar}) {
-		auto& lane = machine->cpu;
-		auto& context = *lane.activeThread();
-		test::reserveReferenceThreadFrame(test::GcHeap(lane), context, context.stackCapacity);
-		require(context.currentFrame->stackCapacity() == parentWidth
-			&& context.stackCapacity >= static_cast<size_t>(childOffset + width),
-			"the admitted backing includes the selected child window without widening the parent");
-	}
-	auto& cpu = native.cpu;
-	const auto start = native.rom.textAddress;
-	const u32 issue = start + 2u * INSTRUCTION_BYTES;
-	const u32 child = start + 6u * INSTRUCTION_BYTES;
-	const u32 successor = start + 3u * INSTRUCTION_BYTES;
-	const auto bindInputs = [&] {
-		for (auto* machine : {&native, &scalar}) {
-			auto& lane = machine->cpu;
-			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], issue);
-			auto& registers = lane.activeThread()->currentFrame->registers;
-			registers.set(2, valueInteger(17));
-			registers.set(3, valueInteger(25));
-			registers.set(4, valueFromTag(ValueTag::Float, 2)); // Child R2 is a raw frontier, not a Lua number.
-			registers.set(6, valueFromTag(ValueTag::Float, child)); // Raw PC transport does not inspect its tag.
-			registers.set(7, valueInteger(childOffset));
-			registers.set(8, valueInteger(width));
-			registers.set(9, valueInteger(2));
-			lane.activeThread()->currentFrame->setTop(10);
-		}
-	};
-	const int jump = BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
-	const int body = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
-		+ BASE_CYCLES[static_cast<u8>(OpCode::KTRUE)];
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	cpu.prepareSystemNativeCode();
-	const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
-	const auto* page = lookup.find(issue, 0);
-	const auto& entry = page->nativeBlocks->entries[(issue & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(entry && entry->terminal.exit == NativeBlockExit::RegisterWindowTransfer,
-		"the physical window opcode owns an actual generated boundary");
-	for (const auto target : {child, successor}) {
-		const auto* cell = lookup.findEntryCellInRoot(lookup.root(0), target);
-		require(cell && *cell, "the receiving window has actual resident native code");
-	}
-#endif
-	bindInputs();
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto before = cpu.nativeGateProfile();
-#endif
-	require(test::runCpuParity(cpu, scalar.cpu, 1) == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - jump
-		&& cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == successor && cpu.readFramePc(1) == child
-		&& cpu.readFrameFunctionAddress(1) == 0 && cpu.getFrameRegisterCount(1) == 2
-		&& cpu.activeThread()->currentFrame->stackCapacity() == width
-		&& cpu.readFrameRegister(1, 0) == valueInteger(17) && cpu.readFrameRegister(1, 1) == valueInteger(25)
-		&& test::sameLanguageRam(cpu, scalar.cpu),
-		"the exact short grant parks the successor and shares both input value lanes");
-	require(test::runCpuParity(cpu, scalar.cpu, body + 1) == RunResult::Yielded
-		&& cpu.instructionBudgetRemaining == 1 - jump && cpu.readFramePc(0) == successor
-		&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 4
-		&& cpu.activeThread()->stack.get(childOffset + sum) == valueInteger(42)
-		&& test::sameLanguageRam(cpu, scalar.cpu), "a short leave publishes the same parent frontier as scalar");
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto afterShort = cpu.nativeGateProfile();
-	const auto oneBudgetFallback = [](const auto& after, const auto& before) {
-		return after.budget == before.budget + 1u && after.pendingCall == before.pendingCall && after.other == before.other;
-	};
-	require(oneBudgetFallback(afterShort.windowEnterFallbacks, before.windowEnterFallbacks)
-		&& oneBudgetFallback(afterShort.windowLeaveFallbacks, before.windowLeaveFallbacks),
-		"each short transfer is attributed once to its own exhausted grant");
-#endif
-	bindInputs();
-	const int grant = 2 * jump + body + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto beforeFull = cpu.nativeGateProfile();
-#endif
-	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
-		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 1
-		&& cpu.readFramePc(0) == successor + INSTRUCTION_BYTES
-		&& cpu.readFrameRegister(0, 2) == valueBool(true)
-		&& cpu.readFrameRegister(0, 3) == valueInteger(42)
-		&& cpu.readFrameRegister(0, 4) == valueInteger(31)
-		&& test::sameLanguageRam(cpu, scalar.cpu), "both windows and their continuation retire in the same grant");
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto afterFull = cpu.nativeGateProfile();
-	const auto windowExit = static_cast<size_t>(NativeBlockExit::RegisterWindowTransfer);
-	require(afterFull.directWindowTransferResumes - beforeFull.directWindowTransferResumes == 2u
-		&& afterFull.exits[windowExit].entries - beforeFull.exits[windowExit].entries == 2u,
-		"both resident transfers rebind in generated code without semantic dispatch");
 #endif
 }
 
@@ -1761,11 +1690,7 @@ int main(int argc, char** argv) {
 		const std::string_view scenario(argv[1]);
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
-		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); }
-		else if (scenario == "borrowed-window") {
-			for (const bool extended : {false, true})
-				for (const bool registerFrontier : {false, true}) exactBorrowedWindowGrant(registerFrontier, extended);
-		}
+		else if (scenario == "register-jump") { exactRegisterJumpGrant(); reservedRegisterJumpModes(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); }
 		else if (scenario == "physical-window-moves") exactPhysicalWindowMoves();
 		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }

@@ -91,9 +91,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::JMP: return NativeJump{instruction.bx()};
 	case OpCode::JAL: return NativeJump{instruction.bx(), static_cast<NativeValueRef>(a)};
 	case OpCode::JREG:
-		if (c >= static_cast<int>(RegisterJumpMode::EnterWindow))
-			return NativeRegisterWindowTransfer{{a, static_cast<u16>(b), static_cast<RegisterJumpMode>(c)}};
-		return NativeRegisterJump{{a, c == 0 ? NATIVE_NO_OPERAND : b}};
+		return NativeRegisterJump{{a, c == static_cast<int>(RegisterJumpMode::Link) ? b : NATIVE_NO_OPERAND}};
 	case OpCode::JMPIF: case OpCode::JMPIFNOT:
 		return NativeTruthBranch{instruction.bx(), static_cast<i16>(a), op == OpCode::JMPIF};
 	case OpCode::EQ: case OpCode::LT: case OpCode::LE:

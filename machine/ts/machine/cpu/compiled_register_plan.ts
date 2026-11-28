@@ -15,7 +15,7 @@ export type JavaScriptRegisterPlan = {
 function generatedRegisterReads(op: OpCode, b: number, c: number): number {
 	switch (op) {
 		case OpCode.CALL: case OpCode.ITERN: case OpCode.SVC: return 0;
-		case OpCode.JREG: return c > RegisterJumpMode.Link ? 0 : REGISTER_OPERAND_A;
+		case OpCode.JREG: return REGISTER_OPERAND_A;
 		case OpCode.MOV:
 			return c === ValueMoveKind.ReadTop || c === ValueMoveKind.ReadBase ? 0
 				: c === ValueMoveKind.WriteIndexed ? REGISTER_OPERAND_A | REGISTER_OPERAND_B : REGISTER_OPERAND_B;

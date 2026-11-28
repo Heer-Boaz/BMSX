@@ -12,7 +12,7 @@ enum class ValueMoveKind : uint32_t {
 };
 enum class ReturnSource : uint32_t { Registers = 0, ExtraArguments = 1 };
 enum class RegisterJumpMode : uint32_t {
-	Jump = 0, Link = 1, EnterWindow = 2, LeaveWindow = 3, LeaveWindowFromRegister = 4, EnterBankWindow = 5,
+	Jump = 0, Link = 1,
 };
 
 constexpr int INSTRUCTION_BYTES = 4;

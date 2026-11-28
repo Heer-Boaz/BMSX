@@ -417,7 +417,6 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/sljit/gate.cpp
 		machine/cpu/jit/sljit/fixed_call_gate.cpp
 		machine/cpu/jit/sljit/return_gate.cpp
-		machine/cpu/jit/sljit/window_transfer.cpp
 		machine/cpu/jit/sljit/length.cpp
 		machine/cpu/jit/sljit/lowering.cpp
 		machine/cpu/jit/sljit/memory.cpp
@@ -1311,7 +1310,6 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_exact_grant_tests ../../tests/cpp/cpu_exact_grant_test.cpp ${BMSX_TEST_ROM_OBJECTS})
 	target_link_libraries(bmsx_cpu_exact_grant_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_exact_grant_jal COMMAND bmsx_cpu_exact_grant_tests jal)
-	add_test(NAME bmsx_cpu_exact_grant_borrowed_window COMMAND bmsx_cpu_exact_grant_tests borrowed-window)
 	add_test(NAME bmsx_cpu_exact_grant_immutable_code_constant COMMAND bmsx_cpu_exact_grant_tests immutable-code-constant)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		add_test(NAME bmsx_cpu_exact_grant_register_jump COMMAND bmsx_cpu_exact_grant_tests register-jump)

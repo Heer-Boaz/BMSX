@@ -1136,7 +1136,7 @@ export class CPU implements MappedPageInvalidator {
 				page.operandByte[pageOffset] = ext;
 				if (page.c[pageOffset] > MemoryAccessKind.Value
 					&& (op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
-					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+					page.ops[pageOffset] = DecodedDispatchOp.ReservedInstruction;
 				}
 			} else if (OPCODE_USES_BX[op] !== 0) {
 				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
@@ -1171,9 +1171,10 @@ export class CPU implements MappedPageInvalidator {
 					page.tableCacheSlots[pageOffset] = -1;
 					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
-				if (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)
-					&& (op !== OpCode.LOAD_MEM || rawC !== MemoryAccessKind.ContextWord)) {
-					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+				if ((op === OpCode.JREG && rawC > RegisterJumpMode.Link)
+					|| (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)
+						&& (op !== OpCode.LOAD_MEM || rawC !== MemoryAccessKind.ContextWord))) {
+					page.ops[pageOffset] = DecodedDispatchOp.ReservedInstruction;
 				} else {
 					const constantCount = image.constWords.length;
 					if ((op === OpCode.ITERN && rawC === 0)
@@ -1888,84 +1889,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeWindowTransfer(frame: CallFrame, a: number, b: number, mode: RegisterJumpMode): boolean {
-		const thread = frame.thread, registers = frame.registers, capacity = registers.capacity();
-		const banked = mode === RegisterJumpMode.EnterBankWindow;
-		if (mode === RegisterJumpMode.EnterWindow || banked) {
-			if (a >= capacity) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return false;
-			}
-			const target = registers.getPayload(a);
-			if ((target & (INSTRUCTION_BYTES - 1)) !== 0) {
-				this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
-				return false;
-			}
-			if (b + (banked ? 4 : 3) > capacity) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return false;
-			}
-			let domain = this.activeExecutionDomainId, image = frame.executionImage;
-			if (banked) {
-				const selected = registers.getPayload(b + 3) | 0;
-				if (selected !== domain) {
-					if ((selected !== SYSTEM_EXECUTION_DOMAIN_ID && selected !== 0 && selected !== 1)
-						|| !this.isUserMode() || this.resetBankSelected()) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-						return false;
-					}
-					const selectedImage = this.executionImageForDomain(selected);
-					if (selectedImage === null) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-						return false;
-					}
-					domain = selected;
-					image = selectedImage;
-				}
-			}
-			const offset = registers.getPayload(b), width = registers.getPayload(b + 1), top = registers.getPayload(b + 2);
-			const base = frame.registerStackBase + offset, end = base + width;
-			if (offset > capacity || top > capacity - offset || top > width || end > MAX_THREAD_VALUE_SLOTS) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return false;
-			}
-			if (!thread.frameSpaceFits(end)) {
-				if (this.resetBankSelected()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				else this.enterRegisterWindowException(frame, end, thread.frameDepth + 2, OpCode.JREG, a);
-				return false;
-			}
-			const child = thread.acquireFrame();
-			child.executionImage = image;
-			child.decodedPage = null;
-			child.initializeControl(0, target, this.currentInstructionPc, false, domain,
-				base, 0, 0, 0, top, 0, base, width);
-			thread.stackTop = end;
-			thread.enterFrame(child);
-			if (banked && domain !== this.activeExecutionDomainId) this.latchActiveExecutionImage(domain, image);
-			return true;
-		}
-		const indirect = mode === RegisterJumpMode.LeaveWindowFromRegister;
-		if (indirect && b >= capacity) {
-			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		const frontier = indirect ? registers.getPayload(b) : b;
-		const parent = frame.previous;
-		if (parent === null || frame.isExceptionFrame || frontier > capacity) {
-			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		const top = (frame.registerStackBase + frontier - parent.registerStackBase) >>> 0;
-		if (top > parent.registers.capacity()) {
-			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return false;
-		}
-		thread.leaveFrame();
-		parent.top = top;
-		this.resumeFrameBank();
-		return true;
-	}
-
 	private enterRegisterWindowException(
 		issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number,
 		resumePc = this.currentInstructionPc,
@@ -2257,7 +2180,7 @@ export class CPU implements MappedPageInvalidator {
 							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV
 								&& (page.c[pageOffset] <= ValueMoveKind.ReadTop
 								|| (page.c[pageOffset] >= ValueMoveKind.SetTop && page.c[pageOffset] <= ValueMoveKind.SetTopImmediate)))
-								|| (dispatchOp === OpCode.JREG && page.c[pageOffset] <= RegisterJumpMode.Link)
+								|| dispatchOp === OpCode.JREG
 								|| (dispatchOp === OpCode.JMP && page.a[pageOffset] === 0)) {
 								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
 								scalarFrame = frame;
@@ -3143,9 +3066,6 @@ export class CPU implements MappedPageInvalidator {
 			switch (exit.exit) {
 				case CompiledBlockExit.Continue: break;
 				case CompiledBlockExit.IndirectJump: frame.pc = run.effectiveAddress; break;
-				case CompiledBlockExit.RegisterWindowJump:
-					redispatch = !this.executeWindowTransfer(frame, exit.exitA, exit.exitB, exit.exitC);
-					break;
 				case CompiledBlockExit.InstructionAddressFault:
 					this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, run.effectiveAddress);
 					redispatch = true; break;
@@ -3322,7 +3242,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.WIDE:
 					this.hardHalt();
 					return;
-				case DecodedDispatchOp.ReservedMemory:
+				case DecodedDispatchOp.ReservedInstruction:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				case DecodedDispatchOp.InvalidImageOperand:
@@ -3453,11 +3373,6 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.JREG: {
 					const mode = page.c[pageOffset];
-					if (mode > RegisterJumpMode.Link) {
-						if (mode <= RegisterJumpMode.EnterBankWindow) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
-						else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-						return;
-					}
 					const target = registers.getPayload(a);
 					if ((target & (INSTRUCTION_BYTES - 1)) !== 0) {
 						this.cop0Words[COP0_BAD_ADDRESS] = target;

@@ -148,7 +148,6 @@ struct CallFrame {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
 	void initializeControl(const FrameEntryControl& entry);
-	void initializeWindow(u32 pc, u32 issuePc, ExecutionDomainId domain, u32 base, u32 width, u32 top);
 	void setRegisterBase(i32 base, i32 width);
 	void rebindRegisters();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

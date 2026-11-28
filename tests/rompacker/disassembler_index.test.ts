@@ -23,17 +23,18 @@ test('function browsing indexes WIDE as one instruction and excludes neighbourin
 	assert.deepEqual([...indexBlua32FunctionInstructions(image, 2)], [image.functions[2].codeAddress]);
 });
 
-test('register window disassembly distinguishes indirect lanes, frontier operands, and ignored registers', () => {
-	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+test('disassembly distinguishes indexed, frontier and jump operands', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.MOV, 1, 63, ValueMoveKind.ReadTop);
 	writeInstruction(text, 1, OpCode.MOV, 1, 2, ValueMoveKind.ReadIndexed);
 	writeInstruction(text, 2, OpCode.MOV, 1, 2, ValueMoveKind.WriteIndexed);
 	writeInstruction(text, 3, OpCode.MOV, 63, 2, ValueMoveKind.SetTop);
-	writeInstruction(text, 4, OpCode.JREG, 63, 2, RegisterJumpMode.LeaveWindowFromRegister);
-	const { image } = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5 }] });
+	writeInstruction(text, 4, OpCode.JREG, 3, 63, RegisterJumpMode.Jump);
+	writeInstruction(text, 5, OpCode.JREG, 2, 1, RegisterJumpMode.Link);
+	const { image } = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6 }] });
 	const instructions = [...indexBlua32FunctionInstructions(image, 0)].map(pc => describeBlua32InstructionAtPc(image, null, pc));
 	assert.deepEqual(instructions.map(instruction => instruction.instructionText),
-		['MOV r1, top', 'MOV r1, r[r2]', 'MOV r[r1], r2', 'MOV top, r2', 'JREG leave r2']);
+		['MOV r1, top', 'MOV r1, r[r2]', 'MOV r[r1], r2', 'MOV top, r2', 'JREG r3', 'JREG r2, r1']);
 	assert.deepEqual(instructions.map(instruction => instruction.operands.map(operand => operand.registerIndex)),
-		[[1], [1, 2], [1, 2], [2], [2]]);
+		[[1], [1, 2], [1, 2], [2], [3], [2, 1]]);
 });
