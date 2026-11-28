@@ -145,6 +145,7 @@ import {
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
 	admitsFunctionPc,
+	findRomFunctionExtentAtPc,
 	isRomInstructionHead,
 	readPublishedPrototype,
 	readRomEntry,
@@ -2927,9 +2928,14 @@ export class CPU implements MappedPageInvalidator {
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
 		const directory = image.romFunctions;
-		const version = romFunctionVersionLane(directory, frame.functionAddress);
 		const selectedImage = domain === SYSTEM_EXECUTION_DOMAIN_ID || domain === slot;
-		const verified = version >= 0 && !directory.mappedCode;
+		const verified = !directory.mappedCode && (domain === SYSTEM_EXECUTION_DOMAIN_ID
+			? (pc - SYSTEM_ROM_BASE) >>> 0 < SYSTEM_ROM_SIZE
+			: (pc - CART_ROM_BASE) >>> 0 < CART_ROM_SIZE);
+		if (verified && (!selectedImage || !isRomInstructionHead(directory, pc))) return;
+		// Raw branches do not change the frame. ROM bounds follow the PC.
+		const version = verified ? findRomFunctionExtentAtPc(directory, pc)
+			: directory.mappedCode ? romFunctionVersionLane(directory, frame.functionAddress) : -1;
 		const pages = [page];
 		let basePc = pagePc, firstWord = 0, endWord = DECODED_PAGE_WORDS;
 		let bounded = false, finalWordStartsInstruction = false;
@@ -2938,7 +2944,6 @@ export class CPU implements MappedPageInvalidator {
 			const end = directory.versions[version + RomFunctionLane.EndPc];
 			const firstPage = (start & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 			const bodyPages = ((((end - 1) & ~MAPPED_PAGE_BYTE_MASK) >>> 0) - firstPage) / MAPPED_PAGE_BYTE_SIZE + 1;
-			if (verified && (pc < start || pc >= end || !isRomInstructionHead(directory, pc))) return;
 			if (verified || (pc >= start && pc < end && bodyPages > 1 && bodyPages <= COMPILED_VERSION_MAX_PAGES
 				&& this.memory.bindRomByteView(end - INSTRUCTION_BYTES, INSTRUCTION_BYTES, slot, romView))) {
 				bounded = true;

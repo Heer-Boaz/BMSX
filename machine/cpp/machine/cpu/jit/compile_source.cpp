@@ -124,11 +124,14 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 
 void CPU::compileNativeRoot(Blua32ExecutionImage& image, u32 functionAddress, DecodedInstructionPage& page,
 	u32 pc, MappedBusSignals busSignals) {
-	const auto* version = image.romFunctions.find(functionAddress);
-	const bool verified = version && !image.romFunctions.mappedCode;
+	const auto& functions = image.romFunctions;
+	const bool verified = !functions.mappedCode && functions.ownsAddress(image.executionDomainId, pc);
+	if (verified && !functions.instructionHead(pc)) return;
+	// Raw jumps keep the register window but need not stay in the entry's
+	// ROM extent. Bounds describe the code being translated, not the frame.
+	const auto* version = verified ? functions.atPc(pc) : functions.mappedCode ? functions.find(functionAddress) : nullptr;
 	const u32 pagePc = pc & ~MAPPED_PAGE_BYTE_MASK;
 	if (version) {
-		if (verified && !version->contains(pc)) return;
 		const bool singlePage = verified && version->entry.codeAddress >= pagePc
 			&& version->endPc - pagePc <= MAPPED_PAGE_BYTE_SIZE;
 		if (!singlePage) {

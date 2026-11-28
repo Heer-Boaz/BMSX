@@ -9,13 +9,13 @@ import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil } from '.
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 
 function assertParity(a: CPU, b: CPU): void {
@@ -79,6 +79,36 @@ test('generated JREG samples an aliased target and faults before writing its lin
 		.flatMap(page => page.compiledBlocks?.entries ?? []);
 	assert.ok(entries.some(entry => entry?.terminal.currentPc === pc && entry.terminal.exit === CompiledBlockExit.IndirectJump));
 	assert.ok(entries.some(entry => entry?.terminal.currentPc === target && entry.terminal.exit === CompiledBlockExit.IndirectJump));
+});
+
+test('generated code follows JREG across immutable ROM extents without activating a function', () => {
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JREG, 0, 0, 1);
+	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 2, OpCode.K1, 1, 0, 0);
+	writeInstruction(text, 3, OpCode.JREG, 0, 0, 0);
+	const rom = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }, { firstWord: 2, wordCount: 2, maxStack: 2 }] });
+	const [caller, worker] = rom.image.functions;
+	const js = createTestSystemCpu(rom, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(rom, CpuExecutionBackend.Interpreter).cpu;
+	const grant = 2 * BASE_CYCLES[OpCode.JREG] + BASE_CYCLES[OpCode.K1];
+	for (let visit = 0; visit < 24; ++visit) {
+		for (const cpu of [js, scalar]) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, caller.address, caller.codeAddress);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, worker.codeAddress);
+		}
+		runCpuParity(js, scalar, grant);
+		assertParity(js, scalar);
+		assert.equal(js.getFrameDepth(), 1);
+		assert.equal(js.readFrameFunctionAddress(0), caller.address);
+		assert.equal(js.readFramePc(0), caller.codeAddress + INSTRUCTION_BYTES);
+		assert.equal(js.readFrameRegister(0, 1), valueInteger(1));
+	}
+	const frame = js.rootThread.frameAtDepth(0);
+	const page = frame.executionImage.compiledCodeLookup?.find(worker.codeAddress, 0);
+	const entry = page?.compiledBlocks?.entries[(worker.codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
+	assert.ok(entry, 'the worker can be published independently of the caller activation');
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

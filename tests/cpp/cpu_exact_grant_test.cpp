@@ -502,6 +502,45 @@ void exactRegisterJumpGrant() {
 #endif
 }
 
+void compileRegisterJumpReceiver() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(4u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 2},
+		{.firstWord = 2, .wordCount = 2, .maxStack = 2}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JREG), 0, 0, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JREG), 0, 0, 0);
+	Machine native(image, false), scalar(image, true);
+	auto& cpu = native.cpu;
+	const u32 start = native.rom.textAddress, worker = start + 2u * INSTRUCTION_BYTES;
+	const int grant = 2 * BASE_CYCLES[static_cast<u8>(OpCode::JREG)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+	for (int i = 0;; ++i) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+			lane.activeThread()->currentFrame->registers.set(0, valueInteger(worker));
+		}
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == start + INSTRUCTION_BYTES
+			&& cpu.readFrameFunctionAddress(0) == native.rom.functionAddresses[0]
+			&& cpu.activeThread()->frameDepth() == 1 && cpu.readFrameRegister(0, 1) == valueInteger(1),
+			"an indirect round trip stays in the original register window with the exact grant");
+		const auto& lookup = cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+		if (lookup) {
+			const auto* entry = lookup->findEntryCellInRoot(lookup->root(0), worker);
+			if (entry && *entry) break;
+		}
+		require(i < 64 || std::chrono::steady_clock::now() < deadline,
+			"the reachable ROM body can be compiled without changing the frame's function");
+		std::this_thread::yield();
+	}
+#endif
+}
+
 void exactImmutableCodeConstantGrant() {
 	constexpr u8 destination = 5;
 	test::Blua32TestImage image;
@@ -1158,7 +1197,7 @@ int main(int argc, char** argv) {
 		const std::string_view scenario(argv[1]);
 		if (scenario == "closure") exactGrant(false);
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
-		else if (scenario == "register-jump") exactRegisterJumpGrant();
+		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); }
 		else if (scenario == "store") exactGrant(true);
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);
