@@ -2,6 +2,7 @@ import type { NumberConstant } from '../number';
 import type {
 	Program,
 	ProgramConstant,
+	ProgramFunctionSymbol,
 	ProgramModuleExport,
 	ProgramModuleProto,
 	ProgramRuntimeSymbols,
@@ -57,24 +58,15 @@ export type ProgramObjectSections = {
 
 export type ProgramConstantIndexRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c';
 export type ProgramGlobalSlotRelocKind = 'gl' | 'sys';
-export type ProgramNamedConstRelocKind = 'module_init';
-export type ProgramFunctionConstRelocKind = 'export_proto';
-
 export type ProgramImageConstReloc =
 	| { wordIndex: number; kind: ProgramConstantIndexRelocKind; constIndex: number }
-	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number }
-	| { wordIndex: number; kind: ProgramNamedConstRelocKind; symbol: string }
-	| {
-		wordIndex: number;
-		kind: ProgramFunctionConstRelocKind;
-		path: string;
-		exportPathKey: string;
-	};
+	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number };
 
-export type ProgramBiosFunctionConstReloc = {
-	wordIndex: number;
-	importIndex: number;
-};
+export type ProgramCodeFunctionTarget =
+	| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
+	| { kind: 'proto'; protoIndex: number }
+	| { kind: 'bios_function'; importIndex: number }
+	| { kind: 'module_init'; symbol: string };
 
 export type ProgramLinkValueUnaryOperator =
 	LuaUnaryOperator.Negate
@@ -118,6 +110,7 @@ export type ProgramLinkValueExpression =
 
 export type ProgramConstValueReloc =
 	| { constIndex: number; kind: 'function_addr'; protoIndex: number }
+	| { constIndex: number; kind: 'code_function'; target: ProgramCodeFunctionTarget }
 	| { constIndex: number; kind: 'text_addr'; offset: number }
 	| {
 		constIndex: number;
@@ -157,9 +150,7 @@ export type ProgramSystemObjectImage = ProgramObjectImageBase & {
 
 export type ProgramCartObjectImage = ProgramObjectImageBase & {
 	domain: 'cart';
-	link: ProgramObjectLink & {
-		biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
-	};
+	link: ProgramObjectLink;
 };
 
 export type ProgramObjectImage =

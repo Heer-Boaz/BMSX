@@ -99,7 +99,7 @@ import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } f
 import { toLuaModulePath } from './module_path';
 import {
 	encodeProgramObjectSections,
-	type ProgramBiosFunctionConstReloc,
+	type ProgramCodeFunctionTarget,
 	type ProgramConstValueReloc,
 	type ProgramRodataConstReloc,
 	type ProgramObjectDataSection,
@@ -114,8 +114,6 @@ import {
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
 import {
-	CLOSURE_DESTINATION_EXT_BITS,
-	CLOSURE_DESTINATION_EXT_SHIFT,
 	MAX_LOW_OPERAND, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
@@ -166,12 +164,7 @@ import {
 
 type ProgramCompilerConstReloc =
 	| ProgramImageConstReloc
-	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number }
-	| {
-		wordIndex: number;
-		kind: 'bios_function';
-		importIndex: number;
-	};
+	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number };
 
 type InitParticipantBinding = ProgramInitParticipant & {
 	objectSlot: number;
@@ -207,7 +200,6 @@ export type CompiledSystemProgram = CompiledProgramBase & {
 export type CompiledCartProgram = CompiledProgramBase & {
 	domain: 'cart';
 	constRelocs: ProgramImageConstReloc[];
-	biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
 };
 
 export type CompiledProgram =
@@ -257,7 +249,6 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 		sections,
 		link: {
 			constRelocs: compiled.constRelocs,
-			biosFunctionConstRelocs: compiled.biosFunctionConstRelocs,
 			constValueRelocs: compiled.constValueRelocs,
 			rodataConstRelocs: compiled.rodataConstRelocs,
 			symbols: {
@@ -526,6 +517,7 @@ class ProgramBuilder {
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private readonly functionAddrRelocByProto = new Map<number, number>();
+	private readonly codeFunctionRelocSlots = new Map<number | string, number>();
 	private readonly linkValueRelocSlotByKey = new Map<string, number>();
 	private bssByteCount: number;
 	private dataByteCount = 0;
@@ -624,7 +616,7 @@ class ProgramBuilder {
 	}
 
 	public constValueRelocIndex(
-		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr' | 'text_addr'>,
+		kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr',
 		symbolIndex: number,
 		addend: number,
 	): number {
@@ -667,6 +659,18 @@ class ProgramBuilder {
 		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({ kind: 'function_addr', constIndex: index, protoIndex });
 		this.functionAddrRelocByProto.set(protoIndex, index);
+		return index;
+	}
+
+	public codeFunctionRelocIndex(target: ProgramCodeFunctionTarget): number {
+		const key = target.kind === 'proto' ? target.protoIndex
+			: target.kind === 'export_proto' ? 'export:' + programModuleExportKey(target.path, target.exportPathKey)
+				: target.kind === 'module_init' ? 'init:' + target.symbol : 'bios:' + target.importIndex;
+		const existing = this.codeFunctionRelocSlots.get(key);
+		if (existing !== undefined) return existing;
+		const index = this.reserveAddressConstant();
+		this.codeFunctionRelocSlots.set(key, index);
+		this.constValueRelocs.push({ constIndex: index, kind: 'code_function', target });
 		return index;
 	}
 
@@ -1070,7 +1074,7 @@ class ProgramBuilder {
 		return this.biosFunctionImportIndexBySymbol.get(programModuleExportKey(path, exportPathKey));
 	}
 
-	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>, frontend: LuaSemanticFrontend): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>, frontend: LuaSemanticFrontend): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			totalBytes += this.protos[i].codeLen;
@@ -1084,7 +1088,6 @@ class ProgramBuilder {
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords).fill(null);
 		const fullInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(totalWords).fill(ROOT_INLINE_CALL_SITES);
 		const imageConstRelocs: ProgramImageConstReloc[] = [];
-		const biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[] = [];
 		let appendOffsetBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
@@ -1122,27 +1125,6 @@ class ProgramBuilder {
 					case 'local_text_addr':
 						imageConstRelocs.push({ wordIndex: targetOffsetWords + reloc.wordIndex, kind: 'bx', constIndex: reloc.constIndex });
 						this.constValueRelocs.push({ constIndex: reloc.constIndex, kind: 'text_addr', offset: targetOffsetBytes + reloc.offset });
-						continue;
-					case 'module_init':
-						imageConstRelocs.push({
-							wordIndex: targetOffsetWords + reloc.wordIndex,
-							kind: reloc.kind,
-							symbol: reloc.symbol,
-						});
-						continue;
-					case 'export_proto':
-						imageConstRelocs.push({
-							wordIndex: targetOffsetWords + reloc.wordIndex,
-							kind: reloc.kind,
-							path: reloc.path,
-							exportPathKey: reloc.exportPathKey,
-						});
-						continue;
-					case 'bios_function':
-						biosFunctionConstRelocs.push({
-							wordIndex: targetOffsetWords + reloc.wordIndex,
-							importIndex: reloc.importIndex,
-						});
 						continue;
 					case 'gl':
 					case 'sys':
@@ -1208,7 +1190,6 @@ class ProgramBuilder {
 			},
 			metadata,
 			imageConstRelocs,
-			biosFunctionConstRelocs,
 			constValueRelocs: this.constValueRelocs.slice(),
 			rodataConstRelocs: this.rodataConstRelocs.slice(),
 			data: this.buildDataSection(),
@@ -1332,6 +1313,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly moduleCompileInfo?: ModuleCompileInfo;
 	private readonly staticCallTargetScope: boolean;
 	private readonly exceptionEntry: boolean;
+	private readonly rawSystemCode: boolean;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
@@ -1400,10 +1382,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			moduleCompileInfo?: ModuleCompileInfo;
 			staticCallTargetScope?: boolean;
 			exceptionEntry?: boolean;
+			rawSystemCode?: boolean;
 		},
 	) {
 		this.program = program;
 		this.parent = parent;
+		this.rawSystemCode = params.rawSystemCode ?? parent?.rawSystemCode ?? false;
 		this.semantics = params.semantics;
 		this.frontend = params.frontend;
 		this.moduleId = params.moduleId;
@@ -1686,10 +1670,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	): void {
 		this.withRange(range, () => {
 			const callReg = this.allocTemp();
-			this.emitABx(OpCode.CLOSURE, callReg, sectionInitProtoIndex);
+			this.emitFunctionCode(callReg, { kind: 'proto', protoIndex: sectionInitProtoIndex });
 			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			this.emitStaticModuleInitializers(callReg);
-			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
+			this.emitFunctionCode(callReg, { kind: 'proto', protoIndex: entryProtoIndex });
 			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), 0);
 			this.emitABC(OpCode.RET, callReg, 0, 0);
 			const entryReturn = this.code[this.code.length - 1];
@@ -1727,9 +1711,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const skip = this.emitJumpPlaceholder(OpCode.JMPIF, callReg);
 			const functionIndex = this.program.moduleProtoIndex(path);
 			if (functionIndex === undefined) {
-				this.emitABx(OpCode.LOADK, callReg, 0, { kind: 'module_init', symbol: path });
+				this.emitFunctionCode(callReg, { kind: 'module_init', symbol: path });
 			} else {
-				this.emitABx(OpCode.CLOSURE, callReg, functionIndex);
+				this.emitFunctionCode(callReg, { kind: 'proto', protoIndex: functionIndex });
 			}
 			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			// Publish only after a successful return, independently of the export.
@@ -1910,7 +1894,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					reservation = Math.max(reservation, this.maxStack);
 					continue;
 				}
-				const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+				const proto = instruction.boundFunctionProto;
 				if (proto === undefined) continue;
 				for (const capture of this.program.protos[proto].upvalueDescs) {
 					if (capture.inStack) reservation = Math.max(reservation, capture.index + 1);
@@ -1984,9 +1968,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (instr.format === 'ABx') {
 				const bxWidthValue = instr.b;
 				const forceWide = isConstBxOp(instr.op)
-					|| instr.op === OpCode.CLOSURE
-					|| isGlobalSlotOp(instr.op)
-					|| instr.symbolicReloc !== undefined;
+					|| isGlobalSlotOp(instr.op);
 				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 				const bxWide = isSignedBxOp(instr.op)
 					? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
@@ -2130,14 +2112,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				continue;
 			}
 			if (instr.format === 'ABx') {
-				// An unresolved static binding is a CLOSURE with a symbol relocation,
-				// not a constant pool load in the executable.
-				const op = instr.symbolicReloc === undefined ? instr.op : OpCode.CLOSURE;
-				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS,
-					op === OpCode.CLOSURE ? CLOSURE_DESTINATION_EXT_BITS : 0, hasWide);
+				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+				const operand = instr.symbolicReloc === undefined ? instr.b : this.program.codeFunctionRelocIndex(instr.symbolicReloc);
 				const bxSplit = isSignedBxOp(instr.op)
-					? splitSignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
-					: splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
+					? splitSignedOperand(operand, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
+					: splitUnsignedOperand(operand, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 				if (hasWide) {
 					writeInstruction(
 						code,
@@ -2145,43 +2124,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 						OpCode.WIDE,
 						(instr.a >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND,
 						bxSplit.wide,
-						op === OpCode.CLOSURE ? instr.a >>> CLOSURE_DESTINATION_EXT_SHIFT : 0,
+						0,
 					);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 				finalRanges[cursor] = range;
 				cursor += 1;
 				if (isConstBxOp(instr.op)) {
-					if (instr.symbolicReloc) {
-						switch (instr.symbolicReloc.kind) {
-							case 'module_init':
-								constRelocs.push({
-									wordIndex: instrWordIndex[index],
-									kind: instr.symbolicReloc.kind,
-									symbol: instr.symbolicReloc.symbol,
-								});
-								break;
-							case 'export_proto':
-								constRelocs.push({
-									wordIndex: instrWordIndex[index],
-									kind: instr.symbolicReloc.kind,
-									path: instr.symbolicReloc.path,
-									exportPathKey: instr.symbolicReloc.exportPathKey,
-								});
-								break;
-							case 'bios_function':
-								constRelocs.push({
-									wordIndex: instrWordIndex[index],
-									kind: instr.symbolicReloc.kind,
-									importIndex: instr.symbolicReloc.importIndex,
-								});
-								break;
-						}
-					} else {
-						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
-					}
+					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: operand });
 				} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
 					constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', objectSlot: instr.b });
 				} else if (isGlobalSlotOp(instr.op)) {
@@ -3054,12 +3006,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
-	private emitModuleFunctionTargetLoad(symbol: ModuleFunctionTarget, target: number): void {
-		// Compile-time function exports use a link-time symbol path that the linker
-		// rewrites to CLOSURE(proto). Dynamic calls load their live table field instead.
-		this.emitABx(OpCode.LOADK, target, 0, symbol);
-	}
-
 	private emitModuleSlotRelocLoad(slotName: string, target: number): void {
 		const access = this.program.resolveModuleStorageAccess(slotName);
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
@@ -3237,11 +3183,26 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitLocalFunctionValue(target: number, proto: number): void {
-		if (this.program.protos[proto].upvalueDescs.length === 0) {
-			this.emitABx(OpCode.CLOSURE, target, proto);
-			return;
-		}
+		if (this.staticCallTargetScope && this.program.protoHasNoUpvalues(proto))
+			throw new Error(`Static function export '${this.protoId}' cannot allocate a runtime Closure.`);
 		this.emitFunctionBinding(target, { proto });
+	}
+
+	private emitFunctionCode(target: number, binding: ProgramCodeFunctionTarget): void {
+		if (target <= MAX_ABX_REGISTER_A) {
+			this.emitABx(OpCode.LOADK, target, 0, binding);
+		} else {
+			this.emitRelocatedPoolLoad(target, this.program.codeFunctionRelocIndex(binding));
+		}
+	}
+
+	private emitRelocatedPoolLoad(target: number, constant: number): void {
+		if (target <= MAX_ABX_REGISTER_A) {
+			this.emitABx(OpCode.LOADK, target, constant);
+		} else {
+			this.emitLoadConst(target, integerConstant(constant));
+			this.emitABC(OpCode.LOADKR, target, target, 0);
+		}
 	}
 
 	private emitFunctionBinding(target: number, source: { proto: number } | { address: LuaExpression }): void {
@@ -3251,13 +3212,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const base = target >= this.localCount && target === tempBase - 1 ? target : this.allocTemp();
 		const argument = this.allocTemp();
 		if ('proto' in source) {
-			const constant = this.program.functionAddrRelocIndex(source.proto);
-			if (argument <= MAX_ABX_REGISTER_A) {
-				this.emitABx(OpCode.LOADK, argument, constant);
-			} else {
-				this.emitLoadConst(argument, integerConstant(constant));
-				this.emitABC(OpCode.LOADKR, argument, argument, 0);
-			}
+			this.emitRelocatedPoolLoad(argument, this.program.functionAddrRelocIndex(source.proto));
 		} else {
 			this.compileExpressionInto(source.address, argument, 1);
 		}
@@ -3432,6 +3387,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		resultCount: number,
 		protoIdHint: string | null = null,
 		functionDisplayNameHint: string | null = null,
+		immutableBinding = false,
 	): number | null {
 		let closureProtoIndex: number | null = null;
 		this.withRange(this.semantics.locations.range(expression.span), () => {
@@ -3441,7 +3397,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					: buildProtoId(this.protoId, protoIdHint);
 				const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
-				this.emitLocalFunctionValue(target, closureProtoIndex);
+				if (this.rawSystemCode && immutableBinding && this.program.protoHasNoUpvalues(closureProtoIndex)) {
+					// The fixed System vector verifier checks the linked callee
+					// before any reset or exception can enter it.
+					this.emitFunctionCode(target, { kind: 'proto', protoIndex: closureProtoIndex });
+				} else {
+					this.emitLocalFunctionValue(target, closureProtoIndex);
+				}
 				return;
 			}
 			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -3945,7 +3907,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const name = decl.name;
 			const target = this.declareLocalFromDecl(decl, this.semantics.locations.range(names[0].span));
 			const hint = this.createLocalFunctionHint(name);
-			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint, name);
+			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint, name, true);
 			(this.localBindings.get(decl.id) as LocalBinding).constClosureProtoIndex = closureProtoIndex;
 			if (closureProtoIndex || closureProtoIndex === 0) {
 				this.program.markStaticClosureProto(closureProtoIndex);
@@ -3991,6 +3953,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					1,
 					hint,
 					namedFunction ? name : null,
+					attributes[i] === 'const',
 				);
 				if (i < names.length) {
 					this.initializerFlags[i] |= INIT_HAS_VALUE_REG;
@@ -4037,6 +4000,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 						resultCount,
 						lastHint,
 						lastIsNamedFunction ? lastName : null,
+						attributes[lastIndex] === 'const',
 					);
 					if (lastHasName) {
 						this.initializerFlags[lastIndex] |= INIT_HAS_VALUE_REG;
@@ -5997,9 +5961,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const methodKey = this.program.constIndex(methodName);
 			this.emitSelf(callBase, callBase, methodKey);
 		} else if (moduleCallTarget !== undefined) {
-			this.emitModuleFunctionTargetLoad(moduleCallTarget, callBase);
+			this.emitFunctionCode(callBase, moduleCallTarget);
 		} else if (ownStaticFunctionExportTarget !== undefined) {
-			this.emitModuleFunctionTargetLoad(ownStaticFunctionExportTarget, callBase);
+			this.emitFunctionCode(callBase, ownStaticFunctionExportTarget);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
@@ -6121,7 +6085,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const slotName = buildModuleExportSlotName(SYSTEM_STARTUP_MODULE_PATH, [entry.symbol]);
 			this.program.recordModuleExport(SYSTEM_STARTUP_MODULE_PATH, entry.symbol, slotName);
 			this.program.recordExportProto(slotName, buildModuleProtoId(entry.path));
-			this.emitModuleFunctionTargetLoad({ kind: 'export_proto', path: SYSTEM_STARTUP_MODULE_PATH, exportPathKey: entry.symbol }, target);
+			this.emitFunctionCode(target, { kind: 'export_proto', path: SYSTEM_STARTUP_MODULE_PATH, exportPathKey: entry.symbol });
 		} else {
 			if (operation === 'code_function') {
 				throw new Error('blua32.code_function requires a callable System startup symbol.');
@@ -6847,6 +6811,7 @@ export function compileLuaChunkToProgram(
 			// A hardware entry is a body, not an initializer publishing a module value.
 			moduleCompileInfo: reset || irq || exception ? undefined : moduleInfo,
 			exceptionEntry: irq || exception,
+			rawSystemCode: reset || irq || exception,
 		});
 		try {
 			builder.compileChunk(module.chunk);
@@ -6938,7 +6903,6 @@ export function compileLuaChunkToProgram(
 		program,
 		metadata: generatedMetadata,
 		imageConstRelocs,
-		biosFunctionConstRelocs,
 		constValueRelocs,
 		rodataConstRelocs,
 		data,
@@ -6986,7 +6950,6 @@ export function compileLuaChunkToProgram(
 		moduleProtoMap: program.moduleProtoMap,
 		staticModulePaths,
 		constRelocs: imageConstRelocs,
-		biosFunctionConstRelocs,
 		constValueRelocs,
 		rodataConstRelocs,
 		data,

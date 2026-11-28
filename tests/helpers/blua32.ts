@@ -255,11 +255,6 @@ function createRawTestBlua32Object(
 		lexicalDeclarations: [],
 		upvalueBindingsByProto: functions.map(() => []),
 	};
-	const code = source.closureRelocations ? source.text.slice() : source.text;
-	for (const relocation of source.closureRelocations ?? []) {
-		if ('functionIndex' in relocation)
-			rewriteResolvedABx(code, relocation.wordIndex, OpCode.CLOSURE, relocation.functionIndex);
-	}
 	const objectBase = {
 		vectors: {
 			resetProtoIndex: source.startupFunctionIndex ?? 0,
@@ -270,7 +265,7 @@ function createRawTestBlua32Object(
 		},
 		sections: {
 			text: {
-				code,
+				code: source.text,
 				protos: functions,
 			},
 			rodata: {
@@ -308,10 +303,7 @@ function createRawTestBlua32Object(
 	const object: ProgramCartObjectImage = {
 		domain,
 		...objectBase,
-		link: {
-			...link,
-			biosFunctionConstRelocs: [],
-		},
+		link,
 	};
 	return { object, metadata };
 }
@@ -339,8 +331,8 @@ function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source
 	}
 	for (let index = 0; index < relocations.length; index += 1) {
 		const relocation = relocations[index];
-		if ('functionIndex' in relocation) continue;
-		const address = 'functionAddress' in relocation ? relocation.functionAddress : system.symbols.functionAddresses[relocation.systemFunctionIndex];
+		const address = 'functionIndex' in relocation ? linked.symbols.functionAddresses[relocation.functionIndex]
+			: 'functionAddress' in relocation ? relocation.functionAddress : system.symbols.functionAddresses[relocation.systemFunctionIndex];
 		rewriteResolvedABx(text, relocation.wordIndex, OpCode.CLOSURE, address >>> 4);
 	}
 }
@@ -471,7 +463,8 @@ export function linkTestBlua32Pair(
 		systemCompiled.metadata,
 		SYSTEM_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
-		cartCompiled.biosFunctionConstRelocs.length !== 0 ? BIOS_FUNCTION_EXPORTS : [],
+		cartCompiled.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'bios_function')
+			? BIOS_FUNCTION_EXPORTS : [],
 	);
 	return {
 		systemImage: system.layout,

@@ -14,7 +14,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
@@ -52,8 +52,7 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const textAddress = image.header.textAddress;
 			for (let pc = textAddress; pc < textAddress + image.textBytes.length;) {
 				const instruction = decodeBlua32InstructionAtPc(image.textBytes, textAddress, pc);
-				assert.ok(instruction.op !== OpCode.CLOSURE || (instruction.c & CLOSURE_ADDRESS_REGISTER_FLAG) === 0,
-					'stock System firmware does not issue the register-address CLOSURE');
+				assert.notEqual(instruction.op, OpCode.CLOSURE, 'packaged stock firmware does not execute CLOSURE');
 				pc = instruction.pc + INSTRUCTION_BYTES;
 			}
 			const { dataAddress, dataByteCount, bssAddress: systemBssAddress, bssByteCount: systemBssByteCount } = image.header;
@@ -138,10 +137,16 @@ halt_until_irq
 			const other = writeTestBlua32Rom(slot0), selected = writeTestBlua32Rom(slot1);
 			const captured = new Set(slot1.layout.functions.filter(fn => fn.upvalues.length !== 0).map(fn => fn.address));
 			assert.equal(captured.size, 2);
-			const immutable = slot1.layout.functions.filter(fn => (fn.flags & BLUA32_FUNCTION_CODE) !== 0);
-			assert.equal(immutable.length, 1, 'ordinary lexical factories are not immutable cartridge symbols');
+			const { functionIds, functionDisplayNames } = slot1.symbols.metadata;
+			const clamp = slot1.layout.functions[functionIds.findIndex(id => id.startsWith('module:' + clampPath + '/module/static:'))];
+			assert.ok(clamp && (clamp.flags & BLUA32_FUNCTION_CODE) !== 0);
+			const factory = functionIds[functionDisplayNames.indexOf('make_uncaptured')];
+			const factoryBody = slot1.layout.functions.filter((_, i) => functionIds[i] === factory || functionIds[i].startsWith(factory + '/'));
+			assert.equal(factoryBody.length, 2);
+			assert.ok(factoryBody.every(fn => (fn.flags & BLUA32_FUNCTION_CODE) === 0),
+				'ordinary lexical factories are not immutable cartridge symbols');
 			const literal = slot1.layout.constants.findIndex(c => typeof c === 'object' && c !== null
-				&& c.kind === 'code_function' && c.word === immutable[0].address);
+				&& c.kind === 'code_function' && c.word === clamp.address);
 			const systemLiteral = slot1.layout.constants.findIndex(c => typeof c === 'object' && c !== null
 				&& c.kind === 'code_function' && c.word === biosImports.functions[0].functionAddress);
 			assert.ok(literal >= 0);
@@ -152,17 +157,13 @@ halt_until_irq
 			let bindings = 0, staticLoads = 0, systemLoads = 0;
 			for (let pc = firstPc; pc < lastPc;) {
 				const instruction = decodeBlua32InstructionAtPc(selected, CART_ROM_BASE, pc);
-				if (instruction.op === OpCode.CLOSURE) {
-					assert.equal(captured.has(instruction.bx * BLUA32_FUNCTION_ALIGNMENT), false);
-					assert.notEqual(instruction.bx * BLUA32_FUNCTION_ALIGNMENT, immutable[0].address);
-					assert.notEqual(instruction.bx * BLUA32_FUNCTION_ALIGNMENT, biosImports.functions[0].functionAddress);
-				}
+				assert.notEqual(instruction.op, OpCode.CLOSURE, 'packaged cartridge code does not execute CLOSURE');
 				if (instruction.op === OpCode.LOADK && instruction.bx === literal) ++staticLoads;
 				if (instruction.op === OpCode.LOADK && instruction.bx === systemLiteral) ++systemLoads;
 				if (instruction.op === OpCode.SVC && instruction.b === 2) bindings += 1;
 				pc = instruction.pc + INSTRUCTION_BYTES;
 			}
-			assert.equal(bindings, captured.size);
+			assert.ok(bindings >= captured.size + factoryBody.length, 'both captured and fresh capture-free objects use the firmware binding');
 			assert.equal(staticLoads, 2, 'both ordinary static calls share one immutable literal');
 			assert.equal(systemLoads, 1, 'the selected cartridge calls the public System export directly');
 			// Socket 0 has a distinct operand record but no startup vector.

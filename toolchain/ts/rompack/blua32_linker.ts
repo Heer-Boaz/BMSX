@@ -1,14 +1,12 @@
 import { textToByteString } from '../../../machine/ts/common/byte_string';
 import { integerConstant, type NumberConstant } from '../lua/number';
-import type { LinkedProgramConstant, ProgramConstant } from '../lua/compiler/program';
+import type { LinkedProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
-	CLOSURE_ADDRESS_REGISTER_WIDE_C,
-	CLOSURE_DESTINATION_EXT_MASK,
 	INSTRUCTION_BYTES,
 	MAX_BX_BITS,
 	MAX_EXT_BX,
@@ -69,7 +67,6 @@ import {
 	decodeBlua32Image,
 	type Blua32ImageLayout,
 } from './blua32_image';
-import type { Blua32CodeFunctionPlan } from './blua32_reset_code';
 import {
 	type Blua32LexicalDeclarationDebug,
 	type Blua32DebugMetadata,
@@ -82,10 +79,8 @@ import {
 import type { LuaSourceCorrespondence } from '../lua/semantic/source_correspondence';
 import type {
 	ProgramBssSymbol,
-	ProgramBiosFunctionConstReloc,
 	ProgramConstValueReloc,
 	ProgramCartObjectImage,
-	ProgramObjectImage,
 	ProgramDataSymbol,
 	ProgramRodataSymbol,
 	ProgramStorageSymbol,
@@ -144,8 +139,6 @@ export type Blua32LinkBaseline = {
 	captureSources?: LuaSourceCorrespondence;
 };
 
-type ObjectConstant = ProgramConstant;
-
 type FunctionRecordLayout = {
 	protoIndexBySlot: number[];
 	functionIds: string[];
@@ -172,7 +165,6 @@ type ImageBuildInput = ImageBuildInputBase & (
 		domain: 'system';
 		object: ProgramSystemObjectImage;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
-		codeFunctions?: Blua32CodeFunctionPlan;
 	}
 	| {
 		domain: 'cart';
@@ -349,7 +341,7 @@ function buildStaticLayoutToken(
 }
 
 function resolveConstValueRelocation(
-	reloc: ProgramConstValueReloc,
+	reloc: Exclude<ProgramConstValueReloc, { kind: 'code_function' }>,
 	functionAddresses: ReadonlyArray<number>,
 	textAddress: number,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
@@ -378,38 +370,6 @@ function resolveConstValueRelocation(
 	}
 }
 
-function resolveConstValues(
-	constants: ReadonlyArray<ObjectConstant>,
-	relocs: ReadonlyArray<ProgramConstValueReloc>,
-	functionAddresses: ReadonlyArray<number>,
-	textAddress: number,
-	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
-	dataAddress: number,
-	dataLoadAddress: number,
-	bssSymbols: ReadonlyArray<ProgramBssSymbol>,
-	bssAddress: number,
-	rodataSymbols: ReadonlyArray<ProgramRodataSymbol>,
-	rodataAddress: number,
-): ObjectConstant[] {
-	const resolved = constants.slice();
-	for (let index = 0; index < relocs.length; index += 1) {
-		const reloc = relocs[index];
-		resolved[reloc.constIndex] = resolveConstValueRelocation(
-			reloc,
-			functionAddresses,
-			textAddress,
-			dataSymbols,
-			dataAddress,
-			dataLoadAddress,
-			bssSymbols,
-			bssAddress,
-			rodataSymbols,
-			rodataAddress,
-		);
-	}
-	return resolved;
-}
-
 export function rewriteResolvedABx(code: Uint8Array, wordIndex: number, op: OpCode, value: number): void {
 	const word = readInstructionWord(code, wordIndex);
 	const wideWord = readInstructionWord(code, wordIndex - 1);
@@ -433,35 +393,6 @@ export function rewriteResolvedABx(code: Uint8Array, wordIndex: number, op: OpCo
 		value & MAX_LOW_BX,
 		(value >> MAX_BX_BITS) & 0xff,
 	);
-}
-
-function rewriteLocalClosures(code: Uint8Array, functionAddresses: ReadonlyArray<number>, symbolLoads: ReadonlySet<number>): void {
-	const instructionCount = code.byteLength / INSTRUCTION_BYTES;
-	for (let wordIndex = 1; wordIndex < instructionCount; wordIndex += 1) {
-		const word = readInstructionWord(code, wordIndex);
-		if (((word >>> 18) & 0x3f) !== OpCode.CLOSURE || symbolLoads.has(wordIndex)) {
-			continue;
-		}
-		const wideWord = readInstructionWord(code, wordIndex - 1);
-		if (((wideWord >>> 18) & 0x3f) !== OpCode.WIDE) {
-			throw new Error('BLua32 closure instruction has no WIDE word.');
-		}
-		if ((wideWord & CLOSURE_ADDRESS_REGISTER_WIDE_C) !== 0) {
-			continue;
-		}
-		const functionIndex = (((wideWord >>> 6) & 0x3f) << BASE_BX_BITS)
-			| ((word >>> 24) << MAX_BX_BITS)
-			| (word & MAX_LOW_BX);
-		rewriteResolvedABx(code, wordIndex, OpCode.CLOSURE, functionAddresses[functionIndex] >> 4);
-	}
-}
-
-function moduleAddressesByPath(entries: ReadonlyArray<Blua32ModuleFunction>): Map<string, number> {
-	const addresses = new Map<string, number>();
-	for (let index = 0; index < entries.length; index += 1) {
-		addresses.set(entries[index].path, entries[index].address);
-	}
-	return addresses;
 }
 
 function layoutFunctionRecords(
@@ -574,105 +505,17 @@ function localFunctionSlotsBySymbol(
 	return slots;
 }
 
-function planNamedCodeFunctionLoads(
-	object: ProgramObjectImage,
-	functionLayout: FunctionRecordLayout,
-	slotBySymbol: ReadonlyMap<string, number>,
-	directCode: Blua32CodeFunctionPlan | undefined,
-): Blua32CodeFunctionPlan | undefined {
-	const targets = new Set(directCode?.targets), loads = new Map(directCode?.loads);
-	const namedLoads = new Map<number, number>(), unencodable = new Set<number>();
-	const { code, protos } = object.sections.text;
-	for (const reloc of object.link.constRelocs) {
-		// Only the dependency-analyzed named exports have symbol references.
-		// STATIC also appears on lexical const declarations executed repeatedly.
-		if (reloc.kind !== 'export_proto') continue;
-		const slot = slotBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
-		if (slot === undefined) continue; // The relocation reports the missing symbol.
-		const proto = protos[functionLayout.protoIndexBySlot[slot]];
-		if (!proto.staticClosure || proto.upvalueDescs.length !== 0) continue;
-		const prefix = readInstructionWord(code, reloc.wordIndex - 1);
-		if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) {
-			unencodable.add(slot);
-		} else {
-			namedLoads.set(reloc.wordIndex, slot);
-		}
-	}
-	// No mixture of code references and Closure materializations for one
-	// symbol. CLOSURE can name a wider destination than LOADK.
-	for (const [word, slot] of namedLoads) {
-		if (!unencodable.has(slot)) {
-			targets.add(slot);
-			loads.set(word, slot);
-		}
-	}
-	return targets.size === 0 ? undefined : { targets, loads };
-}
-
-function rewriteImageRelocation(
-	code: Uint8Array,
-	reloc: ProgramImageConstReloc,
-	localFunctionSlotBySymbol: ReadonlyMap<string, number>,
-	functionAddresses: ReadonlyArray<number>,
-	localModuleAddressByPath: ReadonlyMap<string, number>,
-	globalSlotByObjectSlot: Uint32Array,
-	systemGlobalSlotByObjectSlot: Uint32Array,
-): void {
-	switch (reloc.kind) {
-		case 'gl':
-		case 'sys': {
-			const word = readInstructionWord(code, reloc.wordIndex);
-			rewriteResolvedABx(
-				code,
-				reloc.wordIndex,
-				((word >>> 18) & 0x3f) as OpCode,
-				reloc.kind === 'gl'
-					? globalSlotByObjectSlot[reloc.objectSlot]
-					: systemGlobalSlotByObjectSlot[reloc.objectSlot],
-			);
-			break;
-		}
-		case 'export_proto': {
-			const symbol = `${reloc.path}:${reloc.exportPathKey}`;
-			const slot = localFunctionSlotBySymbol.get(programModuleExportKey(reloc.path, reloc.exportPathKey));
-			if (slot === undefined) {
-				throw new Error(`BLua32 function symbol '${symbol}' is not part of this executable image.`);
-			}
-			rewriteResolvedABx(code, reloc.wordIndex, OpCode.CLOSURE, functionAddresses[slot] >> 4);
-			break;
-		}
-		case 'module_init': {
-			const localAddress = localModuleAddressByPath.get(reloc.symbol);
-			if (localAddress === undefined) {
-				throw new Error(`BLua32 module initializer '${reloc.symbol}' is not part of this executable image.`);
-			}
-			rewriteResolvedABx(code, reloc.wordIndex, OpCode.CLOSURE, localAddress >> 4);
-			break;
-		}
-	}
-}
-
 function rewriteImageRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramImageConstReloc>,
-	codeLoads: ReadonlyMap<number, number>,
-	localFunctionSlotBySymbol: ReadonlyMap<string, number>,
-	functionAddresses: ReadonlyArray<number>,
-	localModuleAddressByPath: ReadonlyMap<string, number>,
 	globalSlotByObjectSlot: Uint32Array,
 	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	for (const reloc of relocs) {
-		if (codeLoads.has(reloc.wordIndex)) continue;
-		rewriteImageRelocation(
-			code,
-			reloc,
-			localFunctionSlotBySymbol,
-			functionAddresses,
-			localModuleAddressByPath,
-			globalSlotByObjectSlot,
-			systemGlobalSlotByObjectSlot,
-		);
+		if (reloc.kind !== 'gl' && reloc.kind !== 'sys') continue;
+		const word = readInstructionWord(code, reloc.wordIndex);
+		rewriteResolvedABx(code, reloc.wordIndex, ((word >>> 18) & 0x3f) as OpCode,
+			reloc.kind === 'gl' ? globalSlotByObjectSlot[reloc.objectSlot] : systemGlobalSlotByObjectSlot[reloc.objectSlot]);
 	}
 }
 
@@ -697,23 +540,6 @@ function layoutGlobalNames(
 		slotByObjectSlot[objectSlot] = slot;
 	}
 	return { names, slotByObjectSlot };
-}
-
-function rewriteBiosFunctionRelocations(
-	code: Uint8Array,
-	relocs: ReadonlyArray<ProgramBiosFunctionConstReloc>,
-	imports: ReadonlyArray<Blua32BiosFunctionImport>,
-	codeLoads: ReadonlyMap<number, number>,
-): void {
-	for (const reloc of relocs) {
-		if (codeLoads.has(reloc.wordIndex)) continue;
-		rewriteResolvedABx(
-			code,
-			reloc.wordIndex,
-			OpCode.CLOSURE,
-			imports[reloc.importIndex].functionAddress >> 4,
-		);
-	}
 }
 
 function buildImage(input: ImageBuildInput & { domain: 'system' }): LinkedSystemBlua32Image;
@@ -756,32 +582,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const localFunctionSlotById = new Map<string, number>();
 	for (const [slot, id] of functionLayout.functionIds.entries()) localFunctionSlotById.set(id, slot);
 	const localFunctionSlotBySymbol = localFunctionSlotsBySymbol(rodata.moduleExports, object.link.symbols, localFunctionSlotById);
-	const codeFunctions = planNamedCodeFunctionLoads(object, functionLayout, localFunctionSlotBySymbol,
-		input.domain === 'system' ? input.codeFunctions : undefined);
-	const codeLoads = new Map<number, number>();
-	const codeConstantSlots = new Map<number, number>();
-	const biosCodeConstantSlots = new Map<number, number>();
-	if (codeFunctions !== undefined) {
-		const used = new Set(codeFunctions.loads.values());
-		for (const slot of codeFunctions.targets) {
-			if (used.has(slot)) codeConstantSlots.set(slot, rodata.constPool.length + codeConstantSlots.size);
-		}
-		for (const [word, slot] of codeFunctions.loads) codeLoads.set(word, codeConstantSlots.get(slot)!);
-	}
-	if (input.domain === 'cart') {
-		for (const reloc of input.object.link.biosFunctionConstRelocs) {
-			// A wide destination uses CLOSURE's larger register encoding.
-			// The published System target still yields the same CodeFunction.
-			const prefix = readInstructionWord(text.code, reloc.wordIndex - 1);
-			if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) continue;
-			let constant = biosCodeConstantSlots.get(reloc.importIndex);
-			if (constant === undefined) {
-				constant = rodata.constPool.length + codeConstantSlots.size + biosCodeConstantSlots.size;
-				biosCodeConstantSlots.set(reloc.importIndex, constant);
-			}
-			codeLoads.set(reloc.wordIndex, constant);
-		}
-	}
 
 	let offset = BLUA32_IMAGE_HEADER_SIZE;
 	let rodataOffset = 0;
@@ -826,7 +626,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			: text.protos[protoIndex].upvalueDescs.length;
 		upvalueByteCount += upvalueCount * BLUA32_UPVALUE_RECORD_SIZE;
 	}
-	const constantBytes = (rodata.constPool.length + codeConstantSlots.size + biosCodeConstantSlots.size) * BLUA32_CONSTANT_RECORD_SIZE;
+	const constantBytes = rodata.constPool.length * BLUA32_CONSTANT_RECORD_SIZE;
 	const globalNameBytes = globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const systemGlobalNameBytes = systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const tableBytes = upvalueByteCount + constantBytes + globalNameBytes + systemGlobalNameBytes;
@@ -862,12 +662,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const functionTableAddress = input.loadAddress + functionTableOffset;
 	const functionAddresses = new Array<number>(functionCount);
 	const functionAddressByProtoIndex = new Array<number>(text.protos.length);
+	const functionSlotByProtoIndex = new Array<number>(text.protos.length);
 	for (let slot = 0; slot < functionCount; slot += 1) {
 		const address = functionTableAddress + slot * BLUA32_FUNCTION_RECORD_SIZE;
 		functionAddresses[slot] = address;
 		const protoIndex = functionLayout.protoIndexBySlot[slot];
 		if (protoIndex >= 0) {
 			functionAddressByProtoIndex[protoIndex] = address;
+			functionSlotByProtoIndex[protoIndex] = slot;
 		}
 	}
 	const moduleFunctions = new Array<Blua32ModuleFunction>(rodata.moduleProtos.length);
@@ -875,7 +677,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		const entry = rodata.moduleProtos[index];
 		moduleFunctions[index] = { path: entry.path, address: functionAddressByProtoIndex[entry.protoIndex] };
 	}
-	const localModuleAddressByPath = moduleAddressesByPath(moduleFunctions);
 
 	const code = new Uint8Array(textByteCount);
 	code.set(text.code);
@@ -888,54 +689,36 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		writeInstruction(code, word + 1, OpCode.JMP, 0,
 			(back & MAX_LOW_BX) >>> MAX_OPERAND_BITS, back & MAX_LOW_OPERAND, back >>> MAX_BX_BITS);
 	}
-	const symbolLoads = new Set<number>();
-	for (const reloc of object.link.constRelocs) {
-		if (reloc.kind === 'export_proto' || reloc.kind === 'module_init') symbolLoads.add(reloc.wordIndex);
-	}
-	if (input.domain === 'cart') {
-		for (const reloc of input.object.link.biosFunctionConstRelocs) symbolLoads.add(reloc.wordIndex);
-	}
-	rewriteLocalClosures(code, functionAddressByProtoIndex, symbolLoads);
-	rewriteImageRelocations(
-		code,
-		input.object.link.constRelocs,
-		codeLoads,
-		localFunctionSlotBySymbol,
-		functionAddresses,
-		localModuleAddressByPath,
-		globalNameLayout.slotByObjectSlot,
-		systemGlobalNameLayout.slotByObjectSlot,
-	);
-	if (input.domain === 'cart') {
-		rewriteBiosFunctionRelocations(
-			code,
-			input.object.link.biosFunctionConstRelocs,
-			input.biosImports,
-			codeLoads,
-		);
-	}
-	for (const [wordIndex, constant] of codeLoads) rewriteResolvedABx(code, wordIndex, OpCode.LOADK, constant);
+	rewriteImageRelocations(code, object.link.constRelocs, globalNameLayout.slotByObjectSlot, systemGlobalNameLayout.slotByObjectSlot);
 
 	const rodataAddress = input.loadAddress + rodataOffset;
 	const dataLoadAddress = input.loadAddress + dataLoadOffset;
-	const constants: LinkedProgramConstant[] = resolveConstValues(
-		rodata.constPool,
-		object.link.constValueRelocs,
-		functionAddressByProtoIndex,
-		input.loadAddress + textOffset,
-		data.symbols,
-		input.dataAddress,
-		dataLoadAddress,
-		bss.symbols,
-		input.bssAddress,
-		rodata.symbols,
-		rodataAddress,
-	);
-	for (const target of codeConstantSlots.keys())
-		constants.push({ kind: 'code_function', word: functionAddresses[target] });
-	if (input.domain === 'cart') {
-		for (const target of biosCodeConstantSlots.keys())
-			constants.push({ kind: 'code_function', word: input.biosImports[target].functionAddress });
+	const constants: LinkedProgramConstant[] = rodata.constPool.slice();
+	const codeTargets = new Set<number>();
+	const moduleSlots = new Map(rodata.moduleProtos.map(module => [module.path, functionSlotByProtoIndex[module.protoIndex]]));
+	for (const reloc of object.link.constValueRelocs) {
+		if (reloc.kind !== 'code_function') {
+			constants[reloc.constIndex] = resolveConstValueRelocation(reloc, functionAddressByProtoIndex,
+				input.loadAddress + textOffset, data.symbols, input.dataAddress, dataLoadAddress, bss.symbols,
+				input.bssAddress, rodata.symbols, rodataAddress);
+			continue;
+		}
+		const target = reloc.target;
+		if (target.kind === 'bios_function') {
+			if (input.domain !== 'cart') throw new Error('A System image cannot import BIOS functions.');
+			constants[reloc.constIndex] = { kind: 'code_function', word: input.biosImports[target.importIndex].functionAddress };
+			continue;
+		}
+		const slot = target.kind === 'proto' ? functionSlotByProtoIndex[target.protoIndex]
+			: target.kind === 'export_proto' ? localFunctionSlotBySymbol.get(programModuleExportKey(target.path, target.exportPathKey))
+				: moduleSlots.get(target.symbol);
+		if (slot === undefined) {
+			const symbol = target.kind === 'module_init' ? target.symbol : target.kind === 'export_proto'
+				? `${target.path}:${target.exportPathKey}` : target.protoIndex;
+			throw new Error(`BLua32 code symbol '${symbol}' is not part of this executable image.`);
+		}
+		constants[reloc.constIndex] = { kind: 'code_function', word: functionAddresses[slot] };
+		codeTargets.add(slot);
 	}
 	const rodataByteCount = rodata.bytes.byteLength;
 	const rodataBytes = rodata.bytes.slice();
@@ -980,8 +763,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			? input.previous!.image.functions[slot].upvalues
 			: currentProto.upvalueDescs;
 		const publicCode = input.domain === 'system' && slot < input.biosExports.length;
-		if (publicCode && (!record.staticClosure || upvalues.length !== 0))
-			throw new Error(`BIOS public function '${functionLayout.functionIds[slot]}' must be immutable and capture-free.`);
+		const immutableCode = publicCode || codeTargets.has(slot);
+		if ((publicCode && !record.staticClosure) || (immutableCode && upvalues.length !== 0))
+			throw new Error(`BLua32 code function '${functionLayout.functionIds[slot]}' must be immutable and capture-free.`);
 		const recordOffset = functionTableOffset + slot * BLUA32_FUNCTION_RECORD_SIZE;
 		writeLE32(
 			bytes,
@@ -997,8 +781,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			bytes,
 			recordOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
 			(record.isVararg ? BLUA32_FUNCTION_VARARG : 0)
-				| (record.staticClosure ? BLUA32_FUNCTION_STATIC : 0)
-				| (publicCode || codeFunctions?.targets.has(slot) ? BLUA32_FUNCTION_CODE : 0),
+				| (record.staticClosure || immutableCode ? BLUA32_FUNCTION_STATIC : 0)
+				| (immutableCode ? BLUA32_FUNCTION_CODE : 0),
 		);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, input.loadAddress + upvalueOffset);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, upvalues.length);
@@ -1100,10 +884,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		functionDefinitions[slot] = input.metadata.functionDefinitionsByProto[protoIndex];
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		const resumePoints = input.metadata.resumePointsByProto[protoIndex];
-		const firstWord = text.protos[protoIndex].entryPC / INSTRUCTION_BYTES;
-		resumePointsByFunction[slot] = codeLoads.size === 0 ? resumePoints : resumePoints.map(point =>
-			point.op === OpCode.CLOSURE && codeLoads.has(firstWord + point.wordOffset + 1)
-				? { ...point, op: OpCode.LOADK } : point);
+		resumePointsByFunction[slot] = resumePoints;
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];
 		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
@@ -1205,7 +986,6 @@ export function linkSystemBlua32Image(
 	ramByteCount: number,
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>,
 	previous?: Blua32LinkBaseline,
-	codeFunctions?: Blua32CodeFunctionPlan,
 ): LinkedSystemBlua32Image {
 	const dataAddress = DYNAMIC_RAM_BASE;
 	const bssAddress = dataAddress + object.sections.data.bytes.byteLength;
@@ -1225,7 +1005,6 @@ export function linkSystemBlua32Image(
 		systemGlobalNames: object.link.symbols.systemGlobalNames,
 		biosExports,
 		previous,
-		codeFunctions,
 	});
 }
 

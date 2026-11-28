@@ -8,7 +8,7 @@ import { hashText } from '../../machine/ts/common/hash';
 
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type {
-	ProgramBiosFunctionConstReloc,
+	ProgramConstValueReloc,
 	ProgramCartObjectImage,
 	ProgramImageConstReloc,
 	ProgramObjectImage,
@@ -186,7 +186,7 @@ function makeCartObject(
 	words: ReadonlyArray<EncodedWord>,
 	constPool: readonly ProgramConstant[] = [],
 	constRelocs: ReadonlyArray<ProgramImageConstReloc> = [],
-	biosFunctionConstRelocs: ReadonlyArray<ProgramBiosFunctionConstReloc> = [],
+	constValueRelocs: ReadonlyArray<ProgramConstValueReloc> = [],
 ): { object: ProgramCartObjectImage; metadata: ProgramMetadata } {
 	const system = makeSystemObject(words, constPool, constRelocs);
 	return {
@@ -195,7 +195,7 @@ function makeCartObject(
 			domain: 'cart',
 			link: {
 				...system.object.link,
-				biosFunctionConstRelocs: Array.from(biosFunctionConstRelocs),
+				constValueRelocs: Array.from(constValueRelocs),
 			},
 		},
 		metadata: system.metadata,
@@ -529,13 +529,13 @@ test('optimizer instruction replacement discards obsolete symbolic relocations',
 	assert.equal(exportLoad.symbolicReloc, undefined);
 });
 
-test('BLua32 linker preserves a local CLOSURE operand and binds a public BIOS call as immutable code', () => {
+test('BLua32 linker resolves local and imported callable values in the constant pool', () => {
 	const system = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 1 },
+		{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	]);
+	], [integerConstant(0)]);
 	system.object.sections.text.protos = [
 		makeProto(0, 3),
 		makeProto(3, 1),
@@ -543,6 +543,7 @@ test('BLua32 linker preserves a local CLOSURE operand and binds a public BIOS ca
 	setFunctionIds(system.object, system.metadata, ['system/entry', 'system/export']);
 	system.object.link.symbols.exportProtoIdBySlot = { system__boot: 'system/export' };
 	system.metadata.exportProtoIdBySlot = { system__boot: 'system/export' };
+	system.object.link.constValueRelocs.push({ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } });
 	system.object.sections.rodata.moduleExports.push({
 		path: 'system/boot',
 		exportPathKey: '',
@@ -560,10 +561,8 @@ test('BLua32 linker preserves a local CLOSURE operand and binds a public BIOS ca
 	);
 	const importedFunctionAddress = linkedSystem.biosImports.functions[0].functionAddress;
 	assert.ok((linkedSystem.layout.functions[0].flags & BLUA32_FUNCTION_CODE) !== 0);
-	assert.equal(
-		decodeBx(linkedSystem.layout.textBytes, 1),
-		importedFunctionAddress >> 4,
-	);
+	assert.deepEqual(linkedSystem.layout.constants[decodeBx(linkedSystem.layout.textBytes, 1)],
+		{ kind: 'code_function', word: importedFunctionAddress });
 	assert.deepEqual(linkedSystem.biosImports.functions, [{
 		path: 'system/boot',
 		exportPathKey: '',
@@ -574,10 +573,7 @@ test('BLua32 linker preserves a local CLOSURE operand and binds a public BIOS ca
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 		{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	], [], [], [{
-		wordIndex: 1,
-		importIndex: 0,
-	}]);
+	], [integerConstant(0)], [], [{ constIndex: 0, kind: 'code_function', target: { kind: 'bios_function', importIndex: 0 } }]);
 	const linkedCart = linkCartBlua32Image(
 		linkedSystem.biosImports,
 		cart.object,
@@ -1362,11 +1358,12 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	const declarationSources = new Map([['entry', 'local captured<const> = 0']]);
 	const initial = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 2 },
+		{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	]);
+	], [integerConstant(0)]);
+	initial.object.link.constValueRelocs.push({ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 2 } });
 	initial.object.sections.text.protos = [
 		makeProto(0, 3),
 		makeProto(3, 1),
@@ -1387,11 +1384,12 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 
 	const changed = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 1 },
+		{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	]);
+	], [integerConstant(0)]);
+	changed.object.link.constValueRelocs.push({ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } });
 	changed.object.sections.text.protos = [
 		makeProto(0, 3),
 		makeProto(3, 1),
@@ -1422,7 +1420,8 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		linked.symbols.functionAddresses[3],
 		previous.symbols.functionAddresses[2] + BLUA32_FUNCTION_RECORD_SIZE,
 	);
-	assert.equal(decodeBx(linked.layout.textBytes, 1), linked.symbols.functionAddresses[2] >> 4);
+	assert.deepEqual(linked.layout.constants[decodeBx(linked.layout.textBytes, 1)],
+		{ kind: 'code_function', word: linked.symbols.functionAddresses[2] });
 	assert.equal(linked.layout.functions[1].staticClosure, false);
 	assert.deepEqual(linked.layout.functions[1].upvalues, [{ inStack: true, index: 0 }]);
 	assert.deepEqual(linked.symbols.metadata.upvalueBindingsByFunction[1], [0]);
@@ -1455,12 +1454,13 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 
 	const reinserted = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 2 },
+		{ op: OpCode.LOADK, a: 0, b: 0, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
-	]);
+	], [integerConstant(0)]);
+	reinserted.object.link.constValueRelocs.push({ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 2 } });
 	reinserted.object.sections.text.protos = [
 		makeProto(0, 3),
 		makeProto(3, 1),

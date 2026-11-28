@@ -115,7 +115,8 @@ return *counter, &counter
 		byteCount: 4,
 		alignment: 4,
 	}]);
-	assert.equal(image.link.constValueRelocs.every(reloc => reloc.kind === 'bss_addr'), true);
+	const storage = image.link.constValueRelocs.filter(reloc => reloc.kind !== 'code_function');
+	assert.ok(storage.length !== 0 && storage.every(reloc => reloc.kind === 'bss_addr'));
 
 	const result = runCold(source, { poison: (memory, linked) =>
 		memory.writeRamRecordWord(sectionAddress(linked.symbols, 'counter'), 0x11223344) });
@@ -270,10 +271,10 @@ return state.read()
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
-	assert.equal(image.link.constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'state'
-			&& reloc.exportPathKey === 'read',
+	assert.equal(image.link.constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'state'
+			&& reloc.target.exportPathKey === 'read',
 	), true);
 
 	const result = runCold(entrySource, { modules: [constModule('state', moduleSource)] });
@@ -292,10 +293,10 @@ return { read = read }
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
-	assert.equal(compiled.constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'state'
-			&& reloc.exportPathKey === 'read',
+	assert.equal(compiled.constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'state'
+			&& reloc.target.exportPathKey === 'read',
 	), true);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
 	assert.deepEqual(runCold(entrySource, { modules: [constModule('state', moduleSource)] }).values, [valueInteger(1)]);
@@ -358,10 +359,10 @@ return state.read_next()
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
-	assert.equal(image.link.constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'state'
-			&& reloc.exportPathKey === 'increment',
+	assert.equal(image.link.constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'state'
+			&& reloc.target.exportPathKey === 'increment',
 	), true);
 	assert.deepEqual(runCold(entrySource, { modules: [constModule('state', moduleSource)] }).values, [valueInteger(41)]);
 });
@@ -424,7 +425,7 @@ return { count = count }
 	);
 });
 
-test('const module function call targets reject runtime closure allocation opcodes', () => {
+test('const module function call targets reject runtime closure allocation', () => {
 	const moduleSource = `
 local function outer()
 	local function inner() return 1 end
@@ -434,7 +435,7 @@ return { outer = outer }
 `;
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.outer()', 'state', moduleSource),
-		/forbidden static opcode CLOSURE \(runtime closure allocation\)/,
+		/cannot allocate a runtime Closure/,
 	);
 });
 
@@ -523,10 +524,10 @@ test('const-module function exports remain pack-time link targets', () => {
 		[constModule('state', moduleSource)],
 		{ entrySource: 'return require("state").read()', programDomain: 'system' },
 	);
-	assert.equal(compiled.constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'state'
-			&& reloc.exportPathKey === 'read',
+	assert.equal(compiled.constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'state'
+			&& reloc.target.exportPathKey === 'read',
 	), true);
 });
 

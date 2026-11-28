@@ -6,7 +6,6 @@ import type {
 	InlineCallSite,
 	LocalSlotDebug,
 	ProgramConstant,
-	ProgramFunctionSymbol,
 	Proto,
 	UpvalueDesc,
 } from '../program';
@@ -41,6 +40,8 @@ import {
 	loadKConstValueForOptimization,
 } from './values';
 
+import type { ProgramCodeFunctionTarget } from '../program_object';
+
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
 
 export type Instruction = {
@@ -62,10 +63,7 @@ export type Instruction = {
 	unknownFunctionBinding?: true;
 	/** Static capture descriptors read by a firmware binding on this frame. */
 	boundFunctionProto?: number;
-	symbolicReloc?:
-		| { kind: 'module_init'; symbol: string }
-		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
-		| { kind: 'bios_function'; importIndex: number };
+	symbolicReloc?: ProgramCodeFunctionTarget;
 	statementRange?: SourceRange;
 	resumeRange?: SourceRange;
 	/** Stable continuation role for compiler-generated code without authored statements. */

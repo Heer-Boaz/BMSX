@@ -44,7 +44,7 @@ function compileWithModule(
 	return {
 		linked,
 		disasm: disassembleModuleFunctions(linked, ['entry.lua', modulePath, ...extraModules.map(module => module.path)]),
-		constRelocs: linked.object.link.constRelocs,
+		constValueRelocs: linked.object.link.constValueRelocs,
 	};
 }
 
@@ -136,11 +136,11 @@ test('dynamic module calls observe replaced direct and method fields at every op
 		'return api.read(), api:method()',
 	].join('\n');
 	for (const optLevel of [3] as const) {
-		const { linked, constRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
-		assert.equal(constRelocs.some(
-			reloc => reloc.kind === 'export_proto'
-				&& reloc.path === 'foo'
-				&& (reloc.exportPathKey === 'read' || reloc.exportPathKey === 'method'),
+		const { linked, constValueRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
+		assert.equal(constValueRelocs.some(
+			reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+				&& reloc.target.path === 'foo'
+				&& (reloc.target.exportPathKey === 'read' || reloc.target.exportPathKey === 'method'),
 		), false);
 		assert.match(disasm, /\bGETFIELD\b/);
 		assert.match(disasm, /\bSELF\b/);
@@ -159,18 +159,18 @@ test('explicit const-module functions call sibling exports through link symbols'
 		'local twice<const> = function(value) return linear(value) * 2 end',
 		'return { linear = linear, twice = twice }',
 	].join('\n');
-	const { linked, constRelocs, disasm } = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
+	const { linked, constValueRelocs, disasm } = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
 	assert.equal(linked.symbols.metadata.staticFunctionIdBySlot.foo__linear?.includes('/static:'), true);
 	assert.equal(linked.symbols.metadata.staticFunctionIdBySlot.foo__twice?.includes('/static:'), true);
-	assert.equal(constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'foo'
-			&& reloc.exportPathKey === 'linear',
+	assert.equal(constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'foo'
+			&& reloc.target.exportPathKey === 'linear',
 	), true);
-	assert.equal(constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'foo'
-			&& reloc.exportPathKey === 'twice',
+	assert.equal(constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'foo'
+			&& reloc.target.exportPathKey === 'twice',
 	), true);
 	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING, 'const-module exports do not materialize a runtime table');
 	const cpu = executeModule(linked);
@@ -184,7 +184,7 @@ return function(value)
 end`;
 	const result = compileWithModule('return require("increment")(6)', 'increment', moduleSource, [], 3);
 
-	assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.path === 'increment'), false);
+	assert.equal(result.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto' && reloc.target.path === 'increment'), false);
 	assert.doesNotMatch(result.disasm, /\bCALL\b|\bCLOSURE\b/);
 	const cpu = executeModule(result.linked);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
@@ -225,7 +225,7 @@ local next_value, next_count, next_marker = require('callback')(owner, 4, 'next'
 return value, count, marker == 'first', next_value, next_count, next_marker == 'next', callback == require('callback'), module_loads`,
 		'callback', moduleSource, [], optLevel);
 		assert.equal(result.linked.object.sections.rodata.moduleProtos.some(proto => proto.path === 'callback'), true, 'a statically required runtime module still has an initializer');
-		assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.path === 'callback'), false);
+		assert.equal(result.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto' && reloc.target.path === 'callback'), false);
 		assert.deepEqual(materializeCpuCompletionValues(executeModule(result.linked)),
 			[valueInteger(13), valueInteger(1), valueBool(true), valueInteger(17), valueInteger(2), valueBool(true), valueBool(true), valueInteger(1)], `O${optLevel}`);
 	}
@@ -233,16 +233,16 @@ return value, count, marker == 'first', next_value, next_count, next_marker == '
 
 test('cartlib easing calls through its live runtime table', () => {
 	const moduleSource = readFileSync('cartlib/easing.lua', 'utf8');
-	const { linked, constRelocs, disasm } = compileWithModule(
+	const { linked, constValueRelocs, disasm } = compileWithModule(
 		'return require("cartlib/easing").arc01(0.25)',
 		'cartlib/easing',
 		moduleSource,
 		[{ path: 'cartlib/util/clamp', source: readFileSync('cartlib/util/clamp.lua', 'utf8') }],
 	);
-	assert.equal(constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'cartlib/easing'
-			&& reloc.exportPathKey === 'arc01',
+	assert.equal(constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'cartlib/easing'
+			&& reloc.target.exportPathKey === 'arc01',
 	), false);
 	assert.match(disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(disasm, TABLE_CONSTRUCTOR_BINDING, 'public easing table remains available for Lua API consumers');
@@ -292,11 +292,11 @@ test('dynamic module function value reads use the live table, not export-proto r
 		'function api.read() return 7 end',
 		'return api',
 	].join('\n');
-	const { linked, constRelocs, disasm } = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
-	assert.equal(constRelocs.some(
-		reloc => reloc.kind === 'export_proto'
-			&& reloc.path === 'foo'
-			&& reloc.exportPathKey === 'read',
+	const { linked, constValueRelocs, disasm } = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
+	assert.equal(constValueRelocs.some(
+		reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'
+			&& reloc.target.path === 'foo'
+			&& reloc.target.exportPathKey === 'read',
 	), false, 'function value read must not emit an export-proto relocation');
 	assert.match(disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
 	const cpu = executeModule(linked);

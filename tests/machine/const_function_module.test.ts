@@ -80,7 +80,7 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 `;
 	const compiled = compileWithModule(entrySource, RECT_OVERLAPS_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(RECT_OVERLAPS_PATH), false);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	assert.equal(compiled.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'), true);
 	const disasm = disassembleConstExport(compiled, RECT_OVERLAPS_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [true, false].map(valueBool));
@@ -94,7 +94,7 @@ return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 `;
 	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	assert.equal(compiled.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'), true);
 	const disasm = disassembleConstExport(compiled, CLAMP_PATH);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10].map(valueInteger));
@@ -138,7 +138,7 @@ return rol8(5), rol8(128)
 		const moduleSource = readFileSync(testCase.sourcePath, 'utf8');
 		const compiled = compileWithModule(testCase.entry, testCase.path, moduleSource);
 		assert.equal(compiled.moduleProtoMap.has(testCase.path), false);
-		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+		assert.equal(compiled.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'), true);
 		const disasm = disassembleConstExport(compiled, testCase.path);
 		assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 		assert.deepEqual(runColdCompiled(compiled).map(numberToHost), testCase.expected);
@@ -160,7 +160,7 @@ return s0, s90, s180, s270, s360, s45, sn45
 	const compiled = compileWithModule(entrySource, SIN_TURN32_PATH, moduleSource);
 	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has(SIN_TURN32_PATH), false);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto'), true);
+	assert.equal(compiled.constValueRelocs.some(reloc => reloc.kind === 'code_function' && reloc.target.kind === 'export_proto'), true);
 	assert.deepEqual(image.sections.rodata.symbols, [{
 		name: 'module:math/sin/rodata:sin_quarter_lut',
 		offset: 0,

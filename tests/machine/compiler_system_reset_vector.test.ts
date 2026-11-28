@@ -8,7 +8,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import { CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
@@ -67,9 +67,9 @@ for (const optLevel of [0, 3] as const) test('System ROM calls its linked code c
 	assert.equal(built.object.sections.rodata.staticModulePaths.includes(resetPath), false);
 	assert.equal(built.object.sections.rodata.moduleProtos.some(module => module.path === resetPath), false);
 	const firstManaged = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, startup.codeAddress);
-	assert.equal(firstManaged.op, OpCode.CLOSURE);
-	assert.equal(firstManaged.bx * BLUA32_FUNCTION_ALIGNMENT,
-		linked.layout.functions[linked.functionProtoIndices.indexOf(built.object.vectors.sectionInitProtoIndex)].address);
+	assert.equal(firstManaged.op, OpCode.LOADK);
+	assert.deepEqual(linked.layout.constants[firstManaged.bx], { kind: 'code_function',
+		word: linked.layout.functions[linked.functionProtoIndices.indexOf(built.object.vectors.sectionInitProtoIndex)].address });
 
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
