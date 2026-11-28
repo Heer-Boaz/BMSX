@@ -11,12 +11,13 @@ import type { Proto } from './program';
 import type { ProgramCodeFunctionTarget } from './program_object';
 import { MAX_ABX_REGISTER_A } from './wide_integer';
 import { controlInstruction } from './window_instructions';
+import { createWindowCallTargetProof } from './window_call_targets';
 import { lowerWindowVararg, WINDOW_VARARG_SCRATCH_WORDS } from './window_varargs';
 
 const RAW_WINDOW_CONTROL_WORDS = 3;
 
 type Body = { proto: Proto; instructions: readonly Instruction[] };
-type DirectSite = { caller: number; instruction: number; producer: number };
+type CallSite = { caller: number; instruction: number; producer: number; targets: readonly number[] };
 type ResultRange = { min: number; max: number };
 type BodyReturns = ResultRange & {
 	forwarded: number[]; suffixes: Map<number, number>; observesCount: boolean; variadic: boolean; varargScratch: boolean;
@@ -25,7 +26,7 @@ type WindowLayout = ResultRange & {
 	top: number; width: number; sealed: boolean; bias: number; parameters: number; observesCount: boolean; extras: ResultRange; scratch: number;
 };
 type WindowCall = { callee: WindowLayout; supplied: ResultRange };
-type CallEdge = { target: WindowCandidate; site: DirectSite };
+type CallEdge = { targets: readonly WindowCandidate[]; site: CallSite };
 type WindowCandidate = StronglyConnectedNode<WindowCandidate> & {
 	protoIndex: number;
 	returns: BodyReturns;
@@ -342,10 +343,12 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		const returns = boundedBodyReturns(bodies[proto]);
 		if (returns !== undefined) signatures.set(proto, returns);
 	}
-	const sites = new Map<number, DirectSite[]>();
+	const sites = new Map<number, CallSite[]>(), allSites: CallSite[] = [];
 	for (let caller = 0; caller < bodies.length; ++caller) {
 		const { proto, instructions } = bodies[caller];
 		let entries: Set<number> | undefined;
+		let proveFiniteCall: ReturnType<typeof createWindowCallTargetProof> | undefined;
+		let found: Set<number> | undefined;
 		const opensCaptures = instructions.some(instruction => instruction.boundFunctionProto !== undefined || instruction.unknownFunctionBinding);
 		for (let i = 0; i < instructions.length; ++i) {
 			const target = instructions[i].symbolicReloc;
@@ -356,25 +359,45 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				entries = new Set();
 				for (const instruction of instructions) visitBranchTargets(instruction, entry => entries!.add(entry));
 			}
-			const call = opensCaptures ? -1 : directCallAfterLoad(instructions, proto.maxStack, i, entries, resolveClosure);
+			let call = opensCaptures ? -1 : directCallAfterLoad(instructions, proto.maxStack, i, entries, resolveClosure);
+			let targets: readonly number[] = [callee];
+			if (call === -1 && !opensCaptures) {
+				proveFiniteCall ??= createWindowCallTargetProof(instructions, proto.maxStack, resolveClosure);
+				const choice = proveFiniteCall(i);
+				if (choice !== undefined) {
+					const symbols = choice.loads.map(load => resolveSymbol(instructions[load].symbolicReloc!));
+					if (symbols.every(symbol => symbol !== undefined)) {
+						call = choice.instruction;
+						targets = [...new Set(symbols)];
+					}
+				}
+			}
 			if (call < 0) {
 				signatures.delete(callee);
 				continue;
 			}
-			const site = instructions[call];
+			if (found?.has(call)) continue;
+			(found ??= new Set()).add(call);
+			const instruction = instructions[call];
 			let producer = -1;
-			if (site.b === 0) {
+			if (instruction.b === 0) {
 				const previous = instructions[call - 1];
-				if (previous === undefined || previous.a <= site.a
+				// The direct proof excludes other incoming edges; a finite choice
+				// may join at the call, so an open source must be exclusive too.
+				if (previous === undefined || previous.a <= instruction.a || entries.has(call)
 					|| !((previous.op === OpCode.CALL && previous.c === 0) || (previous.op === OpCode.VARARG && previous.b === 0))) {
-					signatures.delete(callee);
+					for (const target of targets) signatures.delete(target);
 					continue;
 				}
 				producer = call - 1;
 			}
-			let uses = sites.get(callee);
-			if (uses === undefined) sites.set(callee, uses = []);
-			uses.push({ caller, instruction: call, producer });
+			const site = { caller, instruction: call, producer, targets };
+			allSites.push(site);
+			for (const target of targets) {
+				const uses = sites.get(target);
+				if (uses === undefined) sites.set(target, [site]);
+				else uses.push(site);
+			}
 		}
 	}
 	const candidates = new Map<number, WindowCandidate>();
@@ -385,11 +408,16 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		const candidate: WindowCandidate = { protoIndex, returns, dependencies: [], complete: true,
 			index: -1, lowlink: 0, component: -1, active: false };
 		candidates.set(protoIndex, candidate);
-		for (const site of uses) {
-			let byPc = edges.get(site.caller);
-			if (byPc === undefined) edges.set(site.caller, byPc = new Map());
-			byPc.set(site.instruction, { target: candidate, site });
+	}
+	for (const site of allSites) {
+		const targets = site.targets.map(target => candidates.get(target));
+		if (!targets.every(target => target !== undefined)) {
+			for (const target of targets) if (target !== undefined) target.complete = false;
+			continue;
 		}
+		let byPc = edges.get(site.caller);
+		if (byPc === undefined) edges.set(site.caller, byPc = new Map());
+		byPc.set(site.instruction, { targets, site });
 	}
 	for (const candidate of candidates.values()) {
 		const { protoIndex, dependencies } = candidate;
@@ -399,19 +427,19 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			if (instructions[i].op !== OpCode.CALL) continue;
 			const edge = callees?.get(i);
 			if (edge === undefined) candidate.complete = false;
-			else dependencies.push(edge.target);
+			else dependencies.push(...edge.targets);
 		}
 	}
 
 	// Operand counts do not depend on the transitive window extent. For
 	// example B(A()) can borrow both A and B even if the body of A calls B.
 	// Only a real cycle in the count provenance prevents a finite proof.
-	const argumentBounds = new Map<DirectSite, ResultRange>();
+	const argumentBounds = new Map<CallSite, ResultRange>();
 	const inputBounds = new Map<number, ResultRange | null>();
 	const resultBounds = new Map<number, ResultRange | null>();
 	const extraBounds = (input: ResultRange, parameters: number): ResultRange =>
 		({ min: Math.max(0, input.min - parameters), max: Math.max(0, input.max - parameters) });
-	function boundCall(site: DirectSite): ResultRange | null {
+	function boundCall(site: CallSite): ResultRange | null {
 		const prior = argumentBounds.get(site);
 		if (prior !== undefined) return prior;
 		const instructions = bodies[site.caller].instructions;
@@ -429,7 +457,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				results = input === null ? null : extraBounds(input, bodies[site.caller].proto.numParams);
 			} else {
 				const edge = edges.get(site.caller)?.get(site.producer);
-				results = edge === undefined ? null : boundResults(edge.target);
+				results = edge === undefined ? null : edgeResultBounds(edge);
 			}
 			if (results === null) return null;
 			const prefix = producer.a - call.a - 1;
@@ -468,7 +496,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		for (const pc of returns.forwarded) {
 			const previous = instructions[pc - 1];
 			const edge = edges.get(protoIndex)?.get(pc - 1);
-			const results = previous.op === OpCode.VARARG ? extras! : edge === undefined ? null : boundResults(edge.target);
+			const results = previous.op === OpCode.VARARG ? extras! : edge === undefined ? null : edgeResultBounds(edge);
 			if (results === null) return null;
 			const prefix = previous.a - instructions[pc].a;
 			min = Math.min(min, prefix + results.min);
@@ -482,10 +510,31 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		resultBounds.set(protoIndex, bounds);
 		return bounds;
 	}
+	function edgeResultBounds(edge: CallEdge): ResultRange | null {
+		const bounds = boundResults(edge.targets[0]);
+		if (bounds === null) return null;
+		for (let index = 1; index < edge.targets.length; ++index) {
+			const other = boundResults(edge.targets[index]);
+			if (other === null || bounds.min !== other.min || bounds.max !== other.max) return null;
+		}
+		return bounds;
+	}
 
 	// Certify the acyclic call graph bottom-up, but size each physical view
 	// from its own instructions and outgoing transfer registers only.
 	const windows = new Map<number, WindowLayout>();
+	function sharedWindow(edge: CallEdge): WindowLayout | undefined {
+		const first = windows.get(edge.targets[0].protoIndex);
+		if (first === undefined) return;
+		let width = first.width;
+		for (let index = 1; index < edge.targets.length; ++index) {
+			const other = windows.get(edge.targets[index].protoIndex);
+			if (other === undefined || other.min !== first.min || other.max !== first.max || other.bias !== first.bias
+				|| other.top !== first.top || other.observesCount !== first.observesCount) return;
+			width = Math.max(width, other.width);
+		}
+		return width === first.width ? first : { ...first, width };
+	}
 	components: for (const component of stronglyConnectedComponents(candidates.values())) {
 		const candidate = component[0], { complete, protoIndex, returns, dependencies } = candidate;
 		if (component.length !== 1 || !complete || dependencies.includes(candidate)) continue;
@@ -508,7 +557,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
 				const { a, c } = instructions[pc], base = a + bias, wanted = decodeValueCount(c, -1);
-				const callee = windows.get(edge.target.protoIndex), supplied = boundCall(edge.site);
+				const callee = sharedWindow(edge), supplied = boundCall(edge.site);
 				if (callee === undefined || supplied === null) continue components;
 				const call = { callee, supplied };
 				if (!windowFitsAt(base, wanted, call)) continue components;
@@ -517,7 +566,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 		for (const pc of returns.forwarded) {
 			const producer = instructions[pc - 1];
-			const child = producer.op === OpCode.VARARG ? extras : windows.get(callees!.get(pc - 1)!.target.protoIndex)!;
+			const child = producer.op === OpCode.VARARG ? extras : sharedWindow(callees!.get(pc - 1)!)!;
 			if (child.min !== child.max) forwardEnd = Math.max(forwardEnd, producer.a + bias + child.max);
 		}
 		if (forwardEnd !== -1) {
@@ -535,6 +584,14 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 		windows.set(protoIndex, window);
 	}
+	// A joined site either has one physical ABI for the complete target
+	// set, or every arm keeps its ordinary tagged CodeFunction relocation.
+	for (const site of allSites) {
+		if (site.targets.length === 1) continue;
+		const edge = edges.get(site.caller)?.get(site.instruction);
+		if (edge !== undefined && sharedWindow(edge) === undefined)
+			for (const target of site.targets) windows.delete(target);
+	}
 	// A producer can have a finite result shape but still fail to acquire a
 	// raw body (e.g. outgoing controls do not encode). Open input needs its physical
 	// initialized suffix; drop that consumer and every dependent raw body.
@@ -551,10 +608,12 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 		for (const dependency of dependencies) requireWindow(protoIndex, dependency.protoIndex);
 		for (const site of sites.get(protoIndex)!) {
+			for (const target of site.targets) if (target !== protoIndex) requireWindow(protoIndex, target);
 			if (site.producer === -1) continue;
 			const producer = bodies[site.caller].instructions[site.producer];
-			requireWindow(protoIndex, producer.op === OpCode.VARARG ? site.caller
-				: edges.get(site.caller)!.get(site.producer)!.target.protoIndex);
+			if (producer.op === OpCode.VARARG) requireWindow(protoIndex, site.caller);
+			else for (const target of edges.get(site.caller)!.get(site.producer)!.targets)
+				requireWindow(protoIndex, target.protoIndex);
 		}
 	}
 	for (let i = 0; i < unavailable.length; ++i) {
@@ -566,15 +625,19 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 	for (const [protoIndex] of windows) {
 		for (const site of sites.get(protoIndex)!) {
 			if (site.producer === -1 || bodies[site.caller].instructions[site.producer].op === OpCode.VARARG) continue;
-			const producer = windows.get(edges.get(site.caller)!.get(site.producer)!.target.protoIndex)!;
-			if (producer.min !== producer.max) producer.sealed = true;
+			for (const target of edges.get(site.caller)!.get(site.producer)!.targets) {
+				const producer = windows.get(target.protoIndex)!;
+				if (producer.min !== producer.max) producer.sealed = true;
+			}
 		}
 		const { forwarded } = candidates.get(protoIndex)!.returns;
 		const instructions = bodies[protoIndex].instructions, callees = edges.get(protoIndex);
 		for (const pc of forwarded) {
 			if (instructions[pc - 1].op === OpCode.VARARG) continue;
-			const callee = windows.get(callees!.get(pc - 1)!.target.protoIndex)!;
-			if (callee.min !== callee.max) callee.sealed = true;
+			for (const target of callees!.get(pc - 1)!.targets) {
+				const callee = windows.get(target.protoIndex)!;
+				if (callee.min !== callee.max) callee.sealed = true;
+			}
 		}
 	}
 
@@ -584,7 +647,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		let lowered: Map<number, WindowCall> | undefined;
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
-				const callee = windows.get(edge.target.protoIndex);
+				const callee = sharedWindow(edge);
 				if (callee !== undefined) (lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)! });
 			}
 		}

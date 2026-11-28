@@ -270,20 +270,22 @@ export function deriveBlua32FixedStack(
 					if (c === RegisterJumpMode.EnterWindow) {
 						if (b + 2 >= width) reject('window controls exceed the owning register window');
 						const targets = branches!.get(a), bases = branches!.get(b), capacities = branches!.get(b + 1), tops = branches!.get(b + 2);
-						if (targets?.length !== 1 || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
-							reject('no single static window and target');
+						if (targets === undefined || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
+							reject('no fixed window with finite targets');
 						const base = bases![0], capacity = capacities![0], top = tops![0];
 						if (base > width || top > Math.min(capacity, width - base))
 							reject('initialized prefix exceeds the owning register window');
-						const target = functionByEntry.get(targets![0]) ?? reject('window target is not an entry instruction');
-						const child = image.functions[target];
-						if (Math.max(child.numParams, child.maxStack) > capacity)
-							reject('target footprint exceeds the lent register window');
-						const below = measure(target, true);
-						const end = base + Math.max(capacity, below.valueSlots);
-						if (end > MAX_THREAD_VALUE_SLOTS) reject('window exceeds the physical register extent');
-						valueSlots = Math.max(valueSlots, end);
-						frames = Math.max(frames, 1 + below.frames);
+						for (const address of targets!) {
+							const target = functionByEntry.get(address) ?? reject('window target is not an entry instruction');
+							const child = image.functions[target];
+							if (Math.max(child.numParams, child.maxStack) > capacity)
+								reject('target footprint exceeds the lent register window');
+							const below = measure(target, true);
+							const end = base + Math.max(capacity, below.valueSlots);
+							if (end > MAX_THREAD_VALUE_SLOTS) reject('window exceeds the physical register extent');
+							valueSlots = Math.max(valueSlots, end);
+							frames = Math.max(frames, 1 + below.frames);
+						}
 						registers.fill(0, base);
 						for (const register of branches!.keys()) if (register >= base) branches!.delete(register);
 						break;

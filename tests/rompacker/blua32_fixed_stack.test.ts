@@ -204,6 +204,31 @@ test('fixed stack accounts for nested physical backing outside the initialized c
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /window exceeds the physical register extent/);
 });
 
+test('fixed stack proves each reachable target of one physical window transfer', () => {
+	const text = new Uint8Array(11 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JMPIF, 4, 0, 2);
+	writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.JMP, 0, 0, 1);
+	writeInstruction(text, 3, OpCode.LOADK, 0, 0, 1);
+	writeInstruction(text, 4, OpCode.KSMI, 1, 0, 2);
+	writeInstruction(text, 5, OpCode.KSMI, 2, 0, 7);
+	writeInstruction(text, 6, OpCode.KSMI, 3, 0, 0);
+	writeInstruction(text, 7, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
+	writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 9, OpCode.JREG, 0, 0, RegisterJumpMode.LeaveWindow);
+	writeInstruction(text, 10, OpCode.JREG, 0, 0, RegisterJumpMode.LeaveWindow);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: [integerConstant(0), integerConstant(0)],
+		functions: [{ firstWord: 0, wordCount: 9, maxStack: 5 }, { firstWord: 9, wordCount: 1, maxStack: 2 },
+			{ firstWord: 10, wordCount: 1, maxStack: 7 }] });
+	const constant = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
+	writeLE32(image.bytes, constant, image.functions[1].codeAddress);
+	writeLE32(image.bytes, constant + BLUA32_CONSTANT_RECORD_SIZE, image.functions[2].codeAddress);
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 9, frames: 2 });
+
+	writeLE32(image.bytes, constant + BLUA32_CONSTANT_RECORD_SIZE, image.functions[0].codeAddress + INSTRUCTION_BYTES);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /window target is not an entry instruction/);
+});
+
 test('fixed stack permits a zero-register borrowed window at the parent boundary', () => {
 	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);

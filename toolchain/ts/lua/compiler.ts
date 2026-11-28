@@ -2960,6 +2960,17 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		};
 	}
 
+	private resolveStaticCallChoice(expression: LuaExpression) {
+		if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) return;
+		const first = expression.left;
+		if (first.kind !== LuaSyntaxKind.BinaryExpression || first.operator !== LuaBinaryOperator.And) return;
+		const truthy = this.resolveModuleExportCallTarget(first.right) ?? this.resolveOwnStaticFunctionExportCallTarget(first.right);
+		const falsy = this.resolveModuleExportCallTarget(expression.right) ?? this.resolveOwnStaticFunctionExportCallTarget(expression.right);
+		// The two addresses are linker names in call position, not source
+		// values that can be stored, inspected or observed by table dispatch.
+		if (truthy?.kind === 'export_proto' && falsy?.kind === 'export_proto') return { condition: first.left, truthy, falsy };
+	}
+
 	private resolveCallProtoIndex(expression: LuaCallExpression): number | null {
 		if (expression.method !== null) {
 			return null;
@@ -6008,10 +6019,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
 		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
 		const ownStaticFunctionExportTarget = methodName ? undefined : this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
+		const targetChoice = methodName ? undefined : this.resolveStaticCallChoice(expression.callee);
 		if (constModuleValueCallee) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
 		}
-		if (this.staticCallTargetScope && moduleCallTarget === undefined && ownStaticFunctionExportTarget === undefined) {
+		if (this.staticCallTargetScope && moduleCallTarget === undefined && ownStaticFunctionExportTarget === undefined && targetChoice === undefined) {
 			throw new Error(`Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
 		}
 		const callProtoIndex = this.resolveCallProtoIndex(expression);
@@ -6035,6 +6047,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitFunctionCode(callBase, moduleCallTarget);
 		} else if (ownStaticFunctionExportTarget !== undefined) {
 			this.emitFunctionCode(callBase, ownStaticFunctionExportTarget);
+		} else if (targetChoice !== undefined) {
+			const falseJumps: number[] = [];
+			this.compileConditionJumps(targetChoice.condition, false, falseJumps);
+			this.emitFunctionCode(callBase, targetChoice.truthy);
+			const done = this.emitJumpPlaceholder();
+			for (const jump of falseJumps) this.patchJump(jump, this.code.length);
+			this.emitFunctionCode(callBase, targetChoice.falsy);
+			this.patchJump(done, this.code.length);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
