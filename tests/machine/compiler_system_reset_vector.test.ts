@@ -9,13 +9,14 @@ import { CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { StockFirmwareOperand } from '../../toolchain/ts/lua/compiler/program';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../helpers/blua32';
@@ -142,7 +143,7 @@ for (const optLevel of [0, 3] as const) test('System ROM calls its linked code c
 	assert.deepEqual(execFileSync(native, [system, commands, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
 });
 
-for (const optLevel of [0, 3] as const) test(`only an exact callable startup symbol materializes as a CodeFunction at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) test(`only the exact callable startup symbol uses a linked CodeFunction load at O${optLevel}`, () => {
 	const entry = `module<entry>
 local entries<const> = require('bmsx/startup')
 local address<const> = entries.callable_entry
@@ -187,8 +188,11 @@ return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closur
 	assert.ok(loads.some(constant => constant !== null && typeof constant === 'object'
 		&& constant.kind === 'integer' && constant.word === callable.address));
 	assert.ok(instructions.some(({ op }) => op === OpCode.CALL));
-	assert.deepEqual(instructions.filter(({ op }) => op === OpCode.CLOSURE).map(({ c }) => c & CLOSURE_ADDRESS_REGISTER_FLAG),
-		[CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_FLAG]);
+	assert.ok(!instructions.some(({ op }) => op === OpCode.CLOSURE));
+	assert.deepEqual(instructions.filter(({ op }) => op === OpCode.SVC).map(({ b, c }) => [b, c]), [[2, 0], [2, 0]]);
+	assert.ok(instructions.some(({ op, sbx }) => op === OpCode.KSMI && sbx === StockFirmwareOperand.BindFunction)
+		|| loads.some(constant => constant !== null && typeof constant === 'object'
+			&& constant.kind === 'integer' && constant.word === StockFirmwareOperand.BindFunction));
 });
 
 test('a source selected as reset cannot also be initialized as an ordinary module', () => {

@@ -31,12 +31,12 @@ export function visitInstructionOpenUpvalueRegisters<T>(
 	state: T,
 	visitor: RegisterVisitor<T>,
 ): void {
-	const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
-	if (proto === undefined) return;
-	if (instruction.closureAddressRegister) {
+	if (instruction.unknownFunctionBinding) {
 		visitRegisterRange(state, visitor, 0, maxRegister + 1);
 		return;
 	}
+	const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+	if (proto === undefined) return;
 	const upvalues = resolveClosureUpvalues(proto);
 	for (let index = 0; index < upvalues.length; index += 1) {
 		const upvalue = upvalues[index];

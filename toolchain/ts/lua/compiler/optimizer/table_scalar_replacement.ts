@@ -102,7 +102,7 @@ export function scalarReplacePrivateTables(set: InstructionSet, context: Optimiz
 	const captured = new Uint8Array(maxRegister + 1);
 	const resolveClosure = context.getClosureUpvalues;
 	for (const instruction of instructions) {
-		if (instruction.closureAddressRegister) return set;
+		if (instruction.unknownFunctionBinding) return set;
 		visitInstructionOpenUpvalueRegisters(instruction, maxRegister, resolveClosure, captured, markCapture);
 	}
 	const blocks = buildBasicBlocks(instructions);

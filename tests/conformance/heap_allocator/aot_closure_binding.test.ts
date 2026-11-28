@@ -7,7 +7,7 @@ import test from 'node:test';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueFromTag, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -35,6 +35,57 @@ import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
+
+for (const optLevel of [0, 3] as const) test(`computed immutable Function addresses bind through the ordinary BIOS at O${optLevel}`, t => {
+	const source = `
+local entries<const> = require('bmsx/startup')
+local computed<const> = function(address)
+	return blua32.closure(address)
+end
+local callable<const> = blua32.code_function(entries.protected_call)
+local from_address<const> = computed(entries.protected_call)
+local ordinary<const> = computed(entries.protected_failure)
+local rejected<const>, payload<const> = ordinary(73)
+return from_address, from_address == callable, ordinary, rejected, payload
+`;
+	const linked = linkManagedTestSystem(source, optLevel);
+	const functionNamed = (name: string) => linked.layout.functions[linked.symbols.metadata.functionDisplayNames.indexOf(name)];
+	const callable = functionNamed('protected_call'), ordinary = functionNamed('protected_failure'), binder = functionNamed('computed');
+	const { textBytes, header } = linked.layout;
+	const syscalls: number[][] = [];
+	for (let pc = binder.codeAddress; pc < binder.codeAddress + binder.codeByteCount;) {
+		const instruction = decodeBlua32InstructionAtPc(textBytes, header.textAddress, pc);
+		assert.notEqual(instruction.op, OpCode.CLOSURE);
+		if (instruction.op === OpCode.SVC) syscalls.push([instruction.b, instruction.c]);
+		pc = instruction.pc + INSTRUCTION_BYTES;
+	}
+	assert.deepEqual(syscalls, [[2, 0]]);
+	const rom = writeTestBlua32Rom(linked);
+	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, scheduler } = runtime.machine;
+	const commands: string[] = [];
+	for (let i = 0; i < 32 && cpu.getFrameDepth() !== 0; ++i) {
+		scheduler.runCpuSlice(0, 65536, undefined, CpuRunKind.Scheduled);
+		commands.push('E 65536');
+	}
+	assert.equal(cpu.getFrameDepth(), 0);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	const values = runtime.readCompletionValues();
+	assert.equal(values.length, 5);
+	assert.equal(values[0], valueFromTag(ValueTag.CodeFunction, callable.address));
+	assert.equal(values[1], valueBool(true));
+	assert.equal(valueTag(values[2]), ValueTag.Closure);
+	assert.equal(cpu.captureClosureBinding(valuePayload(values[2])).functionAddress, ordinary.address);
+	assert.deepEqual(values.slice(3), [valueBool(false), valueInteger(73)]);
+	const dir = mkdtempSync(join(tmpdir(), 'bmsx-computed-function-binding-'));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const romPath = join(dir, 'system.rom'), trace = join(dir, 'trace');
+	writeFileSync(romPath, rom);
+	writeFileSync(trace, [...commands, 'c'].join('\n'));
+	const rows = execFileSync(native, [romPath, trace, join(dir, 'unused')], { encoding: 'utf8' }).trimEnd().split('\n');
+	assert.equal(rows.at(-1), [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+});
 
 // More capture entries than pinned Value slots, with the original issuer live.
 const names = Array.from({ length: 513 }, (_, index) => `c${index}`);

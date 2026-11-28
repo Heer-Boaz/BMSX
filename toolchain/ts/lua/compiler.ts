@@ -113,7 +113,7 @@ import {
 	type ProgramLinkValueExpression,
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
-import { CLOSURE_ADDRESS_REGISTER_WIDE_C,
+import {
 	CLOSURE_DESTINATION_EXT_BITS,
 	CLOSURE_DESTINATION_EXT_SHIFT,
 	MAX_LOW_OPERAND, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -1905,7 +1905,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			);
 			let reservation = Math.max(this.nextArgumentIndex, computeMaxRegister(this.code) + 1);
 			for (const instruction of this.code) {
-				if (instruction.op === OpCode.CLOSURE && instruction.closureAddressRegister) {
+				if (instruction.unknownFunctionBinding) {
 					// An indirect descriptor may name any register in the window.
 					reservation = Math.max(reservation, this.maxStack);
 					continue;
@@ -2138,8 +2138,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 						OpCode.WIDE,
 						(instr.a >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND,
 						bxSplit.wide,
-						(op === OpCode.CLOSURE ? instr.a >>> CLOSURE_DESTINATION_EXT_SHIFT : 0)
-							| (instr.closureAddressRegister ? CLOSURE_ADDRESS_REGISTER_WIDE_C : 0),
+						op === OpCode.CLOSURE ? instr.a >>> CLOSURE_DESTINATION_EXT_SHIFT : 0,
 					);
 					finalRanges[cursor] = range;
 					cursor += 1;
@@ -3229,43 +3228,36 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.ranges.push(this.currentRange);
 	}
 
-	private emitClosureAddressRegister(target: number, addressRegister: number): void {
-		this.assertStaticCallTargetCanEmit(OpCode.CLOSURE);
-		this.code.push({
-			op: OpCode.CLOSURE,
-			a: target,
-			b: addressRegister,
-			c: 0,
-			format: 'ABx',
-			rkMask: 0,
-			target: null,
-			closureAddressRegister: true,
-			statementRange: this.currentStatementRange,
-			resumeRange: this.currentStatementRange,
-		});
-		this.ranges.push(this.currentRange);
-	}
-
 	private emitLocalFunctionValue(target: number, proto: number): void {
 		if (this.program.protos[proto].upvalueDescs.length === 0) {
 			this.emitABx(OpCode.CLOSURE, target, proto);
 			return;
 		}
+		this.emitFunctionBinding(target, { proto });
+	}
+
+	private emitFunctionBinding(target: number, source: { proto: number } | { address: LuaExpression }): void {
 		// A live lexical target can itself be captured. Keep it unchanged
 		// until firmware has opened the selected cells on the issuer.
 		const tempBase = this.tempTop;
 		const base = target >= this.localCount && target === tempBase - 1 ? target : this.allocTemp();
 		const argument = this.allocTemp();
-		const constant = this.program.functionAddrRelocIndex(proto);
-		if (argument <= MAX_ABX_REGISTER_A) {
-			this.emitABx(OpCode.LOADK, argument, constant);
+		if ('proto' in source) {
+			const constant = this.program.functionAddrRelocIndex(source.proto);
+			if (argument <= MAX_ABX_REGISTER_A) {
+				this.emitABx(OpCode.LOADK, argument, constant);
+			} else {
+				this.emitLoadConst(argument, integerConstant(constant));
+				this.emitABC(OpCode.LOADKR, argument, argument, 0);
+			}
 		} else {
-			this.emitLoadConst(argument, integerConstant(constant));
-			this.emitABC(OpCode.LOADKR, argument, argument, 0);
+			this.compileExpressionInto(source.address, argument, 1);
 		}
 		this.emitLoadConst(base, integerConstant(StockFirmwareOperand.BindFunction));
 		this.emitABC(OpCode.SVC, base, 2, 0);
-		this.code[this.code.length - 1].boundFunctionProto = proto;
+		const binding = this.code[this.code.length - 1];
+		if ('proto' in source) binding.boundFunctionProto = source.proto;
+		else binding.unknownFunctionBinding = true;
 		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
 		this.tempTop = tempBase;
 	}
@@ -6126,9 +6118,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (operation === 'code_function') {
 				throw new Error('blua32.code_function requires a callable System startup symbol.');
 			}
-			const addressRegister = this.allocTemp();
-			this.compileExpressionInto(address, addressRegister, 1);
-			this.emitClosureAddressRegister(target, addressRegister);
+			this.emitFunctionBinding(target, { address });
 		}
 		if (resultCount > 1) {
 			this.emitLoadNil(target + 1, resultCount - 1);

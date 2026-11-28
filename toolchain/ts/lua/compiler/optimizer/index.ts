@@ -58,7 +58,8 @@ export type Instruction = {
 	tableConstructor?: true;
 	/** Only the explicit window is observed; the issuer frame identity is immaterial. */
 	inlineSupervisorWindow?: true;
-	closureAddressRegister?: boolean;
+	/** A runtime descriptor may capture any existing register or upvalue. */
+	unknownFunctionBinding?: true;
 	/** Static capture descriptors read by a firmware binding on this frame. */
 	boundFunctionProto?: number;
 	symbolicReloc?:
@@ -1381,10 +1382,6 @@ const applyClosureTransferForInlining = (
 			return;
 		}
 		case OpCode.CLOSURE:
-			if (instruction.closureAddressRegister) {
-				closures.delete(instruction.a);
-				return;
-			}
 			if (closureWrittenRegisters.has(instruction.a)) {
 				closures.delete(instruction.a);
 			} else {

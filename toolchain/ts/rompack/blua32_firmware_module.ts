@@ -18,6 +18,7 @@ import {
 } from '../../../machine/ts/spec/blua32/instruction_format';
 import {
 	BLUA32_FUNCTION_ALIGNMENT,
+	BLUA32_FUNCTION_CODE,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
@@ -25,9 +26,11 @@ import {
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_FUNCTION_RESERVED_OFFSET,
+	BLUA32_FUNCTION_STATIC,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
+	BLUA32_IMAGE_MAPPED_CODE_FLAG,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
 } from '../../../machine/ts/spec/blua32/image_format';
@@ -64,6 +67,9 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\tfunction_max_stack_word_index = ${BLUA32_FUNCTION_MAX_STACK_OFFSET >>> 2},`,
 	`\tfunction_flags_word_index = ${BLUA32_FUNCTION_FLAGS_OFFSET >>> 2},`,
 	`\tfunction_vararg_flag = ${BLUA32_FUNCTION_VARARG},`,
+	`\tfunction_static_flag = ${BLUA32_FUNCTION_STATIC},`,
+	`\tfunction_code_flag = ${BLUA32_FUNCTION_CODE},`,
+	`\timage_mapped_code_flag = ${BLUA32_IMAGE_MAPPED_CODE_FLAG},`,
 	`\tfunction_upvalue_table_address_word_index = ${BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET >>> 2},`,
 	`\tfunction_upvalue_count_word_index = ${BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET >>> 2},`,
 	`\tfunction_reserved_word_index = ${BLUA32_FUNCTION_RESERVED_OFFSET >>> 2},`,

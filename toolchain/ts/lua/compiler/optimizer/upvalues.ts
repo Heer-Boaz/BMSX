@@ -31,7 +31,7 @@ export function compactUnusedUpvalues(
 			default:
 				continue;
 		}
-		if (instruction.closureAddressRegister) {
+		if (instruction.unknownFunctionBinding) {
 			// An indirectly addressed function record can capture any upvalue in the creating frame.
 			return;
 		}

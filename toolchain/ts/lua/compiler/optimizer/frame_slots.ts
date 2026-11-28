@@ -52,10 +52,10 @@ export function allocateFrameSlots(
 	const discardCalls = new Uint8Array(maxStack);
 	let openBase = maxStack;
 	for (const instruction of instructions) {
+		if (instruction.unknownFunctionBinding) return undefined;
 		const { op, a, b, c } = instruction;
 		switch (op) {
 			case OpCode.CLOSURE:
-				if (instruction.closureAddressRegister) return undefined;
 				visitInstructionOpenUpvalueRegisters(instruction, maxStack - 1, resolveClosure, pinned, pinSlot);
 				break;
 			case OpCode.CALL:

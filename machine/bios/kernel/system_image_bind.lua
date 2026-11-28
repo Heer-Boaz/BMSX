@@ -41,7 +41,8 @@ end
 
 struct immutable_image_operands
 	magic: u32 -- F:4
-	before_functions: u32[2] -- F:5-7
+	byte_count: u32
+	flags: u32
 	functions: addr -- F:8
 	function_count: u32 -- F:9
 	constants: addr -- F:10

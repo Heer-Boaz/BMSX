@@ -1,6 +1,6 @@
 local entries<const> = require('bmsx/startup')
 local load_chunk<const> = require('compiler/api').load
-local protect<const> = blua32.closure(entries.protected_call)
+local protect<const> = blua32.code_function(entries.protected_call)
 local frame_bindings<const> = require('debug/frame')
 local frame_count<const> = __bmsx_frame_count
 local running<const> = __bmsx_coroutine_running

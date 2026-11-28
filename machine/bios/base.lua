@@ -45,8 +45,8 @@ getglobal = require('kernel/get_global_entry')
 setglobal = require('kernel/set_global_entry')
 select = select_arguments
 error = raise_error
-pcall = blua32.closure(entries.protected_call)
-xpcall = blua32.closure(entries.protected_xcall)
+pcall = blua32.code_function(entries.protected_call)
+xpcall = blua32.code_function(entries.protected_xcall)
 
 
 assert = function(condition, ...)

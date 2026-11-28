@@ -8,6 +8,6 @@ return function(target, ...)
 	if tag ~= types.closure_tag and tag ~= types.builtin_tag and tag ~= types.code_tag then
 		__bmsx_error('xpcall error handler must be a function.')
 	end
-	local body<const> = blua32.closure(entries.protected_body)
+	local body<const> = blua32.code_function(entries.protected_body)
 	return body(target, ...)
 end

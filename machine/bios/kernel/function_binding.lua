@@ -8,6 +8,7 @@ local _capture_layout<const> = require('kernel/closure_capture_create')
 local _image_layout<const> = require('kernel/system_image_bind')
 local frames<const> = require('kernel/thread_frame_storage').internal
 local tags<const> = require('kernel/value_type')
+local isa<const> = require('bmsx/blua32')
 local management<const> = layout.management_offset
 local binding_address<const> = layout.ram_base + management + layout.function_binding_offset
 local control_count_mask<const> = (1 << 18) - 1
@@ -15,7 +16,8 @@ local window_mask<const> = (1 << 20) - 1
 local ram_word_mask<const> = 0x003ffffc
 local closure_tag<const> = 7
 local latched_prototype<const> = 8
-local static_function<const> = 1 << 1
+local static_function<const> = isa.function_static_flag
+local code_flags<const> = static_function | isa.function_code_flag
 local out_of_memory<const> = 9
 local invalid_argument<const> = 10
 local cartridge_bank<const> = 1 << 3
@@ -79,7 +81,7 @@ local receive<const> = function(owner, destination, count, deadline)
 	end
 	local record_bytes<const> = sizeof(launch_function_record)
 	local domain = (frame.flags & cartridge_bank) == 0 and -1 or ((frame.flags >> second_socket_shift) & 1)
-	local rom, rom_base, ram_end = 0, 0, 0
+	local rom, rom_base, ram_end, image = 0, 0, 0, 0
 	if prototype >= 0 and prototype < system_rom_end then
 		domain, rom = -1, 1
 	elseif prototype >= cart_rom_start and prototype < cart_rom_end then
@@ -107,7 +109,7 @@ local receive<const> = function(owner, destination, count, deadline)
 			or bytes < header_bytes or offset > extent - bytes then
 			return invalid_argument
 		end
-		local image<const> = rom_base + offset
+		image = rom_base + offset
 		if blua32.context_word(image + offsetof(immutable_image_operands.magic)) ~= image_magic then return invalid_argument end
 		local functions<const> = blua32.context_word(image + offsetof(immutable_image_operands.functions))
 		local count<const> = blua32.context_word(image + offsetof(immutable_image_operands.function_count))
@@ -125,6 +127,14 @@ local receive<const> = function(owner, destination, count, deadline)
 	local flags<const> = blua32.context_word(prototype + offsetof(launch_function_record.flags))
 	local descriptors<const> = blua32.context_word(prototype + offsetof(launch_function_record.captures))
 	local captures<const> = blua32.context_word(prototype + offsetof(launch_function_record.capture_count))
+	if rom ~= 0 and captures == 0 and (flags & code_flags) == code_flags
+		and (blua32.context_word(image + offsetof(immutable_image_operands.flags)) & isa.image_mapped_code_flag) == 0 then
+		local result_word<const>: *u32 = words - 4
+		local result_kind<const>: *u8 = kinds - 1
+		*result_word, *result_kind = prototype | (domain == 1 and 0x80000000 or 0), tags.code_tag
+		frame.top = (frame.top & ~window_mask) | (destination + 1)
+		return nil
+	end
 	local fault<const> = bind(owner, frame, destination, prototype, domain, code, formals, stack, flags, descriptors, captures, rom, deadline)
 	if fault == nil then
 		frame.top = (frame.top & ~window_mask) | (destination + 1)

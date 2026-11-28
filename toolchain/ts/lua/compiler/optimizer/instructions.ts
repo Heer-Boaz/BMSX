@@ -26,7 +26,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	tableConstructor: instruction.tableConstructor,
 	inlineSupervisorWindow: instruction.inlineSupervisorWindow,
 	boundFunctionProto: instruction.boundFunctionProto,
-	closureAddressRegister: instruction.closureAddressRegister,
+	unknownFunctionBinding: instruction.unknownFunctionBinding,
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
 	resumeRange: instruction.resumeRange,
@@ -92,9 +92,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.ARGC:
 			case OpCode.MFC0:
 				updateMax(instruction.a);
-				if (instruction.op === OpCode.CLOSURE && instruction.closureAddressRegister) {
-					updateMax(instruction.b);
-				}
 				break;
 			case OpCode.LOADNIL:
 				updateMax(instruction.a);
