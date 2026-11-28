@@ -1,129 +1,149 @@
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
-import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../../toolchain/ts/firmware/stock_object_layout';
-import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../helpers/firmware_heap_layout';
+import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
+import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { TableRecords } from '../../../machine/ts/machine/cpu/table';
+import { THREAD_STACK_SLOT_BYTES, ThreadLayout, ThreadRecords } from '../../../machine/ts/machine/cpu/thread_record';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
-import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../../helpers/heap_service_system';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../../toolchain/ts/firmware/stock_object_layout';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { cartridgeSlots } from '../../helpers/cartridge';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../helpers/firmware_heap_layout';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_PACE_PAID, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
-const OBJECT_HEAD = 0x6c, SWEEP_LINK = 0x74;
-const entrySource = 'halt_until_irq', PROBE = 'test/native_gc_objects';
-const probeSource = `module<const>
-local gc<const> = require('kernel/gc_objects')
-local sweep<const> = function(control, arena, occupied)
-	return (gc.sweep_objects(control, arena, occupied, 0, 0, 1, 1))
-end
-return { sweep = sweep }
+const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
+const source = `
+local sweep<const> = require('kernel/gc_sweep_quantum').sweep_quantum
+bss report: u32[2]
+while report[0] == 0 do halt_until_irq end
+report[1] = sweep(report[0], 1, 0, 0)
+while true do halt_until_irq end
 `;
-const modules = [
-	...['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/gc_objects'].map(path =>
-		({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
-	{ path: PROBE, source: probeSource },
-].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
-
-mkdirSync('tmp', { recursive: true });
-const directory = mkdtempSync(join('tmp', 'bmsx-gc-objects-'));
+const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
+const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-objects-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { buildDirectory: join('tmp', 'build-cpp-gc-objects') });
-	for (const optLevel of [0, 3] as const) {
-		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, {
-			entrySource, optLevel, programDomain: 'system', preloadModules: [PROBE],
-		});
-		const system = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-		const exported = object.sections.rodata.moduleExports.find(entry => entry.path === PROBE && entry.exportPathKey === 'sweep');
-		assert.ok(exported);
-		const entry = system.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-		assert.ok(entry >= 0);
-		const rom = join(directory, `system-O${optLevel}.rom`);
-		writeFileSync(rom, system.romBytes);
-		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-		});
+	const machine = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	const oracle = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	for (const opt of [0, 3] as const) {
+		const system = linkManagedTestSystem(source, opt), romBytes = writeTestBlua32Rom(system);
+		const rom = join(directory, `system-O${opt}.rom`), initial = join(directory, `before-O${opt}.state`);
+		const nativePartial = join(directory, `native-partial-O${opt}.state`), tsPartial = join(directory, `ts-partial-O${opt}.state`);
+		const report = system.symbols.metadata.staticScopes.declarations.find(symbol => symbol.name === 'report')!.address!;
+		writeFileSync(rom, romBytes);
+		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		const grant = (cycles: number) => scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-		const boot: string[] = [];
-		let result = RunResult.Yielded;
-		for (let i = 0; i < 256 && result === RunResult.Yielded; ++i) {
-			result = grant(4096);
-			boot.push('E 4096');
-		}
-		assert.equal(result, RunResult.Halted);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
-		const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
-		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
-		const table = createReferenceTable(cpu, 3, 8);
-		const colorShift = 8 * GC_COLOR_OFFSET;
-		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((nativeHeapReference(cpu).gc.white() ^ 1) << colorShift);
-		const phase = (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep;
-		const seed = [...boot, 'Y 3 8', `W ${table} ${header}`, `W ${control} ${phase}`,
-			`W ${control + SWEEP_LINK} ${control + OBJECT_HEAD}`];
-		memory.writeRamRecordWord(table, header);
-		memory.writeRamRecordWord(control, phase);
-		memory.writeRamRecordWord(control + SWEEP_LINK, control + OBJECT_HEAD);
-		// The native step wrapper accounts pacing after the sweep leaf.
-		nativeHeapReference(cpu).gc['beginPaceCredit'](memory.readRamRecordWord(control + OBJECT_HEAD + 4) + nativeHeapReference(cpu).stringPool.estimateSweepWork(), 0);
-		for (let word = SWEEP_LINK + 4; word <= GC_PACE_PAID + 4; word += 4) {
-			const address = control + word;
-			seed.push(`W ${address} ${memory.readRamRecordWord(address)}`);
-		}
-		const ranges = [[floor, management], [occupied, occupied + 4],
-			[arena, management + GC_WORKSPACE_END], [control + OBJECT_HEAD, control + SWEEP_LINK + 4]];
-		const verify = ranges.map(([first, end]) => `H ${first} ${end}`);
-		const hashes = () => ranges.map(([first, end]) => String(hashBytes(memory.ramData(), first, end - first)));
-		function run(name: string, quantum: string[]) {
-			const trace = join(directory, `trace-O${optLevel}-${name}.txt`);
-			writeFileSync(trace, [...seed, ...quantum].join('\n'));
-			const output = execFileSync(native, [rom, trace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n');
-			assert.equal(+output[boot.length], table, 'both runners allocate the same fitted Table');
-			return output.slice(boot.length + 1);
-		}
-		const reference = run('native', [`z ${table}`, ...verify]);
-		assert.equal(+reference[0], 1, 'native Sweep processed its one-Table quantum');
+		runGuestToHalt(cpu, 4_194_304);
+		assert.ok(cpu.isHaltedUntilIrq());
 
-		const fn = system.image.functions[entry].address;
-		assert.equal(cpu.beginHeapService(fn, [control, arena, occupied]), true);
-		const retiredHeader = header & ~0xff;
-		let grants = 0;
-		for (; grants < 16384 && memory.readRamRecordByte(table) !== 0; ++grants) {
-			assert.equal(grant(1), RunResult.Yielded);
-			assert.equal(cpu.heapServiceActive(), true);
+		// Reserve the ordinary register window before taking the common seed,
+		// so the guest and oracle see the same arena for the sweep quantum.
+		const stack = cpu.rootThread;
+		cpu.requestRegisterWindow(512, 64, scheduler.cyclesUntilDeadline());
+		runGuestToHalt(cpu, 65_536, stack.frameDepth - 1);
+		assert.ok(cpu.isHaltedUntilIrq());
+		assert.ok(stack.stackRegisters.capacity() >= 512);
+
+		const { gc, heapAllocator: arena, stringPool } = nativeHeapReference(cpu);
+		const management = arena.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
+		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
+		const table = createReferenceTable(cpu, 3, 8), colorShift = 8 * GC_COLOR_OFFSET;
+		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((gc.white() ^ 1) << colorShift);
+		memory.writeRamRecordWord(table, header);
+		memory.writeRamRecordWord(control, (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep);
+		memory.writeRamRecordWord(control + SWEEP_LINK, control + OBJECT_HEAD);
+		const inventory = memory.readRamRecordWord(control + OBJECT_COUNT);
+		gc['beginPaceCredit'](inventory + stringPool.estimateSweepWork(), 0);
+		const charge = memory.readRamRecordWord(occupied);
+		const reportOffset = report - RAM_BASE;
+		const ranges = [[floor, management], [control, management + GC_WORKSPACE_END]];
+		const verify = ranges.map(([first, end]) => `H ${first} ${end}`);
+		// The reference sweeps RAM without running a CPU. Its copies of the
+		// caller's stack and frames therefore cannot be compared with a CALL.
+		const layout = new ThreadLayout();
+		new ThreadRecords(memory).readLayout(stack.address, layout);
+		const execution = [
+			[layout.offset, layout.offset + layout.capacity * THREAD_STACK_SLOT_BYTES],
+			[layout.frameOffset, layout.frameOffset + layout.frames * FRAME_CONTROL_BYTES],
+		].sort(([a], [b]) => a - b);
+		const referenceRanges = [[floor, execution[0][0]], [execution[0][1], execution[1][0]],
+			[execution[1][1], management], ranges[1]];
+		const hashes = (regions = ranges) => regions.map(([first, end]) => String(hashBytes(memory.ramData(), first, end - first)));
+		writeFileSync(initial, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+
+		function run(runner: string, name: string, commands: string[], checkpoint = initial) {
+			const trace = join(directory, `trace-O${opt}-${name}.txt`);
+			writeFileSync(trace, ['X', ...commands].join('\n'));
+			return execFileSync(runner, [rom, trace, checkpoint], { encoding: 'utf8' }).trimEnd().split('\n');
 		}
-		assert.equal(memory.readRamRecordWord(table), retiredHeader);
-		assert.ok(nativeHeapReference(cpu).heapAllocator.issuedObjectStart(table - RAM_BASE - GC_OBJECT_PREFIX), 'kind clears before arena release');
-		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), control + OBJECT_HEAD, 'quantum cursor is not published at kind clear');
+		const reference = run(oracle, 'reference', [`z ${table}`, ...referenceRanges.map(([first, end]) => `H ${first} ${end}`)]);
+		assert.equal(reference[0], '1', 'the native sweep processes its one-Table quantum');
+
+		const commands = [`W ${report} ${management}`, 'h', 'l'], expected: string[] = [];
+		memory.writeRamRecordWord(report, management);
+		cpu.clearHaltUntilIrq();
+		function grant(cycles: number) {
+			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+			const used = cycles - cpu.instructionBudgetRemaining;
+			assert.ok(used > 0);
+			assert.equal(result, cpu.isHaltedUntilIrq() ? RunResult.Halted : RunResult.Yielded);
+			return `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`;
+		}
+		function reach(condition: () => boolean) {
+			for (let n = 0; n < 16384 && !condition(); ++n) {
+				assert.ok(!cpu.isHaltedUntilIrq(), `sweep halted before the expected store (reason=${cpu.readLuaFaultReasonWord()}, report=${memory.readRamRecordWord(report + 4)})`);
+				commands.push('E 1');
+				expected.push(grant(1));
+			}
+			assert.ok(condition());
+		}
+		reach(() => memory.readRamRecordWord(occupied) !== charge);
+		assert.equal(memory.readRamRecordWord(occupied), charge - TableRecords.allocationCharge(0, 8),
+			'hash storage is released before array storage');
+		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory);
+		commands.push(...verify);
+		expected.push(...hashes());
+		reach(() => memory.readRamRecordByte(table) === 0);
+		assert.equal(memory.readRamRecordWord(table), header & ~0xff);
+		assert.ok(arena.issuedObjectStart(table - RAM_BASE - GC_OBJECT_PREFIX), 'kind clears before arena release');
+		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), control + OBJECT_HEAD, 'cursor is unpublished at kind clear');
+		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory);
+		assert.equal(memory.readRamRecordWord(report + 4), 0, 'the ordinary CALL has not returned');
 		const partial = captureRuntimeSaveState(runtime), intermediate = hashes();
-		const tail = () => {
-			const result = grant(65536), cycles = 65536 - cpu.instructionBudgetRemaining;
-			assert.equal(result, RunResult.Yielded);
-			assert.ok(cycles > 0 && cycles < 65536);
-			assert.equal(cpu.heapServiceResult(), 1);
-			return [`${result} ${cycles} 0 ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`, ...hashes()];
-		};
-		const final = tail();
-		assert.deepEqual(final.slice(1), reference.slice(-verify.length),
-			'physical arena, logical charge, allocator state and sweep frontier match the C++ collector');
-		applyRuntimeSaveState(runtime, partial);
-		assert.deepEqual(tail(), final, 'portable restore at the cleared kind reproduces exact bytes and cycles');
-		const guest = run('blua', [`B ${fn} 3 ${control} ${arena} ${occupied}`, `j ${table} ${retiredHeader >>> 0}`,
-			'l', 's', ...verify, 'L 65536', ...verify, 'u', 'L 65536', ...verify]);
-		assert.deepEqual(guest, ['1', String(grants), ...intermediate, ...final, ...final],
-			'both cores use the same retirement instruction frontier and native rewind replays it');
-		console.log(`BIOS-GC-OBJECTS:PASS O${optLevel} (C++ hash-first retirement, paired kind-clear checkpoint)`);
+		writeFileSync(tsPartial, encodeRuntimeSaveState(partial));
+		const finishCommands = ['E 65536', ...verify, `H ${reportOffset + 4} ${reportOffset + 8}`];
+		function finish() {
+			const outcome = grant(65_536);
+			assert.ok(cpu.isHaltedUntilIrq());
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+			assert.equal(memory.readRamRecordWord(report + 4), 1);
+			return [outcome, ...hashes(), String(hashBytes(memory.ramData(), reportOffset + 4, 4))];
+		}
+		const final = finish();
+		assert.deepEqual(hashes(referenceRanges), reference.slice(1),
+			'physical arena, logical charge, sweep frontier and epoch pacing match the frozen C++ collector');
+		const guest = run(machine, 'guest', [...commands, `x ${nativePartial}`, 's', ...verify,
+			...finishCommands, 'u', ...finishCommands]);
+		assert.deepEqual(guest, [...expected, ...intermediate, ...final, ...final],
+			'both cores suspend at the same stores and native rewind replays the quantum');
+		assert.deepEqual(run(machine, 'ts-to-native', finishCommands, tsPartial), final);
+		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativePartial), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		assert.deepEqual(finish(), final, 'native-to-TS restore at kind clear reproduces bytes and cycles');
+
+		console.log(`BIOS-GC-OBJECTS:PASS O${opt} (C++ hash-first sweep, ordinary guest CALL, portable kind-clear checkpoint and rewind)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {
