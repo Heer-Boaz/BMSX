@@ -25,6 +25,17 @@ const pins = [
 	['R', 'machine/cpp/machine/cpu/thread_record.h', 'f612d2139b3e6d7f5b26512ac24ee5fc85b641fee7000899c29323f7023ac5b5', [[18, 18]]],
 ] as const;
 
+// The old separate CONCAT scan operated on duplicated host slots. The
+// firmware now keeps those operands in the interrupted Thread's Value
+// planes, including their String tag test. These source ranges are
+// accounted for by that path, not by the surviving root-bank reads.
+const concatWindowOrigins = new Map<string, readonly (readonly [number, number])[]>([
+	['U', [[5077, 5077], [5095, 5101]]],
+	['P', [[3147, 3147], [3166, 3171]]],
+	['V', [[9, 10]]],
+	['W', [[21, 22]]],
+]);
+
 test('root bank and Thread root descriptors bind the exact raw publication layout', () => {
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
 	const file = workspace.updateFile(path, source);
@@ -32,7 +43,7 @@ test('root bank and Thread root descriptors bind the exact raw publication layou
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	for (const [name, size, fields] of [
 		['root_bank', 16, [['count', 0, 4], ['payloads', 4, 4], ['tags', 8, 4], ['padding', 12, 4]]],
-		['root_descriptors', 48, [['root', 0, 4], ['active', 4, 4], ['completion_thread', 8, 4], ['halted', 12, 4], ['banks', 16, 32]]],
+		['root_descriptors', 32, [['root', 0, 4], ['active', 4, 4], ['completion_thread', 8, 4], ['halted', 12, 4], ['banks', 16, 16]]],
 	] as const) {
 		const type = types.resolve(path, { name, arrayLengths: [], span });
 		assert.equal(type.size, size, name);
@@ -54,6 +65,17 @@ test('the root bank firmware maps each mirrored scheduling, slot, and Thread ord
 	}
 	const lines = source.split('\n');
 	assert.ok(lines.includes(`-- Source basis: ${basis}.`));
+	const receive = readFileSync('machine/bios/kernel/string_control_call.lua', 'utf8');
+	assert.match(receive, /^\s*id, fault = strings\.intern_value_window\(management, owner, slot \+ 1, count, slices\.concat_source, cop0\.event_cycles\)$/m);
+	const reserve = readFileSync('machine/bios/kernel/allocate_string_slice.lua', 'utf8');
+	assert.match(reserve, /^\s*local words<const>, tags<const> = thread_storage\.internal\.value_planes\(owner, first\).*\n[\s\S]*?slices\.retain_concat_sources\(metadata, words, tags, count\).*\n\s*local offset<const>, published<const> = reserve_string_record\(/m);
+	const retain = readFileSync('machine/bios/kernel/string_slice.lua', 'utf8');
+	assert.match(retain, /^local retain_concat_sources<const> = function\([^\n]*\n[^\n]*\n[^\n]*\n\s*for i = 0, count - 1 do[^\n]*\n\s*if tags\[i\] == string_tag then strings\.mark\(metadata, words\[i\]\) end/m);
+	const publish = readFileSync('machine/bios/kernel/gc_root_inputs.lua', 'utf8');
+	assert.match(publish, /^\s*roots\.active = \*interrupted$/m);
+	const trace = readFileSync('machine/bios/kernel/gc_thread_trace.lua', 'utf8');
+	assert.match(trace, /^\s*local _<const>, strings<const> = mark\.mark_value\(control, arena, metadata, \*tag, \*payload, trace_head, replace_color_byte\)/m);
+
 	const exports = lines.indexOf('return {');
 	assert.ok(exports > 0);
 	for (const [index, line] of lines.slice(0, exports).entries()) {
@@ -76,7 +98,8 @@ test('the root bank firmware maps each mirrored scheduling, slot, and Thread ord
 		for (const [first, last] of slices) for (let n = first; n <= last; ++n) {
 			const statement = native.lines[n - 1];
 			if (/^\s*(?:$|\/\/|[{}]$)/.test(statement)) continue;
-			assert.ok(native.covered.has(n), `${key}:${n}: no firmware mapping for ${statement.trim()}`);
+			const moved = concatWindowOrigins.get(key)?.some(([start, end]) => start <= n && n <= end) === true;
+			assert.notEqual(native.covered.has(n), moved, `${key}:${n}: expected exactly one firmware owner for ${statement.trim()}`);
 		}
 	}
 });

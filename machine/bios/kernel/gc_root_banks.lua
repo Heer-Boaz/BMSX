@@ -4,7 +4,7 @@ module<const>
 -- T/C/H: GcHeap; U/P: CPU; G/B: GlobalBank; V/W: Value tags;
 -- Q/R: Thread records; O: RAM map.
 local mark<const> = require('kernel/gc_mark') -- T:307-309,331-338 U:5087,5092,5108-5109 P:3157-3158,3163,3178-3181
-local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5099,5104 P:3157,3169,3174 C:636
+local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5104 P:3157,3174 C:636
 local _bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; read installed String ordinals directly
 local layout<const> = require('kernel/gc_runtime_layout') -- O:6; addresses are relative to the existing System management region
 local name_index_slot_bytes<const> = require('kernel/global_bank').internal.name_index_slot_bytes -- G:21-22,31 B:23-24,34
@@ -25,11 +25,15 @@ local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 -- Installed operand records point at all String IDs in ordinal order.
 -- Only RAM IDs count as roots or collector work. Completion reads the live
 -- host-return observation through its private descriptor.
+-- The former ConcatOperands bank (U:5077,5095-5101 P:3147,3166-3171) has
+-- no separate scan. string_control_call.receive borrows the suspended
+-- Thread's argument window. allocate_string_slice.intern_value_window
+-- retains its Strings before recovery, and gc_thread_trace scans its Values.
 struct root_bank
-	count: u32 -- U:5073-5079 P:3143-3149
-	payloads: addr -- U:5085,5092,5096-5099,5103-5104 P:3155,3163,3168-3169,3173-3174 G:21 B:23
-	tags: addr -- U:5085,5092,5099 P:3155,3163,3169 G:22 B:24
-	padding: u32 -- U:5073-5079 P:3143-3149; align each Count+Payload pair
+	count: u32 -- U:5073-5076,5078-5079 P:3143-3146,3148-3149
+	payloads: addr -- U:5085,5092,5103-5104 P:3155,3163,3173-3174 G:21 B:23
+	tags: addr -- U:5085,5092 P:3155,3163 G:22 B:24
+	padding: u32 -- U:5073-5076,5078-5079 P:3143-3146,3148-3149; align the Count+Payload pair
 end
 
 struct root_descriptors
@@ -41,7 +45,7 @@ struct root_descriptors
 end
 
 local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_base, names_base, kind, first, stop, replace_color_byte) -- U:5082 P:3152
-	local words<const>: *u32 = payloads -- U:5084-5085,5092,5096,5103-5104 P:3154-3155,3163,3168,3173-3174
+	local words<const>: *u32 = payloads -- U:5084-5085,5092,5103-5104 P:3154-3155,3163,3173-3174
 	local work = 0 -- T:591,603 C:636; String work replaces the drained host latch
 	if kind < system_constants then -- U:5083 P:3153
 		local names<const>: *u32 = names_base -- U:5084,5087 P:3154,3157 G:31 B:34
@@ -71,7 +75,7 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 	while kind < stop do -- T:592 C:623
 		local globals<const> = kind < system_constants -- T:594 C:626
 		local literal_bank<const> = not globals and kind < completion -- U:5078-5079 P:3148-3149
-		local bank_end, payloads, tags, names -- T:593 C:624-625 U:5073-5079 P:3143-3149
+		local bank_end, payloads, tags, names -- T:593 C:624-625 U:5073-5076,5078-5079 P:3143-3146,3148-3149
 		if globals then -- U:5083 P:3153
 			local namespace<const>: *namespace_bank = ram_base + control - layout.control_offset + layout.system_global_bank_offset + (kind - system_globals) * sizeof(namespace_bank) -- U:5074-5075,5084 P:3144-3145,3154
 			local values<const>, capacity<const> = namespace.values, namespace.capacity -- U:5084 P:3154 G:21-22,31 B:23-24,34
@@ -84,9 +88,9 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			local maps<const>: *image_operand_map = state + layout.image_operand_maps_offset -- U:5078-5079,5103 P:3148-3149,3173
 			local backings<const>: *image_operand_backing = state + layout.image_operand_backings_offset -- U:5078-5079,5103 P:3148-3149,3173
 			bank_end, payloads = backings[lane].ram_string_end, maps[lane].strings -- U:5078-5079,5104 P:3148-3149,3174
-		else -- U:5076-5077 P:3146-3147
+		else -- U:5076 P:3146
 			local bank<const>: *root_bank = &roots.banks[kind - completion] -- T:593 C:624-625
-			bank_end, payloads, tags = bank.count, bank.payloads, bank.tags -- T:593 C:625 U:5076-5077,5091-5092,5095-5099 P:3146-3147,3162-3163,3166-3169
+			bank_end, payloads, tags = bank.count, bank.payloads, bank.tags -- T:593 C:625 U:5076,5091-5092 P:3146,3162-3163
 		end
 		local words<const> = globals and 3 or 1 -- T:595 C:627
 		local worst<const> = words + (globals and 2 or 1) -- T:595 C:627
