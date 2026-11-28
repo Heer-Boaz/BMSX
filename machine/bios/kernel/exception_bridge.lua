@@ -27,7 +27,6 @@ local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
 local reference_store<const> = 15 << 2
 local storage_window<const> = 16 << 2
-local function_binding<const> = 17 << 2
 local explicit_error<const> = 8
 local out_of_memory<const> = 9
 local string_tag<const> = 5
@@ -144,20 +143,6 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 	local denied_storage<const> = cause == storage_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
 	local transfer_fault
-	if cause == function_binding then
-		local context<const>: *stopped_thread = *interrupted
-		local frame_depth<const> = context.frame_depth & control_count_mask
-		local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (frame_depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
-		local reason<const> = binding.bind(*interrupted, frame, values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10)
-		if reason == nil then
-			if (frame.top & frame_window_mask) <= values then
-				frame.top = (frame.top & ~frame_window_mask) | (values + 1)
-			end
-			cop0.epc = frame.pc
-			blua32.rfe()
-		end
-		transfer_fault = reason
-	end
 	if denied_storage and table_growth.store_resolved(values, depth, instruction, source_cycles, r4, r5) then
 		local context<const>: *stopped_thread = *interrupted
 		local depth<const> = context.frame_depth & control_count_mask
@@ -244,7 +229,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			payload, tag = fault_ids[reason], string_tag
 		end
 		local deadline<const> = denied_window and source_cycles or (denied_storage and r4
-			or ((cause == function_binding or (cause == syscall and values == firmware_ids.bind_function)) and r10 or 0))
+			or ((cause == syscall and values == firmware_ids.bind_function) and r10 or 0))
 		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
 		if caught then
 			if resume_context then *interrupted = resume_context end

@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -22,9 +23,9 @@ test('all nominal opcode prices include instruction issue, while WIDE remains fr
 		0, 2, 2, 2, 3, 2, 2, 2,
 		2, 2, 8, 2, 3, 3, 16, 16,
 		2, 2, 2, 2, 32, 34, 33, 128,
-		2, 2, 2, 2, 2, 2, 3, 2,
+		2, 2, 2, 2, 2, 2, 2, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,
-		2, 2, 2, 8, 3, 4, 3, 32,
+		2, 2, 2, 2, 3, 4, 3, 32,
 		16, 3, 3, 3, 2, 2, 3, 4,
 		3, 4, 8, 8, 16, 16, 17, 2,
 	];
@@ -129,19 +130,18 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		test(`RET charges selected result slots including padding (${backend}, B=${producedOperand}, C=${wantedOperand})`, () => {
 			const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+			writeInstruction(text, 1, OpCode.LOADK, 0, 0, 2);
 			writeInstruction(text, 2, OpCode.MOV, 4, 0, 0);
 			writeInstruction(text, 3, OpCode.LOADK, 5, 0, 0);
 			writeInstruction(text, 4, OpCode.LOADK, 6, 0, 1);
 			writeInstruction(text, 5, OpCode.CALL, 4, 3, wantedOperand);
 			writeInstruction(text, 6, OpCode.JMP, 0, 63, 59, 255);
 			writeInstruction(text, 7, OpCode.RET, 0, producedOperand, 0);
-			const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17), integerConstant(29)], functions: [
+			const image = linkManagedTestOpcodes({ text, verifiedControlFlow: true, constants: [integerConstant(17), integerConstant(29), integerConstant(0)], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 2 },
-			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+			], constValueRelocs: [{ constIndex: 2, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 			const { cpu } = createManagedTestOpcodeCpu(image, backend);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 1000);
 			const produced = producedOperand === 0 ? 2 : producedOperand - 1;
 			const placed = wantedOperand === 0 ? produced : wantedOperand - 1;
@@ -199,17 +199,15 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch RET charges its result range (${backend})`, () => {
 	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(text, 0, OpCode.JMP, 0, 63, 63, 255);
 	writeInstruction(text, 3, OpCode.RET, 0, 0, 0);
 	const image = linkManagedTestOpcodes({ text, functions: [
-		{ firstWord: 0, wordCount: 3, maxStack: 8 }, { firstWord: 3, wordCount: 1, numParams: 2, maxStack: 2 },
-	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+		{ firstWord: 0, wordCount: 1, maxStack: 8 }, { firstWord: 3, wordCount: 1, numParams: 2, maxStack: 2 },
+	] });
 	const { cpu } = createManagedTestOpcodeCpu(image, backend);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	cpu.runUntilDepth(0, 1);
-	const closure = cpu.rootThread.currentFrame!.registers.getPayload(0);
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JMP]);
+	const closure = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+	reserveThreadFrameReference(cpu, cpu.rootThread, 16);
 	for (let call = 0; call < 16; ++call) {
 		cpu.beginCompletionCall(closure, [valueInteger(17), valueInteger(29)]);
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);

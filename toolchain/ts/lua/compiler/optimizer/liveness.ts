@@ -35,7 +35,7 @@ export function visitInstructionOpenUpvalueRegisters<T>(
 		visitRegisterRange(state, visitor, 0, maxRegister + 1);
 		return;
 	}
-	const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+	const proto = instruction.boundFunctionProto;
 	if (proto === undefined) return;
 	const upvalues = resolveClosureUpvalues(proto);
 	for (let index = 0; index < upvalues.length; index += 1) {
@@ -55,7 +55,7 @@ export function visitInstructionUses<T>(
 ): void {
 	switch (instruction.op) {
 		case OpCode.JREG:
-			if (instruction.c === 0) visitRegister(state, visitor, instruction.a);
+			visitRegister(state, visitor, instruction.a);
 			break;
 		case OpCode.MOV:
 		case OpCode.UNM:
@@ -140,15 +140,6 @@ export function visitInstructionUses<T>(
 		case OpCode.ITERN:
 			visitRegisterRange(state, visitor, instruction.a, 3);
 			break;
-		case OpCode.CLOSURE:
-			visitInstructionOpenUpvalueRegisters(
-				instruction,
-				maxRegister,
-				resolveClosureUpvalues,
-				state,
-				visitor,
-			);
-			break;
 		case OpCode.LOAD_MEM:
 			visitRegister(state, visitor, instruction.b);
 			break;
@@ -216,7 +207,7 @@ export function visitInstructionDefs<T>(
 		case OpCode.NOT:
 		case OpCode.LEN:
 		case OpCode.BNOT:
-		case OpCode.CLOSURE:
+		case OpCode.JAL:
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
 		case OpCode.LOAD_MEM_D:

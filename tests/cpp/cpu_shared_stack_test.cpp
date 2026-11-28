@@ -31,23 +31,22 @@ void slidingFixedCall(bool interpreted) {
 	image.text.resize(10 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LOADK), 4, 0, 1);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 5, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 4, 2, 3);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::MOV), 2, 0, 0);
 	writeInstruction(image.text, 9, static_cast<u8>(OpCode::RET), 0, 3, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 128},
-		{.firstWord = 8, .wordCount = 2, .numParams = 2, .maxStack = 8}};
-	image.constants = {37};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		{.firstWord = 8, .wordCount = 2, .numParams = 2, .maxStack = 8, .codeFunction = true}};
+	image.constants = {37, Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
-	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
 	cpu.runUntilDepth(1, 100);
@@ -58,8 +57,7 @@ void slidingFixedCall(bool interpreted) {
 	require(parent->registers.get(0) == valueInteger(1), "the lower caller prefix survives calls");
 	require(parent->next && parent->next->stackBase() == parent->stackBase() + 5, "callee parameters alias the supplied argument slots");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
-	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
-		+ BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
+	cpu.runUntilDepth(0, 2 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	require(thread->frameDepth() == 2, "exhausted CALL grant leaves the callee before its first instruction");
 	auto* child = thread->currentFrame;
 	require(child->registers.words() == parent->registers.words() + 5 && child->registers.tags() == parent->registers.tags() + 5, "callee borrows both planes at the same argument offset");
@@ -84,7 +82,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	image.text.resize(19 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETSYS), 4, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 5, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOADK), 6, 0, 1);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::LOADK), 7, 0, 2);
@@ -96,19 +94,22 @@ void slidingVarargCall(bool interpreted, bool open) {
 	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 128},
 		{.firstWord = 16, .wordCount = 3, .numParams = 1, .maxStack = 8, .isVararg = true}};
 	image.constants = {37, false, Blua32FloatConstant{0x80000000u}};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.systemGlobalNames = {"varargCallee"};
+
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
-	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+	const auto closure = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+	const auto key = bmsx::test::StringPoolReference(cpu).intern(image.systemGlobalNames[0]);
+	NativeGlobalBankReference::setSystemGlobalByKey(cpu, key, valueClosure(closure));
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
 	cpu.runUntilDepth(1, 100);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
-	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::GETSYS)]
 		+ 3 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* thread = cpu.activeThread();
 	require(thread->frameDepth() == 2, "vararg CALL enters before executing the body");
@@ -129,23 +130,26 @@ void formalReservationRoots(bool interpreted) {
 	test::Blua32TestImage image;
 	image.text.resize(5 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 4, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 4, 8, 8);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 4, 8, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 8, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 16},
 		{.firstWord = 4, .wordCount = 1, .numParams = 7, .maxStack = 2}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); test::seedManagedFixture(cpu, addresses);
-	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+	{
+		const auto closure = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+		cpu.activeThread()->currentFrame->registers.set(4, bmsx::valueClosure(closure));
+	}
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	auto* parent = cpu.activeThread()->currentFrame;
 	for (int index = 0; index < 6; ++index) parent->registers.set(5 + index, valueInteger(index));
 	auto table = bmsx::test::allocateTableReference(cpu, 1, 0); table.setInteger(1, valueInteger(73));
 	parent->registers.set(11, valueTable(table.address())); parent->writeControl(bmsx::FrameField::Top, 12);
-	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
 	require(cpu.getFrameDepth() == 2 && child->stackCapacity() == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
 		"the formal count owns every argument even when maxStack is smaller");

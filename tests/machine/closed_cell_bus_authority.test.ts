@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import { GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
-import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -20,20 +20,18 @@ import { runGuestToHalt } from '../helpers/cpu_execution';
 import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 
-for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and CALL cannot enter the private closed-cell store at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CALL cannot enter the private closed-cell store at O${optLevel}`, () => {
 	const system = linkManagedTestSystem(MANAGED_CART_LAUNCH, optLevel);
 	const cartSource = 'local a,b,c,d=121,122,123,124; return a,b,c,d';
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua').chunk, [], { entrySource: cartSource, optLevel });
 	const linked = linkTestCartBlua32(system.biosImports, cart);
 	const entry = linked.cartImage.functions.find(fn => fn.address === linked.cartVectors.entryFunctionAddress)!;
 	const text = linked.cartRomBytes.subarray(entry.codeAddress - CART_ROM_BASE, entry.codeAddress - CART_ROM_BASE + entry.codeByteCount);
-	assert.ok(entry.maxStack >= 5);
+	assert.ok(entry.maxStack >= 3);
 	assert.ok(text.byteLength >= 5 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
-	writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(2), encodeFixedValueCount(0));
-	writeInstruction(text, 4, OpCode.RET, 0, encodeFixedValueCount(0), 0);
+	writeInstruction(text, 1, OpCode.CALL, 0, encodeFixedValueCount(2), encodeFixedValueCount(0));
+	writeInstruction(text, 2, OpCode.RET, 0, encodeFixedValueCount(0), 0);
 	const { cpu, memory } = bootManagedTestSystem(system, 'main', cartridgeSlots(linked.cartRomBytes));
 	runGuestToHalt(cpu, 65_536);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
@@ -50,7 +48,7 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	assert.equal(caller.pc, entry.codeAddress + INSTRUCTION_BYTES);
 	const valueCapacity = memory.readRamRecordWord(thread.address + ThreadField.StackCapacity);
 	const frameCapacity = memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
-	caller.registers.setInteger(0, target);
+	caller.registers.set(0, valueFromTag(ValueTag.CodeFunction, target));
 	const cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 	initialize(memory, cell, nativeHeapReference(cpu).gc.white());
 	nativeHeapReference(cpu).gc.publishObject(cell);
@@ -60,10 +58,10 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	caller.registers.setInteger(1, cell);
 	caller.registers.setString(2, nativeHeapReference(cpu).stringPool.intern('must not overwrite'));
 	cpu.clearHaltUntilIrq();
-	const callPc = entry.codeAddress + 3 * INSTRUCTION_BYTES;
+	const callPc = entry.codeAddress + INSTRUCTION_BYTES;
 	for (let i = 0; i < 4096 && (caller.pc !== callPc); ++i) cpu.runUntilDepth(0, 1);
 	assert.equal(caller.pc, callPc);
-	assert.equal(caller.registers.getTag(0), ValueTag.CodeFunction, 'the raw address resolves to an ordinary callable');
+	assert.equal(caller.registers.getTag(0), ValueTag.CodeFunction, 'the attempted target is the actual ordinary linked callable');
 	assert.equal(caller.registers.getPayload(0), target);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(thread.frameDepth, depth + 1);

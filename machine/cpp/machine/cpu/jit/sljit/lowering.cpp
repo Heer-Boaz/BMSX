@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <new>
+#include "machine/common/numeric.h"
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
@@ -204,7 +205,9 @@ void NativeLowering::lowerOperation(const NativeReplay&, const NativeInstruction
 	m_terminal = true;
 }
 
-void NativeLowering::lowerOperation(const NativeJump&, const NativeInstruction&) {
+void NativeLowering::lowerOperation(const NativeJump& jump, const NativeInstruction& row) {
+	if (jump.link >= 0)
+		emitConstant(static_cast<NativeSlot>(jump.link), valueInteger(toSignedWord(row.pc + u32{row.width} * INSTRUCTION_BYTES)));
 	emitExit(m_blocks[m_current]->terminal);
 }
 

@@ -9,6 +9,7 @@ export type Block = {
 
 export const isJump = (instruction: Instruction): boolean =>
 	instruction.op === OpCode.JMP
+	|| instruction.op === OpCode.JAL
 	|| instruction.op === OpCode.JMPIF
 	|| instruction.op === OpCode.JMPIFNOT;
 
@@ -103,6 +104,7 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 		const nextNext = i + 2;
 		switch (instruction.op) {
 			case OpCode.JMP:
+			case OpCode.JAL:
 				addJumpLeader(instruction);
 				if (next < count) {
 					leaders.add(next);
@@ -202,6 +204,7 @@ export const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 			case OpCode.RFE:
 				break;
 			case OpCode.JMP:
+			case OpCode.JAL:
 				addIndexSuccessor(blockIndex, getJumpTarget(instruction));
 				break;
 			case OpCode.JREG:

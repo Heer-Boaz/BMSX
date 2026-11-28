@@ -15,6 +15,8 @@
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
+#include "support/global_bank_reference.h"
+#include "support/string_pool_reference.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
@@ -532,7 +534,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeInstruction(launcher.text, 1, static_cast<u8>(OpCode::LOAD_MEM), 0, 0, static_cast<u8>(MemoryAccessKind::Word));
 	writeInstruction(launcher.text, 2, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
 	writeInstruction(launcher.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(launcher.text, 4, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(launcher.text, 4, static_cast<u8>(OpCode::GETSYS), 4, 0, 0);
 	writeInstruction(launcher.text, 5, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 	writeInstruction(launcher.text, 6, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(launcher.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
@@ -540,19 +542,19 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeInstruction(launcher.text, 9, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
 	writeInstruction(launcher.text, 10, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	launcher.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8},
-		{.firstWord = 3, .wordCount = 5, .maxStack = 8}, {.firstWord = 8, .wordCount = 1},
+		{.firstWord = 3, .wordCount = 5, .maxStack = 8, .codeFunction = true}, {.firstWord = 8, .wordCount = 1},
 		{.firstWord = 9, .wordCount = 2, .maxStack = 8}};
 	launcher.constants = {static_cast<i32>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), 11};
 	launcher.exceptionFunctionIndex = 2;
-	launcher.closureRelocations = {{4, record}};
+	launcher.systemGlobalNames = {"fixtureMappedCallee"};
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher, test::RAM_CODE_FIXTURE_BYTES);
 	constexpr u32 callerWord = 3, calleeWord = 7, alternateWord = 9;
 	test::Blua32TestImage source; source.text.resize(11 * INSTRUCTION_BYTES);
-	// Admit this branch before profiling without creating the closure until
+	// Admit this branch before profiling without loading the code value until
 	// after the physical SELECT write.
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(source.text, 2, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::LOADK), 4, 0, 3);
 	writeInstruction(source.text, callerWord, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 	writeInstruction(source.text, callerWord + 1, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(source.text, callerWord + 2, static_cast<u8>(OpCode::MOV), 3, 0, 0);
@@ -562,11 +564,11 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeInstruction(source.text, alternateWord, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
 	writeInstruction(source.text, alternateWord + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	source.functions = {{.firstWord = 0, .wordCount = calleeWord, .maxStack = 8},
-		{.firstWord = calleeWord, .wordCount = 2, .maxStack = 8}, {.firstWord = alternateWord, .wordCount = 2, .maxStack = 8}};
-	source.constants = {0, 22, 44};
-	source.closureRelocations = {{2, test::blua32TestFunctionAddress(ramRecord ? RomImageDomain::System : RomImageDomain::Cartridge, 1)}};
+		{.firstWord = calleeWord, .wordCount = 2, .maxStack = 8, .codeFunction = true}, {.firstWord = alternateWord, .wordCount = 2, .maxStack = 8}};
+	const Blua32CodeFunctionConstant codeReference{test::blua32TestFunctionAddress(ramRecord ? RomImageDomain::System : RomImageDomain::Cartridge, 1)};
+	source.constants = {0, 22, 44, codeReference};
 	const auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
-	source.constants = {0, 33, 55};
+	source.constants = {0, 33, 55, codeReference};
 	auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source, test::RAM_CODE_FIXTURE_BYTES);
 	const u32 otherRecord = card1.functionAddresses[1] - CART_ROM_BASE;
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, card1.textAddress + alternateWord * INSTRUCTION_BYTES);
@@ -577,15 +579,17 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		machine->memory.writeBytes(record, system.bytes.data() + system.functionAddresses[3], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
 		machine->memory.writeBytes(code, launcher.text.data() + 9u * INSTRUCTION_BYTES, 2u * INSTRUCTION_BYTES);
-		if (ramRecord) test::seedTestMappedClosure(machine->cpu, record);
+		if (ramRecord) {
+			const auto closure = test::seedTestMappedClosure(machine->cpu, record);
+			const auto key = bmsx::test::StringPoolReference(machine->cpu).intern(launcher.systemGlobalNames[0]);
+			test::NativeGlobalBankReference::setSystemGlobalByKey(machine->cpu, key, valueClosure(closure));
+		}
 		require(machine->cpu.runUntilDepth(0, 7) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
 			"EXEC establishes socket 0 before SELECT changes");
-		test::seedTestRomClosure(machine->cpu, ramRecord ? system.functionAddresses[1] : card0.functionAddresses[1],
-			ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : ExecutionDomainId{0});
 		require(machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::JMP)]) == RunResult::Yielded
 			&& machine->cpu.instructionBudgetRemaining == 0
 			&& machine->cpu.readFramePc(0) == card0.textAddress + INSTRUCTION_BYTES,
-			"the positive cartridge grant leaves the WIDE closure for execution after SELECT");
+			"the positive cartridge grant leaves the WIDE code constant for execution after SELECT");
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
 		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + alternateWord * INSTRUCTION_BYTES,
 			"ordinary data reads see the different record fitted to socket 1");

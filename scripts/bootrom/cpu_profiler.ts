@@ -572,7 +572,7 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 	const categoryRows = collectCpuProfilerCategoryPressure(snapshot);
 	const pathOpcodePressure = collectCpuProfilerPathOpcodePressure(snapshot);
 	const functionOpcodePressure = collectCpuProfilerFunctionOpcodePressure(snapshot);
-	const closureGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.CLOSURE);
+	const branchGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.JAL || opcode === OpCode.JREG);
 	const tableGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode =>
 		opcode === OpCode.GETT || opcode === OpCode.SETT || opcode === OpCode.GETI || opcode === OpCode.SETI || opcode === OpCode.GETFIELD || opcode === OpCode.SETFIELD || opcode === OpCode.SELF
 	);
@@ -620,9 +620,9 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.label} instr=${row.totalCount} share=${row.percent.toFixed(2)}% cycles=${row.totalCycles} cycle_share=${row.cyclePercent.toFixed(2)}% :: ${detail}`);
 	}
 	lines.push('');
-	lines.push('Closure-Heavy Functions');
-	for (let index = 0; index < closureGroupRows.length; index += 1) {
-		const row = closureGroupRows[index];
+	lines.push('Link and Register Branches');
+	for (let index = 0; index < branchGroupRows.length; index += 1) {
+		const row = branchGroupRows[index];
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} closures=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');

@@ -14,10 +14,10 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
@@ -25,7 +25,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../
 import { decodeBlua32Image } from '../../../toolchain/ts/rompack/blua32_image';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
-import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -49,12 +49,6 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const imageAddress = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 			const imageBytes = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET);
 			const image = decodeBlua32Image(system.subarray(imageAddress, imageAddress + imageBytes), imageAddress);
-			const textAddress = image.header.textAddress;
-			for (let pc = textAddress; pc < textAddress + image.textBytes.length;) {
-				const instruction = decodeBlua32InstructionAtPc(image.textBytes, textAddress, pc);
-				assert.notEqual(instruction.op, OpCode.CLOSURE, 'packaged stock firmware does not execute CLOSURE');
-				pc = instruction.pc + INSTRUCTION_BYTES;
-			}
 			const { dataAddress, dataByteCount, bssAddress: systemBssAddress, bssByteCount: systemBssByteCount } = image.header;
 			const systemStaticEnd = Math.max(dataAddress + dataByteCount, systemBssAddress + systemBssByteCount);
 			const payload = 'socket one cartridge literal';
@@ -157,7 +151,6 @@ halt_until_irq
 			let bindings = 0, staticLoads = 0, systemLoads = 0;
 			for (let pc = firstPc; pc < lastPc;) {
 				const instruction = decodeBlua32InstructionAtPc(selected, CART_ROM_BASE, pc);
-				assert.notEqual(instruction.op, OpCode.CLOSURE, 'packaged cartridge code does not execute CLOSURE');
 				if (instruction.op === OpCode.LOADK && instruction.bx === literal) ++staticLoads;
 				if (instruction.op === OpCode.LOADK && instruction.bx === systemLiteral) ++systemLoads;
 				if (instruction.op === OpCode.SVC && instruction.b === 2) bindings += 1;
@@ -270,51 +263,13 @@ halt_until_irq
 			const unentered = preTransfer.runtime.machine;
 			assert.equal(unentered.cpu.systemResetInhibited(), false);
 			assert.equal(unentered.cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
-			const preparedCharge = nativeHeapReference(unentered.cpu).luaHeap.usedBytes();
 			const operandBytes = unentered.memory.readRamRecordWord(owned + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 			const seed = join(output, 'pre-exec.state');
 			const prepared = captureRuntimeSaveState(preTransfer.runtime);
 			writeFileSync(seed, encodeRuntimeSaveState(prepared));
+			const preparedCharge = nativeHeapReference(unentered.cpu).luaHeap.usedBytes();
 
-			// From the same admitted System frame, try constructing a callable
-			// from a valid record on the socket that has *not* been prepared.
-			// This exercises CLOSURE's lazy image lookup, not the EXEC check.
-			const probeRom = new Uint8Array(system);
-			const actualFrame = unentered.cpu.getFrameDepth() - 1;
-			const word = unentered.cpu.readFramePc(actualFrame) / INSTRUCTION_BYTES;
-			writeInstruction(probeRom, word, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(probeRom, word + 1, OpCode.CLOSURE, 0, 0, 0);
-			rewriteResolvedABx(probeRom, word + 1, OpCode.CLOSURE, slot0.startupFunctionAddress / BLUA32_FUNCTION_ALIGNMENT);
-			const probe = new Runtime({ systemRomBytes: probeRom, cartridgeSlots: cartridgeSlots(other, selected),
-				machineModel: PSX_MACHINE_SPEC }, {
-				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-			});
-			probe.boot();
-			applyRuntimeSaveState(probe, prepared);
-			const attempted = probe.machine;
-			attempted.memory.writeMappedWord(IO_CART_SELECT, 0);
-			const absent = executionImageBindingOffset(0);
 			const empty = new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE);
-			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
-			const physicalBytes = nativeHeapReference(attempted.cpu).heapAllocator.occupiedBytes();
-			const attemptedResult = attempted.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-			assert.equal(nativeHeapReference(attempted.cpu).luaHeap.usedBytes(), preparedCharge, 'a Function lookup does not initialize an unprepared cartridge');
-			assert.equal(nativeHeapReference(attempted.cpu).heapAllocator.occupiedBytes(), physicalBytes);
-			assert.equal(attemptedResult, RunResult.Halted);
-			assert.equal(attempted.cpu.captureRuntimeState().hardHalted, true);
-			assert.equal(attempted.cpu.isExecutionDomainResident(0), false);
-			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
-			const probeSystem = join(output, 'unprepared-function.rom');
-			const probeTrace = join(output, 'unprepared-function.trace');
-			writeFileSync(probeSystem, probeRom);
-			writeFileSync(probeTrace, ['X', `O ${IO_CART_SELECT} 0`, 'L 1', 'F', `H ${absent} ${absent + EXECUTION_IMAGE_BINDING_SIZE}`].join('\n'));
-			const attemptedRows = execFileSync(native, [probeSystem, probeTrace, seed, otherPath, selectedPath], { encoding: 'utf8' });
-			assert.deepEqual(attemptedRows.trimEnd().split('\n'), [
-				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, nativeHeapReference(attempted.cpu).gc.fullEpochs(),
-					nativeHeapReference(attempted.cpu).gc.phase(), preparedCharge].join(' '),
-				'1', String(hashBytes(empty, 0, empty.length)),
-			]);
-
 			unentered.memory.writeMappedWord(IO_SYS_CONTROL, SYS_CONTROL_RESET);
 			preTransfer.commands.length = preTransfer.expected.length = 0;
 			preTransfer.commands.push('X', `O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);

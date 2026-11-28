@@ -46,7 +46,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"JMP",
 	"JMPIF",
 	"JMPIFNOT",
-	"CLOSURE",
+	"JAL",
 	"GETUP",
 	"SETUP",
 	"VARARG",

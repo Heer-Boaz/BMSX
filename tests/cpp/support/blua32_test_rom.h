@@ -28,11 +28,6 @@ struct Blua32TestFunction {
 	bool codeFunction = false;
 };
 
-struct Blua32TestClosureRelocation {
-	u32 wordIndex = 0;
-	u32 functionAddress = 0;
-};
-
 struct Blua32TestImage {
 	std::vector<u8> text;
 	std::vector<u8> toolingSymbols;
@@ -40,7 +35,6 @@ struct Blua32TestImage {
 	std::vector<Blua32EncodedConstant> constants;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
-	std::vector<Blua32TestClosureRelocation> closureRelocations;
 	u32 startupFunctionIndex = 0;
 	u32 irqFunctionIndex = 0;
 	u32 exceptionFunctionIndex = 0;

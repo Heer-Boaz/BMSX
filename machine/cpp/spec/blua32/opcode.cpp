@@ -47,7 +47,7 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // JMP
 	2u, // JMPIF
 	2u, // JMPIFNOT
-	8u, // CLOSURE
+	2u, // JAL
 	3u, // GETUP
 	4u, // SETUP
 	3u, // VARARG
@@ -114,7 +114,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX{
 	1u, // JMP
 	1u, // JMPIF
 	1u, // JMPIFNOT
-	1u, // CLOSURE
+	1u, // JAL
 	0u, // GETUP
 	0u, // SETUP
 	0u, // VARARG
@@ -181,7 +181,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // JMP
 	0u, // JMPIF
 	0u, // JMPIFNOT
-	0u, // CLOSURE
+	0u, // JAL
 	0u, // GETUP
 	0u, // SETUP
 	0u, // VARARG
@@ -248,7 +248,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS{
 	0u, // JMP
 	0u, // JMPIF
 	0u, // JMPIFNOT
-	0u, // CLOSURE
+	0u, // JAL
 	0u, // GETUP
 	0u, // SETUP
 	0u, // VARARG
@@ -315,7 +315,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_SCALAR_REGISTER_READS{
 	0u, // JMP
 	1u, // JMPIF
 	1u, // JMPIFNOT
-	0u, // CLOSURE
+	0u, // JAL
 	0u, // GETUP
 	1u, // SETUP
 	0u, // VARARG
@@ -382,7 +382,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_WRITES_REGISTER_A{
 	0u, // JMP
 	0u, // JMPIF
 	0u, // JMPIFNOT
-	1u, // CLOSURE
+	1u, // JAL
 	1u, // GETUP
 	0u, // SETUP
 	0u, // VARARG

@@ -41,12 +41,6 @@ constexpr int MAX_EXT_REGISTER = MAX_EXT_REGISTER_BC;
 constexpr int MAX_EXT_CONST = (1 << (MAX_OPERAND_BITS + EXT_B_BITS - 1)) - 1;
 constexpr int MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 
-constexpr int CLOSURE_DESTINATION_EXT_BITS = 2;
-constexpr int CLOSURE_DESTINATION_EXT_SHIFT = 2 * MAX_OPERAND_BITS;
-constexpr int CLOSURE_DESTINATION_EXT_MASK = (1 << CLOSURE_DESTINATION_EXT_BITS) - 1;
-constexpr int CLOSURE_ADDRESS_REGISTER_WIDE_C = 1 << (MAX_OPERAND_BITS - 1);
-constexpr int CLOSURE_ADDRESS_REGISTER_FLAG = CLOSURE_ADDRESS_REGISTER_WIDE_C << (MAX_OPERAND_BITS + EXT_C_BITS);
-
 constexpr int signExtend(uint32_t value, int bits) {
 	const int shift = 32 - bits;
 	return static_cast<int>(value << shift) >> shift;

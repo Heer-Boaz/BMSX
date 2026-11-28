@@ -48,9 +48,9 @@ void exactTable() {
 		0, 2, 2, 2, 3, 2, 2, 2,
 		2, 2, 8, 2, 3, 3, 16, 16,
 		2, 2, 2, 2, 32, 34, 33, 128,
-		2, 2, 2, 2, 2, 2, 3, 2,
+		2, 2, 2, 2, 2, 2, 2, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,
-		2, 2, 2, 8, 3, 4, 3, 32,
+		2, 2, 2, 2, 3, 4, 3, 32,
 		16, 3, 3, 3, 2, 2, 3, 4,
 		3, 4, 8, 8, 16, 16, 17, 2,
 	};
@@ -159,23 +159,26 @@ void reservedOpcode10ChargesBeforeDispatch() {
 	}
 }
 
-void creationAndCallWorkOnce() {
+void callWorkOnce() {
 	test::Blua32TestImage image;
 	image.text.assign(2 * MAPPED_PAGE_BYTE_SIZE, 0);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::KSMI), 1, 0, 7);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=3}, {.firstWord=DECODED_PAGE_WORDS, .wordCount=1, .numParams=1}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	Machine call(image, false), callScalar(image, true);
 	for (auto* machine : {&call, &callScalar}) {
-		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		{
+			const auto closure = test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+			machine->cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+		}
 	}
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
-	require(call.cpu.instructionBudgetRemaining == -7, "a cache-hit CLOSURE pays literal8 once without another record charge");
+	require(call.cpu.instructionBudgetRemaining == -1, "the WIDE MOV keeps its single two-cycle register charge");
 	test::runCpuParity(call.cpu, callScalar.cpu, 2);
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
 	require(call.cpu.instructionBudgetRemaining == -31 && call.cpu.getFrameDepth() == 2,
@@ -238,7 +241,7 @@ void countedStoreReadinessAndPartialFault() {
 
 int main() {
 	try {
-		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); reservedOpcode10ChargesBeforeDispatch(); creationAndCallWorkOnce(); countedStoreReadinessAndPartialFault();
+		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); reservedOpcode10ChargesBeforeDispatch(); callWorkOnce(); countedStoreReadinessAndPartialFault();
 		std::cout << "Nominal work-class cycle tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

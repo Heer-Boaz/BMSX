@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
@@ -33,19 +34,17 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		[OpCode.VARARG, 0, 3], [OpCode.VARARG, 1, 0], [OpCode.VARARG, 3, 2], [OpCode.VARARG, 129, 128]]) {
 		test(`value ranges charge placed slots on cold and warm execution (${backend}, ${op === OpCode.LOADNIL ? 'LOADNIL' : 'VARARG'}, ${operand})`, () => {
 			const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-			writeInstruction(text, 2, OpCode.JMP, 0, 63, 63, 255);
+			writeInstruction(text, 0, OpCode.JMP, 0, 63, 63, 255);
 			writeInstruction(text, 3, op, 2, operand, 0, (operand >>> 6) << 3);
 			writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
 			const image = linkManagedTestOpcodes({ text, functions: [
-				{ firstWord: 0, wordCount: 3, maxStack: 8 },
+				{ firstWord: 0, wordCount: 1, maxStack: 8 },
 				{ firstWord: 3, wordCount: 2, maxStack: 160, isVararg: true },
-			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+			] });
 			const { cpu } = createManagedTestOpcodeCpu(image, backend);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			cpu.runUntilDepth(0, 1);
-			const closure = cpu.rootThread.currentFrame!.registers.getPayload(0);
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JMP]);
+			const closure = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+			reserveThreadFrameReference(cpu, cpu.rootThread, 176);
 			for (let call = 0; call < 20; ++call) {
 				cpu.beginCompletionCall(closure, [valueInteger(17), valueInteger(29), valueInteger(31)]);
 				const stackBase = cpu.rootThread.currentFrame!.stackBase;
@@ -60,17 +59,16 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		test(`CALL charges only initialized parameters (${backend}, params=${params}, args=${args}, vararg=${vararg})`, () => {
 			const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+			writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
 			writeInstruction(text, 2, OpCode.MOV, 4, 0, 0);
 			writeInstruction(text, 3, OpCode.CALL, 4, args + 1, 1);
 			writeInstruction(text, 4, OpCode.JMP, 0, 63, 61, 255);
 			writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
-			const image = linkManagedTestOpcodes({ text, functions: [
+			const image = linkManagedTestOpcodes({ text, verifiedControlFlow: true, constants: [integerConstant(0)], functions: [
 				{ firstWord: 0, wordCount: 5, maxStack: 16 },
 				{ firstWord: 5, wordCount: 1, numParams: params, maxStack: 8, isVararg: vararg },
-			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+			], constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 			const { cpu } = createManagedTestOpcodeCpu(image, backend);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 5000); cpu.runUntilDepth(1, 100);
 			const root = cpu.rootThread.currentFrame!;
 			const placed = vararg ? params : Math.max(params - args, 0);

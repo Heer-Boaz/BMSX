@@ -109,7 +109,6 @@ struct NativeTerminalExit {
 	NativeExitPlan operator()(const NativeReturnSite& ret) const {
 		return {ret.terminalExit, {.returned = ret}};
 	}
-	NativeExitPlan operator()(const NativeClosure& closure) const { return {closure.terminalExit, {.closure = closure}}; }
 
 	NativeExitPlan operator()(const NativeControlAccess& access) const {
 		if (access.mode == NativeControlMode::WriteSemantic && cop0WriteRetiresControl(access.field))

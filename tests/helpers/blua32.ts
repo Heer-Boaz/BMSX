@@ -18,6 +18,7 @@ import {
 import type {
 	ProgramCartObjectImage,
 	ProgramImageConstReloc,
+	ProgramConstValueReloc,
 	ProgramSystemObjectImage,
 } from '../../toolchain/ts/lua/compiler/program_object';
 import type {
@@ -57,7 +58,6 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import {
-	rewriteResolvedABx,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
@@ -127,7 +127,7 @@ export type TestBlua32Source = {
 	startupFunctionIndex?: number;
 	irqFunctionIndex?: number;
 	exceptionFunctionIndex?: number;
-	closureRelocations?: ReadonlyArray<{ wordIndex: number; functionIndex: number } | { wordIndex: number; functionAddress: number } | { wordIndex: number; systemFunctionIndex: number }>;
+	constValueRelocs?: ReadonlyArray<ProgramConstValueReloc>;
 };
 
 type RawTestSystemBlua32Object = {
@@ -288,7 +288,7 @@ function createRawTestBlua32Object(
 	};
 	const link = {
 		constRelocs: source.constRelocs ? Array.from(source.constRelocs) : [],
-		constValueRelocs: [],
+		constValueRelocs: source.constValueRelocs ? Array.from(source.constValueRelocs) : [],
 		rodataConstRelocs: [],
 		symbols: metadata,
 	};
@@ -320,21 +320,12 @@ function rawTestVectors(source: TestBlua32Source, linked: LinkedBlua32Image): Te
 	};
 }
 
-function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source, system: Pick<LinkedBlua32Image, 'symbols'>): void {
+function prepareRawTestImage(linked: LinkedBlua32Image, source: TestBlua32Source): void {
 	if (!source.verifiedControlFlow) {
 		linked.layout.header.flags = BLUA32_IMAGE_MAPPED_CODE_FLAG;
 		writeLE32(linked.bytes, BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
 	}
-	const text = linked.layout.textBytes, relocations = source.closureRelocations;
-	if (!relocations) {
-		return;
-	}
-	for (let index = 0; index < relocations.length; index += 1) {
-		const relocation = relocations[index];
-		const address = 'functionIndex' in relocation ? linked.symbols.functionAddresses[relocation.functionIndex]
-			: 'functionAddress' in relocation ? relocation.functionAddress : system.symbols.functionAddresses[relocation.systemFunctionIndex];
-		rewriteResolvedABx(text, relocation.wordIndex, OpCode.CLOSURE, address >>> 4);
-	}
+
 }
 
 export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount = 0): TestBlua32Image {
@@ -346,7 +337,7 @@ export function linkRawTestSystemBlua32(source: TestBlua32Source, bssByteCount =
 		LINK_TARGET_RAM_BYTES,
 		[],
 	);
-	prepareRawTestImage(linked, source, linked);
+	prepareRawTestImage(linked, source);
 	return testImage(linked, rawTestVectors(source, linked));
 }
 
@@ -364,7 +355,7 @@ export function linkRawTestBlua32Pair(
 		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
 		LINK_TARGET_RAM_BYTES,
 	);
-	prepareRawTestImage(cart, cartSource, system);
+	prepareRawTestImage(cart, cartSource);
 	return {
 		systemImage: system.image,
 		systemSymbols: system.symbols,

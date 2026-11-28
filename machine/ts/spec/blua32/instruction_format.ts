@@ -36,13 +36,6 @@ export const MAX_EXT_REGISTER = MAX_EXT_REGISTER_BC;
 export const MAX_EXT_CONST = (1 << (MAX_OPERAND_BITS + EXT_B_BITS - 1)) - 1;
 export const MAX_EXT_BX = (MAX_WIDE << BASE_BX_BITS) | MAX_BASE_BX;
 
-export const CLOSURE_DESTINATION_EXT_BITS = 2;
-export const CLOSURE_DESTINATION_EXT_SHIFT = 2 * MAX_OPERAND_BITS;
-export const CLOSURE_DESTINATION_EXT_MASK = (1 << CLOSURE_DESTINATION_EXT_BITS) - 1;
-export const CLOSURE_ADDRESS_REGISTER_WIDE_C = 1 << (MAX_OPERAND_BITS - 1);
-export const CLOSURE_ADDRESS_REGISTER_FLAG = CLOSURE_ADDRESS_REGISTER_WIDE_C << (MAX_OPERAND_BITS + EXT_C_BITS);
-
-
 export function signExtend(value: number, bits: number): number {
 	const shift = 32 - bits;
 	return (value << shift) >> shift;

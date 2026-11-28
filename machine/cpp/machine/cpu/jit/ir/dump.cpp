@@ -19,14 +19,13 @@ namespace {
 
 struct OperationName {
 	const char* operator()(const NativeReplay&) const { return "replay"; }
-	const char* operator()(const NativeJump&) const { return "jump"; }
+	const char* operator()(const NativeJump& op) const { return op.link < 0 ? "jump" : "jump-link"; }
 	const char* operator()(const NativeRegisterJump&) const { return "register-jump"; }
 	const char* operator()(const NativeHalt&) const { return "halt"; }
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeSupervisorCall&) const { return "supervisor-call"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
-	const char* operator()(const NativeClosure&) const { return "create-closure"; }
 	const char* operator()(const NativeLiteral&) const { return "literal"; }
 	const char* operator()(const NativeConstantLoad&) const { return "load-constant"; }
 	const char* operator()(const NativeMove&) const { return "move"; }
@@ -94,15 +93,14 @@ struct OperationPlan {
 	std::ostream& out;
 	void operator()(const auto&) const {}
 	void operator()(const NativeArithmetic& op) const { writeNumericPlan(out, op); }
-	void operator()(const NativeJump& op) const { out << " target=" << op.target; }
+	void operator()(const NativeJump& op) const {
+		out << " target=" << op.target;
+		if (op.link >= 0) out << " link=R" << op.link;
+	}
 	void operator()(const NativeLiteral& op) const {
 		out << " tag=" << unsigned(valueTag(op.value)) << " word=" << valuePayload(op.value);
 	}
 	void operator()(const NativeConstantLoad& op) const { out << " K" << op.index; }
-	void operator()(const NativeClosure& op) const {
-		if ((op.flags & CLOSURE_ADDRESS_REGISTER_FLAG) == 0) out << " address=" << op.address;
-		out << " flags=" << op.flags;
-	}
 	void operator()(const NativeGlobalAccess& op) const {
 		out << (op.access == NativeAccess::Read ? " read" : " write")
 			<< (op.bank == NativeGlobalBank::System ? " system=" : " execution=") << op.index;

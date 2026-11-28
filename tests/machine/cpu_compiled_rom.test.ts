@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { ValueTag, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -38,6 +38,7 @@ import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32,
 import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { reserveThreadFrameReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 
 function loadSource(kind: MemoryAccessKind, displaced = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -524,62 +525,66 @@ for (const ramRecord of [false, true]) {
 	test(ramRecord ? 'a system caller binds a RAM function record to the system image'
 		: 'warm cartridge calls read function records through EXEC rather than data SELECT', () => {
 		const record = DYNAMIC_RAM_BASE + 0x4000, code = record + 0x800;
-		const systemText = new Uint8Array(11 * INSTRUCTION_BYTES);
+		const systemText = new Uint8Array(8 * INSTRUCTION_BYTES);
 		writeInstruction(systemText, 0, OpCode.LOADK, 0, 0, 0);
 		writeInstruction(systemText, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word);
 		writeInstruction(systemText, 2, OpCode.MTC0, 0, COP0_EXEC, 0);
-		writeInstruction(systemText, 3, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(systemText, 4, OpCode.CLOSURE, 4, 0, 0);
-		writeInstruction(systemText, 5, OpCode.MOV, 0, 4, 0);
-		writeInstruction(systemText, 6, OpCode.CALL, 0, 1, 2);
+		writeInstruction(systemText, 3, OpCode.CALL, 0, 1, 2);
+		writeInstruction(systemText, 4, OpCode.RET, 0, 2, 0);
+		writeInstruction(systemText, 5, OpCode.HALT, 0, 0, 0);
+		writeInstruction(systemText, 6, OpCode.LOADK, 0, 0, 1);
 		writeInstruction(systemText, 7, OpCode.RET, 0, 2, 0);
-		writeInstruction(systemText, 8, OpCode.HALT, 0, 0, 0);
-		writeInstruction(systemText, 9, OpCode.LOADK, 0, 0, 1);
-		writeInstruction(systemText, 10, OpCode.RET, 0, 2, 0);
 		const system = { text: systemText, functions: [
 			{ firstWord: 0, wordCount: 3, maxStack: 8 },
-			{ firstWord: 3, wordCount: 5, maxStack: 8 },
-			{ firstWord: 8, wordCount: 1 }, { firstWord: 9, wordCount: 2, maxStack: 8 },
+			{ firstWord: 3, wordCount: 2, maxStack: 8, numParams: 1 },
+			{ firstWord: 5, wordCount: 1 }, { firstWord: 6, wordCount: 2, maxStack: 8 },
 		], constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), integerConstant(11)],
-			exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 4, functionAddress: record }] };
-		const text = new Uint8Array(10 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
-		writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 1, 2);
-		writeInstruction(text, 4, OpCode.MOV, 3, 0, 0);
-		writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
-		writeInstruction(text, 6, OpCode.LOADK, 0, 0, 1);
-		writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
-		writeInstruction(text, 8, OpCode.LOADK, 0, 0, 2);
-		writeInstruction(text, 9, OpCode.RET, 0, 2, 0);
-		const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 },
-			{ firstWord: 6, wordCount: 2, maxStack: 8 }, { firstWord: 8, wordCount: 2, maxStack: 8 }],
-			constants: [integerConstant(0), integerConstant(22), integerConstant(44)], closureRelocations: [ramRecord ? { wordIndex: 1, systemFunctionIndex: 1 } : { wordIndex: 1, functionIndex: 1 }] };
+			exceptionFunctionIndex: 2 };
+		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.MOV, 0, 4, 0);
+		writeInstruction(text, 1, OpCode.MOV, 1, 5, 0);
+		writeInstruction(text, 2, OpCode.CALL, 0, ramRecord ? 2 : 1, 2);
+		writeInstruction(text, 3, OpCode.MOV, 3, 0, 0);
+		writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
+		writeInstruction(text, 5, OpCode.LOADK, 0, 0, 0);
+		writeInstruction(text, 6, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 7, OpCode.LOADK, 0, 0, 1);
+		writeInstruction(text, 8, OpCode.RET, 0, 2, 0);
+		const source = { text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 },
+			{ firstWord: 5, wordCount: 2, maxStack: 8 }, { firstWord: 7, wordCount: 2, maxStack: 8 }],
+			constants: [integerConstant(22), integerConstant(44)] };
 		const pair = linkRawTestBlua32Pair(system, source, RAM_CODE_FIXTURE_BYTES);
-		const other = linkRawTestBlua32Pair(system, { ...source, constants: [integerConstant(0), integerConstant(33), integerConstant(55)] }, RAM_CODE_FIXTURE_BYTES);
+		const other = linkRawTestBlua32Pair(system, { ...source, constants: [integerConstant(33), integerConstant(55)] }, RAM_CODE_FIXTURE_BYTES);
 		const otherRecord = other.cartSymbols.functionAddresses[1] - CART_ROM_BASE;
 		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, other.cartImage.functions[2].codeAddress);
 		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
 		const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(backend =>
 			machine(pair.systemRomBytes, cartridgeSlots(pair.cartRomBytes, other.cartRomBytes), backend));
 		for (const { cpu, memory } of machines) {
-			if (ramRecord) seedTestRomClosure(cpu, pair.systemSymbols.functionAddresses[1]);
-			else seedTestRomClosure(cpu, pair.cartSymbols.functionAddresses[1], 0);
-			const template = pair.systemSymbols.functionAddresses[3];
-			memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
-			memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
-			memory.writeBytes(code, systemText.subarray(9 * INSTRUCTION_BYTES));
-			if (ramRecord) seedTestMappedStaticClosure(cpu, record);
+			const bound = ramRecord ? seedTestRomClosure(cpu, pair.systemSymbols.functionAddresses[1])
+				: seedTestRomClosure(cpu, pair.cartSymbols.functionAddresses[1], 0);
 			assert.equal(cpu.runUntilDepth(0, 7), RunResult.Yielded);
 			assert.equal(cpu.readFrameExecutionDomain(0), 0, 'EXEC establishes socket 0 before SELECT changes');
+			const thread = cpu.rootThread;
+			reserveThreadStorageReference(cpu, thread.address, 16, 4, valueNil());
+			thread.bindStack();
+			const frame = thread.currentFrame!, { registers } = frame;
+			registers.setClosure(4, bound);
+			if (ramRecord) {
+				const template = pair.systemSymbols.functionAddresses[3];
+				memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
+				memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
+				memory.writeBytes(code, systemText.subarray(6 * INSTRUCTION_BYTES));
+				registers.setClosure(5, seedTestMappedStaticClosure(cpu, record));
+			}
+			frame.top = ramRecord ? 6 : 5;
 			memory.writeMappedWord(IO_CART_SELECT, 1);
 			assert.equal(memory.readMappedU32LE(pair.cartSymbols.functionAddresses[1]), other.cartImage.functions[2].codeAddress,
 				'ordinary data reads see the different record fitted to socket 1');
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-		const entry = pair.cartImage.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
+		const entry = pair.cartImage.functions[0].codeAddress;
 		for (const { cpu } of machines) {
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(3), valueInteger(ramRecord ? 11 : 22));
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
@@ -594,11 +599,11 @@ for (const ramRecord of [false, true]) {
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		for (const { cpu } of machines) cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
-		runCpuParity(machines[0].cpu, machines[1].cpu, 3);
+		runCpuParity(machines[0].cpu, machines[1].cpu, 5);
 		if (ramRecord) {
 			assert.equal(machines[0].cpu.readFrameExecutionDomain(1), SYSTEM_EXECUTION_DOMAIN_ID);
 			const relay = machines[0].cpu.rootThread.frameAtDepth(1);
-			const relayEntry = pair.systemImage.functions[1].codeAddress + 2 * INSTRUCTION_BYTES;
+			const relayEntry = pair.systemImage.functions[1].codeAddress;
 			assert.ok(relay.executionImage.compiledCodeLookup!.find(relayEntry, 0)!.compiledBlocks!.entries[(relayEntry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
 				'the system relay is also generated');
 			for (let step = 0; step < 8 && machines[0].cpu.getFrameDepth() !== 3; ++step) runCpuParity(machines[0].cpu, machines[1].cpu, 1);
@@ -618,18 +623,16 @@ for (const ramRecord of [false, true]) {
 }
 
 test('closure records bind their selected socket and survive cross-domain calls and snapshot restore', () => {
-	const launcherText = new Uint8Array(4 * INSTRUCTION_BYTES);
-	writeInstruction(launcherText, 0, OpCode.WIDE, 0, 0, 32);
-	writeInstruction(launcherText, 1, OpCode.CLOSURE, 0, 0, 1);
-	writeInstruction(launcherText, 2, OpCode.JMP, 0, 63, 63, 255);
-	writeInstruction(launcherText, 3, OpCode.HALT, 0, 0, 0);
+	const launcherText = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(launcherText, 0, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(launcherText, 1, OpCode.HALT, 0, 0, 0);
 	const cartText = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(cartText, 0, OpCode.KSMI, 0, 0, 11);
 	writeInstruction(cartText, 1, OpCode.RET, 0, 2, 0);
 	writeInstruction(cartText, 2, OpCode.KSMI, 0, 0, 22);
 	writeInstruction(cartText, 3, OpCode.RET, 0, 2, 0);
 	const pair = linkRawTestBlua32Pair(
-		{ text: launcherText, functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 },
+		{ text: launcherText, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 },
 		{ text: cartText, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }, { firstWord: 2, wordCount: 2, maxStack: 1 }] }, RAM_CODE_FIXTURE_BYTES,
 	);
 	const cards = [pair.cartRomBytes.slice(), pair.cartRomBytes.slice()];
@@ -639,17 +642,9 @@ test('closure records bind their selected socket and survive cross-domain calls 
 	writeLE32(cards[1], record - CART_ROM_BASE + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, pair.cartImage.functions[1].codeAddress);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = machine(pair.systemRomBytes, cartridgeSlots(cards[0], cards[1]), backend);
+		reserveThreadFrameReference(cpu, cpu.rootThread, 8);
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const entry = pair.systemImage.functions[0].codeAddress;
-		const closures = [];
-		for (const slot of [0, 1]) {
-			memory.writeMappedWord(IO_CART_SELECT, slot);
-			seedTestRomClosure(cpu, record, slot as 0 | 1);
-			frame.registers.setInteger(1, record);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
-			cpu.runUntilDepth(0, 2);
-			closures.push(frame.registers.getPayload(0));
-		}
+		const closures = [seedTestRomClosure(cpu, record, 0), seedTestRomClosure(cpu, record, 1)];
 		assert.notEqual(closures[0], closures[1]);
 		assert.equal(cpu.captureClosureBinding(closures[0]).executionDomainId, 0);
 		assert.equal(cpu.captureClosureBinding(closures[1]).executionDomainId, 1);

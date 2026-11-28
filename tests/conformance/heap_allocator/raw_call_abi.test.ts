@@ -15,7 +15,7 @@ import { UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../.
 import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { COP0_CONTEXT } from '../../../machine/ts/spec/blua32/cop0';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode, BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
@@ -46,7 +46,7 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 	const { supplied, formals, suffix, skip, returned, wanted, result, placementCycles } = scenario;
 	const text = new Uint8Array((suffix ? 11 : 10) * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.KSMI, 1, 1, 35); // 99
 	writeInstruction(text, 3, OpCode.KNIL, 2, 0, 0);
 	writeInstruction(text, 4, OpCode.KSMI, 3, 11, 3); // 707
@@ -57,15 +57,13 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 	if (suffix) writeInstruction(text, 9, OpCode.KSMI, 0, skip >>> 6 & 63, skip & 63, skip >>> 12 & 255);
 	writeInstruction(text, suffix ? 10 : 9, OpCode.RET, suffix ? 0 : 1, returned, +suffix);
 	const image = linkRawTestSystemBlua32({
-		text, verifiedControlFlow: true, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+		text, verifiedControlFlow: true, constants: [integerConstant(0)],
+		constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }],
 		functions: [{ firstWord: 0, wordCount: 8, maxStack: 6 }, {
 			firstWord: 8, wordCount: suffix ? 3 : 2, maxStack: 6, numParams: formals, isVararg: suffix,
 		}],
 	});
 	const caller = image.image.functions[0], callee = image.image.functions[1], rom = image.romBytes;
-	// Author the wire-level System CodeFunction. No Closure allocation/link
-	// metadata or managed bootstrap is available to this ROM.
-	writeLE32(rom, callee.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, callee.flags | BLUA32_FUNCTION_CODE);
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler } = runtime.machine;
 	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
@@ -88,7 +86,7 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 		expected.push(`${run} ${cycles} ${memory.ramBusEnd()} -1`);
 	}
 	const word = INSTRUCTION_BYTES;
-	for (const [index, op] of [OpCode.CLOSURE, OpCode.KSMI, OpCode.KNIL, OpCode.KSMI, OpCode.KNIL, OpCode.CALL].entries())
+	for (const [index, op] of [OpCode.LOADK, OpCode.KSMI, OpCode.KNIL, OpCode.KSMI, OpCode.KNIL, OpCode.CALL].entries())
 		step(op, caller.codeAddress + (index === 0 ? 0 : index + 1) * word, 1, op === OpCode.CALL ? placementCycles : 0);
 	const frame = cpu.activeThread.currentFrame!;
 	assert.equal(frame.argumentCount, 4);

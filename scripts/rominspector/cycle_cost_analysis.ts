@@ -277,11 +277,11 @@ export function generateCycleCostReport(image: Blua32ImageLayout, symbols: Blua3
 		}
 	};
 
-	// ── Section 5: Closure-heavy functions ─────────────────────────
+	// ── Section 5: Link and register branches ───────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 FUNCTIONS WITH MOST CLOSURE INSTRUCTIONS',
-		op => op === OpCode.CLOSURE, 20,
-		'CLOSUREs', 'ClosureCyc', '%Closure',
+		'TOP 20 FUNCTIONS WITH MOST LINK AND REGISTER BRANCHES',
+		op => op === OpCode.JAL || op === OpCode.JREG, 20,
+		'Branches', 'BranchCyc', '%Branch',
 	);
 
 	// ── Section 6: Table access heavy functions ────────────────────

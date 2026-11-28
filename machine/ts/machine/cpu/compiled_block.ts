@@ -48,7 +48,6 @@ export const enum CompiledBlockExit {
 	WriteControl,
 	SupervisorCall,
 	ExceptionReturn,
-	CreateClosure,
 	WriteWords,
 	InvalidOperand,
 	WriteGlobal,
@@ -147,6 +146,7 @@ emitters[OpCode.K1] = (p, w, r) => r.writeInteger(p.a[w], '1');
 emitters[OpCode.KSMI] = (p, w, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
 emitters[OpCode.ARGC] = (p, w, r) => r.writeInteger(p.a[w], 'F.argumentCount');
 emitters[OpCode.JMP] = () => '';
+emitters[OpCode.JAL] = emitters[OpCode.JMP];
 emitters[OpCode.JREG] = emitters[OpCode.JMP];
 emitters[OpCode.ITERN] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
@@ -157,7 +157,6 @@ emitters[OpCode.LE] = emitters[OpCode.JMP];
 emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
-emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
@@ -173,8 +172,8 @@ export function compiledBlockSupports(op: number, a: number, c: number): boolean
 }
 
 const blockBoundaryOps = new Uint8Array(256);
-for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.JREG, OpCode.HALT,
-	OpCode.CALL, OpCode.RET, OpCode.CLOSURE, OpCode.SVC,
+for (const op of [OpCode.JMP, OpCode.JAL, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.JREG, OpCode.HALT,
+	OpCode.CALL, OpCode.RET, OpCode.SVC,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.ITERN]) {
 	blockBoundaryOps[op] = 1;
 }
@@ -188,7 +187,7 @@ const continuationOps = new Uint8Array(256);
 for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI,
 	OpCode.SETUP, OpCode.VARARG, OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D,
-	OpCode.CLOSURE, OpCode.CALL, OpCode.SVC, OpCode.LEN]) continuationOps[op] = 1;
+	OpCode.CALL, OpCode.SVC, OpCode.LEN]) continuationOps[op] = 1;
 
 /** Returning semantic operations have a statically known continuation PC. */
 export function compiledBlockHasContinuation(op: number, field: number): boolean {
@@ -263,7 +262,7 @@ export function emitJavaScriptBlock(
 		currentPc = pc;
 		lastPc = (pc + (page.widths[word] - 1) * INSTRUCTION_BYTES) >>> 0;
 		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
-		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
+		nextPc = op === OpCode.JMP || op === OpCode.JAL ? page.bx[word] : pc;
 		const exitIndex = exits.length;
 		const load = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D;
 		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
@@ -306,6 +305,8 @@ export function emitJavaScriptBlock(
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, tableCache, registers, exitIndex));
+		} else if (op === OpCode.JAL) {
+			source.push(registers.writeInteger(page.a[word], `${pc}`));
 		} else if (op === OpCode.JREG) {
 			source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
 			if (page.c[word] === 1) source.push(registers.writeInteger(page.b[word], `${pc}`));
@@ -337,6 +338,7 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
+		else if (op === OpCode.JAL) registerTop = Math.max(registerTop, page.a[word] + 1);
 		else if (op === OpCode.JREG && page.c[word] === 1) registerTop = Math.max(registerTop, page.b[word] + 1);
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);
@@ -353,7 +355,6 @@ export function emitJavaScriptBlock(
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
 		case OpCode.ITERN: terminalExit = CompiledBlockExit.IterateTable; sourceWords += skippedInstructionWidth; break;
-		case OpCode.CLOSURE: terminalExit = CompiledBlockExit.CreateClosure; break;
 		case OpCode.MTC0: terminalExit = cop0WriteRetiresControl(page.b[finalWord])
 			? CompiledBlockExit.WriteControl : CompiledBlockExit.Continue; break;
 		case OpCode.SVC: terminalExit = CompiledBlockExit.SupervisorCall; break;

@@ -157,15 +157,9 @@ auto makeClosureCartImage(
 	image.globalNames.emplace_back(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 	image.globalNames.emplace_back(TEST_CARTRIDGE_VALUE_GLOBAL);
 	std::span<bmsx::u8> code(image.text);
-	if (staticClosure) {
-		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
-		image.closureRelocations = {{1u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::Cartridge, 1u)}};
-	} else {
-		// The wire-format test supplies its already bound input in R0.
-		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
-		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
-	}
+	// The socket fixture supplies its already-sampled callable in R0.
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 1);
@@ -189,9 +183,9 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 	image.text.resize(14u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 2);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 1, 0, 1);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
@@ -232,16 +226,7 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 	for (std::string_view name : TEST_EXTERNAL_CLOSURE_GLOBALS) {
 		image.globalNames.emplace_back(name);
 	}
-	image.closureRelocations = {
-		{
-			1u,
-			bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u),
-		},
-		{
-			3u,
-			bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
-		},
-	};
+
 	image.irqFunctionIndex = 3u;
 	image.exceptionFunctionIndex = 3u;
 	return image;
@@ -252,7 +237,7 @@ auto makeCompletionLatchSystemImage() -> bmsx::test::Blua32TestImage {
 	image.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
@@ -262,10 +247,7 @@ auto makeCompletionLatchSystemImage() -> bmsx::test::Blua32TestImage {
 		{.firstWord = 3u, .wordCount = 2u, .numParams = 1u, .maxStack = 1u, .staticClosure = true},
 		{.firstWord = 5u, .wordCount = 1u},
 	};
-	image.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u),
-	}};
+
 	image.irqFunctionIndex = 2u;
 	image.exceptionFunctionIndex = 2u;
 	return image;
@@ -338,8 +320,11 @@ struct ExternalClosureFixture {
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
 		system.seedLanguageState();
-		for (size_t index : {1u, 2u}) bmsx::test::seedTestRomClosure(cpu, system.systemRom.functionAddresses[index]);
-		const int publicationCycles = 2 * (bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CLOSURE)]
+		for (size_t index : {1u, 2u}) {
+			const auto closure = bmsx::test::seedTestRomClosure(cpu, system.systemRom.functionAddresses[index]);
+			cpu.activeThread()->currentFrame->registers.set(index - 1, bmsx::valueClosure(closure));
+		}
+		const int publicationCycles = 2 * (bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::MOV)]
 			+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::SETGL)]);
 		require(cpu.runUntilDepth(0, publicationCycles) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
@@ -790,6 +775,20 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 	dual.runtime.rebootSystem();
 }
 
+void stopAtSocketStartup(SystemRuntimeFixture& fixture, int socket) {
+	auto& cpu = fixture.runtime.machine.cpu;
+	auto startup = socket == 0 ? fixture.cartRom.textAddress : fixture.cart1Rom.textAddress;
+	cpu.setExecutionHook({
+		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) {
+			return pc == *static_cast<const bmsx::u32*>(context);
+		},
+		.context = &startup, .domainMask = bmsx::executionDomainBit(static_cast<bmsx::ExecutionDomainId>(socket)),
+		.preMaskableInterruptDomainMask = 0u,
+	});
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped, "stop at served cart startup before publication");
+	cpu.setExecutionHook({});
+}
+
 void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat() {
 	SystemRuntimeFixture fixture(
 		makeExecutionSelectorSystemImage(),
@@ -802,13 +801,15 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	// The image-switch test begins with both operand banks already prepared.
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
-	bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
-	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
+	const auto slot0 = bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
+	const auto slot1 = bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
 		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 	const bmsx::StringId publishedValueName =
 		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_VALUE_GLOBAL);
 
+	stopAtSocketStartup(fixture, 0);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(slot0));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system reset firmware enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
 	const bmsx::Value slot0ClosureValue = NativeGlobalBankReference::getGlobalByKey(cpu, publishedClosureName);
@@ -827,6 +828,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
 	require(cpu.readClosureBinding(slot0Closure).executionDomainId == 0, "entering a system exception does not change the closure domain");
+	stopAtSocketStartup(fixture, 1);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(slot1));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 1, "CP0.EXEC latches physically selected cartridge slot 1");
 	const bmsx::Value slot1ClosureValue = NativeGlobalBankReference::getGlobalByKey(cpu, publishedClosureName);
@@ -851,6 +854,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
+	stopAtSocketStartup(fixture, 0);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(slot0));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler can switch execution back to slot 0");
 	require(
 		NativeGlobalBankReference::getGlobalByKey(cpu, publishedValueName) == bmsx::valueInteger(111),
@@ -881,15 +886,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 
 void seedDynamicClosureAtCartStartup(SystemRuntimeFixture& fixture) {
 	auto& cpu = fixture.runtime.machine.cpu;
-	auto startup = fixture.cartRom.textAddress;
-	cpu.setExecutionHook({
-		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) {
-			return pc == *static_cast<const bmsx::u32*>(context);
-		},
-		.context = &startup, .domainMask = bmsx::executionDomainBit(0),
-	});
-	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped, "stop at served cart startup before publication");
-	cpu.setExecutionHook({});
+	stopAtSocketStartup(fixture, 0);
 	std::array<bmsx::u32, 1> cells{};
 	const auto record = bmsx::test::seedTestCapturedClosure(cpu, fixture.cartRom.functionAddresses[1], cells, {}, 0);
 	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(record));
@@ -961,7 +958,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
-	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
+	const auto slot1 = bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
 		bmsx::test::StringPoolReference(cpu).intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
@@ -972,6 +969,8 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
+	stopAtSocketStartup(fixture, 1);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(slot1));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 1 publishes the canonical closure");
 	const bmsx::Value canonicalClosureValue = NativeGlobalBankReference::getGlobalByKey(cpu, publishedClosureName);
 	bmsx::u32 canonicalClosure = bmsx::test::asClosure(canonicalClosureValue, bmsx::test::GcHeap(cpu));
@@ -1022,9 +1021,11 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
+	stopAtSocketStartup(fixture, 1);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(slot1));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler switches the execution latch back to the static cartridge");
 	const bmsx::Value futureCanonicalValue = NativeGlobalBankReference::getGlobalByKey(cpu, publishedClosureName);
-	require(bmsx::test::asClosure(futureCanonicalValue, bmsx::test::GcHeap(cpu)) == bmsx::test::asClosure(restoredCanonicalValue, bmsx::test::GcHeap(cpu)), "future static closure creation reuses the restored canonical identity");
+	require(bmsx::test::asClosure(futureCanonicalValue, bmsx::test::GcHeap(cpu)) == bmsx::test::asClosure(restoredCanonicalValue, bmsx::test::GcHeap(cpu)), "future use preserves the restored callable identity");
 	require(restoredTable.get(futureCanonicalValue) == bmsx::valueInteger(22), "future canonical closure remains the restored table key");
 }
 
@@ -1035,7 +1036,8 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	);
 	fixture.seedLanguageState();
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
-	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	const auto entry = bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(entry));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
 	const bmsx::StringId closureKey = bmsx::test::StringPoolReference(cpu).intern("completion_call");
@@ -1073,7 +1075,8 @@ void testCpuAbortsPhysicalCompletionCallAtMarkedRoot() {
 	);
 	fixture.seedLanguageState();
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
-	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	const auto entry = bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(entry));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
 	const int completionFrameIndex = cpu.getFrameDepth();
@@ -1097,7 +1100,8 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 	fixture.seedLanguageState();
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
-	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	const auto entry = bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(entry));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
 	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
 	const bmsx::StringId closureKey = bmsx::test::StringPoolReference(cpu).intern("held_completion_call");

@@ -44,7 +44,7 @@ export const enum OpCode {
 	JMP,
 	JMPIF,
 	JMPIFNOT,
-	CLOSURE,
+	JAL,
 	GETUP,
 	SETUP,
 	VARARG,
@@ -87,7 +87,7 @@ export const BASE_CYCLES = new Uint8Array([
 	2, 2, 2, 2, 32, 34, 33, 128,
 	2, 2, 2, 2, 2, 2, 2, 2,
 	2, 3, 2, 2, 2, 2, 2, 2,
-	2, 2, 2, 8, 3, 4, 3, 32,
+	2, 2, 2, 2, 3, 4, 3, 32,
 	16, 3, 3, 3, 2, 2, 3, 4,
 	3, 4, 8, 8, 16, 16, 17, 2,
 ]);

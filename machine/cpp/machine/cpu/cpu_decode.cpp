@@ -18,7 +18,7 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		// These owners admit operands after a mode check or as part of a
 		// dynamic placement, and are also reached from native exits.
 		case OpCode::MFC0: case OpCode::MTC0:
-		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::SVC:
+		case OpCode::CALL: case OpCode::SVC:
 			return 0;
 		case OpCode::JREG:
 			return row.c == 0 ? static_cast<u16>(row.a + 1)
@@ -114,10 +114,7 @@ void CPU::decodeInstructionWords(
 		decoded.op = op;
 		decoded.width = static_cast<uint8_t>(width);
 		decoded.baseCycles = BASE_CYCLES[op];
-		decoded.a = static_cast<uint16_t>(
-			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
-			| (op == static_cast<u8>(OpCode::CLOSURE) ? (wideC & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0)
-		);
+		decoded.a = static_cast<uint16_t>((wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow);
 		const u8 rkOperands = OPCODE_RK_OPERANDS[op];
 		decoded.b = static_cast<int16_t>((rkOperands & RK_OPERAND_B) != 0u
 			? signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS))
@@ -170,6 +167,7 @@ void CPU::decodeInstructionWords(
 			case OpCode::JMP:
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT:
+			case OpCode::JAL:
 				decoded.setBx(instructionBranchTarget(pc, width, decodedBx));
 				break;
 			default:

@@ -44,5 +44,4 @@ for (const optLevel of [0, 3] as const) for (const callable of [false, true]) te
 		pc = instruction.pc + INSTRUCTION_BYTES;
 	}
 	assert.ok(ops.includes(OpCode.VARARG) && ops.includes(OpCode.CALL) && ops.includes(OpCode.RET));
-	assert.ok(!ops.includes(OpCode.CLOSURE));
 });

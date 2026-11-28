@@ -46,7 +46,6 @@ struct NativeWindowExtent {
 	u32 operator()(const auto&) const { return slots.fixedExtent(); }
 	u32 operator()(const auto& op) const requires requires { op.terminalExit; } { return cpuOwned ? slots.fixedExtent() : 0; }
 	u32 operator()(const NativeReturnSite&) const { return 0; } // Only the receiving placement selects a source.
-	u32 operator()(const NativeClosure&) const { return 0; } // CLOSURE admits its optional Bx register in the owner.
 	u32 operator()(const NativeTableIterator& op) const { return op.ownsSkip() || cpuOwned ? slots.fixedExtent() : 0; }
 	u32 operator()(const NativeVararg&) const { return 0; } // Placement admits its own range.
 	u32 operator()(const NativeControlAccess& op) const {
@@ -80,11 +79,6 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	size_t fixedFieldReads = 0;
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
-			if (inst.directCodeFunction != 0u) {
-				m_instructions.emplace_back(NativeLiteral{
-					inst.decoded->a, valueFromTag(ValueTag::CodeFunction, inst.directCodeFunction)});
-				continue;
-			}
 			auto operation = translateNativeOperation(*inst.decoded);
 			if (auto* field = std::get_if<NativeTableAccess>(&operation); field && field->keyKind == NativeTableKey::Field) {
 				if (field->readsFixedField()) ++fixedFieldReads;

@@ -4,7 +4,7 @@ import {
 } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_FUNCTION_CODE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import {
 	OpCode, OPCODE_RK_OPERANDS, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
@@ -23,7 +23,6 @@ export type Blua32FixedStackBoundary = {
 	readonly reset?: number;
 	readonly exceptionVectors: ReadonlySet<number>;
 	readonly interruptible: boolean;
-	readonly codeTargets: Set<number>;
 };
 
 type RegisterTargets = Map<number, readonly number[]>;
@@ -33,8 +32,7 @@ type RegisterTargets = Map<number, readonly number[]>;
  * check that the linked operations stay within their scalar instruction set.
  * Prove over linked instructions, after inlining and relocation. CALL places
  * the next non-vararg frame at A+1 in the current stack, not at the end of
- * the caller's own window. This does not give ordinary CALL/CLOSURE private
- * memory authority or remove the runtime's usual closure allocation.
+ * the caller's own window. This does not give ordinary calls private memory authority.
  */
 export function deriveBlua32FixedStack(
 	image: Blua32ImageLayout,
@@ -162,19 +160,6 @@ export function deriveBlua32FixedStack(
 						else branches.delete(a);
 					}
 					break;
-				case OpCode.CLOSURE: {
-					const address = bx << 4;
-					const target = blua32FunctionIndexAtAddress(image, address);
-					if ((c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0 || target < 0 || a >= width)
-						reject('requires a local ROM function record');
-					const record = image.functions[target];
-					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
-						reject('callee must be static, fixed-arity and capture-free');
-					registers[a] = address;
-					branches?.delete(a);
-					boundary?.codeTargets.add(target);
-					break;
-				}
 				case OpCode.CALL:
 					if (b === 0 || c === 0) reject('open call window');
 					if (a + b > width || a + c - 1 > width) reject('call window exceeds the function record');
@@ -252,6 +237,12 @@ export function deriveBlua32FixedStack(
 					for (const target of targets) merge(target, registers);
 					continue;
 				}
+				case OpCode.JAL:
+					if (a >= width) reject('link exceeds the function record');
+					registers[a] = 0;
+					branches?.set(a, [next]);
+					merge(next + sbx * INSTRUCTION_BYTES, registers);
+					continue;
 				case OpCode.JMP:
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT:

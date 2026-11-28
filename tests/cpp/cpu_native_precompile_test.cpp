@@ -70,7 +70,7 @@ test::Blua32TestImage program() {
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOAD_MEM), 3, 2, static_cast<u8>(MemoryAccessKind::U32LE));
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::ADD), 4, 3, 1);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::CLOSURE), 5, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::LOADK), 5, 0, 2);
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::CALL), 5, 1, 2);
 	writeInstruction(image.text, 9, static_cast<u8>(OpCode::ADD), 1, 1, 5);
 	writeInstruction(image.text, 10, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
@@ -80,13 +80,13 @@ test::Blua32TestImage program() {
 	writeInstruction(image.text, 192, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 256, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
 	writeInstruction(image.text, 257, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.constants = {static_cast<i32>(DYNAMIC_RAM_BASE + 0x4000u), static_cast<i32>(IO_IRQ_FLAGS)};
+	image.constants = {static_cast<i32>(DYNAMIC_RAM_BASE + 0x4000u), static_cast<i32>(IO_IRQ_FLAGS), Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	image.functions = {{.firstWord=0, .wordCount=11, .maxStack=8},
-		{.firstWord=64, .wordCount=2, .maxStack=1}, {.firstWord=128, .wordCount=1},
+		{.firstWord=64, .wordCount=2, .maxStack=1, .codeFunction=true}, {.firstWord=128, .wordCount=1},
 		{.firstWord=192, .wordCount=1}, {.firstWord=256, .wordCount=2}};
 	image.irqFunctionIndex = 2;
 	image.exceptionFunctionIndex = 3;
-	image.closureRelocations = {{7, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	return image;
 }
 
@@ -319,7 +319,6 @@ void preparationHasNoGuestEffects() {
 void coldLazyWritesAndRestoreAgree() {
 	const auto image = test::encodeBlua32TestRom(RomImageDomain::System, program());
 	Fixture prepared(image), lazy(image);
-	for (auto* m : {&prepared, &lazy}) test::seedTestRomClosure(m->runtime.machine.cpu, image.functionAddresses[1]);
 	auto& fast = prepared.runtime.machine.cpu;
 	auto& reference = lazy.runtime.machine.cpu;
 	fast.prepareSystemNativeCode();

@@ -30,9 +30,8 @@ import {
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { rewriteResolvedABx } from '../../toolchain/ts/rompack/blua32_linker';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
+import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import {
 	createTestRuntime,
@@ -72,6 +71,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	const cpu = runtime.machine.cpu;
 	cpu.reset();
 	abortFixtureCompletionCall(cpu, 0);
+	admitTestHeapServiceCpu(cpu, runtime.machine.executionAddressSpace);
 
 	const functionAddress = image.image.header.bssAddress;
 	const codeAddress = functionAddress + 0x100;
@@ -89,7 +89,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	const mappedCode = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(mappedCode, 0, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	memory.writeBytes(codeAddress, mappedCode);
-	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, functionAddress);
+	cpu.beginCompletionCall(seedTestMappedStaticClosure(cpu, functionAddress));
 	runToSupervisorFault(runtime);
 
 	const luaSources: LuaSourceRegistry = {
@@ -146,15 +146,14 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 
 	cpu.reset();
 	abortFixtureCompletionCall(cpu, 0);
-	const mappedCallerCode = new Uint8Array(4 * INSTRUCTION_BYTES);
-	writeInstruction(mappedCallerCode, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(mappedCallerCode, 1, OpCode.CLOSURE, 0, 0, 0);
-	rewriteResolvedABx(mappedCallerCode, 1, OpCode.CLOSURE, image.symbols.functionAddresses[1] >>> 4);
-	writeInstruction(mappedCallerCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 0);
-	writeInstruction(mappedCallerCode, 3, OpCode.RET, 0, 0, 0);
+	admitTestHeapServiceCpu(cpu, runtime.machine.executionAddressSpace);
+	const mappedCallerCode = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(mappedCallerCode, 0, OpCode.CALL, 0, encodeFixedValueCount(0), 0);
+	writeInstruction(mappedCallerCode, 1, OpCode.RET, 0, 0, 0);
 	memory.writeMappedU32LE(codeByteCountAddress, mappedCallerCode.byteLength);
 	memory.writeBytes(codeAddress, mappedCallerCode);
-	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, functionAddress);
+	cpu.beginCompletionCall(seedTestMappedStaticClosure(cpu, functionAddress));
+	cpu.activeThread.currentFrame!.registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 	runToSupervisorFault(runtime);
 
 	const mixedFault = createRuntimeFaultState();
@@ -173,7 +172,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(readBlua32CompiledSource(mixedFault.faultSnapshot.details.sources.get(sourceFrame)!), source);
 	assert.equal(mixedFault.lastLuaCallStack[1].functionName, `function@${functionAddress.toString(16)}`);
 	assert.equal(mixedFault.lastLuaCallStack[1].kind, 'instruction');
-	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress + 2 * INSTRUCTION_BYTES);
+	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress);
 	assert.deepEqual(mixedFault.faultSnapshot.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: sourcePath });
 
 });

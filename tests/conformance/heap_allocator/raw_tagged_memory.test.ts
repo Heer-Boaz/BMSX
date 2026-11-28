@@ -18,9 +18,7 @@ import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_CART_ENTRY, CPU_STATUS_SYSTEM_ENTRY,
 } from '../../../machine/ts/spec/blua32/cop0';
-import {
-	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET,
-} from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -31,6 +29,8 @@ import {
 import { CART_ROM_BASE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_STACK_BASE, DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
+import type { ProgramConstant } from '../../../toolchain/ts/lua/compiler/program';
+import type { ProgramConstValueReloc } from '../../../toolchain/ts/lua/compiler/program_object';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -52,13 +52,15 @@ const emptyReservedHash = hashBytes(new Uint8Array(reservedEnd - reservedStart),
 
 class RawProgram {
 	readonly code: [OpCode, number, number, number, number?][] = [];
-	readonly constants: number[] = [];
+	readonly constants: ProgramConstant[] = [];
+	readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	readonly functions: { firstWord: number; wordCount: number; maxStack: number; numParams: number }[] = [];
 	emit(op: OpCode, a = 0, b = 0, c = 0, ext?: number) { this.code.push([op, a, b, c, ext]); }
 	load(register: number, value: number) {
 		const slot = this.constants.length;
-		this.constants.push(value);
+		this.constants.push(integerConstant(value));
 		this.emit(OpCode.LOADK, register, slot >>> 6, slot & 63);
+		return slot;
 	}
 	body(emit: () => void, numParams = 0) {
 		const firstWord = this.code.length;
@@ -69,11 +71,11 @@ class RawProgram {
 		this.load(6, data); this.load(7, address);
 		this.emit(OpCode.STORE_MEM, 6, 7, MemoryAccessKind.Word);
 	}
-	source(exceptionFunctionIndex = 1, closureRelocations?: TestBlua32Source['closureRelocations']) {
+	source(exceptionFunctionIndex = 1): TestBlua32Source {
 		const text = new Uint8Array(this.code.length * word);
 		for (const [index, instruction] of this.code.entries()) writeInstruction(text, index, ...instruction);
-		return { text, functions: this.functions, constants: this.constants.map(integerConstant),
-			exceptionFunctionIndex, closureRelocations, verifiedControlFlow: true };
+		return { text, functions: this.functions, constants: this.constants,
+			exceptionFunctionIndex, constValueRelocs: this.constValueRelocs, verifiedControlFlow: true };
 	}
 }
 
@@ -289,8 +291,12 @@ function rawCartridge(cells: ReadonlyArray<readonly [number, number]>) {
 		system.load(0, -3); system.emit(OpCode.MTC0, 0, COP0_EXEC);
 		system.emit(OpCode.RET, 0, 1);
 	});
-	return { system, card, link(cardClosures?: TestBlua32Source['closureRelocations']) {
-		const pair = linkRawTestBlua32Pair(system.source(2), card.source(0, cardClosures));
+	return { system, card, link(cardCode?: { constIndex: number; systemFunctionIndex: number }) {
+		const linkedSystem = linkRawTestSystemBlua32(system.source(2));
+		if (cardCode) card.constants[cardCode.constIndex] = {
+			kind: 'code_function', word: linkedSystem.image.functions[cardCode.systemFunctionIndex].address,
+		};
+		const pair = linkRawTestBlua32Pair(linkedSystem, card.source(0));
 		for (const [slot, pointer] of [
 			[functionSlot!, pair.systemImage.functions[1].address],
 			[codeSlot!, pair.systemImage.functions[1].codeAddress],
@@ -361,7 +367,8 @@ test('a cartridge CALL preserves user privilege across System ROM, while SVC ent
 		// The same physical function is called from both contexts.
 		system.emit(OpCode.MOV, 1, 0);
 		system.emit(OpCode.WIDE);
-		system.emit(OpCode.CLOSURE, 0, 0, 3);
+		const constIndex = system.load(0, 0);
+		system.constValueRelocs.push({ constIndex, kind: 'code_function', target: { kind: 'proto', protoIndex: 3 } });
 		system.emit(OpCode.CALL, 0, 2, 2);
 		system.emit(OpCode.RFE);
 	});
@@ -371,9 +378,10 @@ test('a cartridge CALL preserves user privilege across System ROM, while SVC ent
 		system.emit(OpCode.LOAD_MEM, 0, 1, MemoryAccessKind.Value);
 		system.emit(OpCode.RET, 0, 2);
 	}, 1);
+	let cardCodeSlot: number;
 	card.body(() => {
 		card.emit(OpCode.WIDE);
-		card.emit(OpCode.CLOSURE, 0);
+		cardCodeSlot = card.load(0, 0);
 		card.load(1, denied);
 		card.emit(OpCode.CALL, 0, 2, 2);
 		card.load(0, allowed);
@@ -381,8 +389,7 @@ test('a cartridge CALL preserves user privilege across System ROM, while SVC ent
 		card.emit(OpCode.MFC0, 0, COP0_STATUS);
 		card.emit(OpCode.RET, 0, 2);
 	});
-	const pair = link([{ wordIndex: 1, systemFunctionIndex: 3 }]), callee = pair.systemImage.functions[3];
-	writeLE32(pair.systemRomBytes, callee.address + BLUA32_FUNCTION_FLAGS_OFFSET, callee.flags | BLUA32_FUNCTION_CODE);
+	const pair = link({ constIndex: cardCodeSlot!, systemFunctionIndex: 3 }), callee = pair.systemImage.functions[3];
 
 	const { runtime, step, inspect, observe, completion, replay } = paired(t, pair.systemRomBytes, pair.cartRomBytes);
 	const { cpu, memory } = runtime.machine;

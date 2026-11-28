@@ -1,3 +1,4 @@
+import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -88,6 +89,7 @@ import {
 	createTestSystemCpu,
 	linkRawTestBlua32Pair,
 	linkRawTestSystemBlua32,
+	seedTestRomClosure,
 	linkTestBlua32Pair,
 	writeTestBlua32Rom,
 	type TestBlua32Image,
@@ -126,7 +128,7 @@ function makeHaltTestImages(startupFunctionIndex: number): TestBlua32ImagePair {
 	writeInstruction(code, 2, OpCode.RET, 0, 0, 0, 0);
 	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 5, OpCode.CLOSURE, 0, 0, 0, 0);
+	writeInstruction(code, 5, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(code, 6, OpCode.RET, 0, 2, 0, 0);
 	return linkRawTestBlua32Pair(
 		CART_LAUNCHER_SYSTEM_IMAGE_SOURCE,
@@ -172,8 +174,8 @@ function makeHaltCpu(): {
 function makeCompletionLatchTestImage(): TestBlua32Image {
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
-	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
+	writeInstruction(code, 1, OpCode.LOADNIL, 0, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 1, 0, 0);
 	writeInstruction(code, 3, OpCode.MOV, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
@@ -248,7 +250,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 	writeInstruction(systemCode, 3, OpCode.RFE, 0, 0, 0, 0);
 	if (nested) {
 		writeInstruction(systemCode, 4, OpCode.WIDE, 0, 0, 0, 0);
-		writeInstruction(systemCode, 5, OpCode.CLOSURE, 0, 0, 0, 0);
+		writeInstruction(systemCode, 5, OpCode.MOV, 0, 0, 0, 0);
 		writeInstruction(systemCode, 6, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 		writeInstruction(systemCode, 7, OpCode.RET, 0, 0, 0, 0);
 		writeInstruction(systemCode, 8, systemLeafOp, 0, 0, 0, 0);
@@ -259,7 +261,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 	}
 	const cartCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(cartCode, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(cartCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
+	writeInstruction(cartCode, 1, OpCode.MOV, 0, 0, 0, 0);
 	writeInstruction(cartCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	writeInstruction(cartCode, 3, OpCode.K0, 0, 0, 0, 0);
 	writeInstruction(cartCode, 4, OpCode.RET, 0, 0, 0, 0);
@@ -272,7 +274,6 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 				{ firstWord: 3, wordCount: 1 },
 				...(nested ? [{ firstWord: 4, wordCount: 4, maxStack: 1 }, { firstWord: 8, wordCount: 2 }] : [{ firstWord: 4, wordCount: 2 }]),
 			],
-			closureRelocations: nested ? [{ wordIndex: 5, functionIndex: 3 }] : [],
 			constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)],
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,
@@ -284,10 +285,6 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 				{ firstWord: 0, wordCount: 5, maxStack: 1 },
 				{ firstWord: 5, wordCount: 1 },
 			],
-			closureRelocations: [{
-				wordIndex: 1,
-				functionIndex: 2,
-			}],
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,
 			exceptionFunctionIndex: 1,
@@ -295,13 +292,18 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 	);
 	const memory = new Memory({ systemRom: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes, images.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController, new ExecutionAddressSpace(memory));
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irqController, executionAddressSpace);
 	const dma = new DmaController(memory, cpu, irqController, new DeviceScheduler(cpu));
 	memory.cartridgeController.connect(memory, irqController, dma);
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.readFrameExecutionDomain(0), 0);
+	admitTestHeapServiceCpu(cpu, executionAddressSpace);
+	const frame = cpu.activeThread.currentFrame!;
+	frame.registers.setClosure(0, seedTestRomClosure(cpu, images.systemSymbols.functionAddresses[2]));
+	if (nested) frame.thread.stackRegisters.setClosure(frame.stackBase + 1, seedTestRomClosure(cpu, images.systemSymbols.functionAddresses[3]));
 	const runtime = makeRuntime(cpu, irqController, sliceStats);
 	return { cpu, cpuExecution: runtime.cpuExecution, images, runtime };
 }
@@ -520,7 +522,7 @@ test('suspended execution observes CPU hook reconfiguration at the next burst', 
 });
 
 test('suspended executor returns control without advancing hardware while the system controller holds the CPU', () => {
-	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const { cpu, irqController } = createTestHeapServiceCpu(COMPLETION_LATCH_TEST_IMAGE);
 	const sliceStats = { begin: 0, end: 0 };
 	const runtime = makeRuntime(cpu, irqController, sliceStats);
 	const baseDepth = cpu.getFrameDepth();
@@ -783,9 +785,10 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
-	const { cpu, irqController } = createTestBlua32PairCpu(HALT_CLOSURE_TEST_IMAGES);
-	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0] + BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
-	const haltClosure = asClosure(cpu.readFrameRegister(0, 0), nativeHeapReference(cpu).gc);
+	const { cpu, irqController, executionAddressSpace } = createTestBlua32PairCpu(HALT_CLOSURE_TEST_IMAGES);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0]), RunResult.Yielded);
+	admitTestHeapServiceCpu(cpu, executionAddressSpace);
+	const haltClosure = seedTestRomClosure(cpu, HALT_CLOSURE_TEST_IMAGES.cartSymbols.functionAddresses[0], 0);
 	const runtime = makeRuntime(cpu, irqController);
 
 	const out = runtime.callClosure(haltClosure, EMPTY_CALL_ARGS);
@@ -898,9 +901,9 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 });
 
 test('completion-call return routing survives save-state through the raw CPU latch', () => {
-	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const { cpu, irqController } = createTestHeapServiceCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const closure = seedTestRomClosure(cpu, COMPLETION_LATCH_TEST_IMAGE.symbols.functionAddresses[1]);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const closureKey = nativeHeapReference(cpu).stringPool.intern('completion_call');
 	setReferenceGlobal(cpu, closureKey, valueClosure(closure));
 
@@ -928,9 +931,9 @@ test('completion-call return routing survives save-state through the raw CPU lat
 });
 
 test('CPU aborts a physical completion call at its marked root', () => {
-	const { cpu } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const { cpu } = createTestHeapServiceCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const closure = seedTestRomClosure(cpu, COMPLETION_LATCH_TEST_IMAGE.symbols.functionAddresses[1]);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const completionFrameIndex = cpu.getFrameDepth();
 	cpu.beginCompletionCall(closure);
 	cpu.beginCompletionCall(closure);
@@ -945,9 +948,9 @@ test('CPU aborts a physical completion call at its marked root', () => {
 });
 
 test('Runtime callClosure leaves its completion frame pending when the shared executor hits a breakpoint', () => {
-	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const { cpu, irqController } = createTestHeapServiceCpu(COMPLETION_LATCH_TEST_IMAGE);
+	const closure = seedTestRomClosure(cpu, COMPLETION_LATCH_TEST_IMAGE.symbols.functionAddresses[1]);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const runtime = makeRuntime(cpu, irqController);
 	const closurePc = COMPLETION_LATCH_TEST_IMAGE.image.functions[1].codeAddress;
 	runtime.machine.cpu.setExecutionHook(
@@ -1442,23 +1445,6 @@ test('BLua32 branches fetch adjacent mapped instructions without function-range 
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		assert.equal(cpu.getFrameDepth(), 0);
 	}
-});
-
-test('unmapped CLOSURE records hard-halt without entering host error handling', () => {
-	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({
-		text: code,
-		functions: [{ firstWord: 0, wordCount: 2 }],
-		closureRelocations: [{ wordIndex: 1, functionAddress: 0x06000000 }],
-	}, RAM_CODE_FIXTURE_BYTES);
-	const { cpu } = createTestSystemCpu(image);
-
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	assertFrameFunctionAddresses(cpu, [
-		image.symbols.functionAddresses[0],
-	]);
 });
 
 test('an uncaught Lua runtime error enters the exception root with CPU_CAUSE_CODE_TRAP instead of throwing to host', () => {

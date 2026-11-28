@@ -42,7 +42,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'JMP',
 	'JMPIF',
 	'JMPIFNOT',
-	'CLOSURE',
+	'JAL',
 	'GETUP',
 	'SETUP',
 	'VARARG',

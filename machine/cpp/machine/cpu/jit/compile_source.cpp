@@ -177,7 +177,6 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	bool immutableSource = true;
 	auto& specializations = workspace.specializations;
 	specializations.clear();
-	const bool systemRomImage = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID && !image.romFunctions.mappedCode;
 	for (auto* source : pages) {
 		auto& page = source->page;
 		const auto& binding = page.mapping;
@@ -208,22 +207,11 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 			for (;;) {
 				const auto& instruction = page.words[cursor];
 				const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
-				u32 directCodeFunction = 0u;
-				// The source and target records share one immutable published
-				// image lifetime. Do not capture targets from another domain.
-				if (systemRomImage && pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE
-					&& instruction.op == static_cast<u8>(OpCode::CLOSURE)
-					&& (instruction.c & CLOSURE_ADDRESS_REGISTER_FLAG) == 0) {
-					const u32 address = instruction.bx() * BLUA32_FUNCTION_ALIGNMENT;
-					const auto* record = image.romFunctions.find(address);
-					if (record && isStaticCodeFunction(record->entry.flags, record->upvalueCount))
-						directCodeFunction = address;
-				}
 				const DecodedInstruction* row = &instruction;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 				if (pending) row = m_nativeCompilerWorker->captureInstruction(instruction);
 #endif
-				instructions[instructionCount++] = {row, pc, directCodeFunction};
+				instructions[instructionCount++] = {row, pc};
 				if (instruction.op == static_cast<u8>(OpCode::SETFIELD)) {
 					const u8 extraHashSlots = instructionFieldExtraHashSlots(page.sourceWords[cursor], instruction.width);
 					if (extraHashSlots) specializations.fieldGrowth.push_back({pc, extraHashSlots});

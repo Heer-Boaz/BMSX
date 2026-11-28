@@ -14,13 +14,14 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_CONTEXT, CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
+import type { ProgramConstValueReloc } from '../../../toolchain/ts/lua/compiler/program_object';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -45,7 +46,7 @@ function assemble(operation: OpcodeCase) {
 	const oldCapacity = returning ? 12 : callerCapacity;
 	const ops: [OpCode, number, number, number][] = [], constants: number[] = [];
 	const functions: { firstWord: number; wordCount: number; maxStack: number; numParams: number; isVararg: boolean }[] = [];
-	const closures: { wordIndex: number; functionIndex: number }[] = [];
+	const constValueRelocs: ProgramConstValueReloc[] = [];
 	let functionSlot = 0, pcSlot = 0, issue = 0, afterMove = 0;
 	function add(op: OpCode, a = 0, b = 0, c = 0) { ops.push([op, a, b, c]); }
 	function load(register: number, value: number) {
@@ -83,8 +84,8 @@ function assemble(operation: OpcodeCase) {
 	functionBody(vararg ? 2 : callerCapacity, () => {
 		if (!vararg) {
 			add(OpCode.WIDE);
-			closures.push({ wordIndex: ops.length, functionIndex: 3 });
-			add(OpCode.CLOSURE, returning ? 2 : 3);
+			constValueRelocs.push({ constIndex: constants.length, kind: 'code_function', target: { kind: 'proto', protoIndex: 3 } });
+			load(returning ? 2 : 3, 0);
 			if (!returning) load(4, 41);
 		}
 		if (returning) {
@@ -136,11 +137,10 @@ function assemble(operation: OpcodeCase) {
 	const text = new Uint8Array(ops.length * word);
 	for (const [index, op] of ops.entries()) writeInstruction(text, index, ...op);
 	const { image, romBytes } = linkRawTestSystemBlua32({ text, functions, constants: constants.map(integerConstant),
-		closureRelocations: closures, exceptionFunctionIndex: 2, verifiedControlFlow: true });
+		constValueRelocs, exceptionFunctionIndex: 2, verifiedControlFlow: true });
 	const [, caller, handler, child] = image.functions;
 	for (const [slot, value] of [[functionSlot, caller.address], [pcSlot, caller.codeAddress]])
 		writeLE32(romBytes, image.header.constantTableAddress + slot * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET, value);
-	writeLE32(romBytes, child.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, child.flags | BLUA32_FUNCTION_CODE);
 	return { rom: romBytes, caller, child, oldCapacity, issuePc: (returning ? child.codeAddress : caller.codeAddress) + issue * word,
 		handlerPc: handler.codeAddress, checkpointPc: handler.codeAddress + afterMove * word };
 }
@@ -181,7 +181,7 @@ for (const operation of ['CALL', 'VARARG', 'RET'] as const) test(`bare System RO
 		assert.equal(paid, BASE_CYCLES[op] + extra, `PC 0x${pc.toString(16)}`);
 		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
 		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
-		record('E 1', `${outcome} ${paid} 0 ${memory.ramBusEnd()} -1`);
+		record('E 1', `${outcome} ${paid} ${memory.ramBusEnd()} -1`);
 	}
 	const issueDepth = returning ? 2 : 1, issuer = control + (issueDepth - 1) * FRAME_CONTROL_BYTES;
 	for (let i = 0; i < 128 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== issuePc; ++i) step();

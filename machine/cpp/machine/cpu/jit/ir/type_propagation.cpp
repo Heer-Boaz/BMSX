@@ -176,6 +176,9 @@ struct NativeTypePropagation::Transfer {
 	}
 
 	void operator()(const NativeLiteral& op) const { result(valueTag(op.value)); }
+	void operator()(const NativeJump& op) const {
+		if (op.link >= 0) result(ValueTag::Integer);
+	}
 	void operator()(const NativeLength&) const { result(ValueTag::Integer); }
 
 	NativeTagCheck check(size_t operand, ValueTag expected) const {

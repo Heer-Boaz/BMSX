@@ -788,14 +788,17 @@ void resumesCompletionRootBank() {
 	test::Blua32TestImage source;
 	source.text.resize(5 * INSTRUCTION_BYTES);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(source.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(source.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(source.text, 3, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
 	writeInstruction(source.text, 4, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	source.functions = {{.firstWord=0, .wordCount=3}, {.firstWord=3, .wordCount=2, .isVararg=true}};
-	source.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	Machine machine(source, true);
-	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+	{
+		const auto closure = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		machine.cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+	}
 	auto& cpu = machine.cpu;
 	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
@@ -966,7 +969,7 @@ void resumesOpenThreadAfterClosingInstruction() {
 	test::Blua32TestImage program;
 	program.text.resize(7 * INSTRUCTION_BYTES);
 	writeInstruction(program.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(program.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(program.text, 2, static_cast<u8>(OpCode::CALL), 0, 2, 2);
 	writeInstruction(program.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(program.text, 4, static_cast<u8>(OpCode::JMP), 1, 0, 0);
@@ -976,10 +979,13 @@ void resumesOpenThreadAfterClosingInstruction() {
 		{.firstWord=4, .wordCount=2, .numParams=1, .maxStack=8},
 		{.firstWord=6, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 1})}};
 	program.functions.back().upvalues.back().index = 0;
-	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	Machine generated(program), scalar(program, true);
 	for (auto* machine : {&generated, &scalar}) {
-		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		{
+			const auto closure = test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+			machine->cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+		}
 	}
 	const auto setup = [](Machine& machine) {
 		const auto target = bmsx::test::allocateTableReference(machine.cpu).address();
@@ -991,7 +997,7 @@ void resumesOpenThreadAfterClosingInstruction() {
 	const u32 target = setup(generated);
 	require(setup(scalar) == target, "the test shares the same physical operands across modes");
 	constexpr auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
-	require(test::runCpuParity(generated.cpu, scalar.cpu, cycles(OpCode::CLOSURE) + cycles(OpCode::CALL)) == RunResult::Yielded,
+	require(test::runCpuParity(generated.cpu, scalar.cpu, cycles(OpCode::MOV) + cycles(OpCode::CALL)) == RunResult::Yielded,
 		"both cores stop at the child entry before the closing JMP");
 	for (auto* machine : {&generated, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->currentFrame;

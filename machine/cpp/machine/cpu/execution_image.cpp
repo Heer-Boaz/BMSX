@@ -101,13 +101,13 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 		return versions[a].entry.codeAddress == versions[b].entry.codeAddress && versions[a].endPc == versions[b].endPc;
 	}).begin(), order.end());
 	result.instructionHeads.resize((textBytes / INSTRUCTION_BYTES + 31u) / 32u);
+	const auto read = [&](u32 pc) { return readLE32(code.data() + (pc - text)); };
 	u32 previousEnd = text;
 	for (u32 index : order) {
 		const auto& version = versions[index];
 		if (version.entry.codeAddress < previousEnd)
 			throw BMSX_RUNTIME_ERROR("BLua32 function TEXT extents overlap.");
 		previousEnd = version.endPc;
-		auto read = [&](u32 pc) { return readLE32(code.data() + (pc - text)); };
 		for (u32 pc = version.entry.codeAddress; pc < version.endPc;) {
 			const u32 word = (pc - text) / INSTRUCTION_BYTES;
 			result.instructionHeads[word >> 5u] |= u32{1} << (word & 31u);
@@ -119,6 +119,10 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 				pc += INSTRUCTION_BYTES;
 			}
 		}
+	}
+	// JAL may target another published extent, including a later record.
+	for (const u32 index : order) {
+		const auto& version = versions[index];
 		for (u32 pc = version.entry.codeAddress; pc < version.endPc;) {
 			const u32 source = read(pc);
 			const bool wide = instructionOpcode(source) == static_cast<u8>(OpCode::WIDE);
@@ -126,17 +130,21 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 			const u32 body = wide ? read(pc + INSTRUCTION_BYTES) : source;
 			const auto op = static_cast<OpCode>(instructionOpcode(body));
 			const u32 next = pc + width * INSTRUCTION_BYTES;
-			if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
+			if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT || op == OpCode::JAL) {
 				const u32 target = instructionBranchTarget(pc, width, instructionBx(body, wide ? instructionLowB(source) : 0u, true));
-				if (!version.contains(target) || !result.instructionHead(target))
+				if (op == OpCode::JAL) {
+					if (!result.instructionHead(target))
+						throw BMSX_RUNTIME_ERROR("BLua32 JAL target is not an instruction in its image.");
+				} else if (!version.contains(target) || !result.instructionHead(target)) {
 					throw BMSX_RUNTIME_ERROR("BLua32 branch target is not an instruction in its function.");
+				}
 			}
 			if (op == OpCode::JREG) {
 				const u32 mode = (body & MAX_LOW_OPERAND) | (((body >> 24u) & ((1u << EXT_C_BITS) - 1u)) << MAX_OPERAND_BITS)
 					| (wide ? (source & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0u);
 				if (mode > 1u) throw BMSX_RUNTIME_ERROR("BLua32 register jump has an invalid mode.");
 			}
-			if (op != OpCode::JMP && op != OpCode::JREG && op != OpCode::RET && op != OpCode::RFE && op <= OpCode::HALT) {
+			if (op != OpCode::JMP && op != OpCode::JAL && op != OpCode::JREG && op != OpCode::RET && op != OpCode::RFE && op <= OpCode::HALT) {
 				if (!version.contains(next))
 					throw BMSX_RUNTIME_ERROR("BLua32 function falls through the end of its TEXT extent.");
 				if (op == OpCode::EQ || op == OpCode::LT || op == OpCode::LE || op == OpCode::ITERN) {

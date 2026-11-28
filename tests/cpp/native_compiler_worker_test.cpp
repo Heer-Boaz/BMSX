@@ -367,15 +367,14 @@ void pendingGenericWorkSurvivesFirstCallObservation() {
 		image.text.resize(18u * INSTRUCTION_BYTES);
 		image.functions = {{.firstWord = 0u, .wordCount = 10u, .maxStack = 3},
 			{.firstWord = 12u, .wordCount = 2u, .numParams = 1u}, {.firstWord = 16u, .wordCount = 2u}};
-		image.closureRelocations = {{1u, test::blua32TestFunctionAddress(RomImageDomain::System, 1u)},
-			{3u, test::blua32TestFunctionAddress(RomImageDomain::System, 2u)}};
+
 		const auto put = [&](u32 word, OpCode op, u8 a = 0u, u8 b = 0u, u8 c = 0u, u8 ext = 0u) {
 			writeInstruction(image.text, word, static_cast<u8>(op), a, b, c, ext);
 		};
 		put(0, OpCode::WIDE);
-		put(1, OpCode::CLOSURE, 1);
+		put(1, OpCode::MOV, 1, 1, 0);
 		put(2, OpCode::WIDE);
-		put(3, OpCode::CLOSURE, 2);
+		put(3, OpCode::MOV, 2, 2, 0);
 		// R0 starts nil. Enter the loop by a real branch so the root,
 		// rather than its backedge, reaches the threshold first.
 		put(4, OpCode::JMP);
@@ -392,8 +391,14 @@ void pendingGenericWorkSurvivesFirstCallObservation() {
 		CpuMachine machine(image, false);
 		auto& cpu = machine.cpu;
 		// This bare image exercises binding and worker observation, not allocation.
-		test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
-		test::seedTestRomClosure(cpu, machine.rom.functionAddresses[2]);
+		{
+			const auto closure = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+			cpu.activeThread()->currentFrame->registers.set(1, bmsx::valueClosure(closure));
+		}
+		{
+			const auto closure = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[2]);
+			cpu.activeThread()->currentFrame->registers.set(2, bmsx::valueClosure(closure));
+		}
 		const u32 text = machine.rom.textAddress, root = text + 5u * INSTRUCTION_BYTES;
 		for (int step = 0; cpu.readFramePc(0) != root && step < 4; ++step) cpu.runUntilDepth(0, 1);
 		require(cpu.readFramePc(0) == root, "real closure setup reaches the verified loop root");

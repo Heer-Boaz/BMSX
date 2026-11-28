@@ -262,23 +262,22 @@ void tableWrites() {
 void directCalls() {
 	auto image=imageWithHandler(7);
 	writeInstruction(image.text,0,static_cast<u8>(OpCode::WIDE),0,0,0);
-	writeInstruction(image.text,1,static_cast<u8>(OpCode::CLOSURE),0,0,0);
+	writeInstruction(image.text,1,static_cast<u8>(OpCode::LOADK),0,0,0);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::CALL),0,1,1);
 	writeInstruction(image.text,3,static_cast<u8>(OpCode::WIDE),0,0,0);
-	writeInstruction(image.text,4,static_cast<u8>(OpCode::CLOSURE),0,0,0);
+	writeInstruction(image.text,4,static_cast<u8>(OpCode::LOADK),0,0,0);
 	writeInstruction(image.text,5,static_cast<u8>(OpCode::CALL),0,1,1);
 	writeInstruction(image.text,6,static_cast<u8>(OpCode::HALT),0,0,0);
 	writeInstruction(image.text,32,static_cast<u8>(OpCode::WIDE),0,0,0);
-	writeInstruction(image.text,33,static_cast<u8>(OpCode::CLOSURE),0,0,0);
+	writeInstruction(image.text,33,static_cast<u8>(OpCode::LOADK),0,0,1);
 	writeInstruction(image.text,34,static_cast<u8>(OpCode::CALL),0,1,1);
 	writeInstruction(image.text,35,static_cast<u8>(OpCode::RET),0,1,0);
 	writeInstruction(image.text,48,static_cast<u8>(OpCode::K1),0,0,0);
 	writeInstruction(image.text,49,static_cast<u8>(OpCode::RET),0,1,0);
-	image.functions.push_back({.firstWord=32,.wordCount=4,.maxStack=4});
-	image.functions.push_back({.firstWord=48,.wordCount=2,.maxStack=1});
-	image.closureRelocations={{1,test::blua32TestFunctionAddress(RomImageDomain::System,3)},
-		{4,test::blua32TestFunctionAddress(RomImageDomain::System,3)},
-		{33,test::blua32TestFunctionAddress(RomImageDomain::System,4)}};
+	image.functions.push_back({.firstWord=32,.wordCount=4,.maxStack=4,.codeFunction=true});
+	image.functions.push_back({.firstWord=48,.wordCount=2,.maxStack=1,.codeFunction=true});
+	image.constants={Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System,3)},
+		Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System,4)}};
 	Fixture generated(image,false,false),scalar(image,true);
 	// Both runs start with the same admitted backing. In the generated run
 	// the entire nested CALL/RET chain can retire within one native grant.
@@ -288,7 +287,6 @@ void directCalls() {
 		test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), thread.address, 0u, 4u, valueNil());
 		thread.bindStack();
 		thread.reserveFixedFrameViews();
-		for (auto index : {3u, 4u}) test::seedTestRomClosure(cpu, fixture->rom.functionAddresses[index]);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.runtime.machine.cpu.prepareSystemNativeCode();

@@ -85,6 +85,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::UNM: case OpCode::BNOT:
 		return NativeArithmetic{a, b, c, op, NativeArithmeticHint{}};
 	case OpCode::JMP: return NativeJump{instruction.bx()};
+	case OpCode::JAL: return NativeJump{instruction.bx(), static_cast<NativeValueRef>(a)};
 	case OpCode::JREG: return NativeRegisterJump{{a, c == 0 ? NATIVE_NO_OPERAND : b}};
 	case OpCode::JMPIF: case OpCode::JMPIFNOT:
 		return NativeTruthBranch{instruction.bx(), static_cast<i16>(a), op == OpCode::JMPIF};
@@ -94,8 +95,6 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::VARARG: return NativeVararg{{a, static_cast<i16>(decodeValueCount(b, -1))}};
 	case OpCode::RET: return NativeReturnSite{{a, static_cast<i16>(decodeValueCount(b, -1))}};
 	case OpCode::HALT: return NativeHalt{};
-	case OpCode::CLOSURE:
-		return NativeClosure{{instruction.bx(), a, static_cast<u16>(c)}};
 	case OpCode::SVC: return NativeSupervisorCall{{a, static_cast<u16>(b)}};
 	case OpCode::RFE: return NativeExceptionReturn{};
 	default:

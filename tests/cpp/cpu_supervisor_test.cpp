@@ -478,49 +478,21 @@ void testMappedFetchCrossesFunctionRecordMetadata() {
 	require(machine.cpu.getFrameDepth() == 0, "mapped RET completes the original call frame");
 }
 
-void testUnmappedClosureRecordHardHalts() {
-	bmsx::test::Blua32TestImage image;
-	image.text.resize(2u * bmsx::INSTRUCTION_BYTES);
-	bmsx::writeInstruction(
-		std::span<bmsx::u8>(image.text),
-		0,
-		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
-		0,
-		0,
-		0
-	);
-	bmsx::writeInstruction(
-		std::span<bmsx::u8>(image.text),
-		1,
-		static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE),
-		0,
-		0,
-		0
-	);
-	image.functions = {{.firstWord = 0u, .wordCount = 2u}};
-	image.closureRelocations = {{.wordIndex = 1u, .functionAddress = UNMAPPED_ADDRESS}};
-	CpuTestMachine machine(std::move(image));
-
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "unmapped CLOSURE record hard-halts");
-	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(machine.cpu.getFrameDepth() == 1u, "unmapped CLOSURE record retains the active frame");
-	require(machine.cpu.readFrameFunctionAddress(machine.cpu.getFrameDepth() - 1) == machine.systemRom.functionAddresses[0], "unmapped CLOSURE record does not enter host state");
-}
 
 void testCrossImageCallStackPcsBelongToTheirFrames() {
 	bmsx::test::Blua32TestImage system;
 	system.text.resize(7u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> systemCode(system.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
 	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
 	system.functions = {
-		{.firstWord = 0u, .wordCount = 4u},
-		{.firstWord = 4u, .wordCount = 1u},
+		{.firstWord = 0u, .wordCount = 4u, .codeFunction = true},
+		{.firstWord = 4u, .wordCount = 1u, .codeFunction = true},
 		{.firstWord = 5u, .wordCount = 2u},
 	};
 	system.constants = {
@@ -528,11 +500,9 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 			bmsx::RomImageDomain::Cartridge,
 			0u
 		)),
+		bmsx::Blua32CodeFunctionConstant{bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)},
 	};
-	system.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u),
-	}};
+
 	system.startupFunctionIndex = 2u;
 	system.irqFunctionIndex = 1u;
 	system.exceptionFunctionIndex = 1u;
@@ -541,7 +511,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	cart.text.resize(5u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> cartCode(cart.text);
 	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
@@ -549,15 +519,11 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 		{.firstWord = 0u, .wordCount = 4u},
 		{.firstWord = 4u, .wordCount = 1u},
 	};
-	cart.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 0u),
-	}};
+	cart.constants = {bmsx::Blua32CodeFunctionConstant{bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 0u)}};
 	cart.irqFunctionIndex = 1u;
 	cart.exceptionFunctionIndex = 1u;
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
-	for (size_t index : {0u, 1u}) bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[index]);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
 	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
 		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
@@ -741,57 +707,30 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 void testMappedRamFunctionExecution() {
 	bmsx::test::Blua32TestImage systemImage;
 	systemImage.text.resize(9u * bmsx::INSTRUCTION_BYTES);
-	systemImage.constants = {static_cast<bmsx::i32>(RAM_FUNCTION_ADDRESS)};
+	systemImage.constants = {bmsx::Blua32CodeFunctionConstant{
+		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
 	std::span<bmsx::u8> systemCode(systemImage.text);
-	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
-	bmsx::writeInstruction(
-		systemCode,
-		3,
-		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
-		0,
-		0,
-		bmsx::CLOSURE_ADDRESS_REGISTER_WIDE_C
-	);
-	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
-	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
+	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::JMP), 0, 0, 4);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(systemCode, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	systemImage.functions = {
 		{.firstWord = 0u, .wordCount = 6u, .maxStack = 2u},
-		{.firstWord = 6u, .wordCount = 2u},
+		{.firstWord = 6u, .wordCount = 2u, .codeFunction = true},
 		{.firstWord = 8u, .wordCount = 1u},
 	};
 	systemImage.startupFunctionIndex = 0u;
 	systemImage.irqFunctionIndex = 2u;
 	systemImage.exceptionFunctionIndex = 2u;
-	systemImage.closureRelocations = {{.wordIndex = 1u, .functionAddress = RAM_FUNCTION_ADDRESS}};
+
 
 	CpuTestMachine machine(std::move(systemImage));
 	bmsx::CPU& cpu = machine.cpu;
-	bmsx::test::seedTestRomClosure(cpu, machine.systemRom.functionAddresses[1]);
 	bmsx::Memory& memory = machine.memory;
-	const bmsx::u32 romFunctionOperand = machine.systemRom.functionAddresses[1] >> 4u;
 	std::array<bmsx::u8, 4u * bmsx::INSTRUCTION_BYTES> ramCode{};
-	bmsx::writeInstruction(
-		ramCode,
-		0,
-		static_cast<bmsx::u8>(bmsx::OpCode::WIDE),
-		0,
-		static_cast<bmsx::u8>(romFunctionOperand >> bmsx::BASE_BX_BITS),
-		0
-	);
-	bmsx::writeInstruction(
-		ramCode,
-		1,
-		static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE),
-		0,
-		static_cast<bmsx::u8>((romFunctionOperand >> 6u) & 0x3fu),
-		static_cast<bmsx::u8>(romFunctionOperand & 0x3fu),
-		static_cast<bmsx::u8>(romFunctionOperand >> bmsx::MAX_BX_BITS)
-	);
+	bmsx::writeInstruction(ramCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(ramCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(
 		ramCode,
 		2,
@@ -831,19 +770,11 @@ void testMappedRamFunctionExecution() {
 		0u
 	);
 	memory.writeBytes(RAM_CODE_ADDRESS, ramCode.data(), ramCode.size());
-	bmsx::test::seedTestMappedClosure(cpu, RAM_FUNCTION_ADDRESS);
-
-	require(
-		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
-		"ROM creates a closure for a mapped RAM function record"
-	);
-	bmsx::u32 directClosure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
-	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(1), bmsx::test::GcHeap(cpu));
-	require(
-		cpu.readClosureBinding(directClosure).functionAddress == RAM_FUNCTION_ADDRESS
-			&& cpu.readClosureBinding(closure).functionAddress == RAM_FUNCTION_ADDRESS,
-		"direct and register-addressed closures retain the mapped RAM function address"
-	);
+	const auto closure = bmsx::test::seedTestMappedClosure(cpu, RAM_FUNCTION_ADDRESS);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted
+		&& cpu.readCompletionValues().get(0) == bmsx::valueClosure(closure),
+		"ROM publishes the already sampled RAM function value");
 
 	cpu.beginCompletionCall(closure);
 	require(
@@ -1006,7 +937,7 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	if (nested) {
 		bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-		bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
 		bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
 		bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 		bmsx::writeInstruction(systemCode, 8, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
@@ -1020,11 +951,11 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 		{.firstWord = 3u, .wordCount = 1u},
 	};
 	if (nested) {
-		system.functions.push_back({.firstWord = 4u, .wordCount = 4u, .maxStack = 1u});
-		system.functions.push_back({.firstWord = 8u, .wordCount = 2u});
-		system.closureRelocations = {{5u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 3u)}};
+		system.functions.push_back({.firstWord = 4u, .wordCount = 4u, .maxStack = 1u, .codeFunction = true});
+		system.functions.push_back({.firstWord = 8u, .wordCount = 2u, .codeFunction = true});
+
 	} else {
-		system.functions.push_back({.firstWord = 4u, .wordCount = 2u});
+		system.functions.push_back({.firstWord = 4u, .wordCount = 2u, .codeFunction = true});
 	}
 	system.constants = {
 		static_cast<bmsx::i32>(
@@ -1032,6 +963,7 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 				+ bmsx::BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
 		),
 	};
+	if (nested) system.constants.emplace_back(bmsx::Blua32CodeFunctionConstant{bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 3u)});
 	system.startupFunctionIndex = 0u;
 	system.irqFunctionIndex = 1u;
 	system.exceptionFunctionIndex = 1u;
@@ -1040,7 +972,7 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 	cart.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> cartCode(cart.text);
 	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
 	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
@@ -1049,10 +981,7 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 		{.firstWord = 0u, .wordCount = 5u, .maxStack = 1u},
 		{.firstWord = 5u, .wordCount = 1u},
 	};
-	cart.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
-	}};
+	cart.constants = {bmsx::Blua32CodeFunctionConstant{bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u)}};
 	cart.startupFunctionIndex = 0u;
 	cart.irqFunctionIndex = 1u;
 	cart.exceptionFunctionIndex = 1u;
@@ -1060,8 +989,6 @@ void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool sel
 	auto auxiliary = cart;
 	auxiliary.irqFunctionIndex = 0u;
 	CpuTestMachine machine(std::move(system), std::move(cart), std::move(auxiliary));
-	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[2]);
-	if (nested) bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[3]);
 	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart executes HALT inside its system callee");
 	const auto before = machine.cpu.captureRuntimeState();
@@ -1093,7 +1020,7 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	system.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
 		{.firstWord = 3u, .wordCount = 1u},
-		{.firstWord = 4u, .wordCount = 2u},
+		{.firstWord = 4u, .wordCount = 2u, .codeFunction = true},
 	};
 	system.constants = {
 		static_cast<bmsx::i32>(
@@ -1109,7 +1036,7 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	cart.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> cartCode(cart.text);
 	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
 	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
@@ -1118,16 +1045,12 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 		{.firstWord = 0u, .wordCount = 5u, .maxStack = 1u},
 		{.firstWord = 5u, .wordCount = 1u},
 	};
-	cart.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
-	}};
+	cart.constants = {bmsx::Blua32CodeFunctionConstant{bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u)}};
 	cart.startupFunctionIndex = 0u;
 	cart.irqFunctionIndex = 1u;
 	cart.exceptionFunctionIndex = 1u;
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
-	bmsx::test::seedTestRomClosure(machine.cpu, machine.systemRom.functionAddresses[2]);
 	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
 	const bmsx::u32 cartEntryPc = machine.cartRom.textAddress;
 	const bmsx::u32 cartCallPc = cartEntryPc + 2u * bmsx::INSTRUCTION_BYTES;
@@ -1696,7 +1619,7 @@ int main() {
 	testBranchesFetchAdjacentMappedInstructions();
 	testStringOrderingMatchesUtf8CodepointOrder();
 	testMappedFetchCrossesFunctionRecordMetadata();
-	testUnmappedClosureRecordHardHalts();
+
 	testCrossImageCallStackPcsBelongToTheirFrames();
 	testExecutionHookReconfigurationAppliesAtTheNextCpuBurst();
 	testDecodedSuperinstructionsPreserveGuestBoundaries();

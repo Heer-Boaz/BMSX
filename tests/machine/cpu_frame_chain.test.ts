@@ -24,19 +24,16 @@ import { runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function callImage(maxStack: number, returns: number, base = 0) {
-	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, base, 0, 0);
-	writeInstruction(text, 2, OpCode.CALL, base, 1, returns === 0 ? 0 : returns + 1);
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CALL, base, 1, returns === 0 ? 0 : returns + 1);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
-	writeInstruction(text, 4, OpCode.RET, 0, 2, 0);
-	writeInstruction(text, 5, OpCode.JMP, 0, 63, 63, 255);
 	return linkRawTestSystemBlua32({ text, functions: [
-		{ firstWord: 0, wordCount: 4, maxStack: 8 },
-		{ firstWord: 4, wordCount: 1, maxStack },
-		{ firstWord: 5, wordCount: 1, maxStack: 8 },
-	], exceptionFunctionIndex: 2,
-	closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+		{ firstWord: 0, wordCount: 2, maxStack: 8 },
+		{ firstWord: 2, wordCount: 1, maxStack },
+		{ firstWord: 3, wordCount: 1, maxStack: 8 },
+	], exceptionFunctionIndex: 2 });
 }
 
 test('thread growth resizes only the required storage lane', () => {
@@ -231,8 +228,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`RET restores a saved bank even when the selected socket is empty (${backend})`, () => {
 		const image = callImage(8, 1);
 		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.runUntilDepth(0, 1);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		const caller = cpu.rootThread.currentFrame!;
 		caller.savedExecutionBank = 1;
 		assert.equal(cpu.activeCartridgeSlot(), -1, 'a saved bank is not the current fetch latch');
@@ -369,8 +365,7 @@ return pcall(target)
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {
 		const image = callImage(1024, 1, 4);
 		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.runUntilDepth(0, 1);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(4, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
 		const live = nativeHeapReference(cpu).stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
 		const trackedBytes = nativeHeapReference(cpu).luaHeap.usedBytes();
@@ -391,7 +386,7 @@ return pcall(target)
 	test(`return growth keeps the callee rooted until results have moved (${backend})`, () => {
 		const image = callImage(8, 62);
 		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		thread.firstFrame!.registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		for (let grant = 0; grant < 8 && thread.frameDepth !== 2; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(thread.frameDepth, 2);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
@@ -409,8 +404,7 @@ return pcall(target)
 	for (const completion of [false, true]) test(`failed call admission leaves no unallocated extent (${backend}, completion=${completion})`, () => {
 		const image = callImage(PSX_MACHINE_SPEC.ramBytes, 1);
 		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.runUntilDepth(0, 1);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		const caller = thread.currentFrame!;
 		if (completion) {
 			const values = cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock);

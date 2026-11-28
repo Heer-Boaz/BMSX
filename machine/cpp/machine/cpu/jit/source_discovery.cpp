@@ -67,9 +67,9 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 				}
 			}
 			enqueue(successorPc, true);
-		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
+		} else if (op == OpCode::JMP || op == OpCode::JAL || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
 			enqueue(instruction.bx(), true);
-			if (op != OpCode::JMP) enqueue(successorPc, true);
+			if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT) enqueue(successorPc, true);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
 		else if (nativeBlockHasTerminalContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
 	}

@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
@@ -24,17 +25,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			[OpCode.SETFIELD, true], [OpCode.LEN, false]] as const) {
 			const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), length = op === OpCode.LEN;
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 10, 0, 0);
+			writeInstruction(text, 1, OpCode.LOADK, 10, 0, 1);
 			writeInstruction(text, 2, OpCode.MOV, 6, 0, 0);
 			writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, 4, op, 6, length ? 6 : op === OpCode.SETFIELD ? 0 : 1, 2);
 			writeInstruction(text, 5, OpCode.K1, 8, 0, 0);
 			writeInstruction(text, 6, OpCode.JMP, 0, 63, 59, 255);
 			writeInstruction(text, 7, OpCode.RET, 0, 3, 0);
-			const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
+			const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: ['field', integerConstant(0)], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: length ? 2 : 3, maxStack: 8 },
-			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+			], constValueRelocs: [{ constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			reserveThreadFrameReference(cpu, cpu.rootThread, 32); // This raw WIDE fixture exercises placement after admission.
 			let frame = cpu.rootThread.currentFrame!;
@@ -49,8 +50,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			frame.registers.set(2, valueInteger(91));
 			frame.registers.set(12, valueInteger(87));
 			frame.top = 13;
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]);
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK]);
 			cpu.runUntilDepth(0, (BASE_CYCLES[op] + 6) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)
 				assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);

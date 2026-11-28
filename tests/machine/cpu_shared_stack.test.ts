@@ -19,7 +19,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -55,18 +55,17 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(text, 2, OpCode.LOADK, 4, 0, 1);
 		writeInstruction(text, 3, OpCode.LOADK, 5, 0, 0);
 		writeInstruction(text, 4, OpCode.CALL, 4, 2, 3);
 		writeInstruction(text, 5, OpCode.RET, 4, 3, 0);
 		writeInstruction(text, 6, OpCode.MOV, 2, 0, 0);
 		writeInstruction(text, 7, OpCode.RET, 0, 3, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [
+		const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, functions: [
 			{ firstWord: 0, wordCount: 6, maxStack: 128 },
 			{ firstWord: 6, wordCount: 2, numParams: 2, maxStack: 8 },
-		], constants: [integerConstant(37)], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		], constants: [integerConstant(37), integerConstant(0)], constValueRelocs: [{ constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		const calleePc = image.image.functions[1].codeAddress;
 		cpu.setExecutionHook((_domain, pc) => pc === calleePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
@@ -96,7 +95,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const text = new Uint8Array(13 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.SETGL, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(text, 2, OpCode.LOADK, 4, 0, 1);
 		writeInstruction(text, 3, OpCode.CALL, 4, 2, 1);
 		writeInstruction(text, 4, OpCode.KSMI, 5, 0, 51);
 		writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
@@ -107,14 +106,13 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
 		writeInstruction(text, 11, OpCode.GETUP, 0, 0, 0);
 		writeInstruction(text, 12, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [
+		const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, functions: [
 			{ firstWord: 0, wordCount: 6, maxStack: 6 },
 			{ firstWord: 6, wordCount: 3, numParams: 1, maxStack: 2 },
 			{ firstWord: 9, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 5 }] },
 			{ firstWord: 11, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-		], globalNames: ['outer_read', 'inner_read'], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		], constants: [integerConstant(0), integerConstant(0)], globalNames: ['outer_read', 'inner_read'], constValueRelocs: [{ constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 		const { cpu, memory } = createTestSystemCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		const parent = cpu.rootThread.currentFrame!, outer = new Uint32Array(1);
 		parent.registers.set(0, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], outer)));
 		parent.registers.setInteger(5, 37);

@@ -55,9 +55,6 @@ export function allocateFrameSlots(
 		if (instruction.unknownFunctionBinding) return undefined;
 		const { op, a, b, c } = instruction;
 		switch (op) {
-			case OpCode.CLOSURE:
-				visitInstructionOpenUpvalueRegisters(instruction, maxStack - 1, resolveClosure, pinned, pinSlot);
-				break;
 			case OpCode.CALL:
 				bands[a] = 1;
 				if (b === 0 || c === 0) openBase = Math.min(openBase, a);
@@ -201,7 +198,7 @@ export function allocateFrameSlots(
 		const reads = OPCODE_SCALAR_REGISTER_READS[instruction.op];
 		if (instruction.op === OpCode.JREG) {
 			const a = slots[instruction.a];
-			return { ...instruction, a, b: instruction.c === 0 ? 0 : a };
+			return { ...instruction, a, b: instruction.c === 0 ? 0 : slots[instruction.b] };
 		}
 		const a = (reads & REGISTER_OPERAND_A) !== 0 || OPCODE_WRITES_REGISTER_A[instruction.op] !== 0
 			? slots[instruction.a] : instruction.a;

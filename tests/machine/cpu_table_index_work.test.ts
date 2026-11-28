@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -15,7 +16,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { COP0_STRING_INDEX_TABLE, LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
@@ -27,17 +28,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const op of [OpCode.GETT, OpCode.GETI, OpCode.GETFIELD, OpCode.SELF]) {
 			const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 10, 0, 0);
+			writeInstruction(text, 1, OpCode.LOADK, 10, 0, 1);
 			writeInstruction(text, 2, OpCode.MOV, 6, 0, 0);
 			writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, 4, op, 6, 6, op === OpCode.GETT || op === OpCode.GETI ? 1 : 0);
 			writeInstruction(text, 5, OpCode.MOV, 8, 6, 0);
 			writeInstruction(text, 6, OpCode.JMP, 0, 63, 59, 255);
 			writeInstruction(text, 7, OpCode.RET, 1, 2, 0);
-			const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
+			const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: ['field', integerConstant(0)], functions: [
 				{ firstWord: 0, wordCount: 7, maxStack: 16 },
 				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 8 },
-			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+			], constValueRelocs: [{ constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }] });
 			const { cpu } = createTestSystemCpu(image, backend);
 			reserveThreadFrameReference(cpu, cpu.rootThread, 24); // Measure the call once its Value and frame space is available.
 			let frame = cpu.rootThread.currentFrame!;
@@ -50,8 +51,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			frame.registers.setTable(0, table); frame.registers.set(1, key);
 			frame.registers.setInteger(12, 91); frame.top = 13;
 			const readCycles = BASE_CYCLES[op];
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE]);
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK]);
 			cpu.runUntilDepth(0, (readCycles + 6) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)
 				assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);

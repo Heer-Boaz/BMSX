@@ -168,24 +168,19 @@ test('the second mark traces new strong edges without revisiting the table or re
 });
 
 test('completion Values form a resumable root range after the real returning frame is gone', () => {
-	const text = new Uint8Array(20);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
-	writeInstruction(text, 3, OpCode.VARARG, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
+	const text = new Uint8Array(12);
+	writeInstruction(text, 0, OpCode.HALT, 0, 2, 0);
+	writeInstruction(text, 1, OpCode.VARARG, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.RET, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text,
-		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 2, isVararg: true }],
-		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+		functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 2, isVararg: true }],
 	});
 	const { cpu, memory } = createTestHeapServiceCpu(image);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	const callee = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]), target = createReferenceTable(cpu);
 	const results: Value[] = [];
-	cpu.readCompletionValues(results);
-	const callee = valuePayload(results[0]), target = createReferenceTable(cpu);
 	const args = new Array(GC_STEP_WORDS + 64).fill(valueInteger(7));
 	args[args.length - 1] = valueTable(target);
+	reserveThreadFrameReference(cpu, cpu.rootThread, args.length + 16);
 	cpu.beginCompletionCall(callee, args);
 	assert.equal(cpu.runUntilDepth(0, 4 * args.length + 1000), RunResult.Halted);
 	assert.equal(cpu.rootThread.frameDepth, 0);
@@ -340,30 +335,27 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 });
 
 test('a suspended Thread scan follows closing JMP and RET of a large live capture list', () => {
-	const captures = 3000, text = new Uint8Array(7 * 4);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CALL, 0, 2, 2);
-	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.JMP, 1, 0, 0);
-	writeInstruction(text, 5, OpCode.RET, 3, 2, 0);
-	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
+	const captures = 3000, text = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CALL, 0, 2, 2);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.JMP, 1, 0, 0);
+	writeInstruction(text, 3, OpCode.RET, 3, 2, 0);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
 	const capture = { inStack: true, index: 1 };
 	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
 	upvalueDescs[captures - 1] = { inStack: true, index: 0 };
 	const image = linkRawTestSystemBlua32({
 		text, functions: [
-			{ firstWord: 0, wordCount: 4, maxStack: 8 },
-			{ firstWord: 4, wordCount: 2, numParams: 1, maxStack: 8 },
-			{ firstWord: 6, wordCount: 1, upvalueDescs },
+			{ firstWord: 0, wordCount: 2, maxStack: 8 },
+			{ firstWord: 2, wordCount: 2, numParams: 1, maxStack: 8 },
+			{ firstWord: 4, wordCount: 1, upvalueDescs },
 		],
-		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 	});
 	const { cpu, memory } = createTestHeapServiceCpu(image);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	const frame = cpu.rootThread.currentFrame!, gc = nativeHeapReference(cpu).gc, target = createReferenceTable(cpu);
+	frame.registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 	frame.registers.setTable(1, target); frame.top = 2;
-	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 2);
 	const child = cpu.activeThread.currentFrame!, cells = new Uint32Array(captures);
 	child.registers.set(3, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], cells)));

@@ -105,23 +105,6 @@ std::string formatJumpTarget(u32 pc, int sbx, int pcWidth) {
 	return formatSignedOffset(offset, pcWidth) + " -> " + formatPcHex(target, pcWidth);
 }
 
-std::string formatFunctionOperand(
-	const Blua32ImageLayout& image,
-	const Blua32SymbolsImage* symbols,
-	u32 encodedAddress
-) {
-	const u32 address = encodedAddress << 4u;
-	std::ostringstream text;
-	text << "function@" << formatPcHex(address, 8);
-	const u32 first = image.header.functionTableAddress;
-	const u32 end = first + image.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE;
-	if (symbols && address >= first && address < end) {
-		const size_t functionIndex = (address - first) / BLUA32_FUNCTION_RECORD_SIZE;
-		text << " (" << symbols->metadata.functionIds[functionIndex] << ')';
-	}
-	return text.str();
-}
-
 std::string formatGlobalSlotOperand(const Blua32ImageLayout& image, int slot, bool system) {
 	const char* prefix = system ? "sys" : "gl";
 	const std::vector<std::string>& names = system ? image.systemGlobalNames : image.globalNames;
@@ -177,8 +160,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Blua32ImageLayout& imag
 		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
 		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
 		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA
-			| (nextOp == OpCode::CLOSURE ? (cLow & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0);
+		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
 		const int b = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | nextB;
 		const int c = (cLow << cShift) | (extC << MAX_OPERAND_BITS) | nextC;
 		const uint32_t bxLow = (static_cast<uint32_t>(nextB) << 6U) | static_cast<uint32_t>(nextC);
@@ -251,7 +233,7 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Blua32ImageLayout& i
 	return decodeInstructionFromStart(image, pc);
 }
 
-std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
+std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
@@ -332,13 +314,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
 			return "JMPIFNOT r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
-		case OpCode::CLOSURE:
-			if ((decoded.c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0) {
-				return "CLOSURE.R r" + std::to_string(decoded.a)
-					+ ", r" + std::to_string(decoded.bx);
-			}
-			return "CLOSURE r" + std::to_string(decoded.a) + ", "
-				+ formatFunctionOperand(image, symbols, static_cast<u32>(decoded.bx));
+		case OpCode::JAL:
+			return "JAL r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::GETUP:
 			return "GETUP r" + std::to_string(decoded.a) + ", u" + std::to_string(decoded.b);
 		case OpCode::SETUP:
@@ -381,7 +358,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 	throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode in instruction formatter.");
 }
 
-std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
+std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
@@ -466,20 +443,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			if (decoded.c == 0) return {registerOperand("target", decoded.a)};
 			if (decoded.c == 1) return {registerOperand("target", decoded.a), registerOperand("link", decoded.b)};
 			return {plainOperand("reserved mode", std::to_string(decoded.c))};
-		case OpCode::CLOSURE:
-			if ((decoded.c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0) {
-				return {
-					registerOperand("dst", decoded.a),
-					registerOperand("function_address", decoded.bx),
-				};
-			}
-			return {
-				registerOperand("dst", decoded.a),
-				plainOperand(
-					"function",
-					formatFunctionOperand(image, symbols, static_cast<u32>(decoded.bx))
-				),
-			};
+		case OpCode::JAL:
+			return {registerOperand("link", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::GETUP:
 			return {registerOperand("dst", decoded.a), plainOperand("upvalue", "u" + std::to_string(decoded.b))};
 		case OpCode::SETUP:
@@ -560,8 +525,8 @@ auto describeBlua32InstructionAtPc(
 		formatPcHex(decoded.pc, pcWidth),
 		decoded.op,
 		OPCODE_NAMES[static_cast<size_t>(decoded.op)],
-		formatInstructionText(decoded, image, symbols, pcWidth),
-		buildInstructionOperands(decoded, image, symbols, pcWidth),
+		formatInstructionText(decoded, image, pcWidth),
+		buildInstructionOperands(decoded, image, pcWidth),
 		sourceRange,
 	};
 }

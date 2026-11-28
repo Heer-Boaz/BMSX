@@ -113,7 +113,6 @@ test('stock load lowers constructors and captured functions with TS/native parit
 		let bindings = 0;
 		for (let pc = first; pc < end;) {
 			const instruction = decodeBlua32InstructionAtPc(memory.ramData(), RAM_BASE, pc);
-			assert.notEqual(instruction.op, OpCode.CLOSURE);
 			if (instruction.op === OpCode.SVC) {
 				assert.equal(instruction.b, 2);
 				bindings += 1;

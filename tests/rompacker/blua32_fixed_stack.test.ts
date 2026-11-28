@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import {
-	BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES,
+	BASE_OPERAND_BC_BITS, INSTRUCTION_BYTES,
 	MAX_LOW_OPERAND, MAX_OPERAND_BITS, ValueMoveKind, writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -17,10 +17,10 @@ function branchToCall(alternate: number, args = 1) {
 	const text = new Uint8Array(12 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.JMPIFNOT, 0, 0, 3);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.LOADK, 1, 0, 0);
 	writeInstruction(text, 3, OpCode.JMP, 0, 0, 2);
 	writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.CLOSURE, 1, 0, 0);
+	writeInstruction(text, 5, OpCode.LOADK, 1, 0, 1);
 	writeInstruction(text, 6, OpCode.CALL, 1, args, 2);
 	writeInstruction(text, 7, OpCode.RET, 1, 2, 0);
 	writeInstruction(text, 8, OpCode.K0, 0, 0, 0);
@@ -35,7 +35,11 @@ function branchToCall(alternate: number, args = 1) {
 			{ firstWord: 8, wordCount: 2, maxStack: 4 },
 			{ firstWord: 10, wordCount: 2, maxStack: 2 },
 		],
-		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 5, functionIndex: alternate }],
+		constants: [integerConstant(0), integerConstant(0)],
+		constValueRelocs: [
+			{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } },
+			{ constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: alternate } },
+		],
 	}).image;
 }
 
@@ -79,20 +83,20 @@ test('fixed stack follows both linked register returns without allocating anothe
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
 });
 
-test('fixed stack rejects recursion and register-address CLOSURE', () => {
+test('fixed stack rejects recursion and a call without a linked CodeFunction', () => {
 	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.CALL, 0, 1, 1);
 	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
 	const functions = [{ firstWord: 0, wordCount: 4, maxStack: 1 }];
 	const recursive = linkRawTestSystemBlua32({
-		text, functions, closureRelocations: [{ wordIndex: 1, functionIndex: 0 }], verifiedControlFlow: true,
+		text, functions, constants: [integerConstant(0)], verifiedControlFlow: true,
+		constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 0 } }],
 	});
 	assert.throws(() => deriveBlua32FixedStack(recursive.image, [0]), /Recursive fixed-stack function/);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
-	const dynamic = linkRawTestSystemBlua32({ text, functions, verifiedControlFlow: true });
-	assert.throws(() => deriveBlua32FixedStack(dynamic.image, [0]), /requires a local ROM function record/);
+	const dynamic = linkRawTestSystemBlua32({ text, functions, constants: [integerConstant(0)], verifiedControlFlow: true });
+	assert.throws(() => deriveBlua32FixedStack(dynamic.image, [0]), /no single static callee/);
 });
 
 function scalarInstruction(op: OpCode, b: number, c: number, ext = 0, constants: readonly ProgramConstant[] = []) {
@@ -125,13 +129,14 @@ test('fixed stack admits the ordinary scalar moves', () => {
 test('an ordinary vector inspecting a tag does not retain a callable proof', () => {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 0, ValueMoveKind.Tag);
 	writeInstruction(text, 3, OpCode.CALL, 0, 1, 1);
 	writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
 	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
 	const { image } = linkRawTestSystemBlua32({
-		text, verifiedControlFlow: true, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+		text, verifiedControlFlow: true, constants: [integerConstant(0)],
+		constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }],
 		functions: [{ firstWord: 0, wordCount: 5 }, { firstWord: 5, wordCount: 1 }],
 	});
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no single static callee/);

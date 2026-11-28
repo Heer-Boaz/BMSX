@@ -112,7 +112,6 @@ for (const optLevel of [0, 3] as const) test('System ROM calls its linked code c
 	assert.equal(cpu.getFrameDepth(), 2, 'HALT belongs to an ordinary callee on the raw bank');
 	assert.ok(retired.includes(OpCode.STORE_MEM) || retired.includes(OpCode.STORE_MEM_D));
 	assert.ok(retired.includes(OpCode.CALL));
-	assert.ok(!retired.includes(OpCode.CLOSURE));
 	assert.equal(codeLoads, 1);
 	assert.equal(memory.readMappedWord(IO_IRQ_MASK), IRQ_VBLANK | 8);
 
@@ -188,7 +187,6 @@ return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closur
 	assert.ok(loads.some(constant => constant !== null && typeof constant === 'object'
 		&& constant.kind === 'integer' && constant.word === callable.address));
 	assert.ok(instructions.some(({ op }) => op === OpCode.CALL));
-	assert.ok(!instructions.some(({ op }) => op === OpCode.CLOSURE));
 	assert.deepEqual(instructions.filter(({ op }) => op === OpCode.SVC).map(({ b, c }) => [b, c]), [[2, 0], [2, 0]]);
 	assert.ok(instructions.some(({ op, sbx }) => op === OpCode.KSMI && sbx === StockFirmwareOperand.BindFunction)
 		|| loads.some(constant => constant !== null && typeof constant === 'object'

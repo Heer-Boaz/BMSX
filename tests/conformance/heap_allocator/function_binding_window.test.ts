@@ -15,17 +15,18 @@ import { MAPPED_BUS_MASTER_CPU, mappedBusSignalsForCartridgeSlot } from '../../.
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_EPC, CPU_CAUSE_CODE_FUNCTION_BINDING } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, MAX_LOW_OPERAND, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_RETAINED_WORD_BASE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { StockFirmwareOperand } from '../../../toolchain/ts/lua/compiler/program';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -42,15 +43,14 @@ import { nativeHeapReference } from '../../helpers/native_heap/reference';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 
-for (const [opt, mmio] of [[0, false], [3, true]] as const) test(`raw CLOSURE.R samples a mutable prototype and each ${mmio ? 'cartridge MMIO' : 'System RAM'} descriptor once at O${opt}`, t => {
+for (const [opt, mmio] of [[0, false], [3, true]] as const) test(`guest function binding samples a mutable prototype and each ${mmio ? 'cartridge MMIO' : 'System RAM'} descriptor once at O${opt}`, t => {
 	const alignment = BLUA32_FUNCTION_ALIGNMENT - 1;
-	const marker = 'wire-level CLOSURE issue';
 	const source = `
 bss raw_record: word[64]
 local function make(a, b, address, specimen)
 	if specimen then return function() return a * 100 + b end end
 	halt_until_irq
-	return '${marker}'
+	return blua32.closure(address)
 end
 return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 `;
@@ -71,23 +71,6 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 	const storageAddress = layout.header.bssAddress + storage.offset;
 	const prototype = (storageAddress + alignment) & ~alignment;
 	const code = prototype + 128, descriptor = mmio ? IO_RETAINED_WORD_BASE : prototype + 64;
-	// Compile the target body and descriptors but never execute their source
-	// constructor. The two-word return literal reserves an explicit wire site.
-	let instruction = 0;
-	for (let pc = layout.header.textAddress; pc < layout.header.textAddress + layout.textBytes.length;) {
-		const op = decodeBlua32InstructionAtPc(media, base, pc);
-		if (op.op === OpCode.LOADK && layout.constants[op.bx] === marker) {
-			instruction = op.pc;
-			assert.equal(instruction, pc + INSTRUCTION_BYTES);
-			assert.ok(op.a <= MAX_LOW_OPERAND);
-			const word = (pc - base) / INSTRUCTION_BYTES;
-			writeInstruction(media, word, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
-			writeInstruction(media, word + 1, OpCode.CLOSURE, op.a, 0, 2); // address parameter r2
-			break;
-		}
-		pc = op.pc + INSTRUCTION_BYTES;
-	}
-	assert.notEqual(instruction, 0);
 	const words = [code, target.numParams, target.maxStack, target.flags, descriptor, target.upvalues.length];
 	const fields = [BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 		BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET];
@@ -101,13 +84,11 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 	const thread = cpu.activeThread, owner = thread.address, depth = thread.frameDepth;
 	let frame = thread.currentFrame!;
 	const decode = () => decodeBlua32InstructionAtPc(media, base, frame.pc);
-	for (let step = 0; decode().pc !== instruction && step < 16; ++step)
+	for (let step = 0; decode().op !== OpCode.SVC && step < 16; ++step)
 		assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
-	const issue = frame.pc, op = decode(), successor = instruction + INSTRUCTION_BYTES;
-	assert.equal(op.op, OpCode.CLOSURE);
-	assert.equal(op.pc, instruction);
-	assert.equal(op.c & CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_FLAG);
-	assert.equal(frame.registers.get(op.bx), valueInteger(prototype));
+	const op = decode(), successor = op.pc + INSTRUCTION_BYTES;
+	assert.deepEqual([op.op, op.b, op.c], [OpCode.SVC, 2, 0]);
+	assert.equal(frame.registers.get(op.a + 1), valueInteger(prototype));
 	const original = frame.registers.get(op.a), top = frame.top, open = frame.openUpvalueHead;
 	for (let offset = 0; offset < BLUA32_FUNCTION_RECORD_SIZE; offset += 4)
 		memory.writeMappedWord(prototype + offset, readLE32(media, target.address - base + offset));
@@ -150,22 +131,20 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 	}
 	const physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes(), faults = memory.readBusFaultSequence();
 	assert.equal(grant(1), RunResult.Yielded);
-	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.CLOSURE]);
-	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
-	assert.equal(cpu.readEpcWord(), issue);
+	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.SVC]);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+	assert.equal(cpu.readEpcWord(), successor);
 	assert.equal(cpu.fixedInterruptActive(), true);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 	assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), successor);
 	assert.equal(frame.registers.get(op.a), original);
 	assert.equal(frame.top, top);
 	const packet = cpu.activeThread.currentFrame!;
-	assert.equal(packet.argumentCount, 11);
-	assert.deepEqual(Array.from({ length: 10 }, (_, index) => packet.registers.get(index)),
-		[op.a, prototype, domain, ...words, 0].map(valueInteger));
-	assert.equal(valueTag(packet.registers.get(10)), ValueTag.Integer);
+	assert.equal(packet.argumentCount, 3);
+	assert.deepEqual([0, 1, 2].map(register => packet.registers.get(register)),
+		[StockFirmwareOperand.BindFunction, op.a, 1].map(valueInteger));
 	assert.deepEqual(reads, []);
-	observe('Z', `${CPU_CAUSE_CODE_FUNCTION_BINDING} 0 ${issue}`);
-	for (const offset of fields) write(prototype + offset, 0xffffffff);
+	observe('Z', `${CPU_CAUSE_CODE_SYSCALL} 0 ${successor}`);
 	function sample(index: number) {
 		for (let step = 0; reads.length === index && step < 4096; ++step) assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(reads.length, index + 1);
@@ -178,6 +157,8 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 		write(descriptor + 4 * index, 0xffffffff);
 	}
 	sample(0);
+	// The guest has now sampled the record and only its second descriptor is pending.
+	for (const offset of fields) write(prototype + offset, 0xffffffff);
 	writeFileSync(tsMid, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	observe(`x ${cppMid}`); observe('l'); observe('s');
 	const cut = commands.length, rowCut = rows.length;
@@ -188,7 +169,7 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 		assert.equal(cpu.activeThread.address, owner);
 		assert.equal(cpu.readFramePc(depth - 1), successor);
 		assert.equal(cpu.readEpcWord(), successor);
-		assert.equal(frame.top, Math.max(top, op.a + 1));
+		assert.equal(frame.top, op.a + 1);
 		const value = frame.registers.get(op.a), address = valuePayload(value);
 		assert.equal(valueTag(value), ValueTag.Closure);
 		assert.equal(memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), CLOSURE_LATCHED_PROTOTYPE | (domain + 1));
@@ -229,7 +210,7 @@ return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 	assert.deepEqual(rows.slice(replayStart), expected);
 });
 
-test('noncanonical captureless CLOSURE creates distinct identities at the same instruction', t => {
+test('noncanonical captureless binding creates distinct identities at the same instruction', t => {
 	const linked = linkManagedTestSystem(`
 halt_until_irq
 local first, second
@@ -263,26 +244,24 @@ return first == second, first() + second(), first, second
 	const initial = nativeHeapReference(cpu).luaHeap.usedBytes(), closures: ReturnType<typeof valueInteger>[] = [];
 	let issue = 0;
 	for (let i = 0; i < 2; ++i) {
-		for (let step = 0; decode().op !== OpCode.CLOSURE && step < 64; ++step) assert.equal(grant(1), RunResult.Yielded);
+		for (let step = 0; decode().op !== OpCode.SVC && step < 64; ++step) assert.equal(grant(1), RunResult.Yielded);
 		const op = decode(), successor = op.pc + INSTRUCTION_BYTES;
-		assert.equal(op.op, OpCode.CLOSURE);
+		assert.deepEqual([op.op, op.b, op.c], [OpCode.SVC, 2, 0]);
 		if (i === 0) issue = frame.pc;
 		assert.equal(frame.pc, issue);
 		const before = frame.registers.get(op.a);
 		assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), true);
-		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
-		assert.equal(cpu.readEpcWord(), issue);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+		assert.equal(cpu.readEpcWord(), successor);
 		assert.equal(frame.pc, successor);
 		assert.equal(frame.registers.get(op.a), before);
 		const packet = cpu.activeThread.currentFrame!;
-		assert.equal(packet.argumentCount, 11);
-		assert.equal(packet.registers.get(0), valueInteger(op.a));
-		assert.equal(packet.registers.get(1), valueInteger(op.bx * BLUA32_FUNCTION_ALIGNMENT));
-		assert.equal(packet.registers.get(8), valueInteger(0));
-		assert.equal(packet.registers.get(9), valueInteger(1));
+		assert.equal(packet.argumentCount, 3);
+		assert.deepEqual([0, 1, 2].map(register => packet.registers.get(register)),
+			[StockFirmwareOperand.BindFunction, op.a, 1].map(valueInteger));
 		commands.push('Z');
-		rows.push(`${CPU_CAUSE_CODE_FUNCTION_BINDING} 0 ${issue}`);
+		rows.push(`${CPU_CAUSE_CODE_SYSCALL} 0 ${successor}`);
 		for (let step = 0; cpu.fixedInterruptActive() && step < 4096; ++step) assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), false);
 		assert.equal(cpu.getFrameDepth(), depth);
@@ -304,26 +283,24 @@ return first == second, first() + second(), first, second
 	assert.deepEqual(execFileSync(native, [romPath, trace, seed], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
 });
 
-test('a bare System ROM may decline a Closure without a stock allocator', t => {
+test('a bare System ROM may decline a Closure request without a stock allocator', t => {
 	const report = DYNAMIC_RAM_BASE - 16;
 	const instructions = [
-		[OpCode.KSMI, 0, 1, 9], [OpCode.WIDE, 0, 0, 0], [OpCode.CLOSURE, 0, 0, 0], [OpCode.RET, 0, 2, 0],
+		[OpCode.LOADK, 0, 0, 0], [OpCode.LOADK, 1, 0, 1], [OpCode.KSMI, 2, 1, 9],
+		[OpCode.SVC, 0, 2, 0], [OpCode.RET, 2, 2, 0],
 		[OpCode.RET, 0, 1, 0],
-		// The alternate vector records the sampled prototype but leaves the
-		// old destination alone. No callable object is created or published.
-		[OpCode.LOADK, 11, 0, 0], [OpCode.STORE_MEM, 1, 11, MemoryAccessKind.Word],
-		[OpCode.MFC0, 11, COP0_EPC, 0], [OpCode.KSMI, 12, 0, 2 * INSTRUCTION_BYTES],
-		[OpCode.ADD, 11, 11, 12], [OpCode.MTC0, 11, COP0_EPC, 0], [OpCode.RFE, 0, 0, 0],
+		// This system vector observes the token and does not publish a callable.
+		[OpCode.LOADK, 3, 0, 2], [OpCode.STORE_MEM, 0, 3, MemoryAccessKind.Word], [OpCode.RFE, 0, 0, 0],
 	] as const;
 	const text = new Uint8Array(instructions.length * INSTRUCTION_BYTES);
 	for (const [index, [op, a, b, c]] of instructions.entries()) writeInstruction(text, index, op, a, b, c);
 	const rom = linkRawTestSystemBlua32({
-		text, constants: [integerConstant(report)], verifiedControlFlow: true,
-		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }], exceptionFunctionIndex: 2,
+		text, constants: [StockFirmwareOperand.BindFunction, 0, report].map(integerConstant), verifiedControlFlow: true,
+		constValueRelocs: [{ constIndex: 1, kind: 'function_addr', protoIndex: 1 }], exceptionFunctionIndex: 2,
 		functions: [
-			{ firstWord: 0, wordCount: 4, maxStack: 1 },
-			{ firstWord: 4, wordCount: 1, staticClosure: false, maxStack: 1 },
-			{ firstWord: 5, wordCount: 7, maxStack: 13, numParams: 11 },
+			{ firstWord: 0, wordCount: 5, maxStack: 3 },
+			{ firstWord: 5, wordCount: 1 },
+			{ firstWord: 6, wordCount: 3, maxStack: 4, numParams: 3 },
 		],
 	});
 	const runtime = new Runtime({ systemRomBytes: rom.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
@@ -334,20 +311,25 @@ test('a bare System ROM may decline a Closure without a stock allocator', t => {
 	const outcome = scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 	assert.equal(outcome, RunResult.Halted);
 	assert.equal(cpu.fixedInterruptActive(), false);
-	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
-	const successor = rom.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+	const successor = rom.image.functions[0].codeAddress + 4 * INSTRUCTION_BYTES;
 	assert.equal(cpu.readEpcWord(), successor);
-	assert.equal(memory.readMappedWord(report), rom.image.functions[1].address);
+	assert.equal(memory.readMappedWord(report), StockFirmwareOperand.BindFunction);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(73)]);
 	assert.deepEqual(memory.ramData().subarray(state, state + inactive.length), inactive);
 	const dir = mkdtempSync(join(tmpdir(), 'raw-function-binding-'));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	const romPath = join(dir, 'system.rom'), trace = join(dir, 'trace');
 	writeFileSync(romPath, rom.romBytes);
-	writeFileSync(trace, `E 4096\nZ\nM ${report}\nC\nH ${state} ${state + inactive.length}\n`);
+	writeFileSync(trace, `E 4096
+Z
+M ${report}
+C
+H ${state} ${state + inactive.length}
+`);
 	assert.deepEqual(execFileSync(native, [romPath, trace, join(dir, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), [
 		`${outcome} ${4096 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`,
-		`${CPU_CAUSE_CODE_FUNCTION_BINDING} 0 ${successor}`, `${rom.image.functions[1].address} 0`, '73',
+		`${CPU_CAUSE_CODE_SYSCALL} 0 ${successor}`, `${StockFirmwareOperand.BindFunction} 0`, '73',
 		String(hashBytes(inactive, 0, inactive.length)),
 	]);
 });

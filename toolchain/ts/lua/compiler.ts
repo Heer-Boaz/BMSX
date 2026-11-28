@@ -162,10 +162,6 @@ import {
 	type LuaSourceMap,
 } from './compiler/source_map';
 
-type ProgramCompilerConstReloc =
-	| ProgramImageConstReloc
-	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number };
-
 type InitParticipantBinding = ProgramInitParticipant & {
 	objectSlot: number;
 };
@@ -496,7 +492,7 @@ class ProgramBuilder {
 	public readonly functionDefinitions: Array<SourceRange | null> = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>[] = [];
-	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
+	public readonly protoConstRelocs: ReadonlyArray<ProgramImageConstReloc>[] = [];
 	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocatedLocalSlotDebug>[] = [];
@@ -876,7 +872,7 @@ class ProgramBuilder {
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
 		inlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>,
-		constRelocs: ReadonlyArray<ProgramCompilerConstReloc>,
+		constRelocs: ReadonlyArray<ProgramImageConstReloc>,
 		statementPoints: ReadonlyArray<ProgramStatementPoint>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
 		localSlots: ReadonlyArray<LocatedLocalSlotDebug>,
@@ -1122,10 +1118,6 @@ class ProgramBuilder {
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
 				switch (reloc.kind) {
-					case 'local_text_addr':
-						imageConstRelocs.push({ wordIndex: targetOffsetWords + reloc.wordIndex, kind: 'bx', constIndex: reloc.constIndex });
-						this.constValueRelocs.push({ constIndex: reloc.constIndex, kind: 'text_addr', offset: targetOffsetBytes + reloc.offset });
-						continue;
 					case 'gl':
 					case 'sys':
 						imageConstRelocs.push({
@@ -1319,7 +1311,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedInlineCallSites: Array<ReadonlyArray<InlineCallSite>> | null = null;
-	private finalizedConstRelocs: ProgramCompilerConstReloc[] | null = null;
+	private finalizedConstRelocs: ProgramImageConstReloc[] | null = null;
 	private finalizedStatementPoints: ProgramStatementPoint[] | null = null;
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
 	private finalizedLocalSlots: LocatedLocalSlotDebug[] | null = null;
@@ -1798,7 +1790,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return this.finalizedInlineCallSites!;
 	}
 
-	public getConstRelocs(): ReadonlyArray<ProgramCompilerConstReloc> {
+	public getConstRelocs(): ReadonlyArray<ProgramImageConstReloc> {
 		this.finalizeCode();
 		return this.finalizedConstRelocs!;
 	}
@@ -1927,12 +1919,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
-			if (instr.op === OpCode.JREG && instr.c === 1) {
-				// A symbolic link has a static destination. Reserve WIDE LOADK
-				// for its continuation and relax the following direct branch.
-				wordWidths[index] = 3;
-				continue;
-			}
 			if (instr.op === OpCode.KSMI && instr.a > MAX_ABX_REGISTER_A) {
 				// The optimizer and slot allocator keep one known Integer
 				// definition. Only the narrow ABx encoding needs expansion.
@@ -1995,11 +1981,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			endIndex = cursor;
 			for (let index = 0; index < instructions.length; index += 1) {
 				const instr = instructions[index];
-				const link = instr.op === OpCode.JREG && instr.c === 1;
-				if (!link && instr.format !== 'AsBx') {
+				if (instr.format !== 'AsBx') {
 					continue;
 				}
-				const targetIndex = link ? instr.branchTargets![0] : instr.target;
+				const targetIndex = instr.target;
 				if (targetIndex === null) {
 					throw new Error('[FunctionBuilder] Unpatched jump instruction.');
 				}
@@ -2009,7 +1994,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					throw new Error(`[FunctionBuilder] Jump offset out of range: ${sbx}`);
 				}
 				sbxValues[index] = sbx;
-				if (wordWidths[index] === (link ? 3 : 1) && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
+				if (wordWidths[index] === 1 && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
 					wordWidths[index] += 1;
 					changed = true;
 				}
@@ -2026,33 +2011,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const code = new Uint8Array(endIndex * INSTRUCTION_BYTES);
 		const finalRanges: Array<SourceRange | null> = new Array(endIndex);
 		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(endIndex);
-		const constRelocs: ProgramCompilerConstReloc[] = [];
-		let labelConstants: Map<number, number> | undefined;
+		const constRelocs: ProgramImageConstReloc[] = [];
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
 			const width = wordWidths[index];
 			const range = ranges[index];
-			const labelLoad = instr.op === OpCode.JREG && instr.c === 1;
-			if (labelLoad) {
-				const offset = (instrWordIndex[index] + 1) * INSTRUCTION_BYTES;
-				const constants = labelConstants ??= new Map();
-				let constIndex = constants.get(offset);
-				if (constIndex === undefined) {
-					constIndex = this.program.reserveAddressConstant();
-					constants.set(offset, constIndex);
-					constRelocs.push({ wordIndex: cursor + 1, kind: 'local_text_addr', constIndex, offset });
-				} else {
-					constRelocs.push({ wordIndex: cursor + 1, kind: 'bx', constIndex });
-				}
-				const split = splitUnsignedOperand(constIndex, 'Bx', MAX_BX_BITS, EXT_BX_BITS, true);
-				const link = splitUnsignedOperand(instr.b, 'A', MAX_OPERAND_BITS, 0, true);
-				writeInstruction(code, cursor, OpCode.WIDE, link.wide, split.wide, 0);
-				finalRanges[cursor++] = range;
-				writeInstruction(code, cursor, OpCode.LOADK, link.low,
-					(split.low >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, split.low & MAX_LOW_OPERAND, split.ext);
-				finalRanges[cursor++] = range;
-			}
 			const integer = wideIntegers?.get(index);
 			if (integer !== undefined) {
 				code.set(integer, cursor * INSTRUCTION_BYTES);
@@ -2060,8 +2024,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				cursor += width;
 				continue;
 			}
-			const hasWide = width - (labelLoad ? 2 : 0) === 2;
-			if (instr.format === 'ABC' && !labelLoad) {
+			const hasWide = width === 2;
+			if (instr.format === 'ABC') {
 				if (isDisplacedMemoryOp(instr.op)) {
 					const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 					const bSplit = splitUnsignedOperand(instr.b, 'B', MAX_OPERAND_BITS, 0, hasWide);
@@ -2142,7 +2106,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				continue;
 			}
 
-			const aSplit = splitUnsignedOperand(labelLoad ? 0 : instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+			const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 			const sbx = sbxValues[index];
 			const bxSplit = splitSignedOperand(sbx, 'sBx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 			if (hasWide) {
@@ -2150,7 +2114,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				finalRanges[cursor] = range;
 				cursor += 1;
 			}
-			writeInstruction(code, cursor, labelLoad ? OpCode.JMP : instr.op,
+			writeInstruction(code, cursor, instr.op,
 				aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 			finalRanges[cursor] = range;
 			cursor += 1;
@@ -2245,11 +2209,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			labels.set(statement.label, labels.has(statement.label) ? -1 : target.index);
 		}
 		for (const { instruction, labels: destinations } of this.registerJumps) {
-			instruction.branchTargets = destinations.map(label => {
+			const branchTargets = destinations.map(label => {
 				const target = labels.get(label);
 				if (target === undefined || target < 0) throw new Error(`Register branch label '${label}' must name a unique local label.`);
 				return target;
 			});
+			if (instruction.op === OpCode.JAL) instruction.target = branchTargets[0];
+			else instruction.branchTargets = branchTargets;
 		}
 	}
 
@@ -4401,7 +4367,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				if (label.kind !== LuaSyntaxKind.StringLiteralExpression) throw new Error('Register branch labels must be string literals.');
 				return label.value;
 			});
-			this.emitABC(OpCode.JREG, binding.reg, link ? binding.reg : 0, link ? 1 : 0);
+			if (link) this.emitJumpPlaceholder(OpCode.JAL, binding.reg);
+			else this.emitABC(OpCode.JREG, binding.reg, 0, 0);
 			this.registerJumps.push({ instruction: this.code[this.code.length - 1], labels });
 			return true;
 		}

@@ -64,7 +64,6 @@ export const enum DecodedDispatchOp {
 	CompiledWarm = OPCODE_COUNT + 5,
 	Compiled = OPCODE_COUNT + 6,
 	InvalidImageOperand = OPCODE_COUNT + 7,
-	StaticCodeFunction = OPCODE_COUNT + 8,
 }
 
 // Index by the decoded dispatch byte, including the host-only dispatch
@@ -75,7 +74,7 @@ for (const opcode of [
 	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.ARGC, OpCode.NOT,
 	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
-	OpCode.GETFIELD, OpCode.SELF, DecodedDispatchOp.StaticCodeFunction,
+	OpCode.GETFIELD, OpCode.SELF,
 ]) SCALAR_LOCAL_PC[opcode] = 1;
 
 export const enum RomFunctionLane {
@@ -142,17 +141,21 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			const body = wide ? readLE32(code, offset + INSTRUCTION_BYTES) : head;
 			const op = instructionOpcode(body);
 			const next = pc + width * INSTRUCTION_BYTES;
-			if (op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
+			if (op === OpCode.JMP || op === OpCode.JAL || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
 				const target = instructionBranchTarget(pc, width, instructionBx(body, wide ? instructionLowB(head) : 0));
-				if (target < first || target >= end || !isRomInstructionHead(directory, target))
+				if (op === OpCode.JAL) {
+					if (!isRomInstructionHead(directory, target))
+						throw new Error('BLua32 JAL target is not an instruction in its image.');
+				} else if (target < first || target >= end || !isRomInstructionHead(directory, target)) {
 					throw new Error('BLua32 branch target is not an instruction in its function.');
+				}
 			}
 			if (op === OpCode.JREG) {
 				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
 					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
 				if (mode > 1) throw new Error('BLua32 register jump has an invalid mode.');
 			}
-			if (op !== OpCode.JMP && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
+			if (op !== OpCode.JMP && op !== OpCode.JAL && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
 				if (op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE || op === OpCode.ITERN) {
 					const skippedWide = instructionOpcode(readLE32(code, codeOffset + next - textAddress)) === OpCode.WIDE;
@@ -310,9 +313,8 @@ export function decodedDispatchCanFuse(op: number): boolean {
 /** End of the fixed register footprint, independent of the bound frame. */
 export function fixedRegisterExtent(op: number, a: number, b: number, c: number): number {
 	switch (op) {
-		// The operation owns its dynamic window; a register-address CLOSURE
-		// uses a Bx selector wider than the ordinary register fields.
-		case OpCode.CALL: case OpCode.CLOSURE:
+		// CALL owns its dynamic window.
+		case OpCode.CALL:
 			return 0;
 		case OpCode.JREG:
 			return c === 0 ? a + 1 : c === 1 ? Math.max(a, b) + 1 : 0;

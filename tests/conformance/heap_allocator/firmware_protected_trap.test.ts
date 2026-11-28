@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { StockFirmwareOperand } from '../../../toolchain/ts/lua/compiler/program';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,7 @@ import { ValueTag, valueBool, valueFloatBits, valueInteger, valueNil, valuePaylo
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_FUNCTION_BINDING, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_SYSCALL, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -107,9 +108,9 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 			assert.equal(frame.argumentCount, 4, 'the ordinary handler CALL may need backing');
 			continue;
 		}
-		if (observedCause === CPU_CAUSE_CODE_FUNCTION_BINDING) {
+		if (observedCause === CPU_CAUSE_CODE_SYSCALL && frame.registers.get(0) === valueInteger(StockFirmwareOperand.BindFunction)) {
 			assert.equal(next, 5, 'the variadic pcall argument is bound before its call');
-			assert.equal(frame.argumentCount, 11);
+			assert.equal(frame.argumentCount, 3);
 			observe('Z', `${observedCause} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
 			bindings++;
 			continue;

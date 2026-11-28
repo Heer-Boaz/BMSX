@@ -54,9 +54,9 @@ bmsx::test::Blua32TestImage allocationImage() {
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
@@ -65,18 +65,15 @@ bmsx::test::Blua32TestImage allocationImage() {
 		{.firstWord = 6u, .wordCount = 1u},
 		{.firstWord = 7u, .wordCount = 1u, .staticClosure = false},
 	};
-	image.closureRelocations = {
-		{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)},
-		{4u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u)},
-	};
+
 	return image;
 }
 
 void replayAllocationIdentities() {
 	auto image = allocationImage();
-	image.closureRelocations[0].functionAddress = bmsx::DYNAMIC_RAM_BASE;
+
 	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
-	image.closureRelocations.pop_back();
+
 	bmsx::writeInstruction(image.text, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(image.text, 4, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
@@ -90,9 +87,11 @@ void replayAllocationIdentities() {
 	const auto anchorRam = cpu.memory().captureSaveState();
 
 	const auto publishInputs = [&]() {
-		bmsx::test::seedTestMappedClosure(cpu, bmsx::DYNAMIC_RAM_BASE);
+		const auto canonical = bmsx::test::seedTestMappedClosure(cpu, bmsx::DYNAMIC_RAM_BASE);
 		const auto dynamic = bmsx::test::seedTestMappedClosure(cpu, dynamicPrototype, false);
-		cpu.activeThread()->currentFrame->registers.set(2, bmsx::valueClosure(dynamic));
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(1, bmsx::valueClosure(canonical));
+		frame.registers.set(2, bmsx::valueClosure(dynamic));
 	};
 	const auto anchorBytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	publishInputs();
@@ -127,15 +126,18 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		std::span<bmsx::u8> code(image.text);
 		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(table ? bmsx::OpCode::MOV : bmsx::OpCode::K1), 0, 0, 0);
 		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-		bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 4, 0, 0);
+		bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 4, 4, 0);
 		bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 4, 1, 0);
 		bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 		bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 		image.functions = {{.firstWord = 0u, .wordCount = 5u, .maxStack = 8u}, {.firstWord = 5u, .wordCount = 1u}};
-		image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
+
 		SnapshotMachine machine(image);
 		auto& cpu = machine.runtime.machine.cpu;
-		bmsx::test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+		{
+			const auto closure = bmsx::test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+			cpu.activeThread()->currentFrame->registers.set(4, bmsx::valueClosure(closure));
+		}
 		if (table) cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 		auto returnPc = machine.rom.textAddress + 4u * bmsx::INSTRUCTION_BYTES;
 		cpu.setExecutionHook({
@@ -175,7 +177,7 @@ void capturesUsePhysicalRecords() {
 	auto image = allocationImage();
 	image.functions[1].staticClosure = false;
 	image.functions[1].upvalues = {{true, 0u}};
-	image.closureRelocations.clear();
+
 	bmsx::writeInstruction(image.text, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(image.text, 4, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(image.text, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
@@ -202,7 +204,7 @@ void inspectOpenAndClosedClosure() {
 	auto image = allocationImage();
 	image.functions[1].staticClosure = false;
 	image.functions[1].upvalues = {{true, 0u}};
-	image.closureRelocations.clear();
+
 	bmsx::writeInstruction(image.text, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(image.text, 4, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 2, 2, 0);
 	bmsx::writeInstruction(image.text, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
@@ -294,14 +296,14 @@ void restoreUnrootedCanonicalClosure() {
 	auto image = allocationImage();
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::KNIL), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	constexpr auto address = bmsx::DYNAMIC_RAM_BASE;
 	constexpr auto dynamicPrototype = address + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
-	image.closureRelocations = {{1u, address}};
+
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
@@ -310,8 +312,9 @@ void restoreUnrootedCanonicalClosure() {
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	const auto cold = cpu.captureRuntimeState();
 	const auto coldRam = cpu.memory().captureSaveState();
-	bmsx::test::seedTestMappedClosure(cpu, address);
-	cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]
+	const auto seed = bmsx::test::seedTestMappedClosure(cpu, address);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(seed));
+	cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MOV)]
 		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::KNIL)]);
 	const auto warm = cpu.captureRuntimeState();
 	const auto warmRam = cpu.memory().captureSaveState();
@@ -348,9 +351,10 @@ void restoreUnrootedCanonicalClosure() {
 	const auto sweep = cpu.captureRuntimeState();
 	const auto sweepRam = cpu.memory().captureSaveState();
 	const auto build = [&] {
-		bmsx::test::seedTestMappedClosure(cpu, address);
+		const auto seed = bmsx::test::seedTestMappedClosure(cpu, address);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(seed));
 		cpu.writeFrameExecution(0, bmsx::SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
-		cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]);
+		cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MOV)]);
 		return bmsx::valuePayload(cpu.readFrameRegister(0, 0));
 	};
 	const auto replacement = build();
@@ -367,7 +371,7 @@ void capturePreservesGlobalRegisters() {
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	image.closureRelocations.clear();
+
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
@@ -383,7 +387,7 @@ void capturePreservesGlobalRegisters() {
 
 void restoreHardHalt() {
 	auto image = allocationImage();
-	image.closureRelocations.clear();
+
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);

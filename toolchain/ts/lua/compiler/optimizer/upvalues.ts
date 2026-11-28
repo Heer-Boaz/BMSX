@@ -25,7 +25,6 @@ export function compactUnusedUpvalues(
 			case OpCode.SETUP:
 				remap[instruction.b] = 1;
 				continue;
-			case OpCode.CLOSURE:
 			case OpCode.SVC:
 				break;
 			default:
@@ -35,7 +34,7 @@ export function compactUnusedUpvalues(
 			// An indirectly addressed function record can capture any upvalue in the creating frame.
 			return;
 		}
-		const protoIndex = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+		const protoIndex = instruction.boundFunctionProto;
 		if (protoIndex === undefined) continue;
 		childProtos.add(protoIndex);
 		const childDescriptors = closureUpvalues(protoIndex);

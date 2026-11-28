@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
+import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
@@ -14,20 +14,20 @@ import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/valu
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_FUNCTION_BINDING } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_STATIC,
-	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_FLAGS_OFFSET,
-	BLUA32_IMAGE_MAPPED_CODE_FLAG,
+	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { StockFirmwareOperand } from '../../../toolchain/ts/lua/compiler/program';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -40,10 +40,8 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 const source = `
 bss prototype: word[256]
 local function make()
-	local value = test_payload
-	test_first_write = value
-	test_second_write = value
-	return value
+	local alignment<const> = ${BLUA32_FUNCTION_ALIGNMENT - 1}
+	return blua32.closure((&prototype[0] + alignment) & ~alignment)
 end
 local function payload(a, b, c, d, e, f, g) return a + g end
 test_payload = payload
@@ -78,31 +76,35 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 		const linked = linkManagedTestSystem(domain === 'cart' ? boot : program, level);
 		const card = domain === 'cart' ? (() => {
 			const compiled = compileLuaChunkToProgram(parseLuaChunk(source), [], { entrySource: source, optLevel: level });
-			return linkCartBlua32Image(linked.biosImports, encodeCompiledProgramObject(compiled), compiled.metadata,
+			const object = encodeCompiledProgramObject(compiled);
+			const executable = linkCartBlua32Image(linked.biosImports, object, compiled.metadata,
 				CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+			return { ...executable, object };
 		})() : null;
 		const image = (card ?? linked).layout, base = card ? CART_ROM_BASE : SYSTEM_ROM_BASE;
 		const system = writeTestBlua32Rom(linked), cart = card === null ? null : writeTestBlua32Rom(card);
 		const owning = cart ?? system;
-		if (cart !== null) writeLE32(cart, image.address - base + BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
 		const symbols = (card ?? linked).symbols;
 		const findFunction = (name: string) => image.functions[symbols.metadata.functionDisplayNames.indexOf(name)];
 		const target = findFunction('payload'), factory = findFunction('make');
 		assert.ok(target && factory, symbols.metadata.functionDisplayNames.slice(0, 16).join(', '));
-		assert.ok(factory.codeByteCount >= 3 * INSTRUCTION_BYTES);
-		const issue = factory.codeAddress, word = (issue - base) / INSTRUCTION_BYTES;
+		let issue = factory.codeAddress;
+		for (;;) {
+			const instruction = decodeBlua32InstructionAtPc(owning, base, issue);
+			if (instruction.op === OpCode.SVC) break;
+			issue = instruction.pc + INSTRUCTION_BYTES;
+			assert.ok(issue < factory.codeAddress + factory.codeByteCount);
+		}
 		const alignment = BLUA32_FUNCTION_ALIGNMENT - 1;
-		const prototype = (image.header.bssAddress + alignment) & ~alignment;
-		// The source provides a real, invoked factory and function body. Replace
-		// the factory's first words with the machine's mapped prototype form.
-		writeInstruction(owning, word, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(owning, word + 1, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(owning, word + 2, OpCode.RET, 0, 2, 0);
-		rewriteResolvedABx(owning, word + 1, OpCode.CLOSURE, prototype / BLUA32_FUNCTION_ALIGNMENT);
+		const storage = (card ?? linked).object.sections.bss.symbols.find(symbol => symbol.name.endsWith('/bss:prototype'))!;
+		const storageAddress = image.header.bssAddress + storage.offset;
+		const prototype = (storageAddress + alignment) & ~alignment;
 		const decoded = decodeBlua32InstructionAtPc(owning, base, issue);
+		assert.equal(decoded.b, 2);
+		const nextPc = decoded.pc + INSTRUCTION_BYTES;
 		const codeExtent = target.codeByteCount;
 		const firstCode = prototype + BLUA32_FUNCTION_RECORD_SIZE, secondCode = firstCode + codeExtent;
-		assert.ok(codeExtent > 0 && secondCode + codeExtent <= image.header.bssAddress + image.header.bssByteCount);
+		assert.ok(codeExtent > 0 && secondCode + codeExtent <= storageAddress + storage.byteCount);
 		for (const canonical of [false, true]) {
 			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
@@ -142,6 +144,12 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 				commands.push(`O ${prototype + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET} ${address}`);
 			};
 			const faults = memory.readBusFaultSequence(), seen: number[] = [];
+			let completedSamples = 0;
+			const readWord = memory.readMappedBusU32LE.bind(memory);
+			memory.readMappedBusU32LE = (...args) => {
+				if (args[0] === prototype + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) ++completedSamples;
+				return readWord(...args);
+			};
 			let commandCut = 0, rowCut = 0;
 			function reachHalt() {
 				for (let n = 0; n < 8192 && !cpu.isHaltedUntilIrq(); ++n) grant(31);
@@ -169,22 +177,24 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 					writeCodeAddress(code);
 					const previousBytes = nativeHeapReference(cpu).luaHeap.usedBytes(), owner = cpu.activeThread.address, depth = cpu.getFrameDepth() - 1;
 					const previous = cpu.activeThread.currentFrame!.registers.get(decoded.a);
-					assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
+					assert.equal(grant(1), BASE_CYCLES[OpCode.SVC]);
 					const miss = !canonical || (visit & 1) === 0;
 					assert.ok(cpu.fixedInterruptActive());
-					assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
-					assert.equal(cpu.readEpcWord(), issue);
-					assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Pc), decoded.pc + INSTRUCTION_BYTES);
+					assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+					assert.equal(cpu.readEpcWord(), nextPc);
+					assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Pc), nextPc);
 					assert.equal(cpu.readThreadRegister(owner, depth, decoded.a), previous);
 					assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 					const packet = cpu.activeThread.currentFrame!;
-					assert.equal(packet.argumentCount, 11);
-					assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(r => packet.registers.get(r)),
-						[decoded.a, prototype, domain === 'cart' ? 0 : -1, code, target.numParams, target.maxStack,
-							flags, -1, 0, 0].map(valueInteger));
+					assert.equal(packet.argumentCount, 3);
+					assert.deepEqual([0, 1, 2].map(r => packet.registers.get(r)),
+						[StockFirmwareOperand.BindFunction, decoded.a, 1].map(valueInteger));
+					assert.equal(cpu.readThreadRegister(owner, depth, decoded.a + 1), valueInteger(prototype));
 					if (visit === 0) {
-						// The live record no longer describes callable code, but its
-						// sample remains bound across the ordinary vector and restore.
+						// Stop after the firmware's last record read, before the bind.
+						for (let n = 0; completedSamples === 0 && n < 4096; ++n) grant(1);
+						assert.equal(completedSamples, 1);
+						assert.ok(cpu.fixedInterruptActive());
 						writeCodeAddress(0xffffffff);
 						grant(1);
 						writeFileSync(checkpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -192,7 +202,7 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 					}
 					for (let n = 0; n < 4096 && cpu.fixedInterruptActive(); ++n) grant(1);
 					assert.equal(cpu.fixedInterruptActive(), false);
-					assert.equal(cpu.readFramePc(depth), decoded.pc + INSTRUCTION_BYTES);
+					assert.equal(cpu.readFramePc(depth), nextPc);
 					assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), previousBytes + (miss ? closureRecordBytes(0, true) : 0));
 					const closure = valuePayload(cpu.activeThread.currentFrame!.registers.get(decoded.a));
 					assert.equal(memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), (domain === 'cart' ? 1 : 0)

@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { StockFirmwareOperand } from '../../../toolchain/ts/lua/compiler/program';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_BINDING_FLAGS } from '../../../machine/ts/machine/cpu/closure';
@@ -13,7 +14,7 @@ import { ValueTag, valueInteger, valuePayload, valueTag } from '../../../machine
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_FUNCTION_BINDING } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../../machine/ts/spec/blua32/image_format';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -49,7 +50,7 @@ for (const opt of [0, 3] as const) test(`firmware canonicalizes and reclaims a R
 	const proto = target.address;
 	assert.equal(target.upvalues.length, 0);
 	// In Lua a static module export cannot escape as a Value. Program the
-	// same Function-record bit over an ordinary CLOSURE that returns a Value.
+	// same Function-record bit on an ordinary lexical binding.
 	writeLE32(rom, proto + BLUA32_FUNCTION_FLAGS_OFFSET, target.flags | BLUA32_FUNCTION_STATIC);
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
@@ -80,16 +81,20 @@ for (const opt of [0, 3] as const) test(`firmware canonicalizes and reclaims a R
 		assert.notEqual(grant(1), RunResult.Halted);
 		for (let i = 0; i < 32768; ++i) {
 			const frame = cpu.activeThread.currentFrame;
-			if (cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_FUNCTION_BINDING
-				&& frame!.argumentCount === 11 && frame!.registers.get(1) === valueInteger(proto)) return frame!;
+			if (cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
+				&& frame!.argumentCount === 3 && frame!.registers.get(0) === valueInteger(StockFirmwareOperand.BindFunction)) {
+				const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+				const slot = valuePayload(frame!.registers.get(1)) + 1;
+				if (cpu.readThreadRegister(owner, cpu.readThreadFrameDepth(owner) - 1, slot) === valueInteger(proto)) return frame!;
+			}
 			assert.notEqual(grant(1), RunResult.Halted);
 		}
-		assert.fail(`missed CLOSURE @${proto.toString(16)}: pc ${cpu.lastPc.toString(16)}, epc ${cpu.readEpcWord().toString(16)}, cause ${cpu.readCauseWord()}, depth ${cpu.getFrameDepth()}, fixed ${cpu.fixedInterruptActive()}`);
+		assert.fail(`missed guest binding @${proto.toString(16)}: pc ${cpu.lastPc.toString(16)}, epc ${cpu.readEpcWord().toString(16)}, cause ${cpu.readCauseWord()}, depth ${cpu.getFrameDepth()}, fixed ${cpu.fixedInterruptActive()}`);
 	};
 	const land = (packet: ReturnType<typeof seek>) => {
 		const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		const depth = cpu.readThreadFrameDepth(owner) - 1;
-		const destination = valuePayload(packet.registers.get(0));
+		const destination = valuePayload(packet.registers.get(1));
 		const successor = cpu.readThreadFrameWord(owner, depth, FrameField.Pc);
 		for (let i = 0; i < 4096 && cpu.fixedInterruptActive(); ++i) assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), false);

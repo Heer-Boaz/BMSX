@@ -25,6 +25,7 @@ function fixedRegisterWrites(op: OpCode, b: number): number {
 		case OpCode.LOADNIL: return b;
 		case OpCode.VARARG: return b === 0 ? 0 : b - 1;
 		case OpCode.SELF: return 2;
+		case OpCode.JAL: return 1;
 		case OpCode.MFC0: return cop0FieldImplemented(b) ? 1 : 0;
 		default: return OPCODE_WRITES_REGISTER_A[op] === 0 || compiledBlockEndsBlock(op, b) ? 0 : 1;
 	}
@@ -85,11 +86,11 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 		if (plan.fallthrough) successors[index].add(index + 1);
 		else switch (page.ops[finalWord]) {
 			case OpCode.HALT: case OpCode.CALL: case OpCode.RET:
-			case OpCode.CLOSURE: case OpCode.SVC: case OpCode.RFE: case OpCode.ITERN: case OpCode.JREG: break;
+			case OpCode.SVC: case OpCode.RFE: case OpCode.ITERN: case OpCode.JREG: break;
 			case OpCode.MTC0:
 				if (!cop0WriteRetiresControl(page.b[finalWord])) addSuccessor(nextPc);
 				break;
-			case OpCode.JMP: addSuccessor(page.bx[finalWord]); break;
+			case OpCode.JMP: case OpCode.JAL: addSuccessor(page.bx[finalWord]); break;
 			case OpCode.JMPIF: case OpCode.JMPIFNOT:
 				addSuccessor(page.bx[finalWord]); addSuccessor(nextPc); break;
 			case OpCode.EQ: case OpCode.LT: case OpCode.LE:

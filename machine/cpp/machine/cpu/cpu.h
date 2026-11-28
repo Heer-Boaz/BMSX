@@ -349,7 +349,6 @@ private:
 	void enterResidentFrame(CallFrame&);
 	void enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress = 0u);
 	void enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value);
-	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
 	bool enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots, int position);

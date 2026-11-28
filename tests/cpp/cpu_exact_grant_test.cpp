@@ -13,6 +13,8 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
+#include "support/global_bank_reference.h"
+#include "support/string_pool_reference.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
 
@@ -546,8 +548,7 @@ void exactImmutableCodeConstantGrant() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(11 * INSTRUCTION_BYTES);
-	// Give the CALL suffix its own architectural entry, no artificial
-	// CLOSURE block boundary before it.
+	// Give the CALL suffix its own architectural entry, independently of the load.
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 1, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -597,21 +598,12 @@ void exactImmutableCodeConstantGrant() {
 	const auto& installed = *native.activeThread()->currentFrame->executionImage;
 	const auto* page = installed.nativeCodeLookup->find(prefix, 0);
 	const auto* entry = page->nativeBlocks->entries[(prefix & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-	require(entry && entry->terminal.exit != NativeBlockExit::CreateClosure && entry->terminal.nextPc >= successor,
+	require(entry && entry->terminal.nextPc >= successor,
 		"the native region includes the ordinary load without a binding exit");
-#endif
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto& exits = native.nativeGateProfile().exits;
-	const auto& bindingExit = exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
-	const auto oldBindings = bindingExit.entries;
 #endif
 	require(test::runCpuParity(native, scalar.cpu, prefixCycles + 1) == RunResult::Yielded
 		&& native.instructionBudgetRemaining == 1 - loadCycles, "a positive short grant still charges one whole LOADK");
 	check(successor, body, destination + 1, expected);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(bindingExit.entries == oldBindings,
-		"the generated short-grant stop does not enter the C++ binding gate");
-#endif
 	require(test::runCpuParity(native, scalar.cpu, unitCycles) == RunResult::Yielded
 		&& native.instructionBudgetRemaining == 0, "the successor uses a separate grant");
 	check(successor + INSTRUCTION_BYTES, successor, 8, expected);
@@ -679,7 +671,62 @@ void exactImmutableCodeConstantGrant() {
 	}
 }
 
-void exactGrant(bool store) {
+void exactJumpAndLinkGrant() {
+	constexpr u8 linkSlot = 130;
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(7u * INSTRUCTION_BYTES);
+	// A widened JAL must link after both physical words, then enter a
+	// sibling TEXT extent without changing its activation window.
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), linkSlot >> 6, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JAL), linkSlot & 63, 0, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 0, linkSlot & 63, 0, (linkSlot >> 6) << 3);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::KSMI), 1, 0, 59);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 3, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = linkSlot + 1u},
+		{.firstWord = 4, .wordCount = 3, .maxStack = 1}};
+	const int base = BASE_CYCLES[static_cast<size_t>(OpCode::JAL)];
+	require(base == 2, "JAL charges its fixed two-cycle transfer");
+	for (int grant : {1, 100}) {
+		Machine native(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		native.cpu.prepareSystemNativeCode();
+		const u32 issue = native.rom.textAddress;
+		const auto& lookup = *native.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+		const auto* entry = lookup.findEntryCellInRoot(lookup.root(0), issue);
+		require(entry && *entry, "the WIDE JAL source has actual generated code");
+#endif
+		for (auto* machine : {&native, &scalar}) {
+			auto& frame = *machine->cpu.activeThread()->currentFrame;
+			frame.registers.set(1, valueInteger(17));
+			frame.setTop(1);
+		}
+		const auto result = test::runCpuParity(native.cpu, scalar.cpu, grant);
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			const u32 start = machine->rom.textAddress;
+			const auto link = valueInteger(start + 2u * INSTRUCTION_BYTES);
+			if (grant == 1) {
+				require(result == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - base
+					&& cpu.readCurrentInstructionPc() == start && cpu.lastPc == start + INSTRUCTION_BYTES
+					&& cpu.readFramePc(0) == start + 4u * INSTRUCTION_BYTES && cpu.getFrameDepth() == 1
+					&& cpu.readFrameFunctionAddress(0) == machine->rom.functionAddresses[0]
+					&& cpu.getFrameRegisterCount(0) == linkSlot + 1
+					&& cpu.readFrameRegister(0, 1) == valueInteger(17) && cpu.readFrameRegister(0, linkSlot) == link,
+					"JAL retires link and sibling PC atomically, without changing frame or other registers");
+			} else {
+				const auto values = cpu.readCompletionValues();
+				require(result == RunResult::Halted && values.size() == 2
+					&& values.get(0) == link && values.get(1) == valueInteger(59),
+					"the sibling body reads the caller window and can return through its original frame");
+			}
+		}
+		require(test::sameLanguageRam(native.cpu, scalar.cpu), "JAL peers expose identical RAM");
+	}
+}
+
+void exactStoreGrant() {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
 	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
 	for (int grant : {2, 4, 6, 8}) {
@@ -688,27 +735,15 @@ void exactGrant(bool store) {
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
-		if (store) writeInstruction(image.text, 3, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
 			static_cast<u8>(MemoryAccessKind::U32LE));
-		else {
-			writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-			writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
-		}
-		const u32 jump = store ? 4u : 5u;
-		writeInstruction(image.text, jump, static_cast<u8>(OpCode::JMP), 0, 63, 63 - jump, 255);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
-		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
-		image.functions = {{.firstWord = 0, .wordCount = jump + 1u, .maxStack = 6},
-			{.firstWord = 6, .wordCount = 1, .maxStack = 1},
-			{.firstWord = 7, .wordCount = 1}};
-		if (!store) image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 6},
+			{.firstWord = 6, .wordCount = 1, .maxStack = 1}};
 		image.irqFunctionIndex = 1;
 		Machine native(image, false, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
-			if (!store) {
-				machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
-				test::seedTestMappedClosure(machine->cpu, DYNAMIC_RAM_BASE);
-			}
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
 			frame->registers.set(4, valueInteger(address));
 			frame->registers.set(5, valueInteger(0x12345678));
@@ -729,10 +764,6 @@ void exactGrant(bool store) {
 		}
 		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
 		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		const auto& generated = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
-		const auto beforeClosure = generated.entries;
-#endif
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
@@ -742,8 +773,8 @@ void exactGrant(bool store) {
 			machine->irq.raise(IRQ_GPU);
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
 		}
-		std::printf("%s grant=%d cycles=%d/%d pc=%08x/%08x EPC=%08x/%08x allocations=%u/%u RAM=%08x/%08x\n",
-			store ? "store" : "closure", grant, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
+		std::printf("store grant=%d cycles=%d/%d pc=%08x/%08x EPC=%08x/%08x allocations=%u/%u RAM=%08x/%08x\n",
+			grant, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
 			nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), nativeAllocations, scalarAllocations,
 			native.memory.readU32(address), scalar.memory.readU32(address));
 		require(nativeResult == scalarResult, "both CPUs return the same status for the requested grant");
@@ -751,11 +782,7 @@ void exactGrant(bool store) {
 		require(nativePc == scalarPc && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(), "IRQ is accepted at the same guest instruction boundary");
 		require(native.cpu.readEpcWord() == nativePc && native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
 			&& test::sameLanguageRam(native.cpu, scalar.cpu), "IRQ captures the measured continuation and identical language RAM");
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		if (!store && grant == 8)
-			require(generated.entries == beforeClosure + 1, "the measured grant actually reaches native CLOSURE");
-#endif
-		require(nativeAllocations == 0 && scalarAllocations == 0, "no allocation on cache hit before the IRQ");
+		require(nativeAllocations == 0 && scalarAllocations == 0, "no allocation in a raw STORE grant before the IRQ");
 		require(native.memory.readU32(address) == scalar.memory.readU32(address), "no premature native RAM store before the IRQ");
 	}
 }
@@ -852,7 +879,7 @@ void exactGrantSweep(bool scalarControl) {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JAL), 3, 0, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
 		static_cast<u8>(MemoryAccessKind::U32LE));
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
@@ -861,18 +888,15 @@ void exactGrantSweep(bool scalarControl) {
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6},
 		{.firstWord = 7, .wordCount = 1, .maxStack = 1},
 		{.firstWord = 8, .wordCount = 1}};
-	image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
 	image.irqFunctionIndex = 1;
 	unsigned mismatchCount = 0;
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, scalarControl, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
-			machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
-			test::seedTestMappedClosure(machine->cpu, DYNAMIC_RAM_BASE);
 			auto& frame = *machine->cpu.rootThread()->frameAtDepth(0);
 			frame.registers.set(4, valueInteger(address));
 			frame.registers.set(5, valueInteger(0x12345678));
-			// These inputs are live across CLOSURE and its successor, not just within the register capacity.
+			// These inputs are live across JAL and its successor, not just within the register capacity.
 			frame.setTop(6);
 		}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -900,7 +924,7 @@ void exactGrantSweep(bool scalarControl) {
 			const auto* thread = machine->cpu.activeThread();
 			require(thread->frameDepth() == 1u && machine->cpu.readFrameRegister(0, 4) == valueInteger(address)
 				&& machine->cpu.readFrameRegister(0, 5) == valueInteger(0x12345678),
-				"the warm CLOSURE loop preserves live store operands without faulting");
+				"the warm JAL loop preserves live store operands without faulting");
 			auto& frame = *thread->frameAtDepth(0);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], machine->rom.textAddress);
@@ -910,16 +934,7 @@ void exactGrantSweep(bool scalarControl) {
 		}
 		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
 		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		const auto& generated = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
-		const auto beforeClosure = generated.entries;
-#endif
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		if (grant == 64)
-			require(scalarControl ? generated.entries == beforeClosure : generated.entries > beforeClosure,
-				"the longest measured grant reaches native CLOSURE only without the scalar control hook");
-#endif
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
 		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
@@ -1109,7 +1124,7 @@ void exactCallVarargSweep() {
 	test::Blua32TestImage image;
 	image.text.resize(18u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 10, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETSYS), 10, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 10, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 1, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 0, 2, 2);
@@ -1118,7 +1133,7 @@ void exactCallVarargSweep() {
 	writeInstruction(image.text, 17, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 16},
 		{.firstWord = 16, .wordCount = 2, .maxStack = 4, .isVararg = true}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.systemGlobalNames = {"varargCallee"};
 	unsigned mismatchCount = 0;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	bool nativeCallEntered = false, nativeReturnEntered = false;
@@ -1126,12 +1141,14 @@ void exactCallVarargSweep() {
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
-			test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+			const auto closure = test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+			const auto name = test::StringPoolReference(machine->cpu).intern(image.systemGlobalNames[0]);
+			test::NativeGlobalBankReference::setSystemGlobalByKey(machine->cpu, name, valueClosure(closure));
 			machine->cpu.runUntilDepth(0, 4000);
 			auto* thread = machine->cpu.activeThread();
 			if (thread->frameDepth() > 1) machine->cpu.runUntilDepth(1, 100);
 			auto* frame = thread->frameAtDepth(0);
-			require(valueIsClosure(frame->registers.get(10)), "warm caller retains its closure");
+			require(valueIsClosure(frame->registers.get(10)), "warm caller retains its variadic callable");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			if (machine == &native) {
 				waitForNativeEntries(*machine, machine->rom.textAddress, {2, 16});
@@ -1193,12 +1210,12 @@ void exactCallVarargSweep() {
 
 int main(int argc, char** argv) {
 	try {
-		if (argc != 2) throw std::runtime_error("expected allocate or store");
+		if (argc != 2) throw std::runtime_error("expected an exact-grant scenario");
 		const std::string_view scenario(argv[1]);
-		if (scenario == "closure") exactGrant(false);
+		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
 		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); }
-		else if (scenario == "store") exactGrant(true);
+		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);
 		else if (scenario == "sweep-scalar-control") exactGrantSweep(true);

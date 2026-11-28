@@ -1,12 +1,13 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { GcPhase, asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
-import { GC_COLOR_OFFSET, CLOSURE_CANONICAL } from '../../toolchain/ts/firmware/stock_object_layout';
+import { GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
-import { allocatedObjectRecords, runCpuWithinBudget } from '../helpers/cpu_execution';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -17,7 +18,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -25,17 +26,16 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, name === 'table' ? OpCode.MOV : OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(code, 2, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(code, 2, OpCode.LOADK, 4, 0, 0);
 	writeInstruction(code, 3, OpCode.CALL, 4, 1, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0);
 	writeInstruction(code, 5, OpCode.RET, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
-		text: code,
+		text: code, verifiedControlFlow: true, constants: [integerConstant(0)],
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1 }],
-		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
+		constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }],
 	});
 	const { cpu } = createTestSystemCpu(image);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	if (name === 'table') cpu.rootThread.frameAtDepth(0).registers.setTable(0, createReferenceTable(cpu));
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -163,67 +163,6 @@ test('restore retains weak referents until the original allocation-triggered col
 		assert.equal(allocateUntilCollected(), expectedCount);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
 	}
-});
-
-test('a materialized but unrooted canonical closure remains part of the checkpoint', () => {
-	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
-local target<const> = function() end
-return 1
-`, 0, [], 'snapshot-canonical.lua'));
-	const { cpu } = createTestSystemCpu(image);
-	const functionAddress = image.vectors.entryFunctionAddress;
-	const entry = image.image.functions.find(fn => fn.address === functionAddress)!.codeAddress;
-	cpu.setExecutionHook((_domain, at) => at === entry, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	assert.equal(runCpuWithinBudget(cpu, 10_000), RunResult.ExecutionStopped);
-	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	const frame = cpu.getFrameDepth() - 1;
-	const cold = cpu.captureRuntimeState();
-	const coldRam = cpu.memory.captureSaveState();
-	const build = () => {
-		assert.equal(cpu.runUntilDepth(frame, BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
-		assert.equal(cpu.fixedInterruptActive(), true, 'a cold canonical Closure enters the System vector');
-		for (let grant = 0; grant < 32 && cpu.fixedInterruptActive(); ++grant)
-			assert.equal(cpu.runUntilDepth(frame, 1024), RunResult.Yielded);
-		return cpu.readFrameRegister(frame, 0);
-	};
-	const first = build(), closureAddress = valuePayload(first);
-	assert.notEqual(closureAddress, 0);
-	const address = cpu.captureClosureBinding(closureAddress).functionAddress;
-	cpu.rootThread.frameAtDepth(frame).registers.setNil(0);
-
-	const warm = cpu.captureRuntimeState();
-	const warmRam = cpu.memory.captureSaveState();
-	assert.equal(cpu.readFrameRegister(frame, 0), valueNil());
-	assert.equal(allocatedObjectRecords(cpu).find(record =>
-		cpu.memory.readRamRecordByte(record) === ValueTag.Closure
-		&& cpu.memory.readRamRecordWord(record + CLOSURE_PROTOTYPE_ADDRESS) === address
-		&& (cpu.memory.readRamRecordByte(record + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0), closureAddress);
-	cpu.runUntilDepth(0, 1000);
-	const expected = cpu.captureRuntimeState();
-	cpu.memory.restoreSaveState(coldRam);
-	cpu.restoreRuntimeState(cold);
-	cpu.memory.restoreSaveState(warmRam);
-	cpu.restoreRuntimeState(warm);
-	assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(closureAddress), closureAddress);
-	assert.deepEqual(cpu.captureRuntimeState(), warm);
-	cpu.runUntilDepth(0, 1000);
-	assert.deepEqual(cpu.captureRuntimeState(), expected);
-
-	cpu.memory.restoreSaveState(warmRam);
-	cpu.restoreRuntimeState(warm);
-	while (nativeHeapReference(cpu).gc.phase() !== GcPhase.Sweep) nativeHeapReference(cpu).gc.step();
-	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), nativeHeapReference(cpu).gc.white() ^ 1);
-	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
-	const atColdSite = () => {
-		cpu.writeFrameExecution(frame, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
-		return build();
-	};
-	const replacement = atColdSite();
-	assert.notEqual(valuePayload(replacement), closureAddress);
-	cpu.memory.restoreSaveState(sweepRam);
-	cpu.restoreRuntimeState(sweep);
-	assert.equal(atColdSite(), replacement, 'restore does not republish an already retired closure');
-
 });
 
 test('hard-halt is restored independently of the live future CPU latch', () => {

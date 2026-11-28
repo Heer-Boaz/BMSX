@@ -254,12 +254,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.returnFromException(*frame);
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::CreateClosure: {
-			const auto& closure = exit->operands.closure;
-			cpu.executeClosure(*frame, closure.result, closure.address, closure.flags);
-			transition = NativeBlockTransition::Redispatch;
-			break;
-		}
 		case NativeBlockExit::SkipInstruction:
 			cpu.skipNextInstruction(*frame);
 			transition = NativeBlockTransition::Redispatch;

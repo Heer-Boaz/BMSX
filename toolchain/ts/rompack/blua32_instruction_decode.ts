@@ -1,4 +1,4 @@
-import { CLOSURE_DESTINATION_EXT_MASK, CLOSURE_DESTINATION_EXT_SHIFT, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, instructionFieldExtraHashSlots, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, instructionFieldExtraHashSlots, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP } from '../../../machine/ts/spec/blua32/opcode';
 
 export type DecodedInstruction = {
@@ -40,8 +40,7 @@ const decodeInstruction = (code: Uint8Array, codeAddress: number, pc: number): D
 		const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
 		const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
 		const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-		const a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA
-			| (nextOp === OpCode.CLOSURE ? (cLow & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0);
+		const a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
 		const b = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | nextB;
 		const c = (cLow << cShift) | (extC << MAX_OPERAND_BITS) | nextC;
 		const bxLow = (nextB << 6) | nextC;

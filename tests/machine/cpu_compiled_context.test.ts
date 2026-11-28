@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { findStockGlobalSlot } from '../../toolchain/ts/firmware/stock_global_bank';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
@@ -559,7 +560,7 @@ test('a fresh frame grows through scalar VARARG before using a warm generated re
 for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil padding and stack relocation (B=${fixed})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 20, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 20, 20, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 20, 0);
 	writeInstruction(text, 3, OpCode.CALL, 0, 0, 2);
 	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
@@ -572,11 +573,10 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	writeInstruction(text, 22, OpCode.JMP, 0, 63, 57, 255);
 	writeInstruction(text, 24, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 160 },
-		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }],
-		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }] });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(20, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 2);
 		cpu.rootThread.frameAtDepth(0).top = 1;
 		cpu.runUntilDepth(0, 9002);

@@ -1,3 +1,4 @@
+import { StockFirmwareOperand } from '../../toolchain/ts/lua/compiler/program';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -143,34 +144,36 @@ function managedSelectorSystem(): TestBlua32Image {
 }
 
 function makeClosureCartSource(value: number, path: string, staticClosure: boolean): TestBlua32Source {
-	const text = new Uint8Array(9 * INSTRUCTION_BYTES);
+	const text = new Uint8Array(10 * INSTRUCTION_BYTES);
 	const range = {
 		path,
 		start: { line: 1, column: 1 },
 		end: { line: 1, column: 2 },
 	};
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1, 0);
-	writeInstruction(text, 2, OpCode.SETGL, 0, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
-	writeInstruction(text, 4, OpCode.SETGL, 0, 0, 1, 0);
-	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0, 0);
-	writeInstruction(text, 6, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(text, 7, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(text, 8, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 1, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 2, 0);
+	writeInstruction(text, 2, OpCode.SVC, 0, 2, 0, 0);
+	writeInstruction(text, 3, OpCode.SETGL, 0, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
+	writeInstruction(text, 5, OpCode.SETGL, 0, 0, 1, 0);
+	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(text, 7, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(text, 8, OpCode.RET, 0, 2, 0, 0);
+	writeInstruction(text, 9, OpCode.RFE, 0, 0, 0, 0);
 	return {
 		text,
 		functions: [
-			{ firstWord: 0, wordCount: 6 },
-			{ firstWord: 6, wordCount: 2, staticClosure },
-			{ firstWord: 8, wordCount: 1 },
+			{ firstWord: 0, wordCount: 7, maxStack: 2 },
+			{ firstWord: 7, wordCount: 2, staticClosure },
+			{ firstWord: 9, wordCount: 1 },
 		],
-		constants: [integerConstant(value)],
+		constants: [integerConstant(value), integerConstant(StockFirmwareOperand.BindFunction), integerConstant(0)],
+		constValueRelocs: [{ constIndex: 2, kind: 'function_addr', protoIndex: 1 }],
 		globalNames: [
 			CART_CLOSURE_GLOBAL_NAME,
 			CART_CLOSURE_RESULT_GLOBAL_NAME,
 		],
-		debugRanges: [range, range, range, range, range, range, range, range, range],
+		debugRanges: [range, range, range, range, range, range, range, range, range, range],
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
 	};
@@ -520,7 +523,7 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 		makeClosureCartSource(111, 'slot0.lua', true),
 	);
 	const unusedSource = makeClosureCartSource(222, 'slot1.lua', true);
-	unusedSource.constants = [integerConstant(222), 'unused-slot-string'];
+	unusedSource.constants = [...unusedSource.constants!, 'unused-slot-string'];
 	unusedSource.globalNames = [
 		CART_CLOSURE_GLOBAL_NAME,
 		CART_CLOSURE_RESULT_GLOBAL_NAME,

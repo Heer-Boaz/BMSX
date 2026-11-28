@@ -55,7 +55,6 @@ return from_address, from_address == callable, ordinary, rejected, payload
 	const syscalls: number[][] = [];
 	for (let pc = binder.codeAddress; pc < binder.codeAddress + binder.codeByteCount;) {
 		const instruction = decodeBlua32InstructionAtPc(textBytes, header.textAddress, pc);
-		assert.notEqual(instruction.op, OpCode.CLOSURE);
 		if (instruction.op === OpCode.SVC) syscalls.push([instruction.b, instruction.c]);
 		pc = instruction.pc + INSTRUCTION_BYTES;
 	}

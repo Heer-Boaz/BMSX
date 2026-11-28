@@ -39,7 +39,7 @@ struct Machine {
 		test::Blua32TestImage image;
 		image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 4, 1, 1);
 		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
@@ -49,7 +49,7 @@ struct Machine {
 		image.functions = {{.firstWord=0, .wordCount=5, .maxStack=8},
 			{.firstWord=DECODED_PAGE_WORDS, .wordCount=1, .maxStack=2}};
 		image.globalNames = {"continuationResult"};
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		return image;
 	}
 	Machine() : rom(test::encodeBlua32TestRom(RomImageDomain::System, image(), test::RAM_CODE_FIXTURE_BYTES)),
@@ -57,7 +57,8 @@ struct Machine {
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		test::seedManagedFixture(cpu, addresses);
-		test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+		const auto closure = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+		cpu.activeThread()->currentFrame->registers.set(0, valueClosure(closure));
 		memory.writeBytes(rootPc, rom.bytes.data() + rom.textAddress, MAPPED_PAGE_BYTE_SIZE);
 	}
 	static constexpr u32 rootPc = DYNAMIC_RAM_BASE + 0x4000;
@@ -174,7 +175,7 @@ void cartridgeReturnSelectsLiveBank() {
 	test::Blua32TestImage systemImage;
 	systemImage.text.resize(6 * INSTRUCTION_BYTES);
 	writeInstruction(systemImage.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(systemImage.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(systemImage.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(systemImage.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
 	writeInstruction(systemImage.text, 3, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
 	writeInstruction(systemImage.text, 4, static_cast<u8>(OpCode::STORE_MEM), 0, 1, static_cast<u8>(MemoryAccessKind::Word));
@@ -182,7 +183,7 @@ void cartridgeReturnSelectsLiveBank() {
 	systemImage.constants = {static_cast<i32>(IO_CART_SELECT)};
 	systemImage.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
 		{.firstWord=3, .wordCount=3, .numParams=1, .maxStack=2}};
-	systemImage.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, systemImage, test::RAM_CODE_FIXTURE_BYTES);
 	test::Blua32TestImage cartridge;
 	cartridge.text.resize(5 * INSTRUCTION_BYTES);
@@ -201,7 +202,8 @@ void cartridgeReturnSelectsLiveBank() {
 		DeviceScheduler scheduler(cpu); DmaController dma(memory, cpu, irq, scheduler);
 		memory.cartridgeController().connect(memory, irq, dma);
 		test::seedManagedFixture(cpu, addresses);
-		test::seedTestRomClosure(cpu, system.functionAddresses[1]);
+		const auto closure = test::seedTestRomClosure(cpu, system.functionAddresses[1]);
+		cpu.activeThread()->currentFrame->registers.set(0, valueClosure(closure));
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 		cpu.runUntilDepth(0, 3);
 		auto* parent = cpu.rootThread()->firstFrame;

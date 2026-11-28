@@ -104,7 +104,7 @@ test::Blua32TestImage program(Workload workload) {
 		const bool arithmetic = workload == Workload::CallsArithmetic;
 		if (arithmetic) text.resize(41u * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(workload == Workload::CallsRamRecord ? OpCode::MOV : OpCode::LOADK), 0, 0, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
 		writeInstruction(text, 3, static_cast<u8>(OpCode::MOV), 4, 0, 0);
 		writeInstruction(text, 4, static_cast<u8>(OpCode::CALL), 4, encodeFixedValueCount(0), 2);
@@ -116,8 +116,10 @@ test::Blua32TestImage program(Workload workload) {
 		}
 		writeInstruction(text, arithmetic ? 40 : 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = arithmetic ? 34u : 2u}};
-		image.closureRelocations = {{1, workload == Workload::CallsRamRecord
-			? RAM_RECORD_ADDRESS : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		if (workload != Workload::CallsRamRecord) {
+			image.functions[1].codeFunction = true;
+			image.constants = {Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		}
 		break;
 	}
 	case Workload::CodeWrites:
@@ -174,8 +176,8 @@ test::Blua32TestImage program(Workload workload) {
 			writeInstruction(text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 		} else {
 			writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-			writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+			writeInstruction(text, 1, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+			image.systemGlobalNames = {"varargCallee"};
 		}
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
 		const u32 call = captures ? 3u : 6u;
@@ -312,10 +314,15 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x100));
 		registers.set(2, valueInteger(1));
 		memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x100, 1);
+	} else if (workload == Workload::Varargs) {
+		const auto closure = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+		const auto key = test::StringPoolReference(cpu).intern(image.systemGlobalNames[0]);
+		NativeGlobalBankReference::setSystemGlobalByKey(cpu, key, valueClosure(closure));
 	} else if (workload == Workload::CallsRamRecord) {
 		memory.writeBytes(RAM_RECORD_ADDRESS, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE,
 			BLUA32_FUNCTION_RECORD_SIZE);
-		test::seedTestMappedClosure(cpu, RAM_RECORD_ADDRESS);
+		const auto closure = test::seedTestMappedClosure(cpu, RAM_RECORD_ADDRESS);
+		cpu.activeThread()->currentFrame->registers.set(0, valueClosure(closure));
 	} else if (workload == Workload::CodeWrites) {
 		const u32 codeAddress = DYNAMIC_RAM_BASE + 0x1000;
 		for (u32 offset = 0; offset < image.text.size(); offset += INSTRUCTION_BYTES) {

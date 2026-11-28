@@ -64,7 +64,10 @@ struct NativeReplay {
 };
 struct NativeJump {
 	u32 target;
-	constexpr NativeSlotAccess slots() const { return {}; }
+	NativeValueRef link = NATIVE_NO_OPERAND;
+	constexpr NativeSlotAccess slots() const {
+		return {.writes = link < 0 ? NativeSlotRange{} : NativeSlotRange{static_cast<u16>(link), 1}};
+	}
 };
 struct NativeRegisterJump : NativeExitOperands::RegisterJump {
 	static constexpr auto terminalExit = NativeBlockExit::RegisterJump;
@@ -95,13 +98,6 @@ struct NativeReturnSite : NativeExitOperands::Return {
 	static constexpr auto terminalExit = NativeBlockExit::Return;
 	constexpr NativeSlotAccess slots() const {
 		return {.readsRange = {first, static_cast<u16>(std::max<int>(produced, 0)), produced < 0}};
-	}
-};
-struct NativeClosure : NativeExitOperands::Closure {
-	static constexpr auto terminalExit = NativeBlockExit::CreateClosure;
-	constexpr NativeSlotAccess slots() const {
-		return {.writes = {result, 1},
-			.readsRange = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0 ? NativeSlotRange{address, 1} : NativeSlotRange{}};
 	}
 };
 struct NativeLiteral {
@@ -305,7 +301,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 
 using NativeOperation = std::variant<
 	NativeReplay, NativeJump, NativeRegisterJump, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
-	NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
+	NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;
 

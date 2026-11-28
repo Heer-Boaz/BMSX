@@ -1,7 +1,6 @@
 import {
 	ValueMoveKind,
 	ReturnSource,
-	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	EXT_A_BITS,
 	EXT_B_BITS,
 	EXT_BX_BITS,
@@ -57,7 +56,6 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\text_b_bits = ${EXT_B_BITS},`,
 	`\text_bx_bits = ${EXT_BX_BITS},`,
 	`\text_c_bits = ${EXT_C_BITS},`,
-	`\tclosure_address_register_wide_c = ${CLOSURE_ADDRESS_REGISTER_WIDE_C},`,
 	`\tfixed_value_count_bias = ${encodeFixedValueCount(0)},`,
 	`\tfunction_alignment = ${BLUA32_FUNCTION_ALIGNMENT},`,
 	`\tfunction_record_size = ${BLUA32_FUNCTION_RECORD_SIZE},`,
@@ -109,7 +107,6 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_svc = ${OpCode.SVC},`,
 	`\top_rfe = ${OpCode.RFE},`,
 	`\top_vararg = ${OpCode.VARARG},`,
-	`\top_closure = ${OpCode.CLOSURE},`,
 	`\top_getup = ${OpCode.GETUP},`,
 	`\top_setup = ${OpCode.SETUP},`,
 	`\top_ret = ${OpCode.RET},`,

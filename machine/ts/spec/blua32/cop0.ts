@@ -61,7 +61,6 @@ export const CPU_CAUSE_CODE_TRAP = 13 << 2;
 export const CPU_CAUSE_CODE_REGISTER_WINDOW = 14 << 2;
 export const CPU_CAUSE_CODE_REFERENCE_STORE = 15 << 2;
 export const CPU_CAUSE_CODE_STORAGE_WINDOW = 16 << 2;
-export const CPU_CAUSE_CODE_FUNCTION_BINDING = 17 << 2;
 
 export const LUA_FAULT_REASON_UNKNOWN = 0;
 export const LUA_FAULT_REASON_CALL_NON_FUNCTION = 1;

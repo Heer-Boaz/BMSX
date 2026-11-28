@@ -1,6 +1,6 @@
 import { decodeBlua32InstructionAtPc, type DecodedInstruction } from './blua32_instruction_decode';
 import { extractSourceRangeText } from './source_text';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatInteger } from '../../../machine/ts/common/number_format';
@@ -9,9 +9,6 @@ import {
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,
 } from './blua32_image';
-import {
-	BLUA32_FUNCTION_RECORD_SIZE,
-} from '../../../machine/ts/spec/blua32/image_format';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
@@ -196,18 +193,6 @@ const formatSourceGlobalSlotOperand = (
 	return `${prefix}${slot} (${names[slot]})`;
 };
 
-const formatSourceFunctionOperand = (source: Blua32DisassemblySource, encodedAddress: number): string => {
-	const address = (encodedAddress << 4) >>> 0;
-	let text = `function@${address.toString(16).padStart(8, '0')}`;
-	const first = source.image.header.functionTableAddress;
-	const end = first + source.image.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE;
-	if (source.symbols !== null && address >= first && address < end) {
-		const functionIndex = (address - first) / BLUA32_FUNCTION_RECORD_SIZE;
-		text += ` (${source.symbols.metadata.functionIds[functionIndex]})`;
-	}
-	return text;
-};
-
 const sourceRangeAtPc = (source: Blua32DisassemblySource, pc: number): SourceRange | null => {
 	return source.symbols === null
 		? null
@@ -309,10 +294,8 @@ const buildInstructionOperands = (
 			return c === 0 ? [registerOperand('a', 'target', a)]
 				: c === 1 ? [registerOperand('a', 'target', a), registerOperand('b', 'link', b)]
 					: [plainOperand('c', 'reserved mode', c.toString())];
-		case OpCode.CLOSURE:
-			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
-				? [registerOperand('a', 'dst', a), registerOperand('b', 'function_address', bx)]
-				: [registerOperand('a', 'dst', a), plainOperand('bx', 'function', formatSourceFunctionOperand(source, bx))];
+		case OpCode.JAL:
+			return [registerOperand('a', 'link', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.GETUP:
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'upvalue', `u${b}`)];
 		case OpCode.SETUP:
@@ -518,10 +501,8 @@ const formatInstruction = (
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JREG:
 			return c === 0 ? `JREG r${a}` : c === 1 ? `JREG r${a}, r${b}` : `JREG (reserved mode ${c})`;
-		case OpCode.CLOSURE:
-			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
-				? `CLOSURE.R r${a}, r${bx}`
-				: `CLOSURE r${a}, ${formatSourceFunctionOperand(source, bx)}`;
+		case OpCode.JAL:
+			return `JAL r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.GETUP:
 			return `GETUP r${a}, u${b}`;
 		case OpCode.SETUP:

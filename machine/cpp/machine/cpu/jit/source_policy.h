@@ -19,7 +19,6 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SETI:
 		case OpCode::SELF:
 		case OpCode::LEN:
-		case OpCode::CLOSURE:
 		case OpCode::MFC0:
 		case OpCode::MTC0:
 		case OpCode::SVC:
@@ -57,6 +56,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SHR:
 		case OpCode::BNOT:
 		case OpCode::JMP:
+		case OpCode::JAL:
 		case OpCode::JREG:
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
@@ -85,7 +85,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
-		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::SVC:
+		case OpCode::CALL: case OpCode::SVC:
 			return true;
 		case OpCode::MTC0: return field == COP0_STATUS || field == COP0_RAM_END || field == COP0_CURRENT
 			|| (field >= COP0_TABLE_LOOKUP_KEY && field <= COP0_STRING_INDEX_TABLE);
@@ -106,8 +106,8 @@ inline constexpr bool nativeBlockCanSkip(u8 op) {
 inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	// Decoded dispatch opcodes are bytes, including the internal pseudo-ops.
 	std::array<bool, 256> boundaries{};
-	for (const auto op : {OpCode::JMP, OpCode::JREG, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
-		OpCode::CALL, OpCode::RET, OpCode::CLOSURE, OpCode::SVC,
+	for (const auto op : {OpCode::JMP, OpCode::JAL, OpCode::JREG, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
+		OpCode::CALL, OpCode::RET, OpCode::SVC,
 		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE, OpCode::ITERN}) {
 		boundaries[static_cast<u8>(op)] = true;
 	}

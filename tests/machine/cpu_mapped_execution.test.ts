@@ -1,15 +1,7 @@
-import { asClosure } from '../helpers/native_heap/gc_heap';
-import { nativeHeapReference } from '../helpers/native_heap/reference';
-import { createReferenceTable } from '../helpers/cpu_heap_reference';
-import { setReferenceGlobal } from '../helpers/global_bank_reference';
-import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
-import { allocatedObjectRecords } from '../helpers/cpu_execution';
-import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
-import { integerConstant } from '../../toolchain/ts/lua/number';
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import {
@@ -24,32 +16,28 @@ import {
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
-	BASE_BX_BITS,
-	CLOSURE_ADDRESS_REGISTER_WIDE_C,
 	INSTRUCTION_BYTES,
-	MAX_BX_BITS,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100;
 
 test('compact and padded ROM calls use admitted record spans with identical cycles and results', () => {
-	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1);
-	writeInstruction(text, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 2);
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CALL, 0, encodeFixedValueCount(0), 2);
+	writeInstruction(text, 1, OpCode.RET, 0, 2, 0);
+	writeInstruction(text, 2, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
-	writeInstruction(text, 4, OpCode.K1, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text,
-		functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2 }],
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }, { firstWord: 2, wordCount: 2 }],
 	}, RAM_CODE_FIXTURE_BYTES);
 	const sourceRecord = image.symbols.functionAddresses[1];
 	// The second image pads this same final record page; the compact one ends
@@ -60,9 +48,9 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		const romBytes = new Uint8Array(padded ? (compactLength + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK : compactLength);
 		romBytes.set(image.romBytes);
 		romBytes.set(image.romBytes.subarray(sourceRecord, sourceRecord + BLUA32_FUNCTION_RECORD_SIZE), record);
-		const { cpu, memory } = createTestSystemCpu({ romBytes });
-		seedTestRomClosure(cpu, record);
-		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, record);
+		const { cpu, memory } = createTestHeapServiceCpu({ romBytes });
+		reserveThreadFrameReference(cpu, cpu.rootThread, 16);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestRomClosure(cpu, record));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const readWord = memory.readMappedBusU32LE.bind(memory);
 		let scalarRecordReads = 0;
@@ -70,7 +58,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 			if (address >= record && address < record + BLUA32_FUNCTION_RECORD_SIZE) scalarRecordReads++;
 			return readWord(address, signals, access);
 		};
-		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * (BASE_CYCLES[OpCode.RET] + 1) + BASE_CYCLES[OpCode.K1];
+		const cycles = BASE_CYCLES[OpCode.CALL] + 2 * (BASE_CYCLES[OpCode.RET] + 1) + BASE_CYCLES[OpCode.K1];
 		runGuestToHalt(cpu, cycles);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
@@ -125,152 +113,35 @@ function writeRamFunction(
 	memory.writeBytes(RAM_CODE_ADDRESS, code);
 }
 
-for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses mapped RAM functions directly and through a register (${backend})`, () => {
-	const systemCode = new Uint8Array(9 * INSTRUCTION_BYTES);
-	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
-	writeInstruction(systemCode, 2, OpCode.LOADK, 1, 0, 0, 0);
-	writeInstruction(systemCode, 3, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C, 0);
-	writeInstruction(systemCode, 4, OpCode.CLOSURE, 1, 0, 1, 0);
-	writeInstruction(systemCode, 5, OpCode.RET, 0, 3, 0, 0);
-	writeInstruction(systemCode, 6, OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(systemCode, 7, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(systemCode, 8, OpCode.RFE, 0, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({
-		text: systemCode,
-		functions: [
-			{ firstWord: 0, wordCount: 6, maxStack: 2 },
-			{ firstWord: 6, wordCount: 2 },
-			{ firstWord: 8, wordCount: 1 },
-		],
-		constants: [integerConstant(RAM_FUNCTION_ADDRESS)],
-		startupFunctionIndex: 0,
-		irqFunctionIndex: 2,
-		exceptionFunctionIndex: 2,
-		closureRelocations: [{ wordIndex: 1, functionAddress: RAM_FUNCTION_ADDRESS }],
-	}, RAM_CODE_FIXTURE_BYTES);
-	const { cpu, memory } = createTestSystemCpu(image, backend);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	const romFunctionOperand = image.symbols.functionAddresses[1] >>> 4;
-	const ramCode = new Uint8Array(4 * INSTRUCTION_BYTES);
-	writeInstruction(ramCode, 0, OpCode.WIDE, 0, romFunctionOperand >>> BASE_BX_BITS, 0, 0);
-	writeInstruction(
-		ramCode,
-		1,
-		OpCode.CLOSURE,
-		0,
-		(romFunctionOperand >>> 6) & 0x3f,
-		romFunctionOperand & 0x3f,
-		romFunctionOperand >>> MAX_BX_BITS,
-	);
-	writeInstruction(ramCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
-	writeInstruction(ramCode, 3, OpCode.RET, 0, 2, 0, 0);
-	writeRamFunction(memory, ramCode, 1);
-	seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
-
-	runGuestToHalt(cpu, 100);
-	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, nativeHeapReference(cpu).gc));
-	assert.equal(cpu.captureClosureBinding(closures[0]).functionAddress, RAM_FUNCTION_ADDRESS);
-	assert.equal(cpu.captureClosureBinding(closures[1]).functionAddress, RAM_FUNCTION_ADDRESS);
-	const closure = closures[1];
-
-	cpu.beginCompletionCall(closure);
-	runGuestToHalt(cpu, 100);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
-
-	const readMappedBusU32LE = memory.readMappedBusU32LE.bind(memory);
-	let instructionReadCount = 0;
-	memory.readMappedBusU32LE = (addr, busSignals, faultAccess): number => {
-		instructionReadCount += 1;
-		return readMappedBusU32LE(addr, busSignals, faultAccess);
-	};
-	cpu.beginCompletionCall(closure);
-	runGuestToHalt(cpu, 100);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
-	assert.equal(instructionReadCount, 0);
-
-	const replacement = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(replacement, 0, OpCode.K0, 0, 0, 0, 0);
-	writeInstruction(replacement, 1, OpCode.RET, 0, 2, 0, 0);
-	memory.writeBytes(RAM_CODE_ADDRESS, replacement);
-
-	cpu.beginCompletionCall(closure);
-	runGuestToHalt(cpu, 100);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
-	assert.equal(instructionReadCount, 0, 'the rewritten instructions come from the live RAM page without decoding the bus address again');
-});
-
-
-for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM closure versions are guest-GC weak and direct entry retains the raw record count (${backend})`, () => {
-	const systemCode = new Uint8Array(4 * INSTRUCTION_BYTES);
-	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
-	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 1);
-	writeInstruction(systemCode, 2, OpCode.JMP, 0, 63, 63, 255);
-	writeInstruction(systemCode, 3, OpCode.HALT, 0, 0, 0);
+test('a published RAM function executes updated code without repeating the record fetch', () => {
+	const systemCode = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(systemCode, 0, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(systemCode, 1, OpCode.K1, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: systemCode, functions: [
-		{ firstWord: 0, wordCount: 3, maxStack: 4 }, { firstWord: 3, wordCount: 1 },
-	], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-	const { cpu, memory } = createTestSystemCpu(image, backend);
+		{ firstWord: 0, wordCount: 1, maxStack: 8 }, { firstWord: 1, wordCount: 1 },
+	] }, RAM_CODE_FIXTURE_BYTES);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
+	reserveThreadFrameReference(cpu, cpu.rootThread, 16);
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RET, 0, 2, 0);
-	writeRamFunction(memory, code, 4);
-	const instantiate = (maxStack: number, issueFixture = false) => {
-		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, maxStack);
-		if (issueFixture) seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
-		const frame = cpu.rootThread.frameAtDepth(0);
-		frame.registers.setInteger(1, RAM_FUNCTION_ADDRESS);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-		cpu.runUntilDepth(0, 2);
-		return frame.registers.get(0);
-	};
-	const retained = instantiate(4, true);
-	cpu.rootThread.frameAtDepth(0).registers.set(2, retained);
-	for (let maxStack = 5; maxStack < 35; ++maxStack) instantiate(maxStack, true);
-	const latest = instantiate(35, true);
-	cpu.rootThread.frameAtDepth(0).top = 3;
-	const countVersions = (): number => {
-		let count = 0;
-		for (const closure of allocatedObjectRecords(cpu)) {
-			if (memory.readRamRecordByte(closure) === ValueTag.Closure
-				&& memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) === RAM_FUNCTION_ADDRESS) ++count;
-		}
-		return count;
-	};
-	const beforeSweep = cpu.captureRuntimeState();
-	assert.equal(countVersions(), 32, 'uncleared weak cache is captured before guest collection');
-	cpu.restoreRuntimeState(beforeSweep);
-	nativeHeapReference(cpu).gc.collect();
-	assert.equal(countVersions(), 2, 'guest GC prunes unreferenced record versions');
-	assert.equal(instantiate(4), retained, 'the first retained version remains canonical after reindex and sweep');
-	assert.equal(instantiate(35), latest, 'the retained tail still matches its original identity');
-	assert.equal(countVersions(), 2, 'not even an unrooted duplicate was allocated');
-	const weak = createReferenceTable(cpu, 1, 0);
-	const metatable = createReferenceTable(cpu, 0, 1);
-	nativeHeapReference(cpu).gc.tables.setStringKey(metatable, nativeHeapReference(cpu).stringPool.intern('__mode'), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
-	nativeHeapReference(cpu).gc.tables.setMetatableAddress(weak, metatable);
-	nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, latest);
-	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('weak_closure'), valueTable(weak));
-	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.tables.getInteger(weak, 1), latest, 'a strong guest root preserves the weak referent identity');
-	assert.equal(instantiate(4), retained, 'overwriting the result drops the last strong reference to the tail');
-	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.tables.getInteger(weak, 1), valueNil(), 'a canonical closure is collectible when reachable only through a weak table');
-	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
-	assert.equal(instantiate(4), retained, 'retiring the moved entry leaves the remaining singleton reusable');
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
-	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
-	const heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()];
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(heap[0] + 16);
-	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, RAM_FUNCTION_ADDRESS);
-	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');
-	const active = cpu.rootThread.currentFrame!;
-	assert.equal(cpu.captureClosureBinding(active.closure).recordUpvalueCount, 3);
-	assert.equal(ClosureRecord.captureCount(cpu.memory, active.closure), 0, 'direct entry has no captured slots');
-	const state = cpu.captureRuntimeState();
-	cpu.restoreRuntimeState(state);
-	assert.equal(cpu.captureClosureBinding(cpu.rootThread.currentFrame!.closure).recordUpvalueCount, 3);
-	assert.equal(ClosureRecord.captureCount(cpu.memory, cpu.rootThread.currentFrame!.closure), 0);
-	cpu.runUntilDepth(1, 100);
+	writeRamFunction(memory, code, 1);
+	const closure = seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
+	assert.equal(cpu.captureClosureBinding(closure).functionAddress, RAM_FUNCTION_ADDRESS);
+	cpu.beginCompletionCall(closure);
+	runGuestToHalt(cpu, 100, 1);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(1)]);
+
+	const readWord = memory.readMappedBusU32LE.bind(memory);
+	let recordReads = 0;
+	memory.readMappedBusU32LE = (address, signals, access) => {
+		if (address >= RAM_FUNCTION_ADDRESS && address < RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_RECORD_SIZE) ++recordReads;
+		return readWord(address, signals, access);
+	};
+	writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
+	memory.writeBytes(RAM_CODE_ADDRESS, code);
+	cpu.beginCompletionCall(closure);
+	runGuestToHalt(cpu, 100, 1);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
+	assert.equal(recordReads, 0, 'RAM code is live, the completed Function record is not re-read');
 });

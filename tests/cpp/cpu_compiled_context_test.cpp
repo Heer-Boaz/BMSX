@@ -108,7 +108,7 @@ void physicalVarargWindow() {
 void hotVarargFrames(int fixed) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 20, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 20, 20, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 20, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
@@ -122,10 +122,13 @@ void hotVarargFrames(int fixed) {
 	writeInstruction(image.text, 24, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 160},
 		{.firstWord = 16, .wordCount = 9, .maxStack = 16, .isVararg = true}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
+		{
+			const auto closure = test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
+			m->cpu.activeThread()->currentFrame->registers.set(20, bmsx::valueClosure(closure));
+		}
 		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frameAtDepth(0)->writeControl(bmsx::FrameField::Top, 1);
 		m->cpu.runUntilDepth(0, 9002);
 	}
@@ -190,7 +193,7 @@ void nativeGenericVarargCallRetiresPhysicalControl() {
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	constexpr u32 callWord = 2u, haltWord = 3u, calleeWord = DECODED_PAGE_WORDS;
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(image.text, callWord, static_cast<u8>(OpCode::CALL), 0, 0, 0);
 	writeInstruction(image.text, haltWord, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, haltWord + 1u, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
@@ -198,13 +201,16 @@ void nativeGenericVarargCallRetiresPhysicalControl() {
 	writeInstruction(image.text, calleeWord + 1u, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16},
 		{.firstWord = calleeWord, .wordCount = 2, .numParams = 1, .maxStack = 8, .isVararg = true}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 
 	CpuMachine generated(image), scalar(image, true);
-	for (auto* m : {&generated, &scalar}) test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
+	for (auto* m : {&generated, &scalar}) {
+		const auto closure = test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
+		m->cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+	}
 	auto& cpu = generated.cpu;
 	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
-	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::CLOSURE)) == RunResult::Yielded,
+	require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::MOV)) == RunResult::Yielded,
 		"the real ROM closure is available before either call");
 	for (auto* machine : {&generated, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->currentFrame;

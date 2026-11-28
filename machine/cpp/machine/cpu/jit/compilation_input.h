@@ -16,7 +16,6 @@ struct DecodedInstruction;
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
-	u32 directCodeFunction = 0u;
 };
 
 struct NativeRejectedFieldProof {

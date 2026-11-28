@@ -68,7 +68,7 @@ try {
 			pc = instruction.pc + INSTRUCTION_BYTES;
 		}
 		assert.ok(ops.includes(OpCode.RFE));
-		for (const op of [OpCode.RET, OpCode.CALL, OpCode.CLOSURE, OpCode.GETSYS, OpCode.GETGL]) assert.ok(!ops.includes(op), `unexpected opcode ${op}`);
+		for (const op of [OpCode.RET, OpCode.CALL, OpCode.GETSYS, OpCode.GETGL]) assert.ok(!ops.includes(op), `unexpected opcode ${op}`);
 		const declarations = built.linked.symbols.metadata.staticScopes.declarations;
 		const bssAddress = (name: string) => {
 			const address = declarations.find(symbol => symbol.name === name)!.address;

@@ -343,7 +343,6 @@ function buildStaticLayoutToken(
 function resolveConstValueRelocation(
 	reloc: Exclude<ProgramConstValueReloc, { kind: 'code_function' }>,
 	functionAddresses: ReadonlyArray<number>,
-	textAddress: number,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
 	dataAddress: number,
 	dataLoadAddress: number,
@@ -355,8 +354,6 @@ function resolveConstValueRelocation(
 	switch (reloc.kind) {
 		case 'function_addr':
 			return integerConstant(functionAddresses[reloc.protoIndex]);
-		case 'text_addr':
-			return integerConstant(textAddress + reloc.offset);
 		case 'data_addr':
 			return integerConstant(dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'data_lma_addr':
@@ -699,7 +696,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	for (const reloc of object.link.constValueRelocs) {
 		if (reloc.kind !== 'code_function') {
 			constants[reloc.constIndex] = resolveConstValueRelocation(reloc, functionAddressByProtoIndex,
-				input.loadAddress + textOffset, data.symbols, input.dataAddress, dataLoadAddress, bss.symbols,
+				data.symbols, input.dataAddress, dataLoadAddress, bss.symbols,
 				input.bssAddress, rodata.symbols, rodataAddress);
 			continue;
 		}

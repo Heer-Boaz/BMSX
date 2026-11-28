@@ -25,8 +25,6 @@ export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 			return 'table dispatch';
 		case OpCode.LEN:
 			return 'Lua object length';
-		case OpCode.CLOSURE:
-			return 'runtime closure allocation';
 		case OpCode.VARARG:
 			return 'vararg dispatch';
 			return 'dynamic string concatenation';

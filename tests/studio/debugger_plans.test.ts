@@ -1,3 +1,6 @@
+import { reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
+import { valueNil } from '../../machine/ts/machine/cpu/value';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -15,8 +18,8 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function controlPlan(
 	events: string[],
@@ -149,27 +152,27 @@ test('completed control plan publishes a binding change after its hook drops the
 });
 
 function completionFixture() {
-	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.RET, 0, 2, 0, 0);
+	writeInstruction(code, 1, OpCode.K1, 0, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(code, 3, OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(code, 4, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: code,
 		functions: [
-			{ firstWord: 0, wordCount: 3 },
-			{ firstWord: 3, wordCount: 2, maxStack: 1 },
-			{ firstWord: 5, wordCount: 1 },
+			{ firstWord: 0, wordCount: 1 },
+			{ firstWord: 1, wordCount: 2, maxStack: 1 },
+			{ firstWord: 3, wordCount: 1 },
 		],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
 	});
-	const { cpu } = createTestSystemCpu(image);
+	const { cpu } = createTestHeapServiceCpu(image);
+	reserveThreadStorageReference(cpu, cpu.rootThread.address, 0, 4, valueNil());
+	cpu.rootThread.bindStack();
+	const closure = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	runGuestToHalt(cpu, 100);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	return { cpu, closure };
 }
 

@@ -39,7 +39,6 @@ import {
 	CPU_CAUSE_CODE_REGISTER_WINDOW,
 	CPU_CAUSE_CODE_REFERENCE_STORE,
 	CPU_CAUSE_CODE_STORAGE_WINDOW,
-	CPU_CAUSE_CODE_FUNCTION_BINDING,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
@@ -62,9 +61,7 @@ import {
 	LUA_FAULT_REASON_UNKNOWN,
 } from '../../spec/blua32/cop0';
 import {
-	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG,
-	CLOSURE_DESTINATION_EXT_MASK,
-	CLOSURE_DESTINATION_EXT_SHIFT, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
+	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, INSTRUCTION_BYTES, MAX_OPERAND_BITS,
 	instructionBranchTarget, instructionBx, instructionFieldExtraHashSlots, instructionLowB, instructionOpcode, instructionSignedBx, signExtend,
 } from '../../spec/blua32/instruction_format';
 import {
@@ -72,7 +69,6 @@ import {
 	BLUA32_CONSTANT_RECORD_SIZE,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
@@ -1139,20 +1135,18 @@ export class CPU implements MappedPageInvalidator {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				}
 			} else if (OPCODE_USES_BX[op] !== 0) {
-				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow
-					| (op === OpCode.CLOSURE ? (wideC & CLOSURE_DESTINATION_EXT_MASK) << CLOSURE_DESTINATION_EXT_SHIFT : 0);
+				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
 				const bx = instructionBx(bodyWord, wideB);
 				switch (op) {
 					case OpCode.KSMI:
 						page.sbx[pageOffset] = instructionSignedBx(bx, width);
 						break;
 					case OpCode.JMP:
+					case OpCode.JAL:
 					case OpCode.JMPIF:
 					case OpCode.JMPIFNOT:
 						page.bx[pageOffset] = instructionBranchTarget(pc, width, bx);
 						break;
-					case OpCode.CLOSURE:
-						page.c[pageOffset] = (wideC << BASE_OPERAND_BC_BITS) | cLow;
 					default:
 						page.bx[pageOffset] = bx;
 						break;
@@ -1224,20 +1218,6 @@ export class CPU implements MappedPageInvalidator {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
 			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
-			return true;
-		}
-		// The binding's source and target share the same published ROM lifetime.
-		// Keep the raw opcode for instrumented execution and dynamic binding.
-		if (op === OpCode.CLOSURE && image.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
-			&& pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE && !image.romFunctions.mappedCode
-			&& (page.c[pageOffset] & CLOSURE_ADDRESS_REGISTER_FLAG) === 0) {
-			const directory = image.romFunctions;
-			const lane = romFunctionVersionLane(directory, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
-			const required = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
-			if (lane >= 0 && directory.versions[lane + RomFunctionLane.UpvalueCount] === 0
-				&& (directory.versions[lane + RomFunctionLane.Flags] & required) === required) {
-				page.dispatchOps[pageOffset] = DecodedDispatchOp.StaticCodeFunction;
-			}
 			return true;
 		}
 		const fusionCandidate = decodedDispatchCanFuse(page.ops[pageOffset]);
@@ -2597,45 +2577,6 @@ export class CPU implements MappedPageInvalidator {
 		this.setRegisterIntegerFast(frame, registers, secondPage.a[secondPageOffset], secondResult);
 	}
 
-	private executeClosure(frame: CallFrame, a: number, bx: number, c: number): void {
-		const registers = frame.registers;
-		const registerAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0;
-		const capacity = registers.capacity();
-		if (a >= capacity || (registerAddress && bx >= capacity)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const functionAddress = registerAddress ? wordOperand(registers.get(bx)) : bx * BLUA32_FUNCTION_ALIGNMENT;
-		if (!this.readFunctionRecordOnBus(
-			this.activeExecutionImage,
-			functionAddress,
-			this.executionBusSignals,
-		)) {
-			this.hardHalt();
-			return;
-		}
-		const record = this.functionRecordLatch;
-		if (record.romBacked && record.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
-			&& (record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) === (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)
-			&& record.recordUpvalueCount === 0) {
-			registers.setEncoded(a, ValueTag.CodeFunction, functionAddress);
-			this.bumpRegisterTop(frame, a);
-			return;
-		}
-		// Exception entry decodes the vector on the same record latch.
-		const { executionDomainId, codeAddress, numParams, maxStack, flags, upvalueTableAddress, recordUpvalueCount, romBacked } = record;
-		const cycles = this.remainingDeviceCycles();
-		const vector = this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_FUNCTION_BINDING,
-			this.currentInstructionPc, valueInteger(a), valueInteger(functionAddress), valueInteger(executionDomainId), valueInteger(codeAddress), 11);
-		if (vector !== null) {
-			const operands = vector.registers;
-			operands.setInteger(4, numParams);
-			operands.setInteger(5, maxStack);
-			operands.setInteger(6, flags);
-			operands.setInteger(7, upvalueTableAddress);
-			operands.setInteger(8, recordUpvalueCount);
-			operands.setInteger(9, +romBacked);
-			operands.setInteger(10, cycles);
-		}
-	}
-
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
 		const registers = frame.registers;
 		const argCount = decodeValueCount(b, Math.max(frame.top - a - 1, 0));
@@ -3026,9 +2967,9 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				graph.enqueue(successorPc, true);
-			} else if (op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
+			} else if (op === OpCode.JMP || op === OpCode.JAL || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
 				graph.enqueue(sourcePage.bx[sourceWord], true);
-				if (op !== OpCode.JMP) graph.enqueue(successorPc, true);
+				if (op === OpCode.JMPIF || op === OpCode.JMPIFNOT) graph.enqueue(successorPc, true);
 			} else if (!compiledBlockEndsBlock(op, sourcePage.b[sourceWord])) {
 				graph.enqueue(successorPc, sourceWord + width >= DECODED_PAGE_WORDS);
 			} else if (compiledBlockHasContinuation(op, sourcePage.b[sourceWord])) graph.enqueue(successorPc, true);
@@ -3117,8 +3058,6 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.SupervisorCall:
 					this.executeSupervisorCall(frame, exit.exitA, exit.exitB); redispatch = true; break;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
-				case CompiledBlockExit.CreateClosure:
-					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
 				case CompiledBlockExit.Call:
 					redispatch = !this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC);
 					break;
@@ -3545,13 +3484,9 @@ export class CPU implements MappedPageInvalidator {
 					}
 					return;
 				}
-				case OpCode.CLOSURE:
-					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]);
-					return;
-				case DecodedDispatchOp.StaticCodeFunction:
-					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					registers.setEncoded(a, ValueTag.CodeFunction, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
-					this.bumpRegisterTop(frame, a);
+				case OpCode.JAL:
+					this.setRegisterIntegerFast(frame, registers, a, frame.pc);
+					frame.pc = page.bx[pageOffset];
 					return;
 				case OpCode.GETUP: {
 					const index = page.b[pageOffset];

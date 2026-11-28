@@ -232,7 +232,8 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 			case OpCode.RET:
 			case OpCode.RFE:
 				break;
-			case OpCode.JMP: {
+			case OpCode.JMP:
+			case OpCode.JAL: {
 				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
 				break;
 			}
@@ -500,7 +501,7 @@ const computeBlockConstantIn = (
 					case OpCode.GETT:
 					case OpCode.GETI:
 					case OpCode.GETFIELD:
-					case OpCode.CLOSURE:
+					case OpCode.JAL:
 					case OpCode.GETUP:
 					case OpCode.LOAD_MEM:
 					case OpCode.LOAD_MEM_D:
@@ -686,7 +687,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.CLOSURE:
+				case OpCode.JAL:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
@@ -1056,7 +1057,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.CLOSURE:
+				case OpCode.JAL:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
@@ -1107,7 +1108,7 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 		return set;
 	}
 	for (let i = 0; i < count; i += 1) {
-		if (instructions[i].op === OpCode.JREG || isSkipInstruction(instructions[i])) {
+		if (instructions[i].op === OpCode.JREG || instructions[i].op === OpCode.JAL || isSkipInstruction(instructions[i])) {
 			// Skip-next semantics depend on adjacency; reordering blocks would break them.
 			return set;
 		}
@@ -1365,6 +1366,9 @@ const applyClosureTransferForInlining = (
 				}
 			}
 			return;
+		case OpCode.JAL:
+			closures.delete(instruction.a);
+			return;
 		case OpCode.MOV: {
 			if (instruction.c !== ValueMoveKind.Copy || closureWrittenRegisters.has(instruction.a)
 				|| closureWrittenRegisters.has(instruction.b)) {
@@ -1379,13 +1383,6 @@ const applyClosureTransferForInlining = (
 			}
 			return;
 		}
-		case OpCode.CLOSURE:
-			if (closureWrittenRegisters.has(instruction.a)) {
-				closures.delete(instruction.a);
-			} else {
-				closures.set(instruction.a, instruction.b);
-			}
-			return;
 		case OpCode.SVC:
 			clearRegisterRange(closures, instruction.a, instruction.b);
 			if (instruction.boundFunctionProto !== undefined && !closureWrittenRegisters.has(instruction.a))
@@ -1849,7 +1846,7 @@ const buildInlineExpansion = (
 				break;
 			}
 			case OpCode.VARARG:
-			case OpCode.CLOSURE:
+			case OpCode.JAL:
 			case OpCode.RET:
 			case OpCode.RFE:
 				return null;
@@ -2010,7 +2007,7 @@ const inlineFunctionCalls = (
 				continue;
 			}
 			// These instructions expose the physical frame or its resumable PC.
-			if (instruction.op === OpCode.CLOSURE
+			if (instruction.op === OpCode.JAL
 				|| instruction.op === OpCode.JREG
 				|| instruction.op === OpCode.VARARG
 				|| instruction.op === OpCode.ARGC
@@ -2159,7 +2156,7 @@ export const optimizeInstructions = (
 		current = cleanupControlFlow(current);
 		// This SSA pipeline does not model address-taken successors yet.
 		// Local control-flow, liveness, constants and register allocation do.
-		if (!current.instructions.some(instruction => instruction.op === OpCode.JREG))
+		if (!current.instructions.some(instruction => instruction.op === OpCode.JREG || instruction.op === OpCode.JAL))
 			current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
 		current = scalarReplacePrivateTables(current, context);

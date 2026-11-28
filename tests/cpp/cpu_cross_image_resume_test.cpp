@@ -154,7 +154,7 @@ struct Images {
 			303, static_cast<i32>(IO_CART_SELECT)};
 		bios.globalNames = {"systemMarker"}; bios.systemGlobalNames = {"systemSlot"};
 		bios.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
-			{.firstWord=DECODED_PAGE_WORDS, .wordCount=6, .numParams=1, .maxStack=2},
+			{.firstWord=DECODED_PAGE_WORDS, .wordCount=6, .numParams=1, .maxStack=2, .codeFunction=true},
 			{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=1},
 			// A second legal function root gives the isolated gate test a real
 			// published RET entry, not an assumed entry in a larger region.
@@ -165,7 +165,7 @@ struct Images {
 			test::Blua32TestImage cart;
 			cart.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
 			writeInstruction(cart.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-			writeInstruction(cart.text, 1, static_cast<u8>(OpCode::CLOSURE), 7, 0, 0);
+			writeInstruction(cart.text, 1, static_cast<u8>(OpCode::LOADK), 7, 0, 4);
 			writeInstruction(cart.text, 2, static_cast<u8>(OpCode::MOV), 4, 7, 0);
 			writeInstruction(cart.text, 3, static_cast<u8>(OpCode::LOADK), 5, 0, 1);
 			writeInstruction(cart.text, 4, static_cast<u8>(OpCode::CALL), 4, 2, 2);
@@ -184,10 +184,10 @@ struct Images {
 			writeInstruction(cart.text, DECODED_PAGE_WORDS + 4, static_cast<u8>(OpCode::STORE_MEM), 1, 0, static_cast<u8>(MemoryAccessKind::Word));
 			writeInstruction(cart.text, DECODED_PAGE_WORDS + 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 			cart.constants = {static_cast<i32>(101u * (slot + 1)), static_cast<i32>(slot ^ 1u),
-				static_cast<i32>(IO_IRQ_ACK), static_cast<i32>(IRQ_VBLANK)};
+				static_cast<i32>(IO_IRQ_ACK), static_cast<i32>(IRQ_VBLANK), Blua32CodeFunctionConstant{system.functionAddresses[1]}};
 			cart.globalNames = {"cartMarker", "cartSystemMarker"};
 			cart.systemGlobalNames = {"systemSlot", "irqSeen"};
-			cart.closureRelocations = {{1, system.functionAddresses[1]}};
+
 			cart.functions = {{.firstWord=0, .wordCount=13, .maxStack=16},
 				{.firstWord=DECODED_PAGE_WORDS, .wordCount=6, .maxStack=4}};
 			cart.irqFunctionIndex = 1; cart.exceptionFunctionIndex = 1;
@@ -212,7 +212,6 @@ struct Machine {
 		test::seedManagedFixture(cpu, addresses);
 		// This probe starts with firmware-prepared operands and measures EXEC and CALL.
 		cpu.replaceExecutionImage(*addresses.resolveDomain(slot));
-		test::seedTestRomClosure(cpu, images.system.functionAddresses[1]);
 		memory.writeMappedU32LE(IO_CART_SELECT, slot);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -227,7 +226,7 @@ struct Machine {
 			if (cpu.readFrameExecutionDomain(0) == static_cast<ExecutionDomainId>(slot)
 				&& cpu.rootThread()->firstFrame->readControl(bmsx::FrameField::Pc) == cartPc(2)) return;
 		}
-		throw std::runtime_error("ordinary EXEC and CLOSURE reach the real cartridge activation");
+		throw std::runtime_error("ordinary EXEC and LOADK reach the real cartridge activation");
 	}
 	void stopBeforeReturn() {
 		stopBeforeCall();

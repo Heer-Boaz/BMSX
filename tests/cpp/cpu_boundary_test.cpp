@@ -63,43 +63,6 @@ struct CpuMachine {
 	}
 };
 
-void capturedClosureRequiresFirmware() {
-	for (const bool scalar : {true, false}) {
-		test::Blua32TestImage image;
-		image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4},
-			{.firstWord = 3, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 0}, {true, 1}}}};
-		// The short grant enters the exception vector but cannot execute it.
-		image.exceptionFunctionIndex = 0;
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-		CpuMachine machine(image);
-		auto& cpu = machine.cpu;
-		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *cpu.rootThread(), 64);
-		auto& parent = *cpu.rootThread()->frameAtDepth(0);
-		require(parent.stackCapacity() == 4 && parent.captureCount() == 0,
-			"capture admission uses the parent frame's reservation and capture count, not its larger Thread backing");
-		parent.registers.set(0, valueInteger(73));
-		parent.registers.set(1, valueInteger(29));
-		parent.registers.set(2, valueInteger(91));
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		if (!scalar) cpu.prepareSystemNativeCode();
-#endif
-		const auto occupied = bmsx::HeapAllocator(cpu.memory()).occupiedBytes();
-		const u32 open = parent.readControl(FrameField::OpenHead), pc = parent.readControl(FrameField::Pc);
-		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected CLOSURE consumes the short grant without running its handler");
-		require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
-			&& cpu.readEpcWord() == pc, "an image without verified allocation firmware traps at the WIDE head");
-		require(parent.registers.get(2) == valueInteger(91), "the rejected CLOSURE does not write its destination");
-		require(parent.readControl(FrameField::OpenHead) == open,
-			"the missing firmware cannot execute an alternative captured allocation path");
-		require(bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == occupied, "capture rejection allocates neither a closure nor captured cells");
-	}
-}
 
 void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 	test::Blua32TestImage image;
@@ -398,7 +361,7 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 		image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 		if (calls) {
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 4, 0);
 			writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 			writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedValueCount(0), 2);
 			writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
@@ -407,7 +370,7 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 			writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 			image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
 				{.firstWord = 5, .wordCount = 3, .maxStack = 2}};
-			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		} else {
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 			writeInstruction(image.text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 0);
@@ -416,7 +379,10 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
 		}
 		CpuMachine machine(image);
-		if (calls) test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		if (calls) {
+			const auto closure = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+			machine.cpu.activeThread()->currentFrame->registers.set(4, bmsx::valueClosure(closure));
+		}
 		const u32 target = machine.rom.textAddress + (calls ? 5u : 0u) * INSTRUCTION_BYTES;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		machine.cpu.setNativeCompilationProfiling(true);
@@ -659,7 +625,7 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		test::Blua32TestImage image;
 		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 4, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 		if (wide) writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(image.text, callBody, static_cast<u8>(OpCode::CALL), 0, 1, 2);
@@ -671,10 +637,13 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		image.functions = {{.firstWord = 0, .wordCount = calleeStart, .maxStack = 8},
 			{.firstWord = calleeStart, .wordCount = 2}, {.firstWord = calleeStart + 2u, .wordCount = 1}};
 		image.exceptionFunctionIndex = 2;
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		CpuMachine native(image), scalar(image);
 		for (auto* machine : {&native, &scalar}) {
-			test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+			{
+				const auto closure = test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+				machine->cpu.activeThread()->currentFrame->registers.set(4, bmsx::valueClosure(closure));
+			}
 		}
 		scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
@@ -747,7 +716,7 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 4, 4, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 6, 0, 0);
@@ -755,7 +724,7 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
-	image.closureRelocations = {{1, recordAddress}};
+
 	for (const bool instrumented : {false, true}) {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
@@ -784,7 +753,10 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 				return readLE32(source.record + offset);
 			});
 		}
-		test::seedTestMappedClosure(cpu, recordAddress);
+		{
+			const auto closure = test::seedTestMappedClosure(cpu, recordAddress);
+			cpu.activeThread()->currentFrame->registers.set(4, bmsx::valueClosure(closure));
+		}
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -838,13 +810,13 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		test::Blua32TestImage image;
 		image.text.resize(6u * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedValueCount(0), 2);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 4}, {.firstWord = 4, .wordCount = 2}};
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES);
 		if (padded) rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
@@ -854,10 +826,13 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		test::seedManagedFixture(cpu, addresses);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		const u32 record = rom.functionAddresses[1];
-		test::seedTestRomClosure(cpu, record);
+		{
+			const auto closure = test::seedTestRomClosure(cpu, record);
+			cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+		}
 		Span<const u8> recordView;
 		require(memory.bindMappedReadView(record, BLUA32_FUNCTION_RECORD_SIZE, MAPPED_BUS_MASTER_CPU, recordView), "compact and padded ROM both admit the complete function record");
-		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
+		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::MOV)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
 			+ 2 * (BASE_CYCLES[static_cast<size_t>(OpCode::RET)] + 1) + BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
 		require(cpu.runUntilDepth(0, cycles) == RunResult::Halted, "compact and padded calls complete");
 		require(cpu.readCompletionValues().size() == 1u && cpu.readCompletionValues().get(0) == valueInteger(1), "compact and padded ROM calls return the same guest value");
@@ -1110,16 +1085,19 @@ void functionReservationIsAdmittedBeforeActivation() {
 		auto image = returnImage();
 		image.text.resize(4 * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 1);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 3},
 			{.firstWord = 3, .wordCount = 1,
 				.numParams = parameters ? MAX_THREAD_VALUE_SLOTS + 1u : 0u,
 				.maxStack = parameters ? 1u : MAX_THREAD_VALUE_SLOTS + 1u}};
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		CpuMachine machine(image);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		{
+			const auto closure = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+			machine.cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(closure));
+		}
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1171,21 +1149,24 @@ void returnRangesSurviveCallerStackGrowth() {
 			test::Blua32TestImage image;
 			image.text.resize(5 * INSTRUCTION_BYTES);
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 2, 2, 0);
 			writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 2, encodeFixedValueCount(0), requested == 0 ? 0 : requested + 1);
 			writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 			writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 5, openReturn ? 0 : produced + 1, 0);
 			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 3},
 				{.firstWord = 4, .wordCount = 1, .maxStack = static_cast<u32>(5 + std::max<int>(produced, 1))}};
-			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 			CpuMachine machine(image);
-			test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+			{
+				const auto closure = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+				machine.cpu.activeThread()->currentFrame->registers.set(2, bmsx::valueClosure(closure));
+			}
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 			auto table = bmsx::test::allocateTableReference(cpu, 0, 0);
 			cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(91));
 			cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(table.address()));
-			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
+			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
 			CallFrame& callee = *cpu.activeThread()->frameAtDepth(1);
 			const Value samples[] = {valueFloatBits(0x80000000u), valueNil(), valueBool(false), valueString(bmsx::test::StringPoolReference(cpu).intern("result")), valueTable(table.address())};
 			for (int i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
@@ -1717,7 +1698,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		test::Blua32TestImage image;
 		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 3, 3, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 3, encodeFixedValueCount(0), 2);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 2, 0, 0);
 		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 3, 2, 0);
@@ -1728,9 +1709,12 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 4},
 			{.firstWord = 5, .wordCount = 2}, {.firstWord = 7, .wordCount = 2}};
 		image.irqFunctionIndex = image.exceptionFunctionIndex = 2;
-		image.closureRelocations = {{1, edgeKind == 1 ? mappedRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+
 		CpuMachine machine(image);
-		if (edgeKind != 1) test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		if (edgeKind != 1) {
+			const auto closure = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+			machine.cpu.activeThread()->currentFrame->registers.set(3, bmsx::valueClosure(closure));
+		}
 		auto& cpu = machine.cpu;
 		const u32 calleePc = machine.rom.textAddress + 5 * INSTRUCTION_BYTES;
 		struct Edge { IrqController& irq; const u8* record; bool armed = false; int count = 0; }
@@ -1748,7 +1732,10 @@ void closureCallAndReturnRespectFrameBoundaries() {
 				});
 			}
 		}
-		if (edgeKind == 1) test::seedTestMappedClosure(cpu, mappedRecord);
+		if (edgeKind == 1) {
+			const auto closure = test::seedTestMappedClosure(cpu, mappedRecord);
+			cpu.activeThread()->currentFrame->registers.set(3, bmsx::valueClosure(closure));
+		}
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueInteger(99));
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
@@ -1919,19 +1906,18 @@ void zeroStackReuse() {
 	test::Blua32TestImage image;
 	image.text.resize(10 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	writeInstruction(image.text, 9, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 7}, {.firstWord = 7, .wordCount = 2}, {.firstWord = 9, .wordCount = 1, .maxStack = 0}};
-	image.closureRelocations = {{1, 0x180}, {4, 0x1a0}};
+	image.functions = {{.firstWord = 0, .wordCount = 7}, {.firstWord = 7, .wordCount = 2, .codeFunction = true}, {.firstWord = 9, .wordCount = 1, .maxStack = 0, .codeFunction = true}};
+	image.constants = {Blua32CodeFunctionConstant{0x180u}, Blua32CodeFunctionConstant{0x1a0u}};
 	CpuMachine machine(image);
-	test::seedTestRomClosure(machine.cpu, 0x180);
 	test::seedTestRomClosure(machine.cpu, 0x1a0);
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "zero-stack call finishes");
@@ -2079,7 +2065,7 @@ int main() {
 		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
 		stringBytePositions(); loadKrIndices(); invalidImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
-		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); capturedClosureRequiresFirmware();
+		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects();
 		reservedEncodingTrapsBeforeEffects(); functionReservationIsAdmittedBeforeActivation();
 		zeroLoadNil(); successorFetchOrdering(); reservedMoveKindIgnoresUnusedRegisterOperands(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();

@@ -1,35 +1,6 @@
 // Shared call/return datapaths, inlined by the interpreter and the native
 // dispatcher without duplicating their semantic owner.
 
-inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, int flags) {
-	const bool addressInRegister = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0;
-	if (static_cast<size_t>(destination) >= frame.registers.size()
-		|| (addressInRegister && operand >= frame.registers.size())) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 functionAddress = addressInRegister
-		? wordOperand(frame.registers.get(operand)) : operand * BLUA32_FUNCTION_ALIGNMENT;
-	if (!readFunctionRecordOnBus(*m_activeExecutionImage, functionAddress, m_executionBusSignals)) {
-		hardHalt();
-		return;
-	}
-	const auto& record = m_functionRecordLatch;
-	const auto domain = record.image->executionDomainId;
-	if (record.romBacked && domain == SYSTEM_EXECUTION_DOMAIN_ID
-		&& isStaticCodeFunction(record.flags, record.upvalueCount)) {
-		frame.registers.set(destination, valueFromTag(ValueTag::CodeFunction, functionAddress));
-		frame.extendTop(destination + 1);
-		return;
-	}
-	const std::array arguments{
-		valueInteger(destination), valueInteger(static_cast<i32>(record.address)), valueInteger(domain),
-		valueInteger(static_cast<i32>(record.codeAddress)), valueInteger(static_cast<i32>(record.numParams)),
-		valueInteger(static_cast<i32>(record.maxStack)), valueInteger(static_cast<i32>(record.flags)),
-		valueInteger(static_cast<i32>(record.upvalueTableAddress)), valueInteger(static_cast<i32>(record.upvalueCount)),
-		valueInteger(record.romBacked), valueInteger(remainingDeviceCycles()),
-	};
-	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_FUNCTION_BINDING,
-		m_currentInstructionPc, arguments);
-}
-
 inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requested) {
 	const int argCount = supplied < 0 ? std::max(frame.readWindow(FrameField::Top) - a - 1, 0) : supplied;
 	if (static_cast<size_t>(a) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);

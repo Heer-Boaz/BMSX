@@ -77,6 +77,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 		switch (instruction.op) {
 			case OpCode.JREG:
 				updateMax(instruction.a);
+				if (instruction.c === 1) updateMax(instruction.b);
 				break;
 			case OpCode.KNIL:
 			case OpCode.KFALSE:
@@ -87,7 +88,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.LOADK:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
-			case OpCode.CLOSURE:
+			case OpCode.JAL:
 			case OpCode.GETUP:
 			case OpCode.ARGC:
 			case OpCode.MFC0:
@@ -224,7 +225,6 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.LOADKR:
 		case OpCode.LOADNIL:
 		case OpCode.NOT:
-		case OpCode.CLOSURE:
 		case OpCode.GETUP:
 		case OpCode.ARGC:
 		case OpCode.VARARG:

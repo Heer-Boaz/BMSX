@@ -24,6 +24,7 @@ import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bm
 import { CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
+import type { ProgramConstValueReloc } from '../../../toolchain/ts/lua/compiler/program_object';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -42,7 +43,7 @@ type ReturnEdit = 'none' | 'bank' | 'unwind' | 'window' | 'close';
 
 function assemble(status: number, payload: Value, source: number, edit: ReturnEdit) {
 	const constants: number[] = [], relocations: { slot: number; fn: number; at: number }[] = [];
-	const closureRelocations: { wordIndex: number; functionIndex: number }[] = [];
+	const constValueRelocs: ProgramConstValueReloc[] = [];
 	const instructions: [OpCode, number, number, number][] = [];
 	const functions: { firstWord: number; wordCount: number; maxStack: number }[] = [];
 	const capacity = Math.max(8, source + 1);
@@ -150,15 +151,16 @@ function assemble(status: number, payload: Value, source: number, edit: ReturnEd
 	if (redirect || unwind) body(capacity, () => {
 		if (unwind) {
 			instructions.push([OpCode.WIDE, 0, 0, 0]);
-			closureRelocations.push({ wordIndex: instructions.length, functionIndex: 1 });
-			instructions.push([OpCode.CLOSURE, capacity - 1, 0, 0], [OpCode.CALL, capacity - 1, 1, 1]);
+			constValueRelocs.push({ constIndex: constants.length, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } });
+			constant(capacity - 1, 0);
+			instructions.push([OpCode.CALL, capacity - 1, 1, 1]);
 		} else instructions.push([OpCode.K0, 0, 0, 0]); // Not this first PC.
 		instructions.push([OpCode.RET, 0, 2, 0]);
 	});
 
 	const text = new Uint8Array(instructions.length * word);
 	for (const [index, instruction] of instructions.entries()) writeInstruction(text, index, ...instruction);
-	const { image, romBytes: rom } = linkRawTestSystemBlua32({ text, functions, closureRelocations, constants: constants.map(integerConstant),
+	const { image, romBytes: rom } = linkRawTestSystemBlua32({ text, functions, constValueRelocs, constants: constants.map(integerConstant),
 		verifiedControlFlow: true, irqFunctionIndex: 3, exceptionFunctionIndex: 2 });
 	assert.equal(image.header.globalNameCount, 0);
 	assert.equal(image.header.systemGlobalNameCount, 0);
@@ -169,10 +171,6 @@ function assemble(status: number, payload: Value, source: number, edit: ReturnEd
 	// The independently authored System IRQ is a fixed-bank code function.
 	const vector = image.functions[3];
 	writeLE32(rom, vector.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, vector.flags | BLUA32_FUNCTION_CODE);
-	if (unwind) {
-		const child = image.functions[1];
-		writeLE32(rom, child.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, child.flags | BLUA32_FUNCTION_CODE);
-	}
 	return { rom, functions: image.functions };
 }
 
@@ -246,7 +244,7 @@ for (const { name, status, source, payload, edit } of [
 	for (let i = 0; i < 256 && cpu.activeThread.address !== a; ++i) assert.equal(grant(runtime), RunResult.Yielded);
 	assert.equal(cpu.activeThread.address, a);
 	if (unwind) {
-		grant(runtime); grant(runtime); // Static CLOSURE + ordinary CALL.
+		grant(runtime); grant(runtime); // Linked CodeFunction load + ordinary CALL.
 		assert.equal(cpu.getFrameDepth(), 2);
 	}
 	grant(runtime); grant(runtime); // LOADK + STATUS, not SVC yet.

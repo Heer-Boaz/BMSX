@@ -1,3 +1,4 @@
+import { integerConstant } from '../../toolchain/ts/lua/number';
 import { valueBool, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -172,15 +173,15 @@ test('inlining can reuse a future capture slot before its closure is opened', ()
 		{ op: OpCode.RET, a: 0, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const callerInstructions: Instruction[] = [
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.LOADK, a: 0, b: 0, c: 0, format: 'ABx', rkMask: 0, target: null },
 		{ op: OpCode.CALL, a: 0, b: 1, c: 2, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
 		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.SVC, a: 4, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null, boundFunctionProto: 1 },
 		{ op: OpCode.RET, a: 4, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const context: OptimizationContext = {
 		currentFunctionId: 'caller',
-		constPool: [],
+		constPool: [integerConstant(0)],
 		constIndex: () => 0,
 		getClosureUpvalues: protoIndex => protoIndex === 1 ? [{ inStack: true, index: 3 }] : [],
 		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
@@ -191,7 +192,7 @@ test('inlining can reuse a future capture slot before its closure is opened', ()
 		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
 		getProtoLocalSlots: () => [],
 		getProtoOuterBindings: () => [],
-		relocatedConstIndices: new Set<number>(),
+		relocatedConstIndices: new Set([0]),
 		closureWrittenRegisters: new Set<number>(),
 	};
 	const optimized = optimizeInstructions(

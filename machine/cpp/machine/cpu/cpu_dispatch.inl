@@ -491,10 +491,10 @@ DISPATCH_LABEL(JMPIFNOT) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(CLOSURE) {
-	PUBLISH_SCALAR_FRONTIER();
-	executeClosure(FRAME, decoded->a, decoded->bx(), decoded->c);
-	DISPATCH_CONTINUE();
+DISPATCH_LABEL(JAL) {
+	SET_REGISTER_FAST(decoded->a, valueInteger(toSignedWord(nextPc)));
+	SET_NEXT_PC(decoded->bx());
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETUP) {

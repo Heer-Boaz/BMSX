@@ -22,9 +22,8 @@ export function linkBlua32ResetCode(
 ): { valueSlots: number; frames: number } {
 	if ((image.header.flags & BLUA32_IMAGE_MAPPED_CODE_FLAG) !== 0)
 		throw new Error('A direct System vector must execute immutable System ROM.');
-	const codeTargets = new Set<number>();
 	const vectors = [reset, irq, exception];
-	const boundary = { reset, exceptionVectors: new Set([irq, exception]), interruptible: true, codeTargets };
+	const boundary = { reset, exceptionVectors: new Set([irq, exception]), interruptible: true };
 	let valueSlots = 0, frames = 0;
 	// Ordinary execution can be interrupted by IRQ and then NMI. Reserve
 	// complete disjoint contexts, even at the deepest ordinary boot call.
@@ -36,17 +35,16 @@ export function linkBlua32ResetCode(
 	if (frames > CPU_FIXED_FRAME_COUNT || valueSlots > CPU_FIXED_VALUE_COUNT)
 		throw new Error(`Direct System vectors require ${frames} frames and ${valueSlots} Values, beyond the fixed CPU bank.`);
 	// The authored supervisor IRQ is also a standalone entry after reset.
-	codeTargets.add(irq);
 	for (const vector of detached) {
 		if (vector === undefined) continue;
 		const size = deriveBlua32FixedStack(image, [vector], {
-			exceptionVectors: new Set([vector]), interruptible: false, codeTargets,
+			exceptionVectors: new Set([vector]), interruptible: false,
 		});
 		if (size.frames > CPU_FIXED_FRAME_COUNT || size.valueSlots > CPU_FIXED_VALUE_COUNT)
 			throw new Error(`Detached vector 0x${image.functions[vector].address.toString(16)} requires ${size.frames} frames and ${size.valueSlots} Values, beyond the fixed CPU bank.`);
 		valueSlots = Math.max(valueSlots, size.valueSlots);
 		frames = Math.max(frames, size.frames);
 	}
-	bindBlua32CodeFunctions(image, codeTargets);
+	bindBlua32CodeFunctions(image, [irq]);
 	return { frames, valueSlots };
 }

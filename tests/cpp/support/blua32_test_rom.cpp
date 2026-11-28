@@ -118,31 +118,6 @@ auto encodeImage(
 		functionAddresses[index] = functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE;
 	}
 
-	std::vector<u8> text = source.text;
-	std::span<u8> textBytes(text);
-	for (const Blua32TestClosureRelocation& relocation : source.closureRelocations) {
-		const u32 word = readInstructionWord(textBytes, static_cast<int>(relocation.wordIndex));
-		const u32 wideWord = readInstructionWord(textBytes, static_cast<int>(relocation.wordIndex - 1u));
-		const u32 functionOperand = relocation.functionAddress >> 4u;
-		writeInstruction(
-			textBytes,
-			static_cast<int>(relocation.wordIndex - 1u),
-			static_cast<u8>(OpCode::WIDE),
-			static_cast<u8>((wideWord >> 12u) & 0x3fu),
-			static_cast<u8>(functionOperand >> BASE_BX_BITS),
-			static_cast<u8>(wideWord & 0x3fu)
-		);
-		writeInstruction(
-			textBytes,
-			static_cast<int>(relocation.wordIndex),
-			static_cast<u8>(OpCode::CLOSURE),
-			static_cast<u8>((word >> 12u) & 0x3fu),
-			static_cast<u8>((functionOperand >> 6u) & 0x3fu),
-			static_cast<u8>(functionOperand & 0x3fu),
-			static_cast<u8>(functionOperand >> MAX_BX_BITS)
-		);
-	}
-
 	std::vector<u8> bytes(imageByteCount);
 	writeLE32(bytes.data() + BLUA32_IMAGE_MAGIC_OFFSET, BLUA32_IMAGE_MAGIC);
 	writeLE32(bytes.data() + BLUA32_IMAGE_BYTE_COUNT_OFFSET, imageByteCount);
@@ -197,7 +172,7 @@ auto encodeImage(
 	writeLE32(bytes.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, textAddress);
 	writeLE32(
 		bytes.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
-		static_cast<u32>(text.size())
+		static_cast<u32>(source.text.size())
 	);
 
 	u32 upvalueIndex = 0;
@@ -299,7 +274,7 @@ auto encodeImage(
 		std::copy(value.begin(), value.end(), bytes.begin() + record + BLUA32_STRING_RECORD_HEADER_SIZE);
 		writeLE32(bucket, imageAddress + record);
 	}
-	std::copy(text.begin(), text.end(), bytes.begin() + textOffset);
+	std::copy(source.text.begin(), source.text.end(), bytes.begin() + textOffset);
 	return bytes;
 }
 

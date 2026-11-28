@@ -174,44 +174,6 @@ test('LOADKR converts its Number index to U32 and faults outside the constant po
 	}
 });
 
-test('captured CLOSURE without verified firmware traps before allocating or opening any capture', () => {
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
-		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
-		writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
-		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-		const image = linkRawTestSystemBlua32({
-			text, functions: [
-				{ firstWord: 0, wordCount: 3, maxStack: 4 },
-				{ firstWord: 3, wordCount: 1, staticClosure: false, upvalueDescs: [
-					{ inStack: true, index: 0 }, { inStack: true, index: 1 },
-				] },
-			],
-			// The exception route reuses the existing root closure. Its first
-			// instruction cannot execute after the deliberately short grant.
-			exceptionFunctionIndex: 0,
-			closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
-		}, RAM_CODE_FIXTURE_BYTES);
-		const { cpu } = createTestSystemCpu(image, backend);
-		resizeThreadStackReference(cpu, cpu.rootThread, 64);
-		const parent = cpu.rootThread.frameAtDepth(0);
-		assert.equal(parent.stackCapacity, 4);
-		assert.equal(parent.captureCount, 0);
-		parent.registers.setInteger(0, 73);
-		parent.registers.setInteger(1, 29);
-		parent.registers.setInteger(2, 91);
-		const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), open = parent.openUpvalueHead, pc = parent.pc;
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		assert.equal(cpu.readEpcWord(), pc, 'the WIDE head is the faulting instruction');
-		assert.equal(parent.registers.get(2), valueInteger(91), 'the failed CLOSURE leaves its destination untouched');
-		assert.equal(parent.openUpvalueHead, open, 'neither valid descriptor opened a capture without firmware');
-		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied, 'absent firmware never falls back to native allocation');
-	}
-});
-
 test('BOR accepts exact signed Integers and never truncates a Float as a word operand', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.BOR, 0, 1, 2);
@@ -272,24 +234,21 @@ test('WIDE signed immediates retain their complete range independently of instru
 test('return ranges preserve shifted source slots when growing the caller stack', () => {
 	for (const instrumented of [false, true]) for (const openReturn of [false, true]) {
 		for (const produced of [0, 1, 3, 61]) for (const requested of [0, 1, 4, 48]) {
-			const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
-			writeInstruction(text, 2, OpCode.CALL, 2, 1, requested === 0 ? 0 : requested + 1);
-			writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-			writeInstruction(text, 4, OpCode.RET, 5, openReturn ? 0 : produced + 1, 0);
+			const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+			writeInstruction(text, 0, OpCode.CALL, 2, 1, requested === 0 ? 0 : requested + 1);
+			writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+			writeInstruction(text, 2, OpCode.RET, 5, openReturn ? 0 : produced + 1, 0);
 			const image = linkRawTestSystemBlua32({ text,
-				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
-					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
-				closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+				functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 },
+					{ firstWord: 2, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
 			}, RAM_CODE_FIXTURE_BYTES);
 			const { cpu } = createTestSystemCpu(image);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(2, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = createReferenceTable(cpu, 0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 91);
 			cpu.rootThread.frameAtDepth(0).registers.setTable(1, table);
-			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const callee = cpu.rootThread.frameAtDepth(1);
 			const samples: Value[] = [valueFloat(-0), valueNil(), valueBool(false), valueString(nativeHeapReference(cpu).stringPool.intern('result')), valueTable(table)];
@@ -575,7 +534,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 3, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 3, 3, 0);
 		writeInstruction(text, 2, OpCode.CALL, 3, 1, 2);
 		writeInstruction(text, 3, OpCode.K1, 2, 0, 0);
 		writeInstruction(text, 4, OpCode.RET, 3, 2, 0);
@@ -586,12 +545,12 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 4 },
 				{ firstWord: 5, wordCount: 2 }, { firstWord: 7, wordCount: 2 }],
-			closureRelocations: [edgeKind === 1 ? { wordIndex: 1, functionAddress: mappedRecord } : { wordIndex: 1, functionIndex: 1 }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
+			irqFunctionIndex: 2, exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
 		const record = image.symbols.functionAddresses[1];
-		if (edgeKind !== 1) seedTestRomClosure(cpu, record);
+		if (edgeKind !== 1) cpu.rootThread.frameAtDepth(0).registers.setClosure(3, seedTestRomClosure(cpu, record));
 		const calleePc = image.image.functions[1].codeAddress;
 		let edges = 0, armed = false;
 		if (edgeKind === 1) {
@@ -602,7 +561,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 					return readLE32(image.romBytes, record + offset);
 				});
 			}
-			seedTestMappedStaticClosure(cpu, mappedRecord);
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(3, seedTestMappedStaticClosure(cpu, mappedRecord));
 		}
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 99);
@@ -748,29 +707,27 @@ test('all scalar memory instructions decode reserved kinds into an architectural
 test('zero-maxStack calls produce true zero results and only requested padding is nil', () => {
 	const text = new Uint8Array(10 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.CALL, 0, 1, 0);
 	writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.LOADK, 0, 0, 1);
 	writeInstruction(text, 5, OpCode.CALL, 0, 1, 2);
 	writeInstruction(text, 6, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 7, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 8, OpCode.RET, 0, 0, 0);
 	writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
 	const image = linkRawTestSystemBlua32({
-		text,
+		text, verifiedControlFlow: true, constants: [integerConstant(0), integerConstant(0)],
 		functions: [{ firstWord: 0, wordCount: 7 }, { firstWord: 7, wordCount: 2 }, { firstWord: 9, wordCount: 1, maxStack: 0 }],
-		closureRelocations: [{ wordIndex: 1, functionAddress: 0x180 }, { wordIndex: 4, functionAddress: 0x1a0 }],
+		constValueRelocs: [{ constIndex: 0, kind: 'code_function', target: { kind: 'proto', protoIndex: 1 } }, { constIndex: 1, kind: 'code_function', target: { kind: 'proto', protoIndex: 2 } }],
 	}, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestSystemCpu(image);
-	seedTestRomClosure(cpu, 0x180);
-	seedTestRomClosure(cpu, 0x1a0);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
 	cpu.readCompletionValues(results);
 	assert.deepEqual(results, [valueNil()]);
 	cpu.rootThread.stackRegisters.setInteger(0, 91);
-	cpu.beginCompletionCallInExecutionDomain(-1, 0x1a0);
+	cpu.beginCompletionCallInExecutionDomain(-1, image.symbols.functionAddresses[2]);
 	assert.equal(cpu.readFrameRegister(0, 0), valueInteger(91), 'scratch storage is not cleared at activation');
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	cpu.readCompletionValues(results);

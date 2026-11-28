@@ -23,7 +23,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		const record = DYNAMIC_RAM_BASE + recordOffset;
 		const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 0, 0, 0);
 		writeInstruction(text, 2, OpCode.MOV, 4, 0, 0);
 		writeInstruction(text, 3, OpCode.LOADK, 5, 0, 0);
 		writeInstruction(text, 4, OpCode.LOADK, 6, 0, 1);
@@ -36,13 +36,13 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS, wordCount: 3, numParams: 2, maxStack: 8 },
-		], constants: [integerConstant(3), integerConstant(4)], closureRelocations: [{ wordIndex: 1, functionAddress: record }] }, RAM_CODE_FIXTURE_BYTES);
+		], constants: [integerConstant(3), integerConstant(4)] }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 		// Supplied fixed arguments already occupy the callee window: no placement surcharge.
 		const callEntryCycles = BASE_CYCLES[OpCode.MOV] + 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL];
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[1], image.symbols.functionAddresses[1] + BLUA32_FUNCTION_RECORD_SIZE));
-			seedTestMappedStaticClosure(cpu, record);
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestMappedStaticClosure(cpu, record));
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -75,9 +75,9 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			const capacity = cpu.rootThread.stackRegisters.capacity();
 			// Reuse a reclaimed RAM record, like the BIOS loader arena does.
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
-			seedTestMappedStaticClosure(cpu, record);
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestMappedStaticClosure(cpu, record));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + callEntryCycles), RunResult.Yielded);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'a recycled prototype supplies its new stack extent');
 			const closure = cpu.rootThread.frameAtDepth(0).registers.getPayload(0);
 			const state = cpu.captureRuntimeState();
@@ -97,9 +97,9 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			registers.setNil(0); registers.setNil(4);
 			nativeHeapReference(cpu).gc.collect();
 			memory.writeBytes(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, word);
-			seedTestMappedStaticClosure(cpu, record);
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestMappedStaticClosure(cpu, record));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + callEntryCycles), RunResult.Yielded);
 			assert.equal(cpu.readBadAddressWord(), 0, 'CALL does not fetch the next instruction without a grant');
 			cpu.runUntilDepth(0, 1);
 			assert.equal(cpu.readBadAddressWord(), image.image.functions[1].codeAddress + 1);
@@ -112,7 +112,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 test('CALL shares supplied argument slots without clearing them', () => {
 	const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 4, 4, 0);
 	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
 	writeInstruction(text, 3, OpCode.CALL, 7, 2, 2);
 	writeInstruction(text, 4, OpCode.MOV, 3, 7, 0);
@@ -122,10 +122,10 @@ test('CALL shares supplied argument slots without clearing them', () => {
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 },
 		{ firstWord: 6, wordCount: 2, numParams: 1, maxStack: 8 },
-	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
+	] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu } of machines) {
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(4, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -170,10 +170,10 @@ for (const { numParams, maxStack, argCount } of [
 	test(`call initialization preserves raw values and declared extents: parameters ${numParams}, stack ${maxStack}, arguments ${argCount}`, () => {
 		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 0, 6, 0);
 		writeInstruction(text, 2, OpCode.CALL, 0, 1, 0);
 		writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 4, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.MOV, 0, 7, 0);
 		writeInstruction(text, 5, OpCode.CALL, 0, argCount + 1, 0);
 		writeInstruction(text, 6, OpCode.JMP, 0, 63, 62, 255);
 		writeInstruction(text, 7, OpCode.RET, numParams, 0, 0);
@@ -182,14 +182,12 @@ for (const { numParams, maxStack, argCount } of [
 			{ firstWord: 0, wordCount: 7, maxStack: 8 },
 			{ firstWord: 7, wordCount: 1, numParams, maxStack },
 			{ firstWord: 8, wordCount: 1, maxStack: 32 },
-		], closureRelocations: [
-			{ wordIndex: 1, functionIndex: 2 },
-			{ wordIndex: 4, functionIndex: 1 },
 		] }, RAM_CODE_FIXTURE_BYTES);
 		const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 		for (const { cpu } of machines) {
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+			const frame = cpu.rootThread.frameAtDepth(0);
+			frame.registers.setClosure(6, seedTestRomClosure(cpu, image.symbols.functionAddresses[2]));
+			frame.registers.setClosure(7, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 		}
 		// The first guest call retains backing storage before the raw function
 		// record with parameters beyond maxStack is ever entered.
@@ -255,7 +253,7 @@ for (const { numParams, maxStack, argCount } of [
 test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 4, 4, 0);
 	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
 	writeInstruction(text, 3, OpCode.CALL, 7, 4, 2);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 61, 255);
@@ -264,10 +262,10 @@ test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 5, maxStack: 8 },
 		{ firstWord: 5, wordCount: 2, numParams: 1, maxStack: 4, isVararg: true },
-	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
+	] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu } of machines) {
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(4, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -311,7 +309,7 @@ test('RET admits only the source values the receiver actually reads', () => {
 	for (const selected of [1, 2]) {
 		const text = new Uint8Array(7 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 0, 0, 0);
 		writeInstruction(text, 2, OpCode.CALL, 0, 1, selected + 1);
 		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
 		writeInstruction(text, 4, OpCode.K1, 0, 0, 0);
@@ -319,11 +317,11 @@ test('RET admits only the source values the receiver actually reads', () => {
 		writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2, maxStack: 1 }, { firstWord: 6, wordCount: 1 },
-		], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
+		], exceptionFunctionIndex: 2 });
 		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 			const { cpu } = createTestHeapServiceCpu(image, backend);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			const callCycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL];
+			cpu.rootThread.frameAtDepth(0).registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
+			const callCycles = BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.CALL];
 			assert.equal(cpu.runUntilDepth(0, callCycles), RunResult.Yielded);
 			const caller = cpu.rootThread.frameAtDepth(0), callee = cpu.rootThread.frameAtDepth(1);
 			const before = caller.registers.get(0);
@@ -344,32 +342,26 @@ test('RET admits only the source values the receiver actually reads', () => {
 	}
 });
 
-test('function records that exceed the physical stack or capture capacity fault before placement', () => {
-	for (const captureCount of [false, true]) {
-		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CALL, 0, 1, 1);
-		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [
-			{ firstWord: 0, wordCount: 3 }, { firstWord: 4, wordCount: 1 }, { firstWord: 3, wordCount: 1 },
-		], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
-		const field = captureCount ? BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET : BLUA32_FUNCTION_MAX_STACK_OFFSET;
-		writeLE32(image.romBytes, image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE + field, 0xffffffff);
-		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-			const { cpu } = createTestHeapServiceCpu(image, backend);
-			if (!captureCount) seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			if (!captureCount) assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			const caller = cpu.rootThread.frameAtDepth(0);
-			const value = caller.registers.get(0);
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + (captureCount ? 0 : 2 * INSTRUCTION_BYTES));
-			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[captureCount ? OpCode.CLOSURE : OpCode.CALL]);
-			assert.equal(caller.registers.get(0), value);
-			assert.equal(caller.stackCapacity, 1);
-		}
+test('CALL rejects a Function whose value extent exceeds physical capacity before placing arguments', () => {
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CALL, 0, 1, 1);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 1 }, { firstWord: 2, wordCount: 1 }, { firstWord: 1, wordCount: 1 },
+	], exceptionFunctionIndex: 2 });
+	writeLE32(image.romBytes, image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE + BLUA32_FUNCTION_MAX_STACK_OFFSET, 0xffffffff);
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const { cpu } = createTestHeapServiceCpu(image, backend);
+		const caller = cpu.rootThread.frameAtDepth(0);
+		caller.registers.setClosure(0, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
+		const value = caller.registers.get(0);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL]);
+		assert.equal(caller.registers.get(0), value);
+		assert.equal(caller.stackCapacity, 1);
 	}
 });
 
@@ -378,7 +370,7 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	const calleeStart = callBody + 3;
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 4, 4, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
 	if (wide) writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, callBody, OpCode.CALL, 0, 1, 2);
@@ -389,11 +381,10 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	writeInstruction(text, calleeStart + 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: calleeStart, maxStack: 8 }, { firstWord: calleeStart, wordCount: 2 }, { firstWord: calleeStart + 2, wordCount: 1 },
-	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }, RAM_CODE_FIXTURE_BYTES);
+	], exceptionFunctionIndex: 2 }, RAM_CODE_FIXTURE_BYTES);
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	seedTestRomClosure(js, image.symbols.functionAddresses[1]);
-	seedTestRomClosure(ref, image.symbols.functionAddresses[1]);
+	for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setClosure(4, seedTestRomClosure(cpu, image.symbols.functionAddresses[1]));
 	assert.equal(runCpuParity(js, ref, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
@@ -421,7 +412,7 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 	const recordAddress = 0x08005000;
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 4, 4, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
 	writeInstruction(text, 3, OpCode.CALL, 0, 1, 2);
 	writeInstruction(text, 4, OpCode.MOV, 6, 0, 0);
@@ -430,7 +421,7 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 	writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 2 },
-	], closureRelocations: [{ wordIndex: 1, functionAddress: recordAddress }] }, RAM_CODE_FIXTURE_BYTES);
+	] }, RAM_CODE_FIXTURE_BYTES);
 	const states = [];
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
@@ -452,7 +443,7 @@ for (const editReturn of [false, true]) test(`CALL keeps its bound record when t
 				return readLE32(image.romBytes, record + offset);
 			});
 		}
-		seedTestMappedStaticClosure(cpu, recordAddress);
+		cpu.rootThread.frameAtDepth(0).registers.setClosure(4, seedTestMappedStaticClosure(cpu, recordAddress));
 		assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.terminal.exit, CompiledBlockExit.Call);

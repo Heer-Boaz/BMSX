@@ -4,7 +4,6 @@ import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, DYNAMIC_RAM_BASE, RAM_BAS
 import { type OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import { type ProgramModule } from '../../toolchain/ts/lua/compiler/passes/module_contract';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { bindBlua32CodeFunctions } from '../../toolchain/ts/rompack/blua32_reset_code';
 import { linkTestSystemBlua32 } from './blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { compileTestSystemWithHeap } from './heap_service_system';
@@ -37,12 +36,11 @@ export function linkFirmwareProbe(
 	], { entrySource, optLevel, programDomain: 'system', resetModule: resetPath, exceptionModule: vectorPath });
 	const linked = linkTestSystemBlua32(compiled);
 	const index = linked.symbols.functionAddresses.indexOf(linked.vectors.exceptionFunctionAddress);
-	const codeTargets = new Set<number>();
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index], {
-		exceptionVectors: new Set([index]), interruptible: false, codeTargets,
+		exceptionVectors: new Set([index]), interruptible: false,
 	});
 	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT);
-	bindBlua32CodeFunctions(linked.image, codeTargets);
+	bindBlua32CodeFunctions(linked.image);
 	linked.romBytes.set(linked.image.bytes, linked.image.address);
 	return linked;
 }

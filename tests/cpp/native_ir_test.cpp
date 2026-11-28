@@ -1079,7 +1079,7 @@ void registerUses() {
 	instructions[2] = NativeInstruction(NativeMove{8, 10, ValueMoveKind::Copy});
 	instructions[4] = NativeInstruction(NativeClearSlots{10, 2});
 	instructions[5] = NativeInstruction(NativeMemoryAccess{15, 16, 12u, MemoryAccessKind::Word, NativeMemoryMode::StoreWords, 3});
-	instructions[6] = NativeInstruction(NativeClosure{{65537u, 1, CLOSURE_ADDRESS_REGISTER_FLAG}});
+	instructions[6] = NativeInstruction(NativeJump{0x240u, 1});
 	instructions[63] = NativeInstruction(NativeLiteral{10, valueInteger(0)});
 	uses.beginBlock(instructions);
 	constexpr int never = std::numeric_limits<int>::max();
@@ -1092,8 +1092,8 @@ void registerUses() {
 	require(uses.nextUse(5, 14) == never && uses.nextUse(5, 15) == 0 && uses.nextUse(5, 16) == 0
 		&& uses.nextUse(5, 17) == 0 && uses.nextUse(5, 18) == never,
 		"word-store liveness includes the exact source range and an aliased address");
-	require(uses.nextUse(6, 65537) == 0 && uses.nextUse(6, 1) == 0 && uses.nextUse(6, 65538) == never,
-		"register-address CLOSURE reads the complete Bx slot and independently defines its result");
+	require(uses.nextRead(6, 0x240) == never && uses.nextUse(6, 1) == 0 && uses.nextUse(6, 0x240) == never,
+		"JAL defines the link register without reading a register for its literal target");
 	require(uses.nextUse(62, 10) == 1 && uses.nextUse(63, 10) == 0 && uses.nextUse(64, 10) == never,
 		"next use includes the final instruction in a full block");
 

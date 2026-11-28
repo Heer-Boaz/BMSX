@@ -65,7 +65,6 @@ constexpr uint32_t CPU_CAUSE_CODE_TRAP = 13u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_REGISTER_WINDOW = 14u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_REFERENCE_STORE = 15u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_STORAGE_WINDOW = 16u << 2u;
-constexpr uint32_t CPU_CAUSE_CODE_FUNCTION_BINDING = 17u << 2u;
 
 constexpr uint32_t LUA_FAULT_REASON_UNKNOWN = 0u;
 constexpr uint32_t LUA_FAULT_REASON_CALL_NON_FUNCTION = 1u;
