@@ -15,7 +15,7 @@ inline NativeTableReference allocateTableReference(CPU& cpu, int arraySize = 0, 
 		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(),
 		NativeTableReference::HEADER_CHARGE + NativeTableReference::allocationCharge(arraySize, hash),
 		LuaAllocationMode::Direct, TableRecord::hashStorageBytes(hash), static_cast<u32>(TableHeader::HashStorage));
-	auto& heap = cpu.gcHeap();
+	GcHeap heap(cpu);
 	auto& memory = heap.memory;
 	NativeTableReference table(heap, address);
 	const u32 kind = static_cast<u32>(ValueTag::Table) | (static_cast<u32>(heap.white()) << 8u)

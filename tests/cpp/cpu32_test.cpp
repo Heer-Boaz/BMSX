@@ -7,6 +7,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
@@ -735,7 +736,7 @@ void tableHeap() {
 	table.set(valueFloat(2.0f), valueInteger(9));
 	for (i32 i = 1; i <= 512; ++i)
 		table.setStringKey(cpu.stringPool().intern("field" + std::to_string(i)), valueInteger(i));
-	cpu.collectHeap(root);
+	bmsx::test::GcHeap(cpu).collect(root);
 	require(table.get(key) == valueFloatBits(0xffa12345), "compact Table traces raw heap references");
 	require(table.getInteger(2) == valueInteger(9), "integral Float key normalizes into array");
 	for (i32 i = 1; i <= 512; ++i)

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "machine/cpu/cpu.h"
+#include "gc_heap_reference.h"
 #include "machine/cpu/execution_image.h"
 #include "spec/bmsx/memory_map.h"
 
@@ -66,7 +67,7 @@ inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 		Memory& memory;
 		std::vector<std::pair<u32, u32>> spans;
 	} inactive{left.memory(), {}};
-	left.gcHeap().visitObjectRecords(&inactive, [](void* context, u32 address) {
+	GcHeap(left).visitObjectRecords(&inactive, [](void* context, u32 address) {
 		auto& [memory, spans] = *static_cast<InactiveFrames*>(context);
 		if (memory.readRamRecordByte(address) == THREAD_RECORD_KIND) {
 			const auto layout = ThreadRecord::storageLayout(memory, address);
@@ -88,7 +89,7 @@ inline bool sameActiveLanguageRam(CPU& left, CPU& right) {
 
 inline u32 allocatedObjectRecords(CPU& cpu) {
 	struct Counter { Memory& memory; u32 count = 0; } records{cpu.memory()};
-	cpu.gcHeap().visitObjectRecords(&records, [](void* context, u32 address) {
+	GcHeap(cpu).visitObjectRecords(&records, [](void* context, u32 address) {
 		auto& records = *static_cast<Counter*>(context);
 		switch (records.memory.readRamRecordByte(address)) {
 			case static_cast<u8>(ValueTag::Table):

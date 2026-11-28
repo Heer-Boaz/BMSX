@@ -7,6 +7,7 @@
 #include "spec/blua32/instruction_format.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
@@ -283,7 +284,7 @@ void directCalls() {
 	for (auto* fixture : {&generated, &scalar}) {
 		auto& cpu = fixture->runtime.machine.cpu;
 		auto& thread = *cpu.rootThread();
-		test::reserveReferenceThreadStorage(cpu.gcHeap(), thread.address, 0u, 4u, valueNil());
+		test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), thread.address, 0u, 4u, valueNil());
 		thread.bindStack();
 		thread.reserveFixedFrameViews();
 		for (auto index : {3u, 4u}) test::seedTestRomClosure(cpu, fixture->rom.functionAddresses[index]);

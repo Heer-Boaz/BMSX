@@ -14,6 +14,8 @@
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
+#include "support/gc_heap_reference.h"
+#include "support/global_bank_reference.h"
 #include "support/string_slice_reference.h"
 #include "support/table_allocation_reference.h"
 
@@ -49,6 +51,7 @@ int main(int argc, char** argv) {
 		Runtime runtime({rom, cartridges, PSX_MACHINE_SPEC}, input);
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
+		bmsx::test::GcHeap collector(cpu);
 		auto& memory = runtime.machine.memory;
 		auto& scheduler = runtime.machine.scheduler;
 		std::vector<std::vector<u8>> replacementRoms;
@@ -84,8 +87,10 @@ int main(int argc, char** argv) {
 					if (operation == 'g') {
 						u32 globals;
 						trace >> globals;
-						for (const u32 bankAddress : {address, globals})
-							GlobalBank(memory, bankAddress).clear(cpu.gcHeap());
+						for (const u32 bankAddress : {address, globals}) {
+							GlobalBank bank(memory, bankAddress);
+							bmsx::test::NativeGlobalBankReference(bank).clear(collector);
+						}
 					} else if (operation == 'i') {
 						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
 							const u32 base = memory.readRamRecordWord(address);
@@ -131,8 +136,8 @@ int main(int argc, char** argv) {
 					trace >> cycles;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.gcHeap().fullEpochs()
-						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< collector.fullEpochs()
+						<< ' ' << static_cast<int>(collector.phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
 				case 'j': {
@@ -152,7 +157,7 @@ int main(int argc, char** argv) {
 				case 'w': {
 					u32 words;
 					trace >> words;
-					std::cout << cpu.gcHeap().stepFullCollection(cpu.gcHeap().fullEpochs(), words) << '\n';
+					std::cout << collector.stepFullCollection(collector.fullEpochs(), words) << '\n';
 					break;
 				}
 				case 'b': {
@@ -164,7 +169,7 @@ int main(int argc, char** argv) {
 				case 'm': {
 					u32 tag, payload, queue;
 					trace >> tag >> payload >> queue;
-					const bool marked = cpu.gcHeap().markValue(valueFromTag(static_cast<ValueTag>(tag), payload), queue);
+					const bool marked = collector.markValue(valueFromTag(static_cast<ValueTag>(tag), payload), queue);
 					std::cout << marked << ' ' << cpu.stringPool().takeMarkWork() << '\n';
 					break;
 				}
@@ -247,7 +252,7 @@ int main(int argc, char** argv) {
 						admitted = false;
 					}
 					std::cout << admitted << ' ' << budget - cpu.instructionBudgetRemaining << ' ' << scheduler.nowCycles() - cycle
-						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< ' ' << static_cast<int>(collector.phase()) << ' ' << cpu.heapAllocator().occupiedBytes()
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -398,13 +403,13 @@ int main(int argc, char** argv) {
 				case 'z': {
 					u32 table;
 					trace >> table;
-					std::cout << cpu.gcHeap().step(valueTable(table), valueNil(), valueNil(), 0u, false, 1) << '\n';
+					std::cout << collector.step(valueTable(table), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
 				case 'y': {
 					u32 string;
 					trace >> string;
-					std::cout << cpu.gcHeap().step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
+					std::cout << collector.step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;

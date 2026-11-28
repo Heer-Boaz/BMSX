@@ -3,6 +3,7 @@
 #include "machine/cpu/decoded_instruction.h"
 #include "common/compiler.h"
 #include "machine/cpu/jit/runtime/block.h"
+#include "support/gc_heap_reference.h"
 #include "support/native_region_fixture.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -641,7 +642,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 				"record selection and activation windows agree at each call boundary");
 			for (int reg = 0; reg < a.stackCapacity(); ++reg) {
 				const Value left = a.registers.get(reg), right = b.registers.get(reg);
-				if (valueIsClosure(left)) require(valueIsClosure(right) && native.cpu.readClosureBinding(asClosure(left, native.cpu.gcHeap())).functionAddress == scalar.cpu.readClosureBinding(asClosure(right, scalar.cpu.gcHeap())).functionAddress,
+				if (valueIsClosure(left)) require(valueIsClosure(right) && native.cpu.readClosureBinding(bmsx::test::asClosure(left, bmsx::test::GcHeap(native.cpu))).functionAddress == scalar.cpu.readClosureBinding(bmsx::test::asClosure(right, bmsx::test::GcHeap(scalar.cpu))).functionAddress,
 					"corresponding closure values retain their function-record addresses");
 				else require(left == right, "every retained register agrees across record-domain transitions");
 			}

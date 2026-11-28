@@ -14,6 +14,7 @@
 #include "spec/bmsx/model.h"
 #include "spec/gx/pcrtc.h"
 #include "spec/gx/gp0.h"
+#include "support/gc_heap_reference.h"
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/blua32_test_rom.h"
@@ -180,7 +181,7 @@ void testAcceptedCpuCyclesAcrossVblanks(bool withReadback) {
 	auto& frameScheduler = runtime.frameScheduler;
 	const u32 nextPc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
-	cpu.gcHeap().finishFinalMark();
+	bmsx::test::GcHeap(cpu).finishFinalMark();
 	runtime.machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
 	input.observeSample = [&] {
@@ -254,15 +255,15 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 	auto& cpu = runtime.machine.cpu;
 	test::seedManagedFixture(cpu, runtime.machine.executionAddressSpace);
 	auto& scheduler = runtime.frameScheduler;
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	auto& arena = cpu.heapAllocator();
 	auto retained = bmsx::test::allocateTableReference(cpu, 16384, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(retained.address())); frame.setTop(1);
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	while (arena.unoccupiedBytes() > 32u * HEAP_PAGE_SIZE)
 		require(arena.allocate(4088u, true) != 0u, "the physical pressure fixture reserves live chunks");
-	const u32 workAddress = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_EPOCH_WORK;
+	const u32 workAddress = arena.managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET + bmsx::test::GC_EPOCH_WORK;
 	const auto checkpoint = captureRuntimeSaveState(runtime);
 	const auto pulse = [&] {
 		const auto now = runtime.machine.scheduler.nowCycles();
@@ -270,7 +271,7 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 		require(!heap.active() && runtime.machine.scheduler.nowCycles() == now,
 			"host polling with no VBlank does not start a physical assist");
 		require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame)
-			&& scheduler.lastTickSequence == 1 && heap.phase() == GcPhase::Pause,
+			&& scheduler.lastTickSequence == 1 && heap.phase() == bmsx::test::GcPhase::Pause,
 			"device time reaches VBlank without a CPU IRQ or any marking");
 		require((runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) != 0u
 			&& runtime.machine.memory.readRamRecordWord(workAddress) == 0u,

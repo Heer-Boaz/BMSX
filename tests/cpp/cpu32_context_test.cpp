@@ -1,5 +1,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
+#include "support/gc_heap_reference.h"
 #include "support/number32_cpu_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/closure_fixture.h"
@@ -238,9 +239,9 @@ u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
 	definition.writeControl(FrameField::OpenHead, cells[0]);
 	definition.registers.set(9, valueClosure(record));
 	require(machine.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the seeded defining frame returns or suspends");
-	auto closure = asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
+	auto closure = bmsx::test::asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
 										: machine.cpu.readCompletionValues().get(0),
-		machine.cpu.gcHeap());
+		bmsx::test::GcHeap(machine.cpu));
 	machine.cpu.setGlobalByKey(
 		*machine.cpu.stringPool().find("saved"), valueClosure(closure));
 	machine.cpu.beginCompletionCall(closure);
@@ -297,13 +298,13 @@ void nativeClosedBarrierOracleAfterHeapGrowth() {
 	const auto cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
 	auto child = bmsx::test::allocateTableReference(m.cpu, 1);
 	child.setInteger(1, valueInteger(123));
-	m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
+	bmsx::test::GcHeap(m.cpu).step(valueNil(), valueNil(), valueNil());
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3,
 		"collector has scanned the closed cell before mutation");
 	bmsx::test::storeUpvalueReference(m.cpu, cell, valueTable(child.address()));
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 2,
 		"closed writes queue the scanned cell again");
-	m.cpu.collectHeap();
+	bmsx::test::GcHeap(m.cpu).collect();
 	const auto retained = TableRecord(m.cpu.memory(), valuePayload(Upvalue::load(m.cpu.memory(), cell)));
 	require(retained.address() == child.address() && retained.getInteger(1) == valueInteger(123),
 		"a child introduced by a closed-cell write survives the incremental collector");

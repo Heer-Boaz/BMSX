@@ -1,6 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/jit/runtime/block.h"
+#include "support/gc_heap_reference.h"
 #include "support/native_region_fixture.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/execution_image.h"
@@ -76,7 +77,7 @@ void capturedClosureRequiresFirmware() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		test::resizeReferenceThreadStack(cpu.gcHeap(), *cpu.rootThread(), 64);
+		test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *cpu.rootThread(), 64);
 		auto& parent = *cpu.rootThread()->frameAtDepth(0);
 		require(parent.stackCapacity() == 4 && parent.captureCount() == 0,
 			"capture admission uses the parent frame's reservation and capture count, not its larger Thread backing");
@@ -253,7 +254,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		"the warmed read and arithmetic have no internal transfer before the field write");
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		bmsx::test::asReferenceTable(frame.registers.get(0), machine->cpu.gcHeap()).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
+		bmsx::test::asReferenceTable(frame.registers.get(0), bmsx::test::GcHeap(machine->cpu)).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		frame.registers.set(4, valueInteger(0));
 	}
 	auto controls = test::fixtureTableControls(native.cpu);
@@ -283,7 +284,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	for (const bool inherited : {false, true}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-			auto table = bmsx::test::asReferenceTable(frame.registers.get(0), machine->cpu.gcHeap());
+			auto table = bmsx::test::asReferenceTable(frame.registers.get(0), bmsx::test::GcHeap(machine->cpu));
 			if (inherited) {
 				auto parent = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 				parent.setStringKey(key, valueInteger(40));
@@ -1058,7 +1059,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		test::resizeReferenceThreadStack(cpu.gcHeap(), *cpu.activeThread(), 64);
+		test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *cpu.activeThread(), 64);
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers.size() == 1 && frame.captureCount() == 0, "the Thread reserve is larger than this activation");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

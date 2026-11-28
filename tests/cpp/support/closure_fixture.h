@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
+#include "gc_heap_reference.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/memory/bus_signals.h"
@@ -11,7 +12,7 @@
 namespace bmsx::test {
 
 // Native reference: reserve the closure and its new cells before publishing frame links.
-inline u32 allocateClosureRecordReference(GcHeap& heap, u32 captures, bool latched = false, std::span<u32> cells = {}) {
+inline u32 allocateClosureRecordReference(GcHeap heap, u32 captures, bool latched = false, std::span<u32> cells = {}) {
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
 	auto recovery = heap.budget.admit(charged, valueNil(), valueNil(), valueNil(), 0u);
@@ -56,9 +57,10 @@ inline u32 seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = 
 	if ((entry.flags & BLUA32_FUNCTION_STATIC) == 0u || readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) != 0u)
 		throw std::logic_error("fixture must name a captureless STATIC prototype");
 	const FunctionPrototype prototype{.functionAddress = address, .entry = entry, .executionDomainId = domain};
-	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), 0u);
-	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, true, false);
-	cpu.gcHeap().publishObject(record);
+	GcHeap heap(cpu);
+	const u32 record = allocateClosureRecordReference(heap, 0u);
+	ClosureRecord::initialize(memory, record, prototype, heap.white(), 0u, true, false);
+	heap.publishObject(record);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	return record;
 }
@@ -80,11 +82,12 @@ inline u32 seedTestCapturedClosure(CPU& cpu, u32 address, std::span<u32> newCell
 	const FunctionPrototype prototype{.functionAddress = address, .entry = FunctionEntry::fromRom(bytes.data()),
 		.upvalueTableAddress = readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET),
 		.recordUpvalueCount = count, .executionDomainId = domain};
-	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), count, latched, newCells);
-	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), count, false, latched);
+	GcHeap heap(cpu);
+	const u32 record = allocateClosureRecordReference(heap, count, latched, newCells);
+	ClosureRecord::initialize(memory, record, prototype, heap.white(), count, false, latched);
 	for (u32 index = 0; index < count; ++index)
 		ClosureRecord::setCaptureAddress(memory, record, index, captures[index]);
-	cpu.gcHeap().publishObject(record);
+	heap.publishObject(record);
 	return record;
 }
 
@@ -107,9 +110,10 @@ inline u32 seedTestMappedClosure(CPU& cpu, u32 address, bool canonical = true, E
 	if (sequence != memory.readBusFaultSequence() || prototype.recordUpvalueCount != 0u
 		|| ((prototype.entry.flags & BLUA32_FUNCTION_STATIC) != 0u) != canonical)
 		throw std::logic_error("fixture storage must provide the selected mapped captureless binding");
-	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), 0u, true);
-	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, canonical, true);
-	cpu.gcHeap().publishObject(record);
+	GcHeap heap(cpu);
+	const u32 record = allocateClosureRecordReference(heap, 0u, true);
+	ClosureRecord::initialize(memory, record, prototype, heap.white(), 0u, canonical, true);
+	heap.publishObject(record);
 	if (canonical) cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	return record;
 }

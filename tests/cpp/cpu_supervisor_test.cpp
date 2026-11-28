@@ -13,6 +13,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "machine/cpu/upvalue.h"
@@ -831,8 +832,8 @@ void testMappedRamFunctionExecution() {
 		cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
 		"ROM creates a closure for a mapped RAM function record"
 	);
-	bmsx::u32 directClosure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
-	bmsx::u32 closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	bmsx::u32 directClosure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
+	bmsx::u32 closure = bmsx::test::asClosure(cpu.readCompletionValues().get(1), bmsx::test::GcHeap(cpu));
 	require(
 		cpu.readClosureBinding(directClosure).functionAddress == RAM_FUNCTION_ADDRESS
 			&& cpu.readClosureBinding(closure).functionAddress == RAM_FUNCTION_ADDRESS,
@@ -1289,7 +1290,7 @@ void testBoundClosureArguments() {
 	frame.registers.set(0, bmsx::valueInteger(7));
 	frame.registers.set(1, bmsx::valueClosure(record));
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "capture factory returns");
-	auto closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	auto closure = bmsx::test::asClosure(cpu.readCompletionValues().get(0), bmsx::test::GcHeap(cpu));
 	for (const auto [argument, expected] : {std::pair{3, 10}, std::pair{5, 15}}) {
 		const std::array args{bmsx::valueInteger(argument)};
 		cpu.beginCompletionCall(closure, {args.data(), args.size()});

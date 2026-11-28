@@ -1,7 +1,6 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
-#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/table_access.h"
 #include "machine/cpu/jit/sljit/value_transport.h"

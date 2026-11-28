@@ -4,6 +4,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
@@ -62,7 +63,7 @@ void slidingFixedCall(bool interpreted) {
 	require(thread->stackTop() == 13, "active stack extent excludes dead caller scratch");
 	child->registers.set(0, valueInteger(41));
 	require(parent->registers.get(5) == valueInteger(41), "both register views name the same storage");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto snapshot = cpu.captureRuntimeState();
 	require(memory.readRamRecordWord(thread->address + static_cast<u32>(ThreadField::StackTop)) == 13, "the thread header owns the shared stack extent");
 	cpu.restoreRuntimeState(snapshot);
@@ -110,7 +111,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	auto* child = thread->currentFrame;
 	require(child->stackBase() == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && child->varargCount() == 2 && child->readControl(bmsx::FrameField::ArgumentCount) == 3u, "vararg working registers slide above original arguments");
 	require(child->registers.get(0) == valueInteger(37) && thread->stack.get(5) == valueNil(), "fixed parameters move, original copies no longer retain roots");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 	cpu.runUntilDepth(1, 100);
@@ -144,7 +145,7 @@ void formalReservationRoots(bool interpreted) {
 	auto* child = cpu.activeThread()->currentFrame;
 	require(cpu.getFrameDepth() == 2 && child->stackCapacity() == 7 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::Top)) == 7,
 		"the formal count owns every argument even when maxStack is smaller");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto snapshot = cpu.captureRuntimeState();
 	require(memory.readRamRecordWord(child->thread->address + static_cast<u32>(ThreadField::StackTop)) == 12, "the thread header includes the complete formal reservation");
 	cpu.restoreRuntimeState(snapshot);
@@ -181,10 +182,10 @@ void capturedSlotSurvivesOpenTop(int top) {
 	cpu.setExecutionHook({[](void* context, ExecutionDomainId, u32 pc) { return pc == *static_cast<u32*>(context); }, &stopPc, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	require(cpu.runUntilDepth(0, 100) == RunResult::ExecutionStopped, "stop after open VARARG changes top");
 	require(static_cast<bmsx::i32>(cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Top)) == top, "raw open VARARG retains its exact top");
-	cpu.collectHeap(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	bmsx::test::GcHeap(cpu).collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	require(valueIsTable(cpu.activeThread()->currentFrame->registers.get(2)), "an open capture owns its slot even above lowered top");
 	cpu.setExecutionHook({}); cpu.runUntilDepth(0, 100);
-	auto closure = asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("read")), cpu.gcHeap());
+	auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("read")), bmsx::test::GcHeap(cpu));
 	cpu.beginCompletionCall(closure); cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
 	require(values.size() == 1 && valueIsTable(values.get(0)), "closing the capture retains its value after the source frame returns");

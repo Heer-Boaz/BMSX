@@ -1,3 +1,4 @@
+#include "support/gc_heap_reference.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include <fstream>
@@ -83,7 +84,7 @@ int main(int argc, char** argv) {
 				const u32 cartEnd = CART_ROM_BASE + static_cast<u32>(cart.size());
 				const auto count = phase >= 5 ? 2 : 1;
 				for (int evaluator = 0; evaluator < count; ++evaluator) {
-					const auto closure = asClosure(cpu.getGlobalByKey(*cpu.stringPool().find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), cpu.gcHeap());
+					const auto closure = bmsx::test::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find(evaluator == 0 ? "fsm_evaluator" : "fsm_other")), bmsx::test::GcHeap(cpu));
 					require(cpu.readClosureBinding(closure).executionDomainId == image->executionDomainId, "inspect the evaluator in its cartridge execution image");
 					const u32 address = cpu.readClosureBinding(closure).functionAddress;
 					const u32 code = memory.readMappedU32LE(address + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
@@ -124,7 +125,7 @@ int main(int argc, char** argv) {
 				if (phase >= 4) {
 					const auto& bindings = TableRecord(cpu.memory(), valuePayload(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings"))));
 					for (int index = 1; index <= 3; ++index)
-						require(cpu.readClosureBinding(asClosure(bindings.getInteger(index), cpu.gcHeap())).functionAddress == primaryFunction,
+						require(cpu.readClosureBinding(bmsx::test::asClosure(bindings.getInteger(index), bmsx::test::GcHeap(cpu))).functionAddress == primaryFunction,
 							"binding did not retain its ROM evaluator");
 				}
 			}

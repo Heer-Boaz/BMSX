@@ -6,6 +6,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/native_region_fixture.h"
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
@@ -249,16 +250,16 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	// Reuse object pages after dropping the holder edge. A recycled record
 	// is not a valid holder unless the live __index member leads to it.
 	secondMeta.setStringKey(indexKey, valueNil());
-	cpu.collectHeap(receiver, valueString(key));
-	require(cpu.gcHeap().tableRecordAddress(holder.address()) == 0, "the old holder really retired");
+	bmsx::test::GcHeap(cpu).collect(receiver, valueString(key));
+	require(bmsx::test::GcHeap(cpu).tableRecordAddress(holder.address()) == 0, "the old holder really retired");
 	// Request only object headers: backing allocations are a different owner
 	// and could occupy the freed address before an object can reuse it.
-	auto reused = bmsx::test::allocateTableReference(cpu);
-	for (int i = 0; i < 8 && reused.address() != holder.address(); ++i) reused = bmsx::test::allocateTableReference(cpu);
-	require(reused.address() == holder.address(), "the probe actually reuses the old owner's guest address");
-	reused.setStringKey(key, valueInteger(44));
+	u32 reused = bmsx::test::allocateTableReference(cpu).address();
+	for (int i = 0; i < 8 && reused != holder.address(); ++i) reused = bmsx::test::allocateTableReference(cpu).address();
+	require(reused == holder.address(), "the probe actually reuses the old owner's guest address");
+	bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), reused).setStringKey(key, valueInteger(44));
 	read(valueNil(), 1);
-	secondMeta.setStringKey(indexKey, valueTable(reused.address()));
+	secondMeta.setStringKey(indexKey, valueTable(reused));
 	read(valueInteger(44), 2);
 }
 
@@ -677,12 +678,12 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			table.setInteger(1, valueInteger(71));
 			model.setInteger(1, valueInteger(71));
 			require(table.lengthHint() != 0u, "the barrier case does not also change the length hint");
-			cpu.gcHeap().step(valueTable(model.address()), ref, valueNil());
+			bmsx::test::GcHeap(cpu).step(valueTable(model.address()), ref, valueNil());
 			require(memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) == 3, "array receiver was actually scanned before inserting the new edge");
 			registers.set(1, valueInteger(1));
 			registers.set(2, valueTable(child.address()));
 			const u32 header = table.address();
-			const u32 head = cpu.gcHeap().changedHeadOffset();
+			const u32 head = bmsx::test::GcHeap(cpu).changedHeadOffset();
 			const u32 previousLink = memory.readRamRecordWord(header + GC_RECORD_LINK);
 			const u32 weakLink = previousLink & ~GC_GRAY_INDEX_MASK;
 			require(weakLink != 0, "the table is also linked to a second weak table");
@@ -718,12 +719,12 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 		const Value child = field ? valueThread(bmsx::test::allocateThreadRecordReference(cpu, 0u)) : valueTable(bmsx::test::allocateTableReference(cpu).address());
 		const auto name = cpu.stringPool().intern("remark field");
 		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
-		const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-		memory.writeRamRecordByte(control, static_cast<u8>(GcPhase::MarkAgain));
+		const auto control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+		memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
 		memory.writeRamRecordByte(owner.address() + GC_COLOR_OFFSET, 3u);
-		auto& heap = cpu.gcHeap();
+		auto heap = bmsx::test::GcHeap(cpu);
 		const auto changed = memory.readRamRecordWord(heap.changedHeadOffset());
-		const auto trace = memory.readRamRecordWord(control + GC_TRACE_HEAD);
+		const auto trace = memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD);
 		const u32 record = valuePayload(child);
 		const u8 color = memory.readRamRecordByte(record + GC_COLOR_OFFSET);
 
@@ -762,7 +763,7 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 		require(memory.readRamRecordByte(owner.address() + GC_COLOR_OFFSET) == 3u
 			&& memory.readRamRecordWord(heap.changedHeadOffset()) == changed
 			&& memory.readRamRecordByte(record + GC_COLOR_OFFSET) == color
-			&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == trace,
+			&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == trace,
 			"generated code does no collector work even during remark");
 	}
 }

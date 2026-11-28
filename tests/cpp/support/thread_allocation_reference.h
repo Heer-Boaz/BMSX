@@ -2,6 +2,8 @@
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
+#include "gc_heap_reference.h"
+#include "thread_storage_reference.h"
 
 #include <algorithm>
 #include <cstring>
@@ -30,7 +32,7 @@ inline void initializeReferenceThread(GcHeap& heap, u32 address, u32 valueBlock,
 
 inline u32 allocateThreadRecordReference(CPU& cpu, u32 entry) {
 	auto& budget = cpu.luaHeap();
-	auto& gc = cpu.gcHeap();
+	GcHeap gc(cpu);
 	constexpr u32 valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
 	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
@@ -77,7 +79,7 @@ inline u32 growReferenceThreadFrames(GcHeap& heap, u32 address, u32 capacity, u3
 	return block;
 }
 
-inline void reserveReferenceThreadStorage(GcHeap& heap, u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
+inline void reserveReferenceThreadStorage(GcHeap heap, u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
 	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
 	const auto& memory = heap.memory;
@@ -102,7 +104,7 @@ inline void reserveReferenceThreadStorage(GcHeap& heap, u32 address, u32 valueCa
 		// old stack. There must be no fallible reservation after that point.
 		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
 		if (!frameBytes || frames) {
-			if (!valueBytes || ThreadRecord::resizeStackBacking(heap, address, valueCapacity)) {
+			if (!valueBytes || resizeReferenceThreadBacking(heap, address, valueCapacity)) {
 				if (frames) growReferenceThreadFrames(heap, address, frameCapacity, frames);
 				return;
 			}
@@ -112,15 +114,15 @@ inline void reserveReferenceThreadStorage(GcHeap& heap, u32 address, u32 valueCa
 	}
 }
 
-inline void resizeReferenceThreadStack(GcHeap& heap, Thread& thread, size_t capacity) {
+inline void resizeReferenceThreadStack(GcHeap heap, Thread& thread, size_t capacity) {
 	if (capacity == thread.stackCapacity) return;
 	if (capacity < thread.stackCapacity)
-		ThreadRecord::resizeStackBacking(heap, thread.address, static_cast<u32>(capacity));
+		resizeReferenceThreadBacking(heap, thread.address, static_cast<u32>(capacity));
 	else reserveReferenceThreadStorage(heap, thread.address, static_cast<u32>(capacity), 0u, valueNil());
 	thread.bindStack();
 }
 
-inline void reserveReferenceThreadFrame(GcHeap& heap, Thread& thread, size_t valueEnd) {
+inline void reserveReferenceThreadFrame(GcHeap heap, Thread& thread, size_t valueEnd) {
 	// The last control slot is reserved for an exception activation.
 	const u32 currentFrames = ThreadRecord::count(heap.memory, thread.address, ThreadField::FrameCapacity);
 	const size_t wanted = std::max<size_t>(THREAD_INITIAL_FRAMES, thread.frameDepth() + 2u);

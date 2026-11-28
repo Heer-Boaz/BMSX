@@ -1,3 +1,4 @@
+#include "support/gc_heap_reference.h"
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/runtime/history/ram_history.h"
@@ -38,9 +39,10 @@ void require(bool condition, const char* message) {
 }
 
 int runPressureStage(bmsx::CPU& cpu) {
+	bmsx::test::GcHeap collector(cpu);
 	int finalSteps = 0;
 	for (int call = 0; call < 12000; ++call) {
-		if (cpu.gcHeap().finalMarkPending()) { cpu.gcHeap().stepFinalMark(); ++finalSteps; continue; }
+		if (collector.finalMarkPending()) { collector.stepFinalMark(); ++finalSteps; continue; }
 		const auto result = cpu.runUntilDepth(0, call % 3 == 0 ? 1 : call % 3 == 1 ? 17 : 2048);
 		require(cpu.readExceptionReturnFrameDepth() == -1 && cpu.readLuaFaultReasonWord() == 0, "unexpected guest fault in allocation pressure fixture");
 		if (result != bmsx::RunResult::Yielded) {
@@ -53,6 +55,7 @@ int runPressureStage(bmsx::CPU& cpu) {
 
 void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	using namespace bmsx;
+	bmsx::test::GcHeap collector(cpu);
 	auto& memory = cpu.memory();
 	const auto global = [&](std::string_view name) { return cpu.getGlobalByKey(*cpu.stringPool().find(name)); };
 	runPressureStage(cpu);
@@ -82,7 +85,7 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 		const int depth = cpu.getFrameDepth();
 		return std::tuple{depth, cpu.readFramePc(depth - 1), global("pressure"),
 			cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget(),
-			cpu.gcHeap().phase(),
+			collector.phase(),
 			cpu.stringPool().find("pressure-retired:é😀:37")};
 	};
 	const auto parked = observe();
@@ -152,24 +155,25 @@ int main(int argc, char** argv) {
 		}
 
 		stressEnabled = true;
+		bmsx::test::GcHeap collector(cpu);
 		auto result = bmsx::RunResult::Yielded;
 		bool restored = false;
 		for (int call = 0; call < 50000 && result == bmsx::RunResult::Yielded; ++call) {
 			result = cpu.runUntilDepth(0, call % 3 == 0 ? 1 : call % 3 == 1 ? 17 : 2048);
 			require(cpu.readLuaFaultReasonWord() == 0, "unexpected guest fault during GC stress");
-			if (!restored && result == bmsx::RunResult::Yielded && cpu.gcHeap().active()) {
-				const auto phase = cpu.gcHeap().phase();
+			if (!restored && result == bmsx::RunResult::Yielded && collector.active()) {
+				const auto phase = collector.phase();
 				const auto depth = cpu.getFrameDepth();
 				const auto pc = cpu.readFramePc(depth - 1);
 				const auto ram = cpu.memory().captureSaveState();
 				const auto state = cpu.captureRuntimeState();
 				cpu.runUntilDepth(0, 2048);
 				require(cpu.readLuaFaultReasonWord() == 0, "unexpected fault in the rewind suffix");
-				require(cpu.gcHeap().phase() != phase || cpu.getFrameDepth() != depth || cpu.readFramePc(depth - 1) != pc,
+				require(collector.phase() != phase || cpu.getFrameDepth() != depth || cpu.readFramePc(depth - 1) != pc,
 					"the live collector or program counter must advance before rewind");
 				cpu.memory().restoreSaveState(ram);
 				cpu.restoreRuntimeState(state);
-				require(cpu.gcHeap().phase() == phase && cpu.getFrameDepth() == depth && cpu.readFramePc(depth - 1) == pc,
+				require(collector.phase() == phase && cpu.getFrameDepth() == depth && cpu.readFramePc(depth - 1) == pc,
 					"restore must reinstate the in-flight major collection and its caller");
 				restored = true;
 			}

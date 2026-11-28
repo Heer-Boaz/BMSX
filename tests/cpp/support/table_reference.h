@@ -2,7 +2,7 @@
 
 #include <span>
 
-#include "machine/cpu/gc_heap.h"
+#include "gc_heap_reference.h"
 #include "machine/cpu/table.h"
 #include "table_constructor_layout.h"
 
@@ -12,7 +12,7 @@ namespace bmsx::test {
 // are shared with the machine's memory-only TableRecord.
 class NativeTableReference : public TableRecord {
 public:
-	NativeTableReference(GcHeap& heap, u32 address) : TableRecord(heap.memory, address), m_heap(&heap) {}
+	NativeTableReference(const GcHeap& heap, u32 address) : TableRecord(heap.memory, address), m_heap(heap) {}
 
 	static constexpr u32 HEADER_CHARGE = 32;
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
@@ -42,7 +42,7 @@ public:
 			const Value value = slots.get(slot);
 			if (isNil(value)) continue;
 			if (weakValues && !valueIsAlive(value)) slots.set(slot, valueNil());
-			else if (valueIsString(value)) m_heap->markString(asStringId(value));
+			else if (valueIsString(value)) m_heap.markString(asStringId(value));
 		}
 		const auto nodes = hashBody(hash).slots;
 		for (u32 slot = std::max(first, array); slot < std::min(array + hash, end); ++slot) {
@@ -54,8 +54,8 @@ public:
 			if ((weakKeys && !valueIsAlive(key)) || (weakValues && !valueIsAlive(value))) {
 				markHashNodeDead(slot - array);
 			} else {
-				if (valueIsString(key)) m_heap->markString(asStringId(key));
-				if (valueIsString(value)) m_heap->markString(asStringId(value));
+				if (valueIsString(key)) m_heap.markString(asStringId(key));
+				if (valueIsString(value)) m_heap.markString(asStringId(value));
 			}
 		}
 	}
@@ -83,10 +83,10 @@ private:
 	void removeFromHash(const Value& key, int slot);
 	void markHashNodeDead(size_t index);
 
-	GcHeap* m_heap;
+	GcHeap m_heap;
 };
 
-inline NativeTableReference asReferenceTable(Value value, GcHeap& heap) {
+inline NativeTableReference asReferenceTable(Value value, const GcHeap& heap) {
 	return NativeTableReference(heap, valuePayload(value));
 }
 

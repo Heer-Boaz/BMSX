@@ -6,6 +6,7 @@
 #include "spec/blua32/opcode.h"
 #include "blua32_test_rom.h"
 #include "firmware_heap_layout.h"
+#include "global_bank_reference.h"
 #include "thread_allocation_reference.h"
 
 #include <algorithm>
@@ -118,7 +119,7 @@ inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addres
 		bank.bind();
 		for (u32 i = 0u; i < count; ++i) {
 			const u32 address = readLE32(records.data() + i * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET);
-			memory.writeRamRecordWord(destination + 4u * i, bank.registerName(cpu.gcHeap(), strings.resolveImageRecord(domain, address)));
+			memory.writeRamRecordWord(destination + 4u * i, NativeGlobalBankReference(bank).registerName(GcHeap(cpu), strings.resolveImageRecord(domain, address)));
 		}
 	};
 	bindNames(field(BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), names, GLOBAL_BANK_OFFSET, base);
@@ -151,7 +152,7 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	Thread prepared(memory, root);
 	prepared.bindStack();
 	const int end = entry ? entry->stackBase + entry->capacity : raw.stackTop();
-	reserveReferenceThreadFrame(cpu.gcHeap(), prepared, end);
+	reserveReferenceThreadFrame(GcHeap(cpu), prepared, end);
 	const u32 control = ThreadRecord::storageLayout(memory, root).frameAddress(0u);
 	if (entry) entry->writeWords([&](FrameField field, u32 word) {
 		memory.writeRamRecordWord(control + static_cast<u32>(field), word);

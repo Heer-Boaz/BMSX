@@ -1,13 +1,14 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
+#include "gc_heap_reference.h"
 #include "machine/cpu/upvalue.h"
 
 namespace bmsx::test {
 
 // Former native SETUP/debug write, kept as an independent policy reference.
 inline void storeUpvalueReference(CPU& cpu, u32 address, Value value) {
-	auto& heap = cpu.gcHeap();
+	GcHeap heap(cpu);
 	auto& memory = heap.memory;
 	const u32 cell = address & UPVALUE_ADDRESS_MASK;
 	if (Upvalue::tryStoreDirect(memory, cell, value)) return;

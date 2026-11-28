@@ -1,14 +1,11 @@
 #pragma once
 
-#include <optional>
-
-#include "machine/cpu/string_pool.h"
 #include "machine/cpu/value_slots.h"
 #include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
 
-class GcHeap;
+namespace test { class NativeGlobalBankReference; }
 
 // Main RAM owns the Value payload address, capacity and live slot count.
 class GlobalBank {
@@ -26,18 +23,8 @@ public:
 	void bind();
 	void detach() { m_values = {}; }
 
-	// Definitions live in the native fixture reference target.
-	StringId name(u32 slot) const;
-	std::optional<u32> find(StringId key) const;
-	void writeSlot(GcHeap&, u32 slot, Value value);
-	u32 registerName(GcHeap&, StringId key, Value pending = valueNil());
-	void clear(GcHeap&);
-
 private:
-	u32 bucketFor(u32 base, u32 capacity, StringId key) const;
-	std::optional<u32> findSlot(u32 base, u32 capacity, StringId key) const;
-	void grow(u32 oldBase, u32 base, u32 capacity, u32 count);
-
+	friend class test::NativeGlobalBankReference;
 	Memory& m_memory;
 	u32 m_descriptor;
 	ValueSpan m_values;

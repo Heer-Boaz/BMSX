@@ -19,7 +19,7 @@ constexpr u32 kHashSlotBudgetBytes = 10u;
 } // namespace
 
 void NativeTableReference::setMetatableAddress(u32 address) {
-	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	m_heap.writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);
 }
 
@@ -36,7 +36,7 @@ void NativeTableReference::markHashNodeDead(size_t index) {
 	const auto body = hashBody(hashSlots());
 	const Value key = body.slots.get(index);
 	eraseHashNode(body, index, key);
-	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex))
+	if (valueIsString(key) && valuePayload(key) == m_heap.diagnosticWord(GcDiagnosticField::NewIndex))
 		m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 }
 
@@ -153,17 +153,17 @@ NativeTableReference::ResizePlan NativeTableReference::planRehash(Value key, u8 
 
 int NativeTableReference::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested) {
 	const u32 oldArray = arrayCapacity(), oldBase = arrayAddress();
-	if (GcHeap::pacedPhase(m_heap->phase()))
-		m_heap->assistBeforeReservation(storageBytes(plan.array > oldArray ? plan.array : 0u, plan.keepHash ? 0u : plan.hash),
+	if (GcHeap::pacedPhase(m_heap.phase()))
+		m_heap.assistBeforeReservation(storageBytes(plan.array > oldArray ? plan.array : 0u, plan.keepHash ? 0u : plan.hash),
 			valueTable(m_address), key, value);
-	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
+	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap.arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
 	u32 base = oldBase;
 	if (plan.array > oldArray) {
 		const u32 bytes = 5u * plan.array;
-		base = !oldBase ? m_heap->arena.allocate(bytes, true) : m_heap->arena.resizeBacking(oldBase, bytes);
+		base = !oldBase ? m_heap.arena.allocate(bytes, true) : m_heap.arena.resizeBacking(oldBase, bytes);
 		if (!base) {
-			if (storage && !plan.keepHash) m_heap->arena.free(storage);
+			if (storage && !plan.keepHash) m_heap.arena.free(storage);
 			return HASH_STORE_DECLINED;
 		}
 	}
@@ -171,7 +171,7 @@ int NativeTableReference::commitHashPlan(const ResizePlan& plan, Value key, Valu
 }
 
 int NativeTableReference::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots) {
-	auto& budget = m_heap->budget;
+	auto& budget = m_heap.budget;
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 previous = allocationCharge(array, hash);
 	const Value owner = valueTable(m_address);
@@ -190,7 +190,7 @@ int NativeTableReference::insertHashWithAdmission(Value key, Value value, u8 ext
 			extraHashSlots = 0;
 			continue;
 		}
-		recovery = m_heap->recoverAllocation(recovery, owner, key, value);
+		recovery = m_heap.recoverAllocation(recovery, owner, key, value);
 		if (hash != 0u) {
 			const auto body = hashBody(hash);
 			const u32 home = hashCanonicalTableKey(key) & (hash - 1u);
@@ -203,7 +203,7 @@ int NativeTableReference::insertHashWithAdmission(Value key, Value value, u8 ext
 int NativeTableReference::resize(const ResizePlan& plan, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested) {
 	const auto [newArraySize, newHashSize, keepHash] = plan;
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
-	m_heap->tableEntriesMoved(m_address);
+	m_heap.tableEntriesMoved(m_address);
 	const u32 oldStorage = hashAddress();
 	const auto oldValues = hashBodyAt(oldStorage, oldHashSize).slots;
 	const auto body = hashBodyAt<true>(storage, newHashSize);
@@ -213,7 +213,7 @@ int NativeTableReference::resize(const ResizePlan& plan, u32 base, u32 storage, 
 	if (!keepHash) initializeHash(storage, newHashSize);
 	if (oldHashSize > 64 && oldArraySize == newArraySize && !keepHash) {
 		const int slot = rebuildHashOnly(hashBodyAt<true>(oldStorage, oldHashSize), body, key, value);
-		m_heap->budget.replaceRecord(oldStorage, previous, requested);
+		m_heap.budget.replaceRecord(oldStorage, previous, requested);
 		return slot;
 	}
 	const int firstFree = static_cast<int>(newHashSize) - 1;
@@ -230,9 +230,9 @@ int NativeTableReference::resize(const ResizePlan& plan, u32 base, u32 storage, 
 		std::memmove(words + newArraySize * 4u, oldArray.tags, keep);
 		if (newArraySize) {
 			initializeArray(base, newArraySize, keep);
-			if (newArraySize < oldArraySize) m_heap->arena.resizeBacking(base, newArraySize * 5u);
+			if (newArraySize < oldArraySize) m_heap.arena.resizeBacking(base, newArraySize * 5u);
 		} else {
-			m_heap->arena.free(base);
+			m_heap.arena.free(base);
 			writeHeader(TableHeader::ArrayStorage, 0u);
 		}
 	}
@@ -243,7 +243,7 @@ int NativeTableReference::resize(const ResizePlan& plan, u32 base, u32 storage, 
 	const int slot = reinsertMapping(body, nextFree, key, value);
 	if (!keepHash && newHashSize > HASH_CENSUS_LIMIT) body.setLive(live + (slot >= 0));
 	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
-	m_heap->budget.replaceRecord(keepHash ? 0 : oldStorage, previous, requested);
+	m_heap.budget.replaceRecord(keepHash ? 0 : oldStorage, previous, requested);
 	return slot;
 }
 
@@ -330,13 +330,13 @@ void NativeTableReference::initializeHash(u32 address, u32 count) {
 
 void NativeTableReference::freeStorage() {
 	const u32 storage = hashAddress();
-	if (storage) m_heap->budget.releaseRecord(storage, allocationCharge(0, hashSlots()));
-	if (const u32 base = arrayAddress()) m_heap->budget.releaseRecord(base, 5u * arrayCapacity());
+	if (storage) m_heap.budget.releaseRecord(storage, allocationCharge(0, hashSlots()));
+	if (const u32 base = arrayAddress()) m_heap.budget.releaseRecord(base, 5u * arrayCapacity());
 }
 
 void NativeTableReference::freeRecord() {
 	freeStorage();
-	m_heap->budget.releaseObject(m_address, HEADER_CHARGE);
+	m_heap.budget.releaseObject(m_address, HEADER_CHARGE);
 }
 
 namespace {
@@ -428,7 +428,7 @@ int NativeTableReference::insertHashWithoutGrowth(const HashBody& body, u32 home
 		if (available >= 0) writeHeader(TableHeader::Free, static_cast<u32>(available - 1));
 		return available;
 	},
-		[this] { m_heap->tableEntriesMoved(m_address); });
+		[this] { m_heap.tableEntriesMoved(m_address); });
 	if (slot >= 0 && body.count > HASH_CENSUS_LIMIT) { body.setLive(body.live() + 1u); body.adjustIntegerBand(key, 1); }
 	return slot;
 }
@@ -461,7 +461,7 @@ TableConstructorLayout NativeTableReference::planStringRecord(std::span<const St
 void NativeTableReference::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
 	std::span<const Value> values) noexcept {
 	const auto body = hashBody(hashSlots());
-	const StringId newIndexKey = m_heap->diagnosticWord(GcDiagnosticField::NewIndex);
+	const StringId newIndexKey = m_heap.diagnosticWord(GcDiagnosticField::NewIndex);
 	for (u32 slot = 0; slot < body.count; ++slot) {
 		const auto& node = layout.nodes[slot];
 		if (node.field < 0) continue;
@@ -473,7 +473,7 @@ void NativeTableReference::fillStringRecord(const TableConstructorLayout& layout
 		if (node.next >= 0) body.setNext(slot, node.next);
 	}
 	if (layout.free != static_cast<i8>(body.count - 1u)) writeHeader(TableHeader::Free, static_cast<u32>(layout.free));
-	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
+	m_heap.writeBarrier(m_address, GC_RECORD_LINK);
 }
 
 int NativeTableReference::set(const Value& rawKey, const Value& value) {
@@ -482,7 +482,7 @@ int NativeTableReference::set(const Value& rawKey, const Value& value) {
 	const Value key = canonicalTableKey(rawKey);
 	const u32 index = arraySlot(key);
 	if (index < arrayCapacity()) {
-		m_heap->writeTableValue(m_address, value);
+		m_heap.writeTableValue(m_address, value);
 		setArraySlot(index, value);
 		return -1;
 	}
@@ -509,7 +509,7 @@ int NativeTableReference::setHash(Value key, Value value, int nodeIndex, u8 extr
 		const u32 valueSlot = static_cast<u32>(nodeIndex) + count;
 		const auto prior = body.slots.tag(valueSlot);
 		if (prior != ValueTag::Nil && prior != ValueTag::DeadKey) {
-			m_heap->writeTableValue(m_address, value);
+			m_heap.writeTableValue(m_address, value);
 			body.slots.set(valueSlot, value);
 			return nodeIndex;
 		}
@@ -536,20 +536,20 @@ bool NativeTableReference::setIntegerArrayKey(int key, const Value& value) {
 	if (slot >= arrayCapacity()) {
 		return false;
 	}
-	m_heap->writeTableValue(m_address, value);
+	m_heap.writeTableValue(m_address, value);
 	setArraySlot(slot, value);
 	return true;
 }
 
 void NativeTableReference::publishHashInsertion(Value key, Value value) {
-	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
-	m_heap->writeTableEntry(m_address, key, value);
+	if (valueIsString(key) && valuePayload(key) == m_heap.diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
+	m_heap.writeTableEntry(m_address, key, value);
 }
 
 void NativeTableReference::setInteger(int indexValue, const Value& value) {
 	const u32 index = arraySlot(indexValue), array = arrayCapacity();
 	if (index < array) {
-		m_heap->writeTableValue(m_address, value);
+		m_heap.writeTableValue(m_address, value);
 		setArraySlot(index, value);
 		return;
 	}
@@ -563,7 +563,7 @@ int NativeTableReference::setStringKey(StringId key, const Value& value, int slo
 }
 
 void NativeTableReference::clear() {
-	m_heap->tableEntriesMoved(m_address);
+	m_heap.tableEntriesMoved(m_address);
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
 	bindHash(0, 0);
@@ -574,9 +574,9 @@ void NativeTableReference::clear() {
 
 size_t NativeTableReference::trackedHeapBytes() const {
 	const u32 storage = hashAddress();
-	return m_heap->arena.allocationBytes(m_address - GC_OBJECT_PREFIX)
-		+ (arrayAddress() ? m_heap->arena.allocationBytes(arrayAddress()) : 0u)
-		+ (storage != 0u ? m_heap->arena.allocationBytes(storage) : 0u);
+	return m_heap.arena.allocationBytes(m_address - GC_OBJECT_PREFIX)
+		+ (arrayAddress() ? m_heap.arena.allocationBytes(arrayAddress()) : 0u)
+		+ (storage != 0u ? m_heap.arena.allocationBytes(storage) : 0u);
 }
 
 } // namespace bmsx::test

@@ -1,4 +1,7 @@
-#include "machine/cpu/gc_heap.h"
+#include "gc_heap_reference.h"
+#include "firmware_heap_layout.h"
+#include "global_bank_reference.h"
+#include "thread_storage_reference.h"
 #include "table_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
@@ -9,7 +12,32 @@
 #include <limits>
 #include <utility>
 
-namespace bmsx {
+namespace bmsx::test {
+
+GcHeap::GcHeap(CPU& cpu)
+	: budget(cpu.luaHeap()), memory(cpu.memory()), arena(cpu.heapAllocator())
+	, m_cpu(cpu), m_stringPool(cpu.stringPool())
+	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
+
+GcHeap::LocalRootsScope::LocalRootsScope(StringPool& strings)
+	: m_strings(&strings) {
+	strings.beginLocalRoots();
+}
+
+GcHeap::LocalRootsScope::LocalRootsScope(LocalRootsScope&& other) noexcept
+	: m_strings(other.m_strings) {
+	other.m_strings = nullptr;
+}
+
+GcHeap::LocalRootsScope::~LocalRootsScope() {
+	if (m_strings) {
+		m_strings->endLocalRoots();
+	}
+}
+
+GcHeap::LocalRootsScope GcHeap::acquireLocalRoots() {
+	return LocalRootsScope(m_stringPool);
+}
 
 void GcHeap::writeBarrier(u32 address, u32 link) {
 	if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
@@ -521,7 +549,7 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 	size_t next = cursor & TRACE_CURSOR_MASK;
 	for (; kind < static_cast<u32>(stop); ++kind, next = 0u) {
 		const auto bank = static_cast<GcRootBank>(kind);
-		const size_t end = m_cpu.rootBankEnd(bank);
+		const size_t end = rootBankEnd(bank);
 		const bool globals = bank < GcRootBank::SystemConstants;
 		const size_t words = globals ? 3u : 1u, worst = words + (globals ? 2u : 1u);
 		while (next < end) {
@@ -530,12 +558,12 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 				return work;
 			}
 			const size_t allowance = std::max(size_t{1}, (limit - work) / worst);
-			work += m_cpu.markRootBank(*this, bank, next, end, allowance) * words;
+			work += markRootBank(bank, next, end, allowance) * words;
 			work += m_stringPool.takeMarkWork();
 		}
 	}
 	memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, 0u);
-	m_cpu.markRootThreads(*this);
+	markRootThreads();
 	return work;
 }
 
@@ -557,7 +585,7 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 		// barriers still publish to Changed, and no allocation can sweep.
 		memory.writeRamRecordPair(m_controlOffset + GC_TRACE_HEAD, indexWord(GC_CHANGED_HEAD), 0u);
 		setRemarkStage(RemarkStage::Roots);
-		m_cpu.markRootHead(*this);
+		markRootHead();
 		// Global banks were scanned once. Their mutation path retains new edges.
 		memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemConstants) << TRACE_CURSOR_BITS);
 	}
@@ -602,7 +630,7 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 	// Before final tracing these values need neither marking nor a cursor:
 	// the collector cannot reclaim this epoch until the mutator stops.
 	if (scopedRoots && remarkStage() < RemarkStage::ClearWeak) {
-		m_cpu.markScopedRoots(*this);
+		markScopedRoots();
 		m_stringPool.markLocalRoots();
 		markValue(root0); markValue(root1); markValue(root2);
 		work += m_stringPool.takeMarkWork();
@@ -714,8 +742,8 @@ size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThr
 
 inline size_t GcHeap::compactThreadStack(u32 address) {
 	const auto layout = ThreadRecord::storageLayout(memory, address);
-	const u32 retained = ThreadRecord::shrinkStack(*this, address, layout);
-	if (retained != 0u) m_cpu.rebindRelocatedThread(address);
+	const u32 retained = shrinkReferenceThreadStack(*this, address, layout);
+	if (retained != 0u) rebindRelocatedThread(address);
 	return 2u * ceilDiv4(retained);
 }
 
@@ -740,7 +768,7 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 	// Clear any selected execution view before its old record or backing can
 	// be reused. View residency does not contribute a root or collector work.
 	const auto layout = ThreadRecord::storageLayout(memory, address);
-	m_cpu.retireThreadView(address);
+	retireThreadView(address);
 	budget.releaseRecord(layout.block, layout.valueBytes());
 	budget.releaseRecord(layout.frameBlock, layout.frameBytes());
 	budget.releaseObject(address, THREAD_HEAP_BYTES);
@@ -813,7 +841,7 @@ std::optional<size_t> GcHeap::reservationAssistAllowance(size_t requested) const
 
 void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread, const int* sourceBudget) {
 	if (const auto allowance = reservationAssistAllowance(requested))
-		m_cpu.assistAllocation(root0, root1, root2, growingThread, *allowance, sourceBudget);
+		assistAllocation(root0, root1, root2, growingThread, *allowance, sourceBudget);
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
@@ -851,7 +879,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
 			m_stringPool.markReachable(diagnosticWord(GcDiagnosticField::Mode));
-			m_cpu.markRootHead(*this);
+			markRootHead();
 			beginInitialBanks();
 		}
 		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
@@ -924,7 +952,7 @@ LuaAllocationRecovery GcHeap::beginAllocationRecovery(LuaAllocationRecovery next
 LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Value root0, Value root1, Value root2, u32 growingThread) {
 	const auto afterEpoch = beginAllocationRecovery(next);
 	// Recovery finishes just this epoch, without allocating to shrink live stacks.
-	do { m_cpu.chargeCollectionWork(step(root0, root1, root2, growingThread, false, GC_STEP_WORDS)); } while (active());
+	do { chargeCollectionWork(step(root0, root1, root2, growingThread, false, GC_STEP_WORDS)); } while (active());
 	return afterEpoch;
 }
 
@@ -977,4 +1005,105 @@ u32 GcHeap::openCellAddress(u32 address) const {
 	return cell != 0u && Upvalue::isOpen(memory, cell) ? cell : 0u;
 }
 
-} // namespace bmsx
+void GcHeap::markRootHead() {
+	using Field = GcDiagnosticField;
+	// Opcode metamethod selectors stay interned independently of guest tables.
+	markString(diagnosticWord(Field::Index));
+	markString(diagnosticWord(Field::NewIndex));
+	markString(diagnosticWord(Field::Length));
+	markString(diagnosticWord(Field::Error));
+	const u32 faults = diagnosticWord(Field::FaultIds);
+	for (u32 reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
+		if (reason != LUA_FAULT_REASON_EXPLICIT_ERROR) markString(memory.readRamRecordWord(faults + reason * sizeof(u32)));
+	markValue(valueFromTag(static_cast<ValueTag>(diagnosticWord(Field::StringIndexTag)),
+		diagnosticWord(Field::StringIndexWord)));
+	if (m_cpu.m_stringComparison.remaining) { markString(m_cpu.m_stringComparison.left); markString(m_cpu.m_stringComparison.right); }
+}
+
+void GcHeap::markScopedRoots() {
+	for (size_t scratchIndex = 0; scratchIndex < m_cpu.m_builtinResultScratchIndex; ++scratchIndex) {
+		BuiltinResults& scratch = m_cpu.m_builtinResultScratch.get(scratchIndex);
+		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {
+			markValue(scratch[valueIndex]);
+		}
+	}
+}
+
+size_t GcHeap::rootBankEnd(GcRootBank bank) const {
+	if (bank == GcRootBank::SystemGlobals) return m_cpu.m_systemGlobalBank.count();
+	if (bank == GcRootBank::Globals) return m_cpu.m_globalBank.count();
+	if (bank == GcRootBank::Completion) return m_cpu.m_completionValueCount;
+	const u32 binding = executionImageBindingOffset(arena.managementOffset(),
+		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
+	return memory.readRamRecordWord(binding + FIRMWARE_IMAGE_BINDING_RAM_STRING_END_OFFSET);
+}
+
+size_t GcHeap::markRootBank(GcRootBank bank, size_t& next, size_t end, size_t allowance) {
+	const size_t stop = std::min(end, next + allowance);
+	const size_t slotsVisited = stop - next;
+	if (bank < GcRootBank::SystemConstants) {
+		const auto& names = bank == GcRootBank::SystemGlobals ? m_cpu.m_systemGlobalBank : m_cpu.m_globalBank;
+		const auto slots = names.values();
+		for (; next < stop; ++next) {
+			markString(NativeGlobalBankReference::name(names, next));
+			markValue(slots.get(next));
+		}
+		return slotsVisited;
+	}
+	if (bank == GcRootBank::Completion) {
+		for (; next < stop; ++next) markValue(m_cpu.m_completionValues.get(next));
+		return slotsVisited;
+	}
+	const u32 binding = executionImageBindingOffset(arena.managementOffset(),
+		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
+	const u32 roots = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	size_t marked = 0;
+	// A literal bank resumes at a physical ordinal. As in the original
+	// compact root scan, only the RAM String roots consume this allowance.
+	for (; next < end && marked < allowance; ++next) {
+		const StringId id = memory.readRamRecordWord(roots + static_cast<u32>(next) * 4u);
+		if (!isRamStringId(id)) continue;
+		markString(id);
+		++marked;
+	}
+	return marked;
+}
+
+void GcHeap::markRootThreads() {
+	markThread(m_cpu.m_rootView.address);
+	if (m_cpu.m_activeThread) markThread(m_cpu.m_activeThread->address);
+	markThread(m_cpu.m_completionThreadAddress);
+	markThread(m_cpu.m_haltedUntilIrqThreadAddress);
+}
+
+void GcHeap::retireThreadView(u32 address) {
+	for (auto& view : m_cpu.m_transferViews) {
+		if (view.address != address) continue;
+		view.select(0u);
+		return;
+	}
+}
+
+void GcHeap::rebindRelocatedThread(u32 address) {
+	m_cpu.visitThreadViews([&](Thread& thread) {
+		if (thread.address != address) return;
+		thread.bindStack();
+	});
+}
+
+void GcHeap::chargeCollectionWork(size_t work) {
+	if (m_cpu.m_runKind != CpuRunKind::Idle) m_cpu.instructionBudgetRemaining -= GC_WORK_WORD_CYCLES * static_cast<int>(work);
+}
+
+size_t GcHeap::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget) {
+	if (m_cpu.m_runKind != CpuRunKind::Idle || sourceBudget) {
+		const int remaining = sourceBudget ? *sourceBudget : m_cpu.instructionBudgetRemaining;
+		if (remaining < GC_WORK_WORD_CYCLES) return 0;
+		words = std::min(words, static_cast<size_t>(remaining / GC_WORK_WORD_CYCLES));
+	}
+	const size_t work = step(root0, root1, root2, growingThread, false, words);
+	chargeCollectionWork(work);
+	return work;
+}
+
+} // namespace bmsx::test

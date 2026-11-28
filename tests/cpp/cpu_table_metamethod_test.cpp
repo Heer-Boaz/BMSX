@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
@@ -61,7 +62,7 @@ struct Machine {
 #endif
 	}
 	Value bindHandler() {
-		test::reserveReferenceThreadFrame(cpu.gcHeap(), *cpu.activeThread(), 32); // These raw fixtures exercise placement after admission.
+		test::reserveReferenceThreadFrame(bmsx::test::GcHeap(cpu), *cpu.activeThread(), 32); // These raw fixtures exercise placement after admission.
 		return valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[2], {}));
 	}
 };
@@ -158,7 +159,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		auto r = cpu.activeThread()->currentFrame->registers;
-		bmsx::test::asReferenceTable(r.get(3), cpu.gcHeap()).setStringKey(cpu.stringPool().intern("__index"), r.get(2));
+		bmsx::test::asReferenceTable(r.get(3), bmsx::test::GcHeap(cpu)).setStringKey(cpu.stringPool().intern("__index"), r.get(2));
 		r.set(0, r.get(4));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -172,11 +173,11 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 void stringIndexUsesTheRestoredControlWord() {
 	Machine machine(Program(OpCode::GETT, false), true);
 	auto& cpu = machine.cpu;
-	auto& gc = cpu.gcHeap();
+	auto gc = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
-	const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
-	const u32 tag = head + static_cast<u32>(GcDiagnosticField::StringIndexTag);
-	const u32 word = head + static_cast<u32>(GcDiagnosticField::StringIndexWord);
+	const u32 head = cpu.heapAllocator().managementOffset() + bmsx::test::GC_DIAGNOSTIC_OFFSET;
+	const u32 tag = head + static_cast<u32>(bmsx::test::GcDiagnosticField::StringIndexTag);
+	const u32 word = head + static_cast<u32>(bmsx::test::GcDiagnosticField::StringIndexWord);
 	auto methods = bmsx::test::allocateTableReference(cpu, 0, 1);
 	const auto key = cpu.stringPool().intern("watched-method");
 	methods.setStringKey(key, valueInteger(73));
@@ -187,7 +188,7 @@ void stringIndexUsesTheRestoredControlWord() {
 	frame->registers.set(1, valueString(key));
 	frame->extendTop(2);
 
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(gc.tableRecordAddress(methods.address()) == methods.address(),
 		"the live RAM index is the sole root of the method Table");
 	const auto ram = memory.captureSaveState();
@@ -229,7 +230,7 @@ void tableValuedNewIndexAndOwnOverwrite() {
 		require(read(0) == valueInteger(37) && isNil(read(3)) && generated.cpu.instructionBudgetRemaining == 1 - cycles(op),
 			"existing false is present: ordinary overwrite stays on its own Table");
 		for (auto* m : {&generated, &scalar}) {
-			auto own = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto own = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(m->cpu));
 			own.set(m->cpu.readFrameRegister(0, 1), valueNil());
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		}
@@ -299,7 +300,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 		"the warmed own slot accepts the next exact tagged value");
 
 	for (auto* m : {&generated, &scalar})
-		bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap()).setStringKey(field, valueNil());
+		bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(m->cpu)).setStringKey(field, valueNil());
 	assign(negativeZero, 1);
 	int holderSlot = -1;
 	require(isNil(own.getStringKey(field)) && holder.getStringKeyCached(field, holderSlot) == negativeZero
@@ -314,7 +315,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 
 	for (auto* m : {&generated, &scalar}) {
 		auto& lane = m->cpu;
-		bmsx::test::asReferenceTable(lane.readFrameRegister(0, 4), lane.gcHeap())
+		bmsx::test::asReferenceTable(lane.readFrameRegister(0, 4), bmsx::test::GcHeap(lane))
 			.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, 0));
 	}
 	assign(rawNaN, 1);

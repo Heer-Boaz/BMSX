@@ -10,6 +10,7 @@
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
@@ -116,7 +117,7 @@ void reclaimUnreachableRecords() {
 	size_t steadyBytes = 0;
 	for (int round = 0; round < 8; ++round) {
 		for (int index = 0; index < 128; ++index) pool.intern("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix);
-		cpu.collectHeap();
+		bmsx::test::GcHeap(cpu).collect();
 		if (round == 0) steadyBytes = cpu.luaHeap().usedBytes();
 		require(cpu.luaHeap().usedBytes() == steadyBytes, "the heap returns to its steady bucket capacity");
 		for (int index = 0; index < 128; ++index) require(!pool.find("garbage-" + std::to_string(round) + "-" + std::to_string(index) + "-" + suffix), "unreachable String leaves its bucket");
@@ -128,7 +129,7 @@ void collectEmptyString() {
 	auto& pool = machine.cpu.stringPool();
 	const auto empty = pool.intern("");
 	require(pool.intern("") == empty && pool.byteLength(empty) == 0u, "empty bytes have a canonical live String record");
-	machine.cpu.collectHeap();
+	bmsx::test::GcHeap(machine.cpu).collect();
 	require(!pool.find(""), "a RAM record with no suffix is still collectible");
 }
 
@@ -178,19 +179,19 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	const auto name = [](u32 index) { return "fill:" + std::to_string(index); };
 	for (u32 i = 0; i < count; ++i) roots.setInteger(i + 1u, valueString(pool.intern(name(i))));
 	require(read(4u) == capacity && read(8u) == capacity, "the next distinct String needs a bucket growth");
-	const auto advance = [&] { return cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
-	for (int step = 0; cpu.gcHeap().phase() != GcPhase::Sweep && step < 40; ++step) advance();
-	require(cpu.gcHeap().phase() == GcPhase::Sweep, "objects must be swept before String reclamation");
+	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
+	for (int step = 0; bmsx::test::GcHeap(cpu).phase() != bmsx::test::GcPhase::Sweep && step < 40; ++step) advance();
+	require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Sweep, "objects must be swept before String reclamation");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = memory.captureSaveState();
 	const auto finish = [&] {
 		cpu.luaHeap().setCollectionTarget(0);
 		const auto added = pool.intern("growth crosses into Strings");
-		require((read(4u) & 0x7fffffffu) == capacity && cpu.gcHeap().phase() == GcPhase::Strings
+		require((read(4u) & 0x7fffffffu) == capacity && bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Strings
 			&& read(0x38u) != 0u && read(0x3cu) > 0u,
 			"unbilled rehash work advances before admitting the String and then yields to its sweep");
-		for (int step = 0; cpu.collecting() && step < 20; ++step) advance();
-		require(!cpu.collecting() && read(4u) == 2u * capacity && pool.find("growth crosses into Strings") == added,
+		for (int step = 0; bmsx::test::GcHeap(cpu).active() && step < 20; ++step) advance();
+		require(!bmsx::test::GcHeap(cpu).active() && read(4u) == 2u * capacity && pool.find("growth crosses into Strings") == added,
 			"later work completes the growth and retains the new String");
 		for (u32 i = 0; i < count; ++i) require(pool.find(name(i)) == asStringId(roots.getInteger(i + 1u)), "each split retains its original interned addresses");
 		return memory.captureSaveState().ram;
@@ -291,7 +292,7 @@ void stringDirectoryGrowthDoesNotForceCollection() {
 	text.back() = 'b';
 	const auto inserted = pool.intern(text);
 	require(read(0u) == base && read(4u) == capacity && read(8u) == capacity + 1u
-		&& read(0x38u) == 0u && !cpu.collecting(),
+		&& read(0x38u) == 0u && !bmsx::test::GcHeap(cpu).active(),
 		"the optional index growth cannot force an emergency collection");
 	require(pool.find(text) == inserted && pool.find(std::string(60, 'a')) == original
 		&& pool.find("grow filler 0"), "the new String uses the pre-existing buckets without retiring their occupants");
@@ -357,13 +358,13 @@ void rehashCollisionAcrossSweepAndRewind() {
 	RamHistory::PageMap checkpoint, collected;
 	archive.capture(memory, nullptr, checkpoint);
 	const auto state = cpu.captureRuntimeState();
-	const auto advance = [&] { cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
+	const auto advance = [&] { bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
 	const auto finish = [&] {
-		for (int step = 0; cpu.gcHeap().phase() != GcPhase::Strings && step < 40; ++step) advance();
-		require(cpu.gcHeap().phase() == GcPhase::Strings && read(0x3cu) == 1u,
+		for (int step = 0; bmsx::test::GcHeap(cpu).phase() != bmsx::test::GcPhase::Strings && step < 40; ++step) advance();
+		require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Strings && read(0x3cu) == 1u,
 			"sweep visits both planes before moving any more links");
-		for (int step = 0; cpu.collecting() && step < 40; ++step) advance();
-		require(!cpu.collecting() && read(0u) == nextBase && read(4u) == 2u * capacity && read(0x38u) == 0u,
+		for (int step = 0; bmsx::test::GcHeap(cpu).active() && step < 40; ++step) advance();
+		require(!bmsx::test::GcHeap(cpu).active() && read(0u) == nextBase && read(4u) == 2u * capacity && read(0x38u) == 0u,
 			"the old directory is no longer published when collection completes");
 		require(pool.find(trigger) == inserted, "the inserted String survives its new chain's sweep");
 		for (const auto& [text, id] : entries) {
@@ -384,7 +385,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 void reclaimLongByteStrings() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto baseline = cpu.luaHeap().usedBytes();
 	const u32 physical = cpu.heapAllocator().occupiedBytes();
 	std::string text;
@@ -394,13 +395,13 @@ void reclaimLongByteStrings() {
 	require(cpu.luaHeap().usedBytes() == baseline + bytes, "logical charge includes the record header and payload, not chunk overhead");
 	require(cpu.heapAllocator().occupiedBytes() == physical + cpu.heapAllocator().allocationBytes(old), "physical diagnostics include the actual chunk");
 	require(pool.byteAt(old, 128) == static_cast<u8>(text[128]), "long indexes address the exact byte");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(cpu.luaHeap().usedBytes() == baseline && cpu.heapAllocator().occupiedBytes() == physical,
 		"GC releases both the logical charge and the physical record");
 	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
 	const auto id = pool.intern(text);
 	require(pool.byteAt(id, 64) == 0xf0, "subsequent allocation publishes replacement bytes");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(pool.byteAt(pool.intern("ascii"), 4) == 'i', "short replacement publishes its own bytes");
 }
 
@@ -410,23 +411,23 @@ void retainNestedMaterializationRoots() {
 	auto& pool = cpu.stringPool();
 	StringId outerId = 0;
 	{
-		auto outer = cpu.acquireLocalRoots();
+		auto outer = bmsx::test::GcHeap(cpu).acquireLocalRoots();
 		outerId = pool.intern("outer string");
 		{
-			auto inner = cpu.acquireLocalRoots();
+			auto inner = bmsx::test::GcHeap(cpu).acquireLocalRoots();
 			const auto innerId = pool.intern("inner string");
-			cpu.collectHeap();
+			bmsx::test::GcHeap(cpu).collect();
 			require(pool.toString(outerId) == "outer string" && pool.toString(innerId) == "inner string", "nested scopes retain their own returned IDs");
 		}
-		cpu.collectHeap();
+		bmsx::test::GcHeap(cpu).collect();
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
 		auto table = bmsx::test::allocateTableReference(cpu);
 		const auto key = pool.intern("nested key");
 		table.setStringKey(key, valueInteger(7));
-		cpu.collectHeap(valueTable(table.address()));
+		bmsx::test::GcHeap(cpu).collect(valueTable(table.address()));
 		require(table.getStringKey(key) == valueInteger(7), "the collector keeps explicit Values and scoped Strings");
 	}
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
 }
 
@@ -440,7 +441,7 @@ void replaySparseAllocationOrder() {
 	for (const auto text : {"hole one", "hole two", "hole three"}) pool.intern(text);
 	pool.endLocalRoots();
 	pool.intern("right anchor");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	pool.intern("partially reused");
 	pool.endLocalRoots();
 	const auto ram = machine.memory.captureSaveState();
@@ -463,7 +464,7 @@ void reuseDeletedStringKeyId() {
 	table.setStringKey(removed, valueNil());
 	const auto retained = pool.intern("retained key");
 	table.setStringKey(retained, valueInteger(23));
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(!pool.find("removed key"), "dead hash nodes do not own their former string text");
 	const auto replacement = pool.intern("replacement key");
 	require(isNil(table.getStringKey(replacement)), "recycled IDs do not resurrect removed mappings");
@@ -505,10 +506,10 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	const StringId original = pool.intern(text);
 	cpu.writeFrameExecution(0, 0, cart.functionAddresses[0], cart.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, bios.functionAddresses[0], bios.textAddress);
-	cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 	const auto savedCpu = cpu.captureRuntimeState();
 	const auto savedMemory = memory.captureSaveState();
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(pool.find(text) == original, "an inactive resident image retains its original RAM String");
 
 	// Activate the same mounted ROM with a different canonical RAM identity.
@@ -530,7 +531,7 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	require(cpu.readFrameRegister(0, 0) == valueString(original), "LOADK uses the restored String binding and not the later activation");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, bios.functionAddresses[0], bios.textAddress);
 	cpu.rootThread()->currentFrame->registers.set(0, valueNil());
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(pool.find(text) == original, "restored image retains the same RAM String through a fresh epoch");
 }
 
@@ -557,18 +558,18 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the image returns its prebound dynamic callee");
 		const auto completion = cpu.readCompletionValues();
 		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");
-		auto closure = asClosure(completion.get(0), cpu.gcHeap());
+		auto closure = bmsx::test::asClosure(completion.get(0), bmsx::test::GcHeap(cpu));
 		const std::string text(4096, 'a');
 		const auto id = cpu.stringPool().intern(text);
 		const std::array args{valueString(id)};
 		if (finalPending) {
-			auto& heap = cpu.gcHeap();
-			for (int step = 0; !heap.finalMarkPending() && step < 30; ++step) cpu.stepHeap(valueNil(), valueNil(), valueNil());
+			auto heap = bmsx::test::GcHeap(cpu);
+			for (int step = 0; !heap.finalMarkPending() && step < 30; ++step) bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 			require(heap.finalMarkPending(), "a final pass is pending when the host can enter an explicit call");
 		}
 		cpu.luaHeap().setCollectionTarget(0);
 		cpu.beginCompletionCall(closure, BuiltinArgsView(args.data(), args.size()));
-		require((!finalPending || !cpu.gcHeap().finalMarkPending()) && cpu.stringPool().find(text) == id,
+		require((!finalPending || !bmsx::test::GcHeap(cpu).finalMarkPending()) && cpu.stringPool().find(text) == id,
 			"call entry roots its incoming argument before final marking and stack growth");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();

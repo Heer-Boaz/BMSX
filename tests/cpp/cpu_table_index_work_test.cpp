@@ -3,6 +3,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
@@ -82,13 +83,16 @@ Value keyFor(CPU& cpu, KeyKind kind) {
 		: kind == KeyKind::Integer ? valueInteger(1) : valueBool(false);
 }
 bmsx::test::NativeTableReference makeChain(CPU& cpu, bmsx::test::NativeTableReference root, int depth, Value key, Value value) {
-	auto current = root;
+	u32 current = root.address();
+	const bmsx::test::GcHeap heap(cpu);
 	for (int i = 1; i < depth; ++i) {
 		auto next = bmsx::test::allocateTableReference(cpu, 2, 2); auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(next.address())); current.setMetatableAddress(meta.address()); current = next;
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(next.address())); bmsx::test::NativeTableReference(heap, current).setMetatableAddress(meta.address());
+		current = next.address();
 	}
-	current.set(key, value);
-	return current;
+	bmsx::test::NativeTableReference tail(heap, current);
+	tail.set(key, value);
+	return tail;
 }
 void cycle(CPU& cpu, bmsx::test::NativeTableReference root) {
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
@@ -192,7 +196,7 @@ void exhaustedStringChainCharges() {
 		}
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(cpu));
 			cycle(cpu, root);
 			// Close the actual tail link onto home. Only the visit bound,
 			// not a negative link, can terminate this raw RAM chain.
@@ -223,7 +227,7 @@ void growingStringHitCharges() {
 				auto& cpu = m->cpu;
 				const auto key = keyFor(cpu, KeyKind::String);
 				auto r = cpu.activeThread()->currentFrame->registers;
-				auto table = depth == 64 ? bmsx::test::allocateTableReference(cpu, 0, 128) : bmsx::test::asReferenceTable(r.get(0), cpu.gcHeap());
+				auto table = depth == 64 ? bmsx::test::allocateTableReference(cpu, 0, 128) : bmsx::test::asReferenceTable(r.get(0), bmsx::test::GcHeap(cpu));
 				r.set(0, valueTable(table.address())); r.set(1, key);
 				const auto home = hashCanonicalTableKey(key) & 127u;
 				next = n;
@@ -256,7 +260,7 @@ void growingStringHitCharges() {
 		}
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(cpu));
 			const auto key = keyFor(cpu, KeyKind::String);
 			root.set(key, valueNil());
 			makeChain(cpu, root, 2, key, valueBool(false));
@@ -311,7 +315,7 @@ void directIndexMemberWork() {
 				auto& cpu = m->cpu;
 				const auto receiver = cpu.readFrameRegister(0, 0);
 				auto root = TableRecord(cpu.memory(), valuePayload(receiver));
-				bmsx::test::NativeTableReference(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
+				bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			}
 			test::runCpuParity(generated.cpu, scalar.cpu, 3);
@@ -476,28 +480,28 @@ void warmedOneHopUsesLiveMappings() {
 		check(valueInteger(73), 8);
 		check(valueInteger(73), 8);
 		for (auto* m : machines) {
-			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(m->cpu));
 			root.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
 		}
 		check(valueBool(false), 0);
 		for (auto* m : machines) {
-			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), bmsx::test::GcHeap(m->cpu));
 			root.set(m->cpu.readFrameRegister(0, 1), valueNil());
 		}
 		check(valueInteger(73), 8);
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
 			auto root = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
-			bmsx::test::NativeTableReference(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
+			bmsx::test::NativeTableReference(bmsx::test::GcHeap(cpu), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
 		}
 		check(valueInteger(107), 8);
 		for (auto* m : machines) {
-			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), bmsx::test::GcHeap(m->cpu));
 			holder.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
 		}
 		check(valueBool(false), 8);
 		for (auto* m : machines) {
-			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), bmsx::test::GcHeap(m->cpu));
 			holder.set(m->cpu.readFrameRegister(0, 1), valueNil());
 		}
 		check(valueNil(), 8);
@@ -517,7 +521,7 @@ void callableIndexUsesARealDetachedActivation() {
 			const Value key = op == OpCode::GETI ? valueInteger(1) : op == OpCode::GETT ? valueFloat(1.0f) : keyFor(cpu, KeyKind::String);
 			const u32 closure = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[2], {});
 			auto& thread = *cpu.activeThread();
-			test::reserveReferenceThreadFrame(cpu.gcHeap(), thread, thread.stackTop() + 8); // The exact grant measures placement, not acquiring storage.
+			test::reserveReferenceThreadFrame(bmsx::test::GcHeap(cpu), thread, thread.stackTop() + 8); // The exact grant measures placement, not acquiring storage.
 			auto* frame = cpu.activeThread()->currentFrame;
 			frame->registers.set(3, valueClosure(closure));
 			frame->writeControl(FrameField::Top, 0x4900000bu);
@@ -631,7 +635,7 @@ void suspendedIndexRestoresItsPlacement() {
 		meta.setStringKey(cpu.stringPool().intern("__index"), valueClosure(entry));
 		root.setMetatableAddress(meta.address());
 		auto* thread = cpu.rootThread();
-		test::reserveReferenceThreadStorage(cpu.gcHeap(), thread->address, 32u, 4u, valueClosure(entry));
+		test::reserveReferenceThreadStorage(bmsx::test::GcHeap(cpu), thread->address, 32u, 4u, valueClosure(entry));
 		thread->bindStack();
 		thread->currentFrame->registers.set(0, valueTable(root.address()));
 		thread->currentFrame->extendTop(1);
@@ -692,7 +696,7 @@ void stringReceiver() {
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
 			TableRecord installed(m->cpu.memory(), m->cpu.captureRuntimeState().stringIndexTableWord);
-			bmsx::test::NativeTableReference(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
+			bmsx::test::NativeTableReference(bmsx::test::GcHeap(m->cpu), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
 		}

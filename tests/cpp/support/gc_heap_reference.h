@@ -1,17 +1,25 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <utility>
 
-#include "common/compiler.h"
+#include "machine/cpu/gc_object.h"
 #include "machine/cpu/heap_allocator.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/lua_heap.h"
+#include "machine/cpu/string_pool.h"
+#include "machine/memory/memory.h"
 
 namespace bmsx {
 class CPU;
 class TableRecord;
+} // namespace bmsx
+
+namespace bmsx::test {
+inline constexpr u32 HEAP_GC_CONTROL_OFFSET = 0x344u;
+
 // Collector work is measured in 32-bit pool words, not host time.
 inline constexpr int GC_WORK_WORD_CYCLES = 3;
 inline constexpr size_t GC_STEP_WORDS = 4096;
@@ -72,7 +80,20 @@ inline constexpr u8 GC_VISIT_MEMBER = 0x40u;
 
 class GcHeap {
 public:
-	GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings);
+	class LocalRootsScope {
+	public:
+		explicit LocalRootsScope(StringPool& strings);
+		LocalRootsScope(LocalRootsScope&& other) noexcept;
+		~LocalRootsScope();
+		LocalRootsScope(const LocalRootsScope&) = delete;
+		LocalRootsScope& operator=(const LocalRootsScope&) = delete;
+
+	private:
+		StringPool* m_strings;
+	};
+
+	explicit GcHeap(CPU& cpu);
+	// The oracle borrows the machine and its existing RAM; it holds no GC state.
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
@@ -82,6 +103,7 @@ public:
 	u32 diagnosticWord(GcDiagnosticField field) const {
 		return memory.readRamRecordWord(diagnosticOffset(field));
 	}
+	LocalRootsScope acquireLocalRoots();
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;
@@ -113,6 +135,8 @@ public:
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS);
 	bool reservationAssistDue(size_t requested) const;
+	void chargeCollectionWork(size_t work);
+	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget);
 	std::optional<size_t> reservationAssistAllowance(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u,
 		const int* sourceBudget = nullptr);
@@ -168,6 +192,11 @@ private:
 	size_t markCell(u32 cell);
 	size_t trace(bool atomic, size_t limit);
 	size_t traceRootBanks(size_t limit, size_t work, GcRootBank stop);
+	void markRootHead();
+	void markScopedRoots();
+	void markRootThreads();
+	size_t rootBankEnd(GcRootBank bank) const;
+	size_t markRootBank(GcRootBank bank, size_t& next, size_t end, size_t allowance);
 	size_t traceCaptures(u32 closure, u32 next, u32 count, size_t work, size_t limit);
 	size_t traceThread(u32 thread, bool atomic, size_t limit, u32 cursor, u32 open, u32 captureTop, bool resumed);
 	size_t resumeTrace(u32 record, bool atomic, size_t limit);
@@ -197,6 +226,8 @@ private:
 	bool markRecord(u32 address, u8 kind, u32 queue);
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
 	size_t compactThreadStack(u32 address);
+	void rebindRelocatedThread(u32 address);
+	void retireThreadView(u32 address);
 	void beginPaceCredit(u32 estimate, u32 runwayShift);
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
@@ -207,4 +238,4 @@ private:
 };
 
 inline u32 asClosure(Value value, const GcHeap& heap) { return heap.closureRecordAddress(valuePayload(value)); }
-} // namespace bmsx
+} // namespace bmsx::test

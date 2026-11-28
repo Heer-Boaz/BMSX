@@ -12,7 +12,6 @@
 #include "spec/blua32/numeric.h"
 
 namespace bmsx {
-class GcHeap;
 struct Thread;
 
 // Only transient complete values use this transport word. Persistent slots use
@@ -128,7 +127,6 @@ inline uint32_t hashCanonicalTableKey(Value value) {
 		default: BMSX_UNREACHABLE();
 	}
 }
-uint32_t asClosure(Value value, const GcHeap& heap);
 
 void appendValueString(std::string& out, Value value, const StringPool& strings);
 // Longest non-String spelling: a signed seven-digit Float such as -1.234567e-30.

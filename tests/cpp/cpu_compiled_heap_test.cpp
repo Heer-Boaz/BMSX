@@ -3,6 +3,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
@@ -236,7 +237,7 @@ void closureAddressAlias(int source) {
 			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(address));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
-		require(native.cpu.readClosureBinding(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == address, "the full source address is sampled before its slot is replaced");
+		require(native.cpu.readClosureBinding(bmsx::test::asClosure(native.cpu.readFrameRegister(0, source), bmsx::test::GcHeap(native.cpu))).functionAddress == address, "the full source address is sampled before its slot is replaced");
 	}
 }
 

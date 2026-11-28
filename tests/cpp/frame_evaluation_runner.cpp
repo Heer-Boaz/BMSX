@@ -8,6 +8,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/cpu_execution_budget.h"
 
 namespace {
@@ -42,7 +43,7 @@ void restoreSuspended(Runtime& runtime, bool inspectFrame) {
 	if (cpu.getGlobalByKey(*cpu.stringPool().find("fixture_inject_completion")) != valueBool(true)) return;
 	const auto argument = valueInteger(depth - 1);
 	const int exceptionDepth = cpu.readExceptionReturnFrameDepth();
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
+	cpu.beginCompletionCall(bmsx::test::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), bmsx::test::GcHeap(cpu)), {&argument, 1});
 	require(test::runCpuWithinBudget(cpu, 1000000, depth) == RunResult::Halted
 		&& !cpu.captureRuntimeState().hardHalted && cpu.readExceptionReturnFrameDepth() == exceptionDepth,
 		"the named completion call must finish without a fault");

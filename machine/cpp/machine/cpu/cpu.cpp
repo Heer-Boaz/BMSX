@@ -68,7 +68,6 @@ CPU::CPU(
 	, m_heapAllocator(memory)
 	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
-	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
 	, m_rootView(memory)
 	, m_irqView(memory)
 	, m_transferViews{Thread{memory}, Thread{memory}}

@@ -5,6 +5,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
@@ -432,7 +433,7 @@ void hotUpvalueAlias() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
-		auto& heap = m->cpu.gcHeap();
+		auto heap = bmsx::test::GcHeap(m->cpu);
 		std::array<u32, 2> cells{};
 		const u32 closure = test::seedTestCapturedClosure(m->cpu, m->rom.functionAddresses[0], cells);
 		Upvalue::bindOpen(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);
@@ -483,7 +484,7 @@ void hotGlobalWritesDeferTheirReferences() {
 	image.globalNames = {"cart-slot"}; image.systemGlobalNames = {"system-slot"};
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	int loopCycles = 2; // LOADNIL places two Values in addition to its base cost.
 	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	require(cpu.runUntilDepth(0, loopCycles * NATIVE_WARM_SCALE * 16) == RunResult::Yielded,
@@ -499,9 +500,9 @@ void hotGlobalWritesDeferTheirReferences() {
 	auto cart = bmsx::test::allocateTableReference(cpu, 1, 0), system = bmsx::test::allocateTableReference(cpu, 1, 0), child = bmsx::test::allocateTableReference(cpu);
 	cart.setInteger(1, valueTable(child.address()));
 	system.setInteger(1, valueTable(child.address()));
-	for (int step = 0; step < 256 && heap.phase() != GcPhase::MarkAgain; ++step)
+	for (int step = 0; step < 256 && heap.phase() != bmsx::test::GcPhase::MarkAgain; ++step)
 		heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 1);
-	require(heap.phase() == GcPhase::MarkAgain && !heap.isAlive(cart.address()) && !heap.isAlive(system.address())
+	require(heap.phase() == bmsx::test::GcPhase::MarkAgain && !heap.isAlive(cart.address()) && !heap.isAlive(system.address())
 		&& !heap.isAlive(child.address()), "the table graphs are genuinely white after the initial global scan");
 	const auto slots = [&](u32 offset) {
 		const u32 descriptor = cpu.heapAllocator().managementOffset() + offset;
@@ -607,13 +608,13 @@ void rawContextValues(CpuMachine& machine) {
 		&& globalExit.nextPc == globals.source[1].pc && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
 		&& ordinary.get(1) == valueInteger(99), "native watched global store leaves before changing either lane");
 	auto* owner = cpu.activeThread();
-	test::resizeReferenceThreadStack(cpu.gcHeap(), *owner, 32);
+	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *owner, 32);
 	auto captureRegisters = owner->stack.subspan(0, 16);
 	auto outerRegisters = owner->stack.subspan(16, 1);
 	CallFrame frame;
 	frame.bindControl(machine.memory, DYNAMIC_RAM_BASE - RAM_BASE + 0x800);
 	frame.registers = captureRegisters;
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	std::array<u32, 2> cells{};
 	const u32 boundClosure = test::allocateClosureRecordReference(heap, 2, false, cells);
 	const u32 open = cells[0], closed = cells[1];
@@ -737,7 +738,7 @@ void rawContextValues(CpuMachine& machine) {
 
 void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	auto& memory = machine.memory;
 	auto& frame = *cpu.activeThread()->currentFrame;
 	std::array<u32, 1> cells{};
@@ -747,8 +748,8 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);
 	frame.writeControl(FrameField::Closure, closure);
 	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
-	const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	memory.writeRamRecordByte(control, static_cast<u8>(GcPhase::MarkAgain));
+	const auto control = cpu.heapAllocator().managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
+	memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
 
 	ContextBlock generated(machine, {{OpCode::SETUP, 0}, {OpCode::GETUP, 1}, {OpCode::JMP}});
@@ -760,14 +761,14 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	const auto& exit = *generated.blocks.front()->run(registers.view(), state);
 	require(exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == generated.source[0].pc
 		&& exit.nextPc == generated.source[1].pc && Upvalue::load(memory, cell) == valueNil()
-		&& registers.get(1) == valueNil() && memory.readRamRecordWord(control + GC_TRACE_HEAD) == 0u,
+		&& registers.get(1) == valueNil() && memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == 0u,
 		"the native handoff precedes both the final-remark barrier and the next read");
 	bmsx::test::storeUpvalueReference(cpu, cell, child); // Original implementation, used as the firmware's differential oracle.
 	require(Upvalue::load(memory, cell) == child, "the reference commits the original Value");
 	require(memory.readRamRecordByte(cell + GC_COLOR_OFFSET) == 3u && memory.readRamRecordWord(cell + UPVALUE_NEXT) == 0u
 		&& memory.readRamRecordWord(heap.changedHeadOffset()) == 0u
 		&& memory.readRamRecordByte(valuePayload(child) + GC_COLOR_OFFSET) == 2u
-		&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == (valuePayload(child) & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
+		&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == (valuePayload(child) & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
 		"the closed capture keeps its white referent live through the current trace, not a later cell rescan");
 }
 

@@ -1,4 +1,5 @@
 #include "machine/cpu/jit/runtime/block.h"
+#include "support/gc_heap_reference.h"
 #include "support/native_region_fixture.h"
 #include "common/compiler.h"
 #include "machine/cpu/cpu.h"
@@ -741,7 +742,7 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 void comparisonDatapathsRespectEveryValueKind() {
 	NativeBlockRunState nativeRunState;
 	auto& strings = cpu.stringPool();
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	const u32 firstClosure = test::allocateClosureRecordReference(heap, 0);
 	ClosureRecord::initialize(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
 	const u32 secondClosure = test::allocateClosureRecordReference(heap, 0);

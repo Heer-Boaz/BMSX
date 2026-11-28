@@ -3,6 +3,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -81,7 +82,7 @@ struct Machine {
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
 			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169) : position == 2 ? valueInteger(195) : valueNil();
 		} else {
-			target = bmsx::test::allocateTableReference(cpu, 0, 1); meta = bmsx::test::allocateTableReference(cpu, 0, 1);
+			target.emplace(bmsx::test::allocateTableReference(cpu, 0, 1)); meta.emplace(bmsx::test::allocateTableReference(cpu, 0, 1));
 			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
 			target->setMetatableAddress(meta->address());
 			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(target->address()));
@@ -180,7 +181,7 @@ void ordinaryCases() {
 		require(static_cast<bmsx::i32>(native.cpu.rootThread()->currentFrame->readControl(bmsx::FrameField::Top)) == receiving, "open, discard, fixed and padded receiving counts retain exact top");
 		if (receiving) require(native.cpu.readFrameRegister(0, 0) == native.expected, "ordinary raw builtin result is exact");
 		if (receiving > 1) require(isNil(native.cpu.readFrameRegister(0, 1)), "unsupported result counts keep ordinary nil padding");
-		native.cpu.collectHeap(); scalar.cpu.collectHeap(); parity(native, scalar);
+		bmsx::test::GcHeap(native.cpu).collect(); bmsx::test::GcHeap(scalar.cpu).collect(); parity(native, scalar);
 		native.cpu.restoreRuntimeState(native.cpu.captureRuntimeState()); scalar.cpu.restoreRuntimeState(scalar.cpu.captureRuntimeState()); parity(native, scalar);
 	}
 	for (const int args : {0, 2, 3}) {

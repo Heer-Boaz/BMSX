@@ -1,5 +1,6 @@
 #include "common/mmap_file.h"
 #include "cartridge_media.h"
+#include "support/gc_heap_reference.h"
 #include "machine/runtime/runtime.h"
 #include "machine/cpu/jit/runtime/compilation_profile.h"
 #include "rompack/image.h"
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
 			r.compilationNanoseconds = compileAfter.compilationNanoseconds - compileBefore.compilationNanoseconds;
 			// Match PUC's untimed collect after ten warmups, using the existing
 			// collector owner, without adding a cartridge API or a GC-off mode.
-			if (iteration == warmup) cpu.collectHeap();
+			if (iteration == warmup) bmsx::test::GcHeap(cpu).collect();
 		}
 		std::cout << std::setprecision(17)
 			<< "{\"mode\":\"" << mode << "\",\"warmup\":" << warmup << ",\"measured\":" << measured

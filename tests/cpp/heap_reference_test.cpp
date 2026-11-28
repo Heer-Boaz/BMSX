@@ -1,4 +1,5 @@
 #include "machine/cpu/upvalue.h"
+#include "support/gc_heap_reference.h"
 #include "support/cpu_execution_parity.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/value_storage.h"
@@ -48,9 +49,9 @@ struct Machine {
 };
 
 void checkReferences(CPU& cpu) {
-	cpu.gcHeap().visitObjectRecords(&cpu, [](void* context, u32 address) {
+	bmsx::test::GcHeap(cpu).visitObjectRecords(&cpu, [](void* context, u32 address) {
 		auto& cpu = *static_cast<CPU*>(context);
-		auto& heap = cpu.gcHeap();
+		auto heap = bmsx::test::GcHeap(cpu);
 		switch (cpu.memory().readRamRecordByte(address)) {
 			case static_cast<u8>(ValueTag::Table):
 				require(heap.tableRecordAddress(address) == address, "an issued table is decoded by its RAM header");
@@ -70,7 +71,7 @@ void checkReferences(CPU& cpu) {
 
 void markIssuedWhiteHeader() {
 	Machine machine;
-	auto& gc = machine.cpu.gcHeap();
+	auto gc = bmsx::test::GcHeap(machine.cpu);
 	const u32 table = bmsx::test::allocateTableReference(machine.cpu).address();
 	const u32 raw = DYNAMIC_RAM_BASE + 0x600;
 	const u32 header = static_cast<u32>(ValueTag::Table) | ((0xfcu | gc.white()) << 8u);
@@ -87,10 +88,10 @@ void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	static_assert(sizeof(decltype(cpu.rootThread()->address)) == sizeof(u32));
 	const Value captured = frame.registers.get(1);
-	auto closure = asClosure(captured, cpu.gcHeap());
+	auto closure = bmsx::test::asClosure(captured, bmsx::test::GcHeap(cpu));
 	const u32 cell = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(valuePayload(captured) == closure, "the register contains the raw closure address");
-	require(cpu.gcHeap().closureRecordAddress(cell) == 0u, "a cell address cannot resolve to a closure");
+	require(bmsx::test::GcHeap(cpu).closureRecordAddress(cell) == 0u, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
 	auto roots = bmsx::test::allocateTableReference(cpu, 512);
 	frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
@@ -99,15 +100,15 @@ void liveReferencesAndReuse() {
 		auto table = bmsx::test::allocateTableReference(cpu); roots.setInteger(static_cast<int>(i + 1), valueTable(table.address()));
 		slots.words()[i] = table.address(); slots.tags()[i] = static_cast<u8>(ValueTag::Table);
 	}
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	for (size_t i = 0; i < slots.capacity(); ++i)
-		require(cpu.gcHeap().tableRecordAddress(slots.words()[i]) == valuePayload(roots.getInteger(static_cast<int>(i + 1))), "32-bit payloads survive allocation growth and collection");
+		require(bmsx::test::GcHeap(cpu).tableRecordAddress(slots.words()[i]) == valuePayload(roots.getInteger(static_cast<int>(i + 1))), "32-bit payloads survive allocation growth and collection");
 	checkReferences(cpu);
 	auto dead = bmsx::test::allocateTableReference(cpu); const u32 freeId = dead.address();
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	auto replacement = bmsx::test::allocateTableReference(cpu);
 	require(replacement.address() == freeId, "a freed guest record address becomes available again");
-	require(cpu.gcHeap().tableRecordAddress(freeId) == replacement.address(), "the recycled address names the new RAM record");
+	require(bmsx::test::GcHeap(cpu).tableRecordAddress(freeId) == replacement.address(), "the recycled address names the new RAM record");
 	frame.registers.set(2,valueTable(replacement.address())); frame.writeControl(bmsx::FrameField::Top, 3);
 }
 
@@ -119,7 +120,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	// Leave holes before saving, then consume them on a discarded timeline.
 	bmsx::test::allocateTableReference(cpu);
 	bmsx::test::allocateTableReference(cpu);
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto saved = cpu.captureRuntimeState();
 	const auto ram = cpu.memory().captureSaveState();
 	const u32 rootsRef = roots.address();
@@ -133,7 +134,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 		require(valuePayload(restoredRoots) == rootsRef &&
 			TableRecord(cpu.memory(), valuePayload(restoredRoots)).getInteger(4) == fourth,
 			"raw reference words still bind the restored table and its entries");
-		for (const u32 address : future) require(cpu.gcHeap().tableRecordAddress(address) == 0u, "discarded addresses have no issued Table header");
+		for (const u32 address : future) require(bmsx::test::GcHeap(cpu).tableRecordAddress(address) == 0u, "discarded addresses have no issued Table header");
 		checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
 		require(saved == restored,
@@ -154,17 +155,17 @@ void incrementalRestore() {
 		roots.setInteger(i, valueTable(bmsx::test::allocateTableReference(cpu, 1, 1).address()));
 		auto dead = bmsx::test::allocateTableReference(cpu, 1); dead.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	}
-	std::unordered_set<GcPhase> phases;
+	std::unordered_set<bmsx::test::GcPhase> phases;
 	for (int step = 0; step < 1000; ++step) {
-		cpu.gcHeap().step(valueNil(), valueNil(), valueNil()); checkReferences(cpu);
-		const auto saved = cpu.captureRuntimeState(); phases.insert(cpu.gcHeap().phase());
+		bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); checkReferences(cpu);
+		const auto saved = cpu.captureRuntimeState(); phases.insert(bmsx::test::GcHeap(cpu).phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		const auto restored = cpu.captureRuntimeState();
 		require(saved == restored,
 			"restoring a partial collection preserves CPU latches");
-		if (!cpu.gcHeap().active()) break;
+		if (!bmsx::test::GcHeap(cpu).active()) break;
 	}
-	for (auto phase : {GcPhase::Mark, GcPhase::Atomic, GcPhase::Sweep, GcPhase::Pause})
+	for (auto phase : {bmsx::test::GcPhase::Mark, bmsx::test::GcPhase::Atomic, bmsx::test::GcPhase::Sweep, bmsx::test::GcPhase::Pause})
 		require(phases.contains(phase), "reference test traverses marking and retirement");
 }
 
@@ -178,16 +179,16 @@ void builtinIdentitiesStayOutsideTheGcHeap() {
 	const auto after = test::allocatedObjectRecords(cpu);
 	require(before == after, "builtin functions have CPU-owned ids, not GC registrations");
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
-	functions = bmsx::test::asReferenceTable(cpu.rootThread()->currentFrame->registers.get(0),cpu.gcHeap());
+	const TableRecord restoredFunctions(cpu.memory(), valuePayload(cpu.rootThread()->currentFrame->registers.get(0)));
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
-		require(asBuiltinFunctionId(functions.getInteger(static_cast<int>(i + 1))) == static_cast<BuiltinFunctionId>(i),
+		require(asBuiltinFunctionId(restoredFunctions.getInteger(static_cast<int>(i + 1))) == static_cast<BuiltinFunctionId>(i),
 			"builtin ids survive restore including zero");
 }
 
 void closedCellLivesInRam() {
-	Machine machine; auto& cpu = machine.cpu; auto& heap = cpu.gcHeap();
+	Machine machine; auto& cpu = machine.cpu; auto heap = bmsx::test::GcHeap(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto closure = asClosure(frame.registers.get(1), heap);
+	auto closure = bmsx::test::asClosure(frame.registers.get(1), heap);
 	const u32 key = cpu.stringPool().intern("saved_capture");
 	cpu.setGlobalByKey(key, frame.registers.get(1));
 	const u32 address = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
@@ -204,12 +205,12 @@ void closedCellLivesInRam() {
 	const auto openRam = memory.captureSaveState();
 	const u32 oldStack = frame.thread->stackOffset();
 	const size_t oldCapacity = frame.thread->stackCapacity;
-	test::resizeReferenceThreadStack(cpu.gcHeap(), *frame.thread, 80);
+	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *frame.thread, 80);
 	require(frame.thread->stackOffset() != oldStack, "the fixture relocates the defining Thread's stack");
 	frame.registers.set(0, valueFloatBits(0xffa12345u));
 	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"the open record follows the new stack block without being rewritten");
-	test::resizeReferenceThreadStack(cpu.gcHeap(), *frame.thread, oldCapacity);
+	test::resizeReferenceThreadStack(bmsx::test::GcHeap(cpu), *frame.thread, oldCapacity);
 	cpu.abortCompletionCall(0);
 	require(!Upvalue::isOpen(memory, address) && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),
@@ -225,15 +226,15 @@ void closedCellLivesInRam() {
 	cpu.rootThread()->currentFrame->registers.set(0, valueInteger(44));
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(saved);
-	closure = asClosure(cpu.getGlobalByKey(key), heap);
+	closure = bmsx::test::asClosure(cpu.getGlobalByKey(key), heap);
 	require(ClosureRecord::captureAddress(cpu.memory(), closure, 0) == address && cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"restore retains the saved capture address and word");
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	const auto occupied = cpu.heapAllocator().occupiedBytes();
 	const auto closureBytes = cpu.heapAllocator().allocationBytes(closure - GC_OBJECT_PREFIX);
 	const auto cellBytes = cpu.heapAllocator().allocationBytes(address - GC_OBJECT_PREFIX);
 	cpu.setGlobalByKey(key, valueNil());
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 	require(cpu.heapAllocator().occupiedBytes() == occupied - closureBytes - cellBytes,
 		"collection releases both raw records");
 	require(heap.cellRecordAddress(address) == 0u && memory.readRamRecordByte(address) == 0u,
@@ -243,13 +244,13 @@ void closedCellLivesInRam() {
 void sweepStopsVisitingReclaimedObjects() {
 	Machine machine;
 	auto& cpu = machine.cpu;
-	auto& heap = cpu.gcHeap();
+	auto heap = bmsx::test::GcHeap(cpu);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto closure = asClosure(frame.registers.get(1), heap);
+	auto closure = bmsx::test::asClosure(frame.registers.get(1), heap);
 	const u32 closureAddress = closure;
 	const u32 cellAddress = ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	const auto sweep = [&]() {
-		while (heap.phase() != GcPhase::Sweep)
+		while (heap.phase() != bmsx::test::GcPhase::Sweep)
 			heap.step(valueNil(), valueNil(), valueNil());
 		const auto work = heap.step(valueNil(), valueNil(), valueNil());
 		while (heap.active()) heap.step(valueNil(), valueNil(), valueNil());
@@ -267,11 +268,11 @@ void sweepStopsVisitingReclaimedObjects() {
 void sweepResumesAfterPublishingAndRestoring() {
 	Machine machine;
 	auto& cpu = machine.cpu;
-	auto& gc = cpu.gcHeap();
+	auto gc = bmsx::test::GcHeap(cpu);
 	const u32 dead = bmsx::test::allocateTableReference(cpu).address();
 	auto keep = bmsx::test::allocateTableReference(cpu);
 	cpu.rootThread()->currentFrame->registers.set(0, valueTable(keep.address()));
-	while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
+	while (gc.phase() != bmsx::test::GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
 
 	require(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1) == 1
 		&& gc.tableRecordAddress(dead) == dead, "one step stops after the newest retained record");

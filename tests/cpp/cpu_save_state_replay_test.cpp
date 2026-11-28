@@ -5,6 +5,7 @@
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
@@ -146,7 +147,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 			weak.setMetatableAddress(mode.address());
 			weak.setInteger(1, cpu.readFrameRegister(0, 0));
 			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(weak.address()));
-			cpu.collectHeap();
+			bmsx::test::GcHeap(cpu).collect();
 			require(weak.getInteger(1) == cpu.readFrameRegister(0, 0), "live caller locals remain heap roots across calls");
 		}
 		const auto saved = cpu.captureRuntimeState();
@@ -182,9 +183,9 @@ void capturesUsePhysicalRecords() {
 	definition.writeControl(bmsx::FrameField::OpenHead, cells[0]);
 	definition.registers.set(1, bmsx::valueClosure(seeded));
 	cpu.runUntilDepth(0, 1000);
-	const auto closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	const auto closure = bmsx::test::asClosure(cpu.readCompletionValues().get(1), bmsx::test::GcHeap(cpu));
 	const auto address = bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0);
-	require(address != closure && cpu.gcHeap().cellRecordAddress(address) == address
+	require(address != closure && bmsx::test::GcHeap(cpu).cellRecordAddress(address) == address
 		&& !bmsx::Upvalue::isOpen(cpu.memory(), address)
 		&& bmsx::Upvalue::load(cpu.memory(), address) == cpu.readCompletionValues().get(0),
 		"closure points to a distinct closed record retaining its table");
@@ -218,7 +219,7 @@ void inspectOpenAndClosedClosure() {
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after capture, before the defining frame returns");
 	const auto open = cpu.captureRuntimeState();
 	const auto openRam = cpu.memory().captureSaveState();
-	auto closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
+	auto closure = bmsx::test::asClosure(cpu.readFrameRegister(0, 1), bmsx::test::GcHeap(cpu));
 	const auto capture = bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0);
 	require(bmsx::Upvalue::isOpen(cpu.memory(), capture), "fixture capture is open");
 	const auto table = cpu.readFrameRegister(0, 0);
@@ -227,13 +228,13 @@ void inspectOpenAndClosedClosure() {
 	require(afterRead == open && cpu.memory().captureSaveState().ram == openRam.ram, "inspection does not change the open cell or heap");
 	cpu.setExecutionHook({});
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
-	closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
+	closure = bmsx::test::asClosure(cpu.readCompletionValues().get(1), bmsx::test::GcHeap(cpu));
 	require(bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0) == capture && !bmsx::Upvalue::isOpen(cpu.memory(), capture),
 		"closing the capture preserves its address");
 	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
 	cpu.memory().restoreSaveState(openRam);
 	cpu.restoreRuntimeState(open);
-	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1), cpu.gcHeap());
+	closure = bmsx::test::asClosure(cpu.readFrameRegister(0, 1), bmsx::test::GcHeap(cpu));
 	require(bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0) == capture && bmsx::Upvalue::isOpen(cpu.memory(), capture),
 		"restoring the same capture address restores its open state");
 	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
@@ -308,7 +309,7 @@ void restoreUnrootedCanonicalClosure() {
 	const auto warmRam = cpu.memory().captureSaveState();
 	require(cpu.readFrameRegister(0, 0) == bmsx::valueNil(), "static closure is no longer a guest root");
 	struct Probe { bmsx::Memory& memory; bmsx::u32 function; bmsx::u32 record = 0; } probe{cpu.memory(), address};
-	cpu.gcHeap().visitObjectRecords(&probe, [](void* context, bmsx::u32 record) {
+	bmsx::test::GcHeap(cpu).visitObjectRecords(&probe, [](void* context, bmsx::u32 record) {
 		auto& probe = *static_cast<Probe*>(context);
 		if (probe.memory.readRamRecordByte(record) == static_cast<bmsx::u8>(bmsx::ValueTag::Closure)
 			&& probe.memory.readRamRecordWord(record + bmsx::CLOSURE_PROTOTYPE_ADDRESS) == probe.function)
@@ -326,15 +327,15 @@ void restoreUnrootedCanonicalClosure() {
 	cpu.restoreRuntimeState(cold);
 	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	require(cpu.gcHeap().closureRecordAddress(probe.record) == probe.record, "restore retains the physical canonical record without a host object list");
+	require(bmsx::test::GcHeap(cpu).closureRecordAddress(probe.record) == probe.record, "restore retains the physical canonical record without a host object list");
 	supplyDynamic();
 	cpu.runUntilDepth(0, 1000);
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == expectedId, "warm cache restore must preserve the next guest allocation identity");
 
 	cpu.memory().restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	while (cpu.gcHeap().phase() != bmsx::GcPhase::Sweep) cpu.stepHeap(bmsx::valueNil(), bmsx::valueNil(), bmsx::valueNil());
-	require(cpu.gcHeap().sweepGarbage(probe.record),
+	while (bmsx::test::GcHeap(cpu).phase() != bmsx::test::GcPhase::Sweep) bmsx::test::GcHeap(cpu).step(bmsx::valueNil(), bmsx::valueNil(), bmsx::valueNil());
+	require(bmsx::test::GcHeap(cpu).sweepGarbage(probe.record),
 		"fixture has a physically allocated but retired canonical closure");
 	const auto sweep = cpu.captureRuntimeState();
 	const auto sweepRam = cpu.memory().captureSaveState();
@@ -458,13 +459,14 @@ void preserveDeepGraph() {
 	const auto key = cpu.stringPool().intern("deep");
 	auto root = bmsx::test::allocateTableReference(cpu, 1, 0);
 	cpu.setGlobalByKey(key, bmsx::valueTable(root.address()));
-	auto tail = root;
+	bmsx::u32 tail = root.address();
+	const bmsx::test::GcHeap heap(cpu);
 	for (int index = 1; index < 4096; ++index) {
 		auto child = bmsx::test::allocateTableReference(cpu, 1, 0);
-		tail.setInteger(1, bmsx::valueTable(child.address()));
-		tail = child;
+		bmsx::test::NativeTableReference(heap, tail).setInteger(1, bmsx::valueTable(child.address()));
+		tail = child.address();
 	}
-	tail.setInteger(1, bmsx::valueTable(root.address()));
+	bmsx::test::NativeTableReference(heap, tail).setInteger(1, bmsx::valueTable(root.address()));
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	auto restored = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(key)));
@@ -500,14 +502,14 @@ void preserveDynamicGlobalRegisters() {
 	cpu.setGlobalByKey(key, bmsx::valueTable(object.address()));
 	const auto nilKey = cpu.stringPool().intern("nil-name");
 	cpu.setGlobalByKey(nilKey, bmsx::valueNil());
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 
 	const auto ram = cpu.memory().captureSaveState();
 	const auto state = cpu.captureRuntimeState();
 	const auto usage = cpu.luaHeap().usedBytes();
 	cpu.setGlobalByKey(key, bmsx::valueNil());
 	cpu.setGlobalByKey(cpu.stringPool().intern("future"), bmsx::valueInteger(100));
-	cpu.collectHeap();
+	bmsx::test::GcHeap(cpu).collect();
 
 	cpu.memory().restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);

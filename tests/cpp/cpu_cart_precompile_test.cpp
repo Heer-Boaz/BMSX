@@ -336,9 +336,8 @@ void coldExecRecordsNumericFieldFeedback() {
 		const auto coldRegion = cold->region;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		auto receiver = bmsx::test::allocateTableReference(cpu, 0, 1);
-		auto holder = receiver;
+		auto holder = inherited ? bmsx::test::allocateTableReference(cpu, 0, 1) : receiver;
 		if (inherited) {
-			holder = bmsx::test::allocateTableReference(cpu, 0, 1);
 			auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 			meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
 			receiver.setMetatableAddress(meta.address());

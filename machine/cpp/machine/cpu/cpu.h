@@ -1,6 +1,5 @@
 #pragma once
 
-#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/builtin_values.h"
 
 #include <array>
@@ -57,6 +56,8 @@
 
 namespace bmsx {
 
+namespace test { class GcHeap; }
+
 class CPU;
 class NativeCompilerWorker;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -70,7 +71,6 @@ struct NativeCompilationSource;
 struct NativeCodeSourcePage;
 struct NativeWarmupAdmission;
 struct NativeWarmupPages;
-class GcHeap;
 class IrqController;
 class Memory;
 class DeviceScheduler;
@@ -196,8 +196,6 @@ public:
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
 	HeapAllocator& heapAllocator() { return m_heapAllocator; }
 	const HeapAllocator& heapAllocator() const { return m_heapAllocator; }
-	GcHeap& gcHeap() { return m_heap; }
-	const GcHeap& gcHeap() const { return m_heap; }
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const DiagnosticExecutionProfile& diagnosticExecutionProfile() const { return m_diagnosticExecutionProfile; }
 #endif
@@ -252,27 +250,6 @@ public:
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u,
 		CpuRunKind kind = CpuRunKind::Direct, const DeviceScheduler* deviceClock = nullptr);
-	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
-	void chargeCollectionWork(size_t work);
-	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget = nullptr);
-	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
-	bool collecting() const { return m_heap.active(); }
-	class LocalRootsScope {
-	public:
-		LocalRootsScope(const LocalRootsScope&) = delete;
-		LocalRootsScope& operator=(const LocalRootsScope&) = delete;
-		LocalRootsScope(LocalRootsScope&& other) noexcept;
-		LocalRootsScope& operator=(LocalRootsScope&& other) = delete;
-		~LocalRootsScope();
-
-	private:
-		friend class CPU;
-
-		explicit LocalRootsScope(CPU& cpu);
-
-		CPU* m_cpu = nullptr;
-	};
-	LocalRootsScope acquireLocalRoots();
 
 	Thread* activeThread() const { return m_activeThread; }
 	Thread* rootThread() { return &m_rootView; }
@@ -320,7 +297,7 @@ public:
 
 private:
 	friend class BuiltinResultsScratchScope;
-	friend class GcHeap;
+	friend class test::GcHeap;
 	friend class LuaHeap;
 	using RunUntilDepthEntry = RunResult (*)(CPU&, int, int);
 	enum class GrantAdmission : u8 { Admitted, Halted, RequestedYield, OutOfCycles };
@@ -511,11 +488,6 @@ private:
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
-	void markRootHead(GcHeap& heap);
-	void markScopedRoots(GcHeap& heap);
-	void markRootThreads(GcHeap& heap);
-	size_t rootBankEnd(GcRootBank bank) const;
-	size_t markRootBank(GcHeap& heap, GcRootBank bank, size_t& next, size_t end, size_t allowance);
 
 	std::array<
 		std::unique_ptr<Blua32ExecutionImage>,
@@ -554,8 +526,6 @@ private:
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
 	Thread& bindThread(u32 address, bool authored = false);
-	void retireThreadView(u32 address);
-	void rebindRelocatedThread(u32 address);
 	template<class Visitor> void visitThreadViews(Visitor&& visitor) {
 		if (m_rootView.address != 0u) visitor(m_rootView);
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
@@ -572,7 +542,6 @@ private:
 	HeapAllocator m_heapAllocator;
 	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
-	GcHeap m_heap;
 	Thread m_rootView;
 	Thread m_irqView;
 	std::array<Thread, 2> m_transferViews;

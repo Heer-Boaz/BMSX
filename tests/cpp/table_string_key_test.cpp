@@ -3,6 +3,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
 
@@ -263,7 +264,7 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 	target.resolveAssignment(valueString(field), newIndex, assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == forwarding.address()
 		&& assignment.extraVisits == 1, "reactivation forwards through the inserted weak value");
-	cpu.gcHeap().collect(valueTable(target.address()));
+	bmsx::test::GcHeap(cpu).collect(valueTable(target.address()));
 	target.resolveAssignment(valueString(field), newIndex, assignment);
 	require(isNil(meta.getStringKey(newIndex)) && assignment.status == TableLookupStatus::Store
 		&& assignment.receiver == target.address() && assignment.extraVisits == 0,

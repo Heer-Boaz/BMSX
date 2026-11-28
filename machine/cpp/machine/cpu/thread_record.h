@@ -5,7 +5,6 @@
 
 namespace bmsx {
 
-class GcHeap;
 class BuiltinArgsView;
 class BuiltinResults;
 
@@ -67,8 +66,6 @@ inline Value error(const Memory& memory, u32 address) {
 		read(memory, address, ThreadField::ErrorWord));
 }
 void invokeDiagnostic(Memory&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
-bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
-u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);
 }
 
 } // namespace bmsx

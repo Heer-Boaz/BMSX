@@ -70,7 +70,6 @@ private:
 	CPU& m_cpu;
 	const u32 m_targetAddress;
 	const u32 m_occupiedAddress;
-	const u32 m_gcControlAddress;
 };
 
 } // namespace bmsx

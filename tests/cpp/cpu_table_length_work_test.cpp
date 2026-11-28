@@ -3,6 +3,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/model.h"
+#include "support/gc_heap_reference.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -108,7 +109,7 @@ void everyGrant() {
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
 				m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
-				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());bmsx::test::asReferenceTable(r.get(10), m->cpu.gcHeap()).setInteger(1,valueInteger(-1));
+				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());bmsx::test::asReferenceTable(r.get(10), bmsx::test::GcHeap(m->cpu)).setInteger(1,valueInteger(-1));
 			}
 			require(test::runCpuParity(generated.cpu,scalar.cpu,grant)==RunResult::Yielded,"LEN loop remains runnable");
 			int remaining=grant,completed=0;while (remaining>0)remaining-=charges[completed++];
@@ -164,7 +165,7 @@ void skippedLength() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void oneGateFrontier() {
 	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto r=frame->registers;
-	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m.cpu, 1).address()));bmsx::test::asReferenceTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
+	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m.cpu, 1).address()));bmsx::test::asReferenceTable(r.get(10), bmsx::test::GcHeap(m.cpu)).setInteger(1,valueInteger(-1));r.set(8, valueNil());
 	const auto* page=frame->executionImage->nativeCodeLookup->find(m.rom.textAddress,0);
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};

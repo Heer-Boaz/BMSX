@@ -1,17 +1,16 @@
-#include "machine/cpu/thread_record.h"
+#include "thread_storage_reference.h"
 
 #include <algorithm>
 #include <cstring>
 
-#include "machine/cpu/gc_heap.h"
-#include "machine/cpu/lua_heap.h"
+#include "gc_heap_reference.h"
 
-namespace bmsx::ThreadRecord {
+namespace bmsx::test {
 
-bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
+bool resizeReferenceThreadBacking(GcHeap& heap, u32 address, u32 capacity) {
 	auto& memory = heap.memory;
-	const u32 old = read(memory, address, ThreadField::StackBlock);
-	const u32 previous = read(memory, address, ThreadField::StackCapacity);
+	const u32 old = ThreadRecord::read(memory, address, ThreadField::StackBlock);
+	const u32 previous = ThreadRecord::read(memory, address, ThreadField::StackCapacity);
 	const u32 bytes = capacity * THREAD_STACK_SLOT_BYTES;
 	u32 block = old;
 	if (capacity > previous) {
@@ -35,10 +34,10 @@ bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	return true;
 }
 
-u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
+u32 shrinkReferenceThreadStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 	auto& memory = heap.memory;
-	const u32 depth = count(memory, address, ThreadField::FrameDepth);
-	u32 used = read(memory, address, ThreadField::StackTop) & FRAME_WINDOW_MASK;
+	const u32 depth = ThreadRecord::count(memory, address, ThreadField::FrameDepth);
+	u32 used = ThreadRecord::read(memory, address, ThreadField::StackTop) & FRAME_WINDOW_MASK;
 	u32 retained = 0;
 	if (layout.valueCapacity > 16) {
 		for (u32 index = 0; index < depth && static_cast<u64>(used) * 3 < layout.valueCapacity; ++index) {
@@ -49,7 +48,7 @@ u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 		}
 		if (static_cast<u64>(used) * 3 < layout.valueCapacity) {
 			const u32 next = layout.valueCapacity / 2, bytes = next * THREAD_STACK_SLOT_BYTES;
-			resizeStackBacking(heap, address, next);
+			resizeReferenceThreadBacking(heap, address, next);
 			retained = bytes;
 		}
 	}
@@ -69,4 +68,4 @@ u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 	return retained;
 }
 
-} // namespace bmsx::ThreadRecord
+} // namespace bmsx::test

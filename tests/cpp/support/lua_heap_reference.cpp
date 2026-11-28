@@ -3,9 +3,15 @@
 #include <algorithm>
 
 #include "machine/cpu/cpu.h"
+#include "gc_heap_reference.h"
 #include "machine/cpu/errors.h"
 
 namespace bmsx {
+
+using test::GcHeap;
+using test::GcPhase;
+using test::GC_ASSIST_BYTES;
+using test::GC_STEP_WORDS;
 
 namespace {
 constexpr size_t COLLECTION_RESERVE_SHIFT = 3;
@@ -27,7 +33,7 @@ i32 LuaHeap::allocationDebt(size_t byteCount) const noexcept {
 	if (nextBytes > capacity()) return -1;
 	const u32 target = collectionTarget();
 	if (nextBytes <= target
-		|| GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress)) >= GcPhase::Atomic)
+		|| GcHeap(m_cpu).phase() >= GcPhase::Atomic)
 		return 0;
 	return static_cast<i32>(nextBytes - target);
 }
@@ -42,7 +48,7 @@ size_t LuaHeap::logicalAssistAllowance(size_t debt, bool pressure) {
 }
 
 void LuaHeap::creditLogicalAssist(size_t byteCount, size_t debt, bool pressure, size_t work) {
-	if (!work || !m_cpu.collecting()) return;
+	if (!work || !GcHeap(m_cpu).active()) return;
 	if (pressure) {
 		setCollectionTarget(usedBytes() + GC_ASSIST_BYTES * std::min(work, GC_STEP_WORDS) / GC_STEP_WORDS);
 	} else {
@@ -71,7 +77,7 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 	if (debt > 0) {
 		const bool pressure = logicalAssistPressure(byteCount);
 		const size_t words = logicalAssistAllowance(debt, pressure);
-		const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words, sourceBudget);
+		const size_t work = GcHeap(m_cpu).assistAllocation(root0, root1, root2, growingThread, words, sourceBudget);
 		creditLogicalAssist(byteCount, debt, pressure, work);
 	}
 	return true;
@@ -87,17 +93,16 @@ LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1,
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	if (!prepareFixedAllocation(byteCount, root0, root1, root2, growingThread)) {
 		do {
-			recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
+			recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2, growingThread);
 		} while (usedBytes() + byteCount > capacity());
 	}
 	return recovery;
 }
 
 void LuaHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread) {
-	// BIOS string keys are created before the collector view is bound.
-	// The RAM phase latch already belongs to the initialized heap arena.
-	if (GcHeap::pacedPhase(GcHeap::decodePhase(m_cpu.memory().readRamRecordByte(m_gcControlAddress))))
-		m_cpu.gcHeap().assistBeforeReservation(requested, root0, root1, root2, growingThread);
+	GcHeap heap(m_cpu);
+	if (GcHeap::pacedPhase(heap.phase()))
+		heap.assistBeforeReservation(requested, root0, root1, root2, growingThread);
 }
 
 u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField) {
@@ -134,7 +139,7 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backin
 	auto recovery = *admission;
 	for (;;) {
 		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField)) return address;
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
+		recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2);
 	}
 }
 
@@ -159,12 +164,13 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	assistBeforeReservation(bytes, root0, root1, root2, growingThread);
 	for (;;) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
+		recovery = GcHeap(m_cpu).recoverAllocation(recovery, root0, root1, root2, growingThread);
 	}
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {
-	m_cpu.chargeCollectionWork(m_cpu.collectHeap(root0, root1, root2, growingThread));
+	GcHeap heap(m_cpu);
+	heap.chargeCollectionWork(heap.collect(root0, root1, root2, growingThread));
 }
 
 void LuaHeap::accountAllocation(u32 bytes) {
