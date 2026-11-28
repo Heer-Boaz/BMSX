@@ -8,12 +8,12 @@ import { MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_p
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
-// An independent allocator in mapped fixture RAM. The real private heap
-// continues to own BLua's startup, frames and temporary values.
+// Only ROM and the fixed reset context execute this allocator. The C/WASM
+// oracle has its own arena; neither the fixture nor the CPU primes one for BLua.
 const FLOOR = 0x80000;
 const LIMIT = 0xc0000;
 const STATE = LIMIT + 0x400;
@@ -45,14 +45,23 @@ ${ops.map((op, index) => {
 end
 `;
 
+const allocatorModule = 'kernel/dlmalloc';
+const luaModules = [
+	{ path: 'main', source: 'module<entry>\nreturn' },
+	{ path: 'reset', source: entrySource },
+	{ path: 'irq', source: 'return' },
+	{ path: 'exception', source: 'return' },
+	{ path: allocatorModule, source: readFileSync(`machine/bios/${allocatorModule}.lua`, 'utf8') },
+].map(module => ({ ...module, displayPath: `${module.path}.lua`, chunk: parseLuaChunk(module.source, module.path) }));
+const { linked } = buildBlua32Image({
+	domain: 'system', luaModules, generatedLuaModules: [], loadAddress: 0x100,
+	ramByteCount: MAIN_RAM_SIZE, optLevel: 3, traceStatements: 'erase',
+	resetModule: 'reset', irqModule: 'irq', exceptionModule: 'exception', biosExports: [],
+});
+const romBytes = writeTestBlua32Rom(linked);
+
 function fixture(backend: CpuExecutionBackend) {
-	const path = 'kernel/dlmalloc';
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }], {
-		entrySource, optLevel: 3, programDomain: 'system',
-	});
-	const { cpu, memory } = createTestHeapServiceCpu(linkTestSystemBlua32(compiled), backend);
-	memory.setRamBusEnd(RAM_BASE + END);
+	const { cpu, memory } = createTestSystemCpu({ romBytes }, backend);
 	const reference = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
 	const arena = bindReferenceDlmalloc(reference, STATE);
 	const actualBytes = memory.ramData().subarray(FLOOR, END);
@@ -74,7 +83,8 @@ function fixture(backend: CpuExecutionBackend) {
 	}
 	function pending() { return memory.readRamRecordWord(MAILBOX) !== 0; }
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded, `fault at EPC ${cpu.readEpcWord().toString(16)}`);
+		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded,
+			`fault ${cpu.readCauseWord().toString(16)} at EPC ${cpu.readEpcWord().toString(16)}`);
 	}
 	function finish() {
 		for (let i = 0; i < 4096 && pending(); i++) grant(2048);
