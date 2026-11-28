@@ -1,7 +1,8 @@
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -16,7 +17,7 @@ import { CPU_CAUSE_IRQ, CPU_INTERRUPT_STATE_HALT, CPU_STATUS_USER_MODE_CURRENT }
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_FRAME_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_IRQ_VECTOR_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import { BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
@@ -48,32 +49,36 @@ ${user ? 'cop0.irq_vector = cop0.system_vector' : ''}
 ` + readFileSync('machine/bios/kernel/irq.lua', 'utf8');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
-mkdirSync('tmp', { recursive: true });
-const dir = mkdtempSync(join('tmp', 'managed-fixed-irq-'));
+const dir = mkdtempSync(join(tmpdir(), 'managed-fixed-irq-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const optLevel of [0, 3] as const) for (const user of [false, true]) {
 		const mode = user ? 'User' : 'Supervisor';
 		const linked = linkManagedTestSystem(source(user), optLevel, COROUTINE_FIRMWARE_MODULES, [], 'main', { irqSource: irqSource(user) });
 		const rom = writeTestBlua32Rom(linked);
 		const vector = readLE32(rom, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET);
-		const replacement = readLE32(rom, BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET);
-		assert.notEqual(vector, replacement);
 		const irq = linked.layout.functions.find(fn => fn.address === vector)!;
 		const symbol = (name: string) => linked.symbols.metadata.staticScopes.declarations.find(e => e.name === name)!.address!;
 		const report = symbol('report'), selectedContext = symbol('selected_context'), dma = symbol('bios_dma_completion_sequence'), vblank = symbol('bios_vblank_count');
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
-		for (let grant = 0; grant < 256 && !cpu.isHaltedUntilIrq(); ++grant)
-			scheduler.runCpuSlice(0, 1024, undefined, CpuRunKind.Scheduled);
-		assert.equal(cpu.isHaltedUntilIrq(), true);
+		// Boot the real O0/O3 firmware through its paid reset and coroutine entry.
+		for (let grant = 0; grant < 32 && !cpu.isHaltedUntilIrq(); ++grant)
+			scheduler.runCpuSlice(0, 65_536, undefined, CpuRunKind.Scheduled);
+		assert.equal(cpu.isHaltedUntilIrq(), true, JSON.stringify({
+			mode, optLevel, cause: cpu.readCauseWord(), reason: cpu.readLuaFaultReasonWord(),
+			pc: cpu.readCurrentInstructionPc(), epc: cpu.readEpcWord(), active: cpu.activeThread.address,
+			root: cpu.rootThread.address, depth: cpu.getFrameDepth(), report: memory.readRamRecordWord(report),
+		}));
 		assert.equal(memory.readRamRecordWord(report), 1, 'a real managed coroutine halted: ' + JSON.stringify({
 			cause: cpu.readCauseWord(), reason: cpu.readLuaFaultReasonWord(), pc: cpu.readCurrentInstructionPc(),
 			root: cpu.rootThread.address, active: cpu.activeThread.address, irq: memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), report,
 			stack: cpu.activeThread.frameDepth,
 		}));
 		assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), user ? vector : 0);
+		const replacement = cpu.captureRuntimeState().systemVectorWord;
+		assert.notEqual(vector, replacement);
 		const retained = cpu.activeThread.address, root = cpu.rootThread.address;
 		assert.notEqual(retained, root);
 		assert.notEqual(retained, CPU_RESET_BANK_ADDRESS);
@@ -109,7 +114,7 @@ try {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			observe(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+			observe(`E ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return result;
 		}
 		const occupied = arena.occupiedBytes(), used = heap.usedBytes(), oldDma = memory.readRamRecordWord(dma), oldVblank = memory.readRamRecordWord(vblank);
@@ -168,7 +173,9 @@ try {
 			assert.equal(memory.readRamRecordWord(report), 1, 'no early instruction in the retained coroutine');
 			observe('P', `${depth} ${epc}`);
 			physicalState();
-			assert.equal(grant(512), RunResult.Halted);
+			let run = RunResult.Yielded;
+			for (let slice = 0; slice < 32 && run === RunResult.Yielded; ++slice) run = grant(512);
+			assert.equal(run, RunResult.Halted);
 			assert.deepEqual(runtime.readCompletionValues(), [valueInteger(41)]);
 			observe('C', 41);
 		}

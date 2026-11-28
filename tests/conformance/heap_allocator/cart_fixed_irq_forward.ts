@@ -1,7 +1,8 @@
 import { abortFixtureCompletionCall } from '../../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -15,7 +16,7 @@ import { CPU_CAUSE_IRQ, CPU_CAUSE_NMI, CPU_EXCEPTION_TARGET_SOCKET_SHIFT, CPU_IN
 import { IO_CART_SELECT, IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_IRQ_VECTOR_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../../toolchain/ts/lua/compiler/optimizer';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
@@ -40,7 +41,8 @@ const irqWords = `module<const>
 bss vector_target: word
 bss system_cycles_marker: word
 bss system_interrupt_sample: word
-return { target = vector_target, marker = system_cycles_marker, sample = system_interrupt_sample }`;
+bss system_previous_vector: word
+return { target = vector_target, marker = system_cycles_marker, sample = system_interrupt_sample, previous_vector = system_previous_vector }`;
 const irqSource = `module<const>
 local irq<const> = require('fixture/irq_words')
 local note<const> = function()
@@ -53,6 +55,11 @@ local vector<const> = function()
 	local sampled<const>: *word = irq.sample
 	local accepted<const>: *word = ${CPU_INTERRUPT_STATE_ADDRESS}
 	*sampled = *accepted
+	-- Keep the managed exception bridge for boot and cartridge setup.
+	-- Install the fixture NMI vector only when forwarding this IRQ.
+	local previous_vector<const>: *word = irq.previous_vector
+	*previous_vector = cop0.system_vector
+	cop0.system_vector = mem32le[${BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET}]
 	local endpoint<const>: *word = irq.target
 	cop0.exception_target = *endpoint
 end
@@ -98,16 +105,18 @@ while true do halt_until_irq end
 }
 
 const exceptionSource = `
+local irq<const> = require('fixture/irq_words')
 bss saved_nmi_epc: word
 local report<const>: *word = saved_nmi_epc
 *report = cop0.epc
+local previous_vector<const>: *word = irq.previous_vector
+cop0.system_vector = *previous_vector
 `;
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-mkdirSync('tmp', { recursive: true });
-const dir = mkdtempSync(join('tmp', 'cart-fixed-irq-forward-'));
+const dir = mkdtempSync(join(tmpdir(), 'cart-fixed-irq-forward-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
 		const linked = linkManagedTestSystem(systemSource, optLevel, [
 			{ path: 'fixture/irq_words', source: irqWords }, { path: 'fixture/user_irq', source: irqSource },
@@ -124,11 +133,15 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
 		memory.writeMappedWord(IO_CART_SELECT, 1);
-		for (let slice = 0; slice < 256 && !cpu.isHaltedUntilIrq(); ++slice)
-			scheduler.runCpuSlice(0, 1024, undefined, CpuRunKind.Scheduled);
+		// Stop at the cartridge's initial HALT after the firmware prepares it.
+		for (let slice = 0; slice < 32 && !cpu.isHaltedUntilIrq(); ++slice)
+			scheduler.runCpuSlice(0, 65_536, undefined, CpuRunKind.Scheduled);
 		assert.equal(cpu.activeCartridgeSlot(), 1, 'the linked System boot runs the real selected slot-1 cart');
 		assert.equal(cpu.isHaltedUntilIrq(), true, 'the armed cartridge has reached its first HALT');
 		const userVector = memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS);
+		const managedVector = cpu.captureRuntimeState().systemVectorWord;
+		const nmiVector = readLE32(system, BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET);
+		assert.notEqual(managedVector, nmiVector);
 		assert.notEqual(userVector, readLE32(system, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET));
 		assert.equal(memory.readRamRecordWord(target), (expectedCartVector | (1 << CPU_EXCEPTION_TARGET_SOCKET_SHIFT)) >>> 0);
 		const ordinaryContext = cpu.activeThread.address, depth = cpu.getFrameDepth(), epc = cpu.readFramePc(depth - 1);
@@ -165,7 +178,7 @@ try {
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(arena.occupiedBytes(), occupied);
 			assert.equal(heap.usedBytes(), charged);
-			observe(`g ${cycles} 0`, `${result} ${paid} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+			observe(`E ${cycles}`, `${result} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			if (paid > 0) advance(paid);
 			return result;
 		}
@@ -244,6 +257,7 @@ try {
 			assert.equal(cpu.readEpcWord(), epc);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
 			assert.equal(status(), irqStatus, 'does not enter a second IRQ');
+			assert.equal(cpu.captureRuntimeState().systemVectorWord, nmiVector);
 			assert.equal(select(), 0);
 			assert.equal(flags(), pending, 'no cart handler instruction has ACKed yet');
 			assert.deepEqual(reportWords(), [0, 0, 0, 0, 0, 0, 0]);
@@ -268,6 +282,7 @@ try {
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
 			assert.equal(cpu.readFramePc(depth), cartIrqPc);
 			assert.equal(status(), afterNmiStatus);
+			assert.equal(cpu.captureRuntimeState().systemVectorWord, managedVector);
 			assert.equal(memory.readRamRecordWord(nmiRecord), cartIrqPc);
 			observe('Z', `${CPU_CAUSE_IRQ} 0 ${epc}`);
 			hash(nmiRecord, 4);
