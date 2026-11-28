@@ -69,8 +69,10 @@ export function deriveBlua32FixedStack(
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
-		if (!fn.staticClosure || fn.isVararg || fn.upvalues.length !== 0)
-			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static, fixed-arity and capture-free.`);
+		// A proved physical entry already supplies the bounded register window.
+		// The source signature only controls ordinary CALL/direct entry.
+		if (!fn.staticClosure || fn.upvalues.length !== 0 || (!borrowed && fn.isVararg))
+			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static${borrowed ? '' : ', fixed-arity'} and capture-free.`);
 		ancestors.add(index);
 		const width = Math.max(1, fn.numParams, fn.maxStack);
 		let valueSlots = width, frames = 1;
@@ -192,6 +194,7 @@ export function deriveBlua32FixedStack(
 					if (!boundary?.exceptionVectors.has(index)) reject('not an authored exception vector');
 					continue;
 				case OpCode.ARGC:
+					if (borrowed) reject('argument count requires an ordinary activation');
 					if (a >= width) reject('not an ordinary CPU argument count read');
 					registers[a] = 0;
 					branches?.delete(a);

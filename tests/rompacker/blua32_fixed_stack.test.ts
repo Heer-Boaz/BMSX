@@ -147,7 +147,7 @@ test('indexed transfers preserve proved targets only when their physical lanes a
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
 });
 
-test('fixed stack permits a register-supplied frontier only when leaving a borrowed window', () => {
+for (const isVararg of [false, true]) test(`fixed stack proves a physical register-supplied frontier (variadic source=${isVararg})`, () => {
 	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 1);
@@ -157,12 +157,18 @@ test('fixed stack permits a register-supplied frontier only when leaving a borro
 	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
 	writeInstruction(text, 6, OpCode.JREG, 63, 1, RegisterJumpMode.LeaveWindowFromRegister);
 	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: [integerConstant(0)],
-		functions: [{ firstWord: 0, wordCount: 6, maxStack: 5 }, { firstWord: 6, wordCount: 1, maxStack: 4 }] });
+		functions: [{ firstWord: 0, wordCount: 6, maxStack: 5 }, { firstWord: 6, wordCount: 1, maxStack: 4, isVararg }] });
 	writeLE32(image.bytes, image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET, image.functions[1].codeAddress);
 	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 5, frames: 2 });
-	assert.throws(() => deriveBlua32FixedStack(image, [1]), /active borrowed window/);
+	assert.throws(() => deriveBlua32FixedStack(image, [1]), isVararg ? /fixed-arity/ : /active borrowed window/);
 	writeInstruction(image.textBytes, 6, OpCode.JREG, 63, 4, RegisterJumpMode.LeaveWindowFromRegister);
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /operand exceeds the function record/);
+	writeInstruction(image.textBytes, 6, OpCode.ARGC, 0, 0, 0);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /argument count requires an ordinary activation/);
+	writeInstruction(image.textBytes, 6, OpCode.VARARG, 0, 2, 0);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /VARARG.*not in the fixed-stack scalar instruction set/);
+	writeInstruction(image.textBytes, 6, OpCode.RET, 0, 2, 0);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /a borrowed window may not return through CALL/);
 });
 
 test('an ordinary vector inspecting a tag does not retain a callable proof', () => {

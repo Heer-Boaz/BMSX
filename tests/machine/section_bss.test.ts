@@ -439,17 +439,19 @@ return { outer = outer }
 	);
 });
 
-test('const module function call targets reject vararg opcodes', () => {
+test('const module function call targets can read a variadic argument window', () => {
 	const moduleSource = `
-local function first(...)
-	return ...
+local function take(first, ...)
+	local second, third = ...
+	return first, second, third
 end
-return { first = first }
+return { take = take }
 `;
-	assert.throws(
-		() => compileWithConstModule('local state<const> = require("state")\nreturn state.first(1)', 'state', moduleSource),
-		/forbidden static opcode VARARG \(vararg dispatch\)/,
-	);
+	for (const optLevel of [0, 3] as const) {
+		const result = runCold('local state<const> = require("state")\nreturn state.take(17, false, 4)',
+			{ optLevel, modules: [constModule('state', moduleSource)] });
+		assert.deepEqual(result.values, [valueInteger(17), valueBool(false), valueInteger(4)]);
+	}
 });
 
 test('const module function call targets reject allocating string concatenation', () => {

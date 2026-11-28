@@ -271,3 +271,111 @@ return sum, a, b, c, d, e, f, g, h, i, j, k, trial.count(), trial.relay(1, 8)
 	writeFileSync(trace, ['X', ...commands.slice(continuation)].join('\n'));
 	assert.deepEqual(replay(), observations.slice(continuation), 'a dynamically computed return retains its exact frontier in the checkpoint');
 });
+
+test('software calls consume open arguments and preserve the actual variadic count', t => {
+	const path = 'window/arguments';
+	const program = `module<const>
+bss evaluations: word
+local produce<const> = function(form, x)
+	${mixing}
+	*evaluations = *evaluations + 1
+	if form == 0 then return end
+	if form == 1 then return false end
+	return false, x, nil
+end
+local collect<const> = function(prefix, a, b, c, d)
+	return prefix, a, b, c, d
+end
+local actual<const> = function(prefix, ...)
+	local a, b, c = ...
+	return blua32.argument_count(), prefix, a, b, c
+end
+local forward<const> = function(prefix, ...)
+	return prefix, ...
+end
+local relay<const> = function(prefix, ...)
+	return actual(prefix, ...)
+end
+local suffix<const> = function(prefix, ...)
+	return blua32.argument_suffix(1)
+end
+local count<const> = function() return *evaluations end
+return { produce = produce, collect = collect, actual = actual, forward = forward, relay = relay, suffix = suffix, count = count }
+`;
+	const main = `
+local probe<const> = require('${path}')
+local c0, p0, q0, r0, s0 = probe.collect(17, probe.produce(0, 2))
+local c3, p3, q3, r3, s3 = probe.collect(19, probe.produce(2, 3))
+local n0, a0, b0, d0, e0 = probe.actual(31, probe.produce(0, 4))
+local n1, a1, b1, d1, e1 = probe.actual(32, probe.produce(1, 5))
+local n3, a3, b3, d3, e3 = probe.actual(33, probe.produce(2, 6))
+local nf, af, bf, df, ef = probe.actual(probe.forward(5, false, nil, 9))
+local fs, gs, hs = probe.forward(7)
+local nr, ar, br, dr, er = probe.relay(8, false, nil, 4)
+local nt, at, bt, dt, et = probe.relay(11)
+local ss, ts, us = probe.suffix(22, false, nil, 9)
+local os, ps = probe.suffix(93)
+return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d1, e1,
+	n3, a3, b3, d3, e3, nf, af, bf, df, ef, fs, gs, hs, nr, ar, br, dr, er, nt, at, bt, dt, et, ss, ts, us, os, ps, probe.count(),
+	probe.forward(38, false, nil)
+`;
+	const z = valueNil(), f = valueBool(false), v = valueInteger;
+	const output = [
+		v(17), z, z, z, z,
+		v(19), f, v(mixInt(3)), z, z,
+		v(1), v(31), z, z, z,
+		v(2), v(32), f, z, z,
+		v(4), v(33), f, v(mixInt(6)), z,
+		v(4), v(5), f, z, v(9),
+		v(7), z, z,
+		v(4), v(8), f, z, v(4),
+		v(1), v(11), z, z, z,
+		z, v(9), z, z, z, v(5), v(38), f, z,
+	];
+	const original = linkManagedTestSystem(main, 0, [{ path, source: program }]);
+	const { cpu: oracle } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(original) });
+	runGuestToHalt(oracle, 4_194_304);
+	assert.deepEqual(materializeCpuCompletionValues(oracle), output);
+
+	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }]);
+	const { layout, symbols } = linked;
+	for (const name of ['__produce', '__collect', '__actual', '__forward', '__relay', '__suffix', '/entry']) {
+		const idx = symbols.metadata.functionIds.findIndex(id => id.endsWith(name) && (name !== '/entry' || id === 'module:main/entry'));
+		assert.notEqual(idx, -1, name);
+		const fn = layout.functions[idx];
+		let transfers = 0;
+		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+			assert.notEqual(row.op, OpCode.CALL, name);
+			assert.notEqual(row.op, OpCode.VARARG, name);
+			assert.notEqual(row.op, OpCode.ARGC, name);
+			if (name !== '/entry') assert.notEqual(row.op, OpCode.RET, name);
+			if (row.op === OpCode.JREG) ++transfers;
+			pc = row.pc + INSTRUCTION_BYTES;
+		}
+		assert.ok(transfers > 0, name);
+	}
+	const systemRomBytes = writeTestBlua32Rom(linked);
+	const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+		cpuExecutionBackend: CpuExecutionBackend.JavaScript },
+		{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
+	runtime.boot();
+	const { cpu, scheduler, memory } = runtime.machine;
+	const commands: string[] = [], observations: string[] = [];
+	for (let grant = 0; grant < 8192; ++grant) {
+		const outcome = scheduler.runCpuSlice(0, 53, 0, CpuRunKind.Scheduled);
+		commands.push('E 53');
+		observations.push(`${outcome} ${53 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		if (outcome === RunResult.Halted) break;
+	}
+	assert.deepEqual(runtime.readCompletionValues(), output);
+	commands.push('c');
+	observations.push([output.length, ...output.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+	const folder = mkdtempSync(join(tmpdir(), 'bmsx-open-software-arguments-'));
+	t.after(() => rmSync(folder, { recursive: true, force: true }));
+	const rom = join(folder, 'system.rom'), trace = join(folder, 'trace');
+	writeFileSync(rom, systemRomBytes);
+	writeFileSync(trace, commands.join('\n'));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	assert.deepEqual(execFileSync(native, [rom, trace, trace], { encoding: 'utf8' }).trim().split('\n'), observations);
+});
