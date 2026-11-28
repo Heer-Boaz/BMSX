@@ -33,12 +33,13 @@ import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
 
-test('Hot Resume relocates linked borrowed code and its WIDE caller without creating a Function activation', () => {
+for (const mode of [RegisterJumpMode.EnterWindow, RegisterJumpMode.EnterBankWindow]) test(
+	`Hot Resume relocates linked borrowed code and its WIDE caller without creating a Function activation (mode ${mode})`, () => {
 	const raw = (first: number, wide: boolean, value: number) => {
 		const issue = first + Number(wide), resume = issue + 1, leaf = resume + 1;
 		const text = new Uint8Array((leaf + 2) * INSTRUCTION_BYTES);
 		if (wide) writeInstruction(text, first, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, issue, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
+		writeInstruction(text, issue, OpCode.JREG, 0, 1, mode);
 		writeInstruction(text, resume, OpCode.RET, 4, 2, 0);
 		writeInstruction(text, leaf, OpCode.KSMI, 0, 0, value);
 		writeInstruction(text, leaf + 1, OpCode.JREG, 0, 1, RegisterJumpMode.LeaveWindow);
@@ -54,6 +55,7 @@ test('Hot Resume relocates linked borrowed code and its WIDE caller without crea
 	parent.registers.setInteger(1, 4);
 	parent.registers.setInteger(2, 4);
 	parent.registers.setInteger(3, 1);
+	if (mode === RegisterJumpMode.EnterBankWindow) parent.registers.setInteger(4, SYSTEM_EXECUTION_DOMAIN_ID);
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JREG]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 2);
 	const child = cpu.rootThread.frameAtDepth(1);

@@ -1884,7 +1884,8 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeWindowTransfer(frame: CallFrame, a: number, b: number, mode: RegisterJumpMode): boolean {
 		const thread = frame.thread, registers = frame.registers, capacity = registers.capacity();
-		if (mode === RegisterJumpMode.EnterWindow) {
+		const banked = mode === RegisterJumpMode.EnterBankWindow;
+		if (mode === RegisterJumpMode.EnterWindow || banked) {
 			if (a >= capacity) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return false;
@@ -1894,9 +1895,27 @@ export class CPU implements MappedPageInvalidator {
 				this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
 				return false;
 			}
-			if (b + 3 > capacity) {
+			if (b + (banked ? 4 : 3) > capacity) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return false;
+			}
+			let domain = this.activeExecutionDomainId, image = frame.executionImage;
+			if (banked) {
+				const selected = registers.getPayload(b + 3) | 0;
+				if (selected !== domain) {
+					if ((selected !== SYSTEM_EXECUTION_DOMAIN_ID && selected !== 0 && selected !== 1)
+						|| !this.isUserMode() || this.resetBankSelected()) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						return false;
+					}
+					const selectedImage = this.executionImageForDomain(selected);
+					if (selectedImage === null) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						return false;
+					}
+					domain = selected;
+					image = selectedImage;
+				}
 			}
 			const offset = registers.getPayload(b), width = registers.getPayload(b + 1), top = registers.getPayload(b + 2);
 			const base = frame.stackBase + offset, end = base + width;
@@ -1910,12 +1929,13 @@ export class CPU implements MappedPageInvalidator {
 				return false;
 			}
 			const child = thread.acquireFrame();
-			child.executionImage = frame.executionImage;
+			child.executionImage = image;
 			child.decodedPage = null;
-			child.initializeControl(0, target, this.currentInstructionPc, false, this.activeExecutionDomainId,
+			child.initializeControl(0, target, this.currentInstructionPc, false, domain,
 				base, 0, 0, 0, top, 0, base, width);
 			thread.stackTop = end;
 			thread.enterFrame(child);
+			if (banked && domain !== this.activeExecutionDomainId) this.latchActiveExecutionImage(domain, image);
 			return true;
 		}
 		const indirect = mode === RegisterJumpMode.LeaveWindowFromRegister;
@@ -3402,7 +3422,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.JREG: {
 					const mode = page.c[pageOffset];
 					if (mode > RegisterJumpMode.Link) {
-						if (mode <= RegisterJumpMode.LeaveWindowFromRegister) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
+						if (mode <= RegisterJumpMode.EnterBankWindow) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
 						else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 						return;
 					}

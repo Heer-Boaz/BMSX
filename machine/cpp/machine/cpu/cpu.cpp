@@ -1324,7 +1324,8 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
 
 bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode mode) {
 	auto& thread = *frame.thread;
-	if (mode == RegisterJumpMode::EnterWindow) {
+	const bool selectsBank = mode == RegisterJumpMode::EnterBankWindow;
+	if (mode == RegisterJumpMode::EnterWindow || selectsBank) {
 		const auto& registers = frame.registers;
 		if (!registers.containsRange(a, 1)) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -1335,9 +1336,24 @@ bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode
 			enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
 			return false;
 		}
-		if (!registers.containsRange(b, 3)) {
+		if (!registers.containsRange(b, selectsBank ? 4 : 3)) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
+		}
+		auto domain = m_activeExecutionDomainId;
+		auto* image = frame.executionImage;
+		if (selectsBank) {
+			const u32 bank = registers.payload(b + 3);
+			domain = toSignedWord(bank);
+			if (domain != m_activeExecutionDomainId) {
+				// The window selects media, not privilege. Supervisor can
+				// hand off to untrusted software only by leaving that mode.
+				if (bank + 1u >= EXECUTION_DOMAIN_COUNT || !isUserMode() || resetBankSelected()
+					|| !(image = executionImageForDomain(domain))) {
+					enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					return false;
+				}
+			}
 		}
 		const u32 offset = registers.payload(b);
 		const u32 width = registers.payload(b + 1);
@@ -1359,10 +1375,11 @@ bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode
 			return false;
 		}
 		auto* child = thread.acquireFrame();
-		child->executionImage = frame.executionImage;
-		child->initializeWindow(target, m_currentInstructionPc, m_activeExecutionDomainId, base, width, top);
+		child->executionImage = image;
+		child->initializeWindow(target, m_currentInstructionPc, domain, base, width, top);
 		thread.setStackTop(static_cast<i32>(end));
 		thread.enterFrame(child);
+		if (selectsBank && domain != m_activeExecutionDomainId) latchActiveExecutionImage(domain, image);
 		return true;
 	}
 	CallFrame* const parent = frame.previous;

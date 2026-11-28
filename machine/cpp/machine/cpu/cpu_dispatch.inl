@@ -488,7 +488,7 @@ DISPATCH_LABEL(JMP) {
 DISPATCH_LABEL(JREG) {
 	if (decoded->c > static_cast<int>(RegisterJumpMode::Link)) {
 		PUBLISH_SCALAR_FRONTIER();
-		if (decoded->c > static_cast<int>(RegisterJumpMode::LeaveWindowFromRegister))
+		if (decoded->c > static_cast<int>(RegisterJumpMode::EnterBankWindow))
 			enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		else if (executeWindowTransfer(FRAME, decoded->a, decoded->b, static_cast<RegisterJumpMode>(decoded->c)))
 			DISPATCH_REBIND_FRAME();

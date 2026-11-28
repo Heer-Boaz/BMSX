@@ -301,6 +301,7 @@ const buildInstructionOperands = (
 				case RegisterJumpMode.Jump: return [registerOperand('a', 'target', a)];
 				case RegisterJumpMode.Link: return [registerOperand('a', 'target', a), registerOperand('b', 'link', b)];
 				case RegisterJumpMode.EnterWindow: return [registerOperand('a', 'target', a), plainOperand('b', 'window', `r${b}..r${b + 2}`)];
+				case RegisterJumpMode.EnterBankWindow: return [registerOperand('a', 'target', a), plainOperand('b', 'bank window', `r${b}..r${b + 3}`)];
 				case RegisterJumpMode.LeaveWindow: return [plainOperand('b', 'frontier', b.toString())];
 				case RegisterJumpMode.LeaveWindowFromRegister: return [registerOperand('b', 'frontier', b)];
 				default: return [plainOperand('c', 'reserved mode', c.toString())];
@@ -522,6 +523,7 @@ const formatInstruction = (
 				case RegisterJumpMode.Jump: return `JREG r${a}`;
 				case RegisterJumpMode.Link: return `JREG r${a}, r${b}`;
 				case RegisterJumpMode.EnterWindow: return `JREG enter r${a}, r${b}..r${b + 2}`;
+				case RegisterJumpMode.EnterBankWindow: return `JREG enter-bank r${a}, r${b}..r${b + 3}`;
 				case RegisterJumpMode.LeaveWindow: return `JREG leave ${b}`;
 				case RegisterJumpMode.LeaveWindowFromRegister: return `JREG leave r${b}`;
 				default: return `JREG (reserved mode ${c})`;

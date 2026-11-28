@@ -153,7 +153,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			if (op === OpCode.JREG) {
 				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
 					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
-				if (mode > RegisterJumpMode.LeaveWindowFromRegister) throw new Error('BLua32 register jump has an invalid mode.');
+				if (mode > RegisterJumpMode.EnterBankWindow) throw new Error('BLua32 register jump has an invalid mode.');
 			}
 			if (op !== OpCode.JMP && op !== OpCode.JAL && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');

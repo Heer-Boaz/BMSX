@@ -150,7 +150,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (exit->exit == NativeBlockExit::RegisterWindowTransfer) {
 		// Both generated gates check these in order, before the physical
 		// transfer. Sample the pending frontier before publication clears it.
-		auto& fallback = exit->operands.registerWindowTransfer.mode == RegisterJumpMode::EnterWindow
+		const auto mode = exit->operands.registerWindowTransfer.mode;
+		auto& fallback = mode == RegisterJumpMode::EnterWindow || mode == RegisterJumpMode::EnterBankWindow
 			? cpu.m_nativeGateProfile.windowEnterFallbacks : cpu.m_nativeGateProfile.windowLeaveFallbacks;
 		if (state.remainingCycles <= 0) ++fallback.budget;
 		else if (run->firstPendingFrame) ++fallback.pendingCall;

@@ -320,6 +320,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 				case RegisterJumpMode::Link: return "JREG r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 				case RegisterJumpMode::EnterWindow:
 					return "JREG enter r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+				case RegisterJumpMode::EnterBankWindow:
+					return "JREG enter-bank r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 				case RegisterJumpMode::LeaveWindow: return "JREG leave " + std::to_string(decoded.b);
 				case RegisterJumpMode::LeaveWindowFromRegister: return "JREG leave r" + std::to_string(decoded.b);
 			}
@@ -465,6 +467,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 				case RegisterJumpMode::Link: return {registerOperand("target", decoded.a), registerOperand("link", decoded.b)};
 				case RegisterJumpMode::EnterWindow:
 					return {registerOperand("target", decoded.a), registerOperand("window descriptor", decoded.b)};
+				case RegisterJumpMode::EnterBankWindow:
+					return {registerOperand("target", decoded.a), registerOperand("banked window descriptor", decoded.b)};
 				case RegisterJumpMode::LeaveWindow: return {plainOperand("live extent", std::to_string(decoded.b))};
 				case RegisterJumpMode::LeaveWindowFromRegister: return {registerOperand("frontier", decoded.b)};
 			}

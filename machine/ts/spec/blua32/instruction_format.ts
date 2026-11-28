@@ -4,7 +4,10 @@ export const enum ValueMoveKind {
 	Payload = 8,
 }
 export const enum ReturnSource { Registers = 0, ExtraArguments = 1 }
-export const enum RegisterJumpMode { Jump = 0, Link = 1, EnterWindow = 2, LeaveWindow = 3, LeaveWindowFromRegister = 4 }
+export const enum RegisterJumpMode {
+	Jump = 0, Link = 1, EnterWindow = 2, LeaveWindow = 3, LeaveWindowFromRegister = 4,
+	EnterBankWindow = 5,
+}
 
 export const INSTRUCTION_BYTES = 4;
 

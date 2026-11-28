@@ -71,8 +71,9 @@ function relocatedWindowCallSite(target: HotResumeRevision, callSite: number, pa
 	const text = next.textBytes.subarray(textOffset, textOffset + fn.codeByteCount);
 	const bodyWord = (bodyPc - fn.codeAddress) / INSTRUCTION_BYTES;
 	const newEnter = decodeBlua32InstructionAtPc(text, fn.codeAddress, bodyPc);
-	if (oldEnter.pc + INSTRUCTION_BYTES !== parentPc || oldEnter.op !== OpCode.JREG || oldEnter.c !== RegisterJumpMode.EnterWindow
-		|| newEnter.op !== OpCode.JREG || newEnter.c !== RegisterJumpMode.EnterWindow || oldEnter.a !== newEnter.a) return -1;
+	if (oldEnter.pc + INSTRUCTION_BYTES !== parentPc || oldEnter.op !== OpCode.JREG
+		|| (oldEnter.c !== RegisterJumpMode.EnterWindow && oldEnter.c !== RegisterJumpMode.EnterBankWindow)
+		|| newEnter.op !== OpCode.JREG || newEnter.c !== oldEnter.c || oldEnter.a !== newEnter.a) return -1;
 	return bodyWord !== 0 && instructionOpcode(readInstructionWord(text, bodyWord - 1)) === OpCode.WIDE
 		? bodyPc - INSTRUCTION_BYTES : bodyPc;
 }

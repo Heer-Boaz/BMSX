@@ -112,7 +112,7 @@ void NativeLowering::lowerOperation(const NativeRegisterJump& jump, const Native
 
 void NativeLowering::lowerOperation(const NativeRegisterWindowTransfer& transfer, const NativeInstruction&) {
 	auto& exit = m_blocks[m_current]->terminal;
-	if (!m_bindings.cpu) {
+	if (!m_bindings.cpu || transfer.mode == RegisterJumpMode::EnterBankWindow) {
 		emitLeave(exit, Charge::Pending);
 		return;
 	}

@@ -16,7 +16,7 @@ import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import { COP0_BAD_ADDRESS, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -202,7 +202,7 @@ for (const unaligned of [false, true]) test(unaligned
 
 	if (unaligned) return;
 	// The full decoded C field is the mode, not just the instruction body's low bits.
-	for (const [wideC, c, extension] of [[0, 4, 0], [0, 1, 1], [1, 1, 0]]) {
+	for (const [wideC, c, extension] of [[0, RegisterJumpMode.EnterBankWindow + 1, 0], [0, 1, 1], [1, 1, 0]]) {
 		const invalid = rom.slice(), index = issue / INSTRUCTION_BYTES;
 		writeInstruction(invalid, index, OpCode.WIDE, 0, 0, wideC);
 		writeInstruction(invalid, index + 1, OpCode.JREG, 0, 0, c, extension);

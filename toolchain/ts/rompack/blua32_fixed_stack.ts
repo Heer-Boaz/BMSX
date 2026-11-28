@@ -267,8 +267,14 @@ export function deriveBlua32FixedStack(
 							reject('requires an active borrowed window and a contained frontier');
 						continue;
 					}
-					if (c === RegisterJumpMode.EnterWindow) {
-						if (b + 2 >= width) reject('window controls exceed the owning register window');
+					if (c === RegisterJumpMode.EnterWindow || c === RegisterJumpMode.EnterBankWindow) {
+						const endControl = b + (c === RegisterJumpMode.EnterBankWindow ? 3 : 2);
+						if (endControl >= width) reject('window controls exceed the owning register window');
+						if (c === RegisterJumpMode.EnterBankWindow) {
+							const banks = branches!.get(endControl);
+							if (banks?.length !== 1 || banks[0] !== 0xffffffff)
+								reject('fixed System window may not change execution bank');
+						}
 						const targets = branches!.get(a), bases = branches!.get(b), capacities = branches!.get(b + 1), tops = branches!.get(b + 2);
 						if (targets === undefined || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
 							reject('no fixed window with finite targets');

@@ -81,6 +81,8 @@ struct NativeRegisterWindowTransfer : NativeExitOperands::RegisterWindowTransfer
 	constexpr NativeSlotAccess slots() const {
 		if (mode == RegisterJumpMode::EnterWindow)
 			return {.reads = {static_cast<i16>(a), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, .readsRange = {b, 3}};
+		if (mode == RegisterJumpMode::EnterBankWindow)
+			return {.reads = {static_cast<i16>(a), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, .readsRange = {b, 4}};
 		if (mode == RegisterJumpMode::LeaveWindowFromRegister)
 			return {.reads = {static_cast<i16>(b), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
 		return {};

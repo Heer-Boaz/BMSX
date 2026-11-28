@@ -169,7 +169,7 @@ emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
 	if (op === OpCode.MOV && c > ValueMoveKind.Payload || op === OpCode.JMP && a !== 0
-		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.LeaveWindowFromRegister) return false;
+		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.EnterBankWindow) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
