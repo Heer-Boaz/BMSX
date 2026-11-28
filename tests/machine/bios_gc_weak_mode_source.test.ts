@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const basis = 'a7e9ec46981f0ddaa0c35b640a75a09927aeb104';
+const busBasis = 'c6fe1ec0413e4ef57b252e9909451d5c4d44877d';
 const stringRecord = 'machine/bios/kernel/string_record.lua';
 const weakMode = 'machine/bios/kernel/gc_weak_mode.lua';
 const recordPins = [
@@ -14,6 +15,8 @@ const recordPins = [
 	['I', 'machine/ts/spec/blua32/image_format.ts', '0b4ed00f7eb0424bb1f5d986714bb583ba90c406b9d999be7f983ac6d69cef27', [[56, 56], [60, 60]]],
 	['J', 'machine/cpp/spec/blua32/image_format.h', 'aeecfe352449d8e467a0b72d78ce402145960807c9ec0483d70d2ebc6f5e30dd', [[62, 62], [66, 66]]],
 	['M', 'machine/ts/spec/bmsx/memory_map.ts', '00dbd23e01f06a9aaf126c55fa7ba6c3306b5ac86caa3adfa695b6b9360fe1f0', [[6, 7], [9, 10], [12, 12]]],
+	['A', 'machine/ts/spec/bmsx/memory_map.ts', 'a53d3928298fe4f2e3b30772637a46a1fab938d87c3aa6596f205fa3ad89377d', [[25, 25]], busBasis],
+	['B', 'machine/cpp/spec/bmsx/memory_map.h', '93b186d1c8d5376211e812b00ccdc58d75a62ce1f7a2886811dd210e8535ac3e', [[31, 31]], busBasis],
 ] as const;
 const policyPins = [
 	['T', 'machine/ts/machine/cpu/gc_heap.ts', '5cded67b5e3eab37552b868c64b60a0438a4c47086080f89f96518a71a138d9f', [[344, 353]]],
@@ -28,13 +31,14 @@ test('firmware weak-mode and String access map the pinned mirrored policy and re
 		[weakMode, policyPins, 'return { weak_mode_bits = weak_mode_bits }'],
 	] as const) {
 		const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
-		for (const [key, file, digest] of pins) {
-			const source = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
+		for (const [key, file, digest, , revision = basis] of pins) {
+			const source = execFileSync('git', ['show', `${revision}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
 			assert.equal(createHash('sha256').update(source).digest('hex'), digest, `${file}: review changed reference bytes`);
 			sources.set(key, { lines: source.split('\n'), covered: new Set() });
 		}
 		const lines = readFileSync(port, 'utf8').replaceAll('\r\n', '\n').split('\n');
 		assert.ok(lines.includes(`-- Source basis: ${basis}.`));
+		if (port === stringRecord) assert.ok(lines.includes(`-- Bus basis: ${busBasis}.`));
 		const exports = lines.indexOf(exportLine);
 		assert.ok(exports > 0);
 		for (const [index, line] of lines.slice(0, exports).entries()) {

@@ -11,8 +11,8 @@ import { compileTestSystemWithHeap } from './heap_service_system';
 
 type Leaf = { path: string; member: string; arity: number; result?: false };
 
-const mailbox = DYNAMIC_RAM_BASE - 64;
-const request = mailbox - RAM_BASE;
+export const FIRMWARE_PROBE_MAILBOX = DYNAMIC_RAM_BASE - 64;
+const request = FIRMWARE_PROBE_MAILBOX - RAM_BASE;
 const vectorPath = 'test/firmware_vector';
 const resetPath = 'test/firmware_reset';
 
@@ -20,18 +20,17 @@ const resetPath = 'test/firmware_reset';
 // A fixture ROM executes the real BIOS leaf from an ordinary System exception,
 // with a test-owned mailbox outside the arena being compared.
 export function linkFirmwareProbe(
-	optLevel: OptimizationLevel, modules: readonly ProgramModule[], leaves: readonly Leaf[],
+	optLevel: OptimizationLevel, modules: readonly ProgramModule[], leaves: readonly Leaf[], entrySource = 'return',
 ) {
 	const source = leaves.map(({ path, member }, i) => `local fn${i}<const> = require(${JSON.stringify(path)}).${member}`).join('\n')
-		+ `\nlocal operation<const> = mem32le[${mailbox}]\n`
+		+ `\nlocal operation<const> = mem32le[${FIRMWARE_PROBE_MAILBOX}]\n`
 		+ leaves.map(({ arity, result }, i) => {
-			const operands = Array.from({ length: arity }, (_, n) => `mem32le[${mailbox + 4 * (n + 1)}]`).join(', ');
+			const operands = Array.from({ length: arity }, (_, n) => `mem32le[${FIRMWARE_PROBE_MAILBOX + 4 * (n + 1)}]`).join(', ');
 			const call = `fn${i}(${operands})`;
-			const store = result === false ? `${call}\n  mem32le[${mailbox}] = 0` : `local word<const> = ${call}\n  mem32le[${mailbox}] = word`;
+			const store = result === false ? `${call}\n  mem32le[${FIRMWARE_PROBE_MAILBOX}] = 0` : `local word<const> = ${call}\n  mem32le[${FIRMWARE_PROBE_MAILBOX}] = word`;
 			return `if operation == ${i} then\n  ${store}\n  return\nend`;
 		}).join('\n');
-	const driver = `mem32le[${mailbox}] = -1\nwhile true do\n  blua32.svc(nil)\n  halt_until_irq\nend`;
-	const entrySource = 'return';
+	const driver = `mem32le[${FIRMWARE_PROBE_MAILBOX}] = -1\nwhile true do\n  blua32.svc(nil)\n  halt_until_irq\nend`;
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [...modules,
 		{ path: resetPath, source: driver, chunk: parseLuaChunk(driver, resetPath) },
 		{ path: vectorPath, source, chunk: parseLuaChunk(source, vectorPath) },

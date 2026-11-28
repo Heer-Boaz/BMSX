@@ -1,9 +1,9 @@
 module<const>
 
 -- Source basis: a7e9ec46981f0ddaa0c35b640a75a09927aeb104.
+-- Bus basis: c6fe1ec0413e4ef57b252e9909451d5c4d44877d.
 -- T/C/H are StringPool's TS/C++ owners; I/J are the String header
--- constants, and M is the memory map. A String ID keeps its socket bit;
--- cartridge ROM bytes are addressed through the explicitly selected bank.
+-- constants; M is the original memory map and A/B pin the qualified read.
 local ram_base<const> = 0x08000000 -- M:6
 local cart_rom_base<const> = 0x10000000 -- M:10,12
 local ram_word_mask<const> = 0x003ffffc -- T:37,81 C:55 M:7-9
@@ -11,9 +11,9 @@ local ram_byte_mask<const> = 0x003fffff -- T:27,37,87,90 C:62,67 M:7
 local length_offset<const> = 8 -- T:86 C:61 I:60 J:66
 local header_bytes<const> = 16 -- T:90-91 C:66,69 I:56 J:62
 
-local rom_read_address<const> = function(id)
-	if (id & 0x7fffffff) >= cart_rom_base then return id | 0x40000000 end
-	return id
+local rom_read_address<const> = function(id) -- T:35-38,75-78 C:34-36,49-51; form a bus address instead of a host storage view
+	if (id & 0x7fffffff) >= cart_rom_base then return id | 0x40000000 end -- T:32,38,78 C:33,36,51 A:25 B:31; preserve the String ID's socket bit
+	return id -- T:36,76 C:35,50; unqualified System ROM address
 end
 
 local is_ram_string_id<const> = function(id) -- T:34 H:17
