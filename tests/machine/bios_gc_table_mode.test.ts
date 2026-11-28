@@ -35,7 +35,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const output = management + GC_WORKSPACE_END - 12, floor = memory.ramBusEnd() - RAM_BASE;
 	const modeKey = nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode);
 	assert.equal(modeKey, nativeHeapReference(oracle).gc.diagnosticWord(GcDiagnosticField.Mode));

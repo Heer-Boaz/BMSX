@@ -22,6 +22,7 @@ import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } 
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { admitTestHeapServiceCpu } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 test('frame redirection uses backed slots without occupying a suspended child window or replacing its captures', t => {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
@@ -65,7 +66,7 @@ test('frame redirection uses backed slots without occupying a suspended child wi
 	assert.ok(child.stackBase + tooWide.maxStack > root.stackRegisters.capacity());
 	const seed = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], rows: string[] = [];
-	const ram = memory.ramData(), used = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
+	const ram = memory.ramData(), used = nativeHeapReference(cpu).luaHeap.usedBytes(), occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	function hash() {
 		const digest = hashBytes(ram, 0, ram.length);
 		commands.push(`H 0 ${ram.length}`);
@@ -80,8 +81,8 @@ test('frame redirection uses backed slots without occupying a suspended child wi
 			: 'Frame execution does not preserve its capture binding.' });
 		assert.equal(cpu.instructionBudgetRemaining, budget);
 		assert.equal(scheduler.nowCycles, cycle);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), used);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 		commands.push(`G ${index} ${SYSTEM_EXECUTION_DOMAIN_ID} ${target.address} ${target.codeAddress}`);
 		rows.push(`${refusal === 'window' ? 0 : refusal === 'capture' ? 2 : 1} 0 0 ${occupied} ${used}`);
 	}

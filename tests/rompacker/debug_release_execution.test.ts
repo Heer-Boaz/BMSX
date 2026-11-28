@@ -17,6 +17,7 @@ import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
 import { buildPublicBiosFixture } from '../helpers/bios_linkage';
 import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { afterTest } from '../helpers/test_cleanup';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-debug-release-'));
@@ -45,7 +46,7 @@ ${MANAGED_CART_LAUNCH}`, optLevel);
 		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(5050)]);
 		assert.ok(!image.constants.includes('erased-payload'));
-		builds.push({ codeBytes: image.textBytes.length, constants: image.constants, cycles: 100_000 - cpu.instructionBudgetRemaining, heap: cpu.luaHeap.usedBytes() });
+		builds.push({ codeBytes: image.textBytes.length, constants: image.constants, cycles: 100_000 - cpu.instructionBudgetRemaining, heap: nativeHeapReference(cpu).luaHeap.usedBytes() });
 	}
 	assert.deepEqual(builds[1], builds[0]);
 });

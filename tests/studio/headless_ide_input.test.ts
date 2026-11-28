@@ -97,7 +97,7 @@ test('headless heap diagnostics collect through the running guest', async t => {
 	const pending = harness.debugStats().finally(() => { settled = true; });
 	await until(() => settled);
 	const stats = await pending;
-	assert.equal(stats.tracked, cpu.luaHeap.usedBytes());
+	assert.equal(stats.tracked, nativeHeapReference(cpu).luaHeap.usedBytes());
 	assert.equal(memory.readRamRecordByte(unreachable), 0);
 	assert.ok(scheduler.nowCycles > started);
 });

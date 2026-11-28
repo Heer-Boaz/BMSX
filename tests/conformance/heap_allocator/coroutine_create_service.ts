@@ -77,7 +77,7 @@ try {
 				// concentrating the OOM fixture on the Thread reservation.
 				cpu.beginCompletionCall(valuePayload(entries[2]), [create, badArgument, entries[6], entries[3]]);
 				runGuestToHalt(cpu, 65_536);
-				assert.deepEqual(runtime.readCompletionValues(), [valueBool(false), valueString(cpu.stringPool.find('Invalid argument.')!)]);
+				assert.deepEqual(runtime.readCompletionValues(), [valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('Invalid argument.')!)]);
 			}
 			const raw = recover ? nativeHeapReference(cpu).stringPool.intern(deadText) : 0;
 			const fn = valuePayload(entries[fixed ? 0 : recover ? 1 : 2]);
@@ -87,7 +87,7 @@ try {
 				for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Strings; ++i)
 					gc.step(closure, valueTable(anchor), valueNil(), 0, false, 1);
 				assert.equal(gc.phase(), GcPhase.Strings);
-				assert.equal(cpu.stringPool.find(deadText), raw);
+				assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), raw);
 			}
 			if (failure) assert.equal(gc.phase(), GcPhase.Pause);
 			if (recover || oom) {
@@ -96,7 +96,7 @@ try {
 			}
 			const before = arena.occupiedBytes(), logical = heap.usedBytes();
 			const originalWhite = gc.white();
-			const faultId = failure ? cpu.stringPool.find(invalid ? 'Invalid argument.' : 'Out of memory.')! : 0;
+			const faultId = failure ? nativeHeapReference(cpu).stringPool.find(invalid ? 'Invalid argument.' : 'Out of memory.')! : 0;
 			const owner = cpu.activeThread.address;
 			const file = join(directory, `O${optLevel}-${name}`), nativePartial = `${file}.native`;
 			writeFileSync(`${file}.seed`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -164,7 +164,7 @@ try {
 					assert.equal(memory.readRamRecordWord(word + ThreadField.StackCapacity), THREAD_INITIAL_VALUES);
 					assert.equal(memory.readRamRecordWord(word + ThreadField.FrameCapacity), THREAD_INITIAL_FRAMES);
 					if (fixed) assert.equal(heap.usedBytes() - logical, THREAD_HEAP_BYTES + THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-					if (recover) assert.equal(cpu.stringPool.find(deadText), undefined);
+					if (recover) assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined);
 				}
 				const thread = valueThread(word);
 				assert.deepEqual(values, failure ? [valueBool(false), valueString(faultId)] : fixed ? [thread, valueInteger(183)] : [thread]);

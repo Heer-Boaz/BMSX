@@ -7,8 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -35,9 +34,9 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	const { cpu, memory } = createTestHeapServiceCpu(image);
 	const oracle = createTestHeapServiceCpu(image).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const metadata = management + HEAP_STRING_METADATA_OFFSET, state = cpu.heapAllocator.allocatorStateOffset();
-	const capacity = cpu.heapAllocator.capacityBytes();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const metadata = management + HEAP_STRING_METADATA_OFFSET, state = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
+	const capacity = nativeHeapReference(cpu).heapAllocator.capacityBytes();
 	function same<T>(action: (target: CPU) => T) {
 		const value = action(cpu);
 		assert.deepEqual(action(oracle), value);
@@ -70,7 +69,7 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	invoke('begin_mark', [control, metadata], 1);
 	invoke('begin_mark', [control, metadata]);
 
-	const occupied = cpu.heapAllocator.occupiedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	nativeHeapReference(oracle).gc['beginInitialBanks']();
 	begin('begin_initial_banks', [control, state, capacity]);
 	for (let i = 0; i < 128 && memory.readRamRecordWord(control + GC_ROOT_CURSOR) === 0; ++i) {

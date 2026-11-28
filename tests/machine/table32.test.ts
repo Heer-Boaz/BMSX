@@ -17,11 +17,11 @@ const tableRom = linkManagedTestSystem('', 0);
 
 test('Table budget charges allocated Value and hash slots rather than physical hash links', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const start = cpu.luaHeap.usedBytes();
-	const occupied = cpu.heapAllocator.occupiedBytes();
+	const start = nativeHeapReference(cpu).luaHeap.usedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const table = createReferenceTable(cpu, 8, 16);
-	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
-	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table));
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes() - occupied, nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table));
 	const base = cpu.tables.arrayAddress(table);
 	const links = cpu.tables.hashAddress(table) + 16 * 10;
 	const tags = base + 8 * 4;
@@ -30,7 +30,7 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 	assert.equal(cpu.memory.readRamRecordWord(base + 8), 0xffa12345);
 	assert.equal(cpu.memory.readRamRecordByte(tags + 2), v.ValueTag.Float);
 	assert.equal(cpu.tables.getInteger(table, 3), v.valueFloatBits(0xffa12345));
-	nativeHeapReference(cpu).gc.tables.clear(table); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
+	nativeHeapReference(cpu).gc.tables.clear(table); assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes() - start, 32);
 });
 
 test('full byte-index chains survive copying and widening during rehash', () => {
@@ -43,8 +43,8 @@ original, duplicate = source, copy
 `);
 	runGuestToHalt(cpu, 20_000_000);
 	const tables = nativeHeapReference(cpu).gc.tables;
-	const source = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('original')!));
-	const copy = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('duplicate')!));
+	const source = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('original')!));
+	const copy = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('duplicate')!));
 	assert.equal(tables.hashSize(source), 128);
 	assert.equal(tables.hashSize(copy), 256);
 	for (let key = 1; key <= 128; ++key) {
@@ -65,8 +65,8 @@ original, duplicate = source, table.copy(source)
 `);
 	runGuestToHalt(cpu, 20_000_000);
 	const tables = nativeHeapReference(cpu).gc.tables;
-	const source = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('original')!));
-	const copy = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('duplicate')!));
+	const source = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('original')!));
+	const copy = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('duplicate')!));
 	assert.equal(tables.hashSize(source), 2048);
 	assert.equal(tables.hashSize(copy), 2048);
 	const sourceBacking = tables.hashAddress(source) & RAM_RECORD_WORD_MASK;
@@ -121,7 +121,7 @@ test('growth for non-array keys preserves sparse reserved slots and their charge
 	const tables = nativeHeapReference(cpu).gc.tables;
 	const mixed = createReferenceTable(cpu, 8, 0), identity = createReferenceTable(cpu);
 	const keys = [v.valueString(nativeHeapReference(cpu).stringPool.intern('hash only')), v.valueInteger(-1), v.valueFloat(0.5), v.valueTable(identity)];
-	const bytes = cpu.luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
+	const bytes = nativeHeapReference(cpu).luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
 	tables.setInteger(mixed, 8, retained);
 	const arrayAddress = tables.arrayAddress(mixed);
 	const slots = [1, 2, 4, 4];
@@ -131,14 +131,14 @@ test('growth for non-array keys preserves sparse reserved slots and their charge
 		assert.equal(tables.arrayAddress(mixed), arrayAddress);
 		assert.equal(tables.getInteger(mixed, 8), retained);
 		assert.equal(tables.hashSize(mixed), slots[i]);
-		assert.equal(cpu.luaHeap.usedBytes(), bytes + 10 * slots[i]);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bytes + 10 * slots[i]);
 	}
 	for (let slot = 1; slot < 8; ++slot) tables.setInteger(mixed, slot, v.valueInteger(slot));
 	tables.set(mixed, v.valueFloat(9), retained);
 	assert.equal(tables.arrayCapacity(mixed), 16);
 	assert.equal(tables.hashSize(mixed), 4);
 	assert.equal(tables.getInteger(mixed, 9), retained);
-	assert.equal(cpu.luaHeap.usedBytes(), bytes + 4 * 10 + 8 * 5);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bytes + 4 * 10 + 8 * 5);
 	for (let i = 0; i < keys.length; ++i) assert.equal(tables.get(mixed, keys[i]), v.valueInteger(i));
 });
 
@@ -152,11 +152,11 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 		else if (home === 0) collision = id;
 	}
 	const spare = createReferenceTable(cpu, 0, 16), tombstones = createReferenceTable(cpu, 0, 16);
-	const start = cpu.luaHeap.usedBytes();
+	const start = nativeHeapReference(cpu).luaHeap.usedBytes();
 	for (const id of keys) tables.setInteger(tombstones, id, v.valueInteger(17));
 	for (let i = 2; i < keys.length; ++i) tables.setInteger(tombstones, keys[i], v.valueNil());
 	for (let i = 0; i < 2; ++i) tables.setInteger(spare, keys[i], v.valueInteger(17));
-	assert.equal(cpu.luaHeap.usedBytes(), start, 'filling and clearing mappings does not change the reservation');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), start, 'filling and clearing mappings does not change the reservation');
 	const before = tables.hashAddress(tombstones);
 	tables.setInteger(tombstones, collision, v.valueInteger(23));
 	tables.setInteger(spare, collision, v.valueInteger(23));
@@ -164,24 +164,24 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 	assert.equal(tables.hashSize(tombstones), 4);
 	assert.equal(tables.hashSize(spare), 16);
 	assert.equal(tables.arrayCapacity(tombstones), tables.arrayCapacity(spare));
-	assert.equal(cpu.luaHeap.usedBytes(), start - (16 - 4) * 10);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), start - (16 - 4) * 10);
 	for (const id of [keys[0], keys[1], collision]) assert.equal(tables.getInteger(tombstones, id), tables.getInteger(spare, id));
 
-	const logical = cpu.luaHeap.usedBytes(), table = createReferenceTable(cpu, 0, 3);
+	const logical = nativeHeapReference(cpu).luaHeap.usedBytes(), table = createReferenceTable(cpu, 0, 3);
 	const backing = tables.hashAddress(table);
-	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40, 'an empty three-slot request immediately charges four slots');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + 32 + 40, 'an empty three-slot request immediately charges four slots');
 	for (let i = 0; i < 4; ++i) tables.setInteger(table, keys[i], v.valueInteger(29));
 	assert.equal(tables.hashSize(table), 4);
 	assert.equal(tables.hashAddress(table), backing);
-	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + 32 + 40);
 	const ram = cpu.memory.captureSaveState();
 	tables.setInteger(table, keys[0], v.valueNil());
 	assert.equal(tables.getInteger(table, keys[0]), v.valueNil());
-	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + 32 + 40);
 	cpu.memory.restoreSaveState(ram);
 	assert.equal(tables.getInteger(table, keys[0]), v.valueInteger(29));
 	tables.setInteger(table, keys[0], v.valueNil());
-	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40, 'deletion after restore retains the rounded reservation');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + 32 + 40, 'deletion after restore retains the rounded reservation');
 });
 
 test('hash deletion and replay retain backing while a hash slot can be reused', () => {
@@ -197,7 +197,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 	const backing = tables.hashAddress(table), home = v.hashCanonicalTableKey(v.valueInteger(1)) & (keys.length - 1);
 	tables.setInteger(table, keys[home], v.valueNil());
 	tables.setInteger(table, keys[(home + 1) & (keys.length - 1)], v.valueNil());
-	const used = cpu.luaHeap.usedBytes(), saved = cpu.memory.captureSaveState();
+	const used = nativeHeapReference(cpu).luaHeap.usedBytes(), saved = cpu.memory.captureSaveState();
 	for (const replay of [false, true]) {
 		if (replay) cpu.memory.restoreSaveState(saved);
 		for (let step = 0; step < 16; ++step) {
@@ -207,7 +207,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 			assert.equal(tables.hashSize(table), 4);
 			assert.equal(tables.getInteger(table, 1), v.valueInteger(29));
 			tables.setInteger(table, 1, v.valueNil());
-			assert.equal(cpu.luaHeap.usedBytes(), used);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 		}
 	}
 });
@@ -275,8 +275,8 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	cpu.tables.resolveStringIndexCached(table, key, -1, result);
 	assert.equal(result.value, v.valueBool(false)); assert.equal(result.extraVisits, 1);
 	for (let i = 1; i <= 512; ++i) { nativeHeapReference(cpu).gc.tables.setInteger(table, i, v.valueInteger(i * -3)); nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern('key' + i), v.valueInteger(i)); }
-	for (let i = 1; i <= 512; ++i) { assert.equal(cpu.tables.getInteger(table, i), v.valueInteger(i * -3)); assert.equal(cpu.tables.getStringKey(table, cpu.stringPool.find('key' + i)!), v.valueInteger(i)); }
-	const cachedKey = cpu.stringPool.find('key123')!;
+	for (let i = 1; i <= 512; ++i) { assert.equal(cpu.tables.getInteger(table, i), v.valueInteger(i * -3)); assert.equal(cpu.tables.getStringKey(table, nativeHeapReference(cpu).stringPool.find('key' + i)!), v.valueInteger(i)); }
+	const cachedKey = nativeHeapReference(cpu).stringPool.find('key123')!;
 	cpu.tables.getStringKeyCached(table, cachedKey, -1, result);
 	assert.equal(result.value, v.valueInteger(123));
 	const predicted = result.slot;
@@ -309,7 +309,7 @@ test('compact Tables participate in incremental tracing, weak clearing and refer
 	const root = v.valueTable(table), childValue = v.valueTable(child);
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern('child'), childValue);
 	nativeHeapReference(cpu).gc.collect(root);
-	assert.equal(cpu.tables.getStringKey(table, cpu.stringPool.find('child')!), childValue);
+	assert.equal(cpu.tables.getStringKey(table, nativeHeapReference(cpu).stringPool.find('child')!), childValue);
 	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(v.valuePayload(childValue)), child);
 	const weak = createReferenceTable(cpu), meta = createReferenceTable(cpu), dead = createReferenceTable(cpu);
 	const deadReference = dead;
@@ -398,7 +398,7 @@ return function(t) return protect(set, t) end
 	for (const key of [1, 3, 4, -1, -3, 5, 6]) tables.setInteger(table, key, v.valueInteger(key));
 	cpu.beginCompletionCall(v.valuePayload(results[0]), [v.valueTable(table)]);
 	nativeHeapReference(cpu).gc.collect();
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const array = tables.arrayAddress(table), hash = tables.hashAddress(table);
 	// Repartitioning for key 7 needs a 28-byte hash and a 40-byte array.
 	// Isolate one hash-sized hole so the first reservation succeeds and the second cannot.
@@ -406,14 +406,14 @@ return function(t) return protect(set, t) end
 	assert.notEqual(arena.allocate(64, true), 0);
 	for (const size of [4096, 256, 8]) while (arena.allocate(size, true) !== 0) {}
 	arena.free(hole);
-	const used = cpu.luaHeap.usedBytes(), occupied = arena.occupiedBytes();
+	const used = nativeHeapReference(cpu).luaHeap.usedBytes(), occupied = arena.occupiedBytes();
 	runGuestToHalt(cpu, 4_194_304);
 	cpu.readCompletionValues(results);
-	assert.deepEqual(results, [v.valueBool(false), v.valueString(cpu.stringPool.find('Out of memory.')!)]);
+	assert.deepEqual(results, [v.valueBool(false), v.valueString(nativeHeapReference(cpu).stringPool.find('Out of memory.')!)]);
 	assert.equal(tables.arrayAddress(table), array);
 	assert.equal(tables.hashAddress(table), hash);
 	assert.equal(arena.occupiedBytes(), occupied);
-	assert.equal(cpu.luaHeap.usedBytes(), used);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 	for (const key of [1, 3, 4, -1, -3, 5, 6]) assert.equal(tables.getInteger(table, key), v.valueInteger(key));
 	assert.equal(tables.getInteger(table, 7), v.valueNil());
 });

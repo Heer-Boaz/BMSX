@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -14,13 +13,14 @@ import { CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, CPU_CAUSE_NMI, LUA_FAULT_REASON_INV
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CPU_RESET_BANK_ADDRESS, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_END, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const createRuntime = (romBytes: Uint8Array) => {
@@ -50,7 +50,7 @@ const firmware = linkRawTestSystemBlua32({ text: code, functions, verifiedContro
 const pcs = firmware.image.functions.map(fn => fn.codeAddress);
 const runtime = createRuntime(firmware.romBytes), { cpu, memory, scheduler, irqController } = runtime.machine;
 const trace: string[] = [], expected: string[] = [];
-const arena = cpu.heapAllocator, management = arena.managementOffset();
+const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 const zeroHeap = new Uint8Array(heapEnd - heapFirst);
 const heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
@@ -60,7 +60,7 @@ const observe = (cmd: string, output?: string | number) => {
 };
 function observeHeap() {
 	assert.equal(arena.occupiedBytes(), 0);
-	assert.equal(cpu.luaHeap.usedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 	assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 	observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 }

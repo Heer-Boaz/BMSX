@@ -39,13 +39,13 @@ function probe.churn(count)
 end
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 20_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const churn = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('churn')!), nativeHeapReference(cpu).gc);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const churn = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('churn')!), nativeHeapReference(cpu).gc);
 	let warmed = 0;
 	for (let cycle = 0; cycle < 3; cycle++) {
 		runCompletionClosure(cpu, churn, [valueInteger(128)]);
 		const heap = collectReferenceHeapBytes(cpu) - logicalThreadBytes(cpu);
-		const weak = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+		const weak = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('weak')!));
 		for (let index = 1; index <= 128; index++) assert.equal(cpu.tables.getInteger(weak, index), valueNil());
 		if (cycle === 0) warmed = heap;
 		else assert.ok(heap <= warmed, `retired identities must not retain more heap: ${heap} > ${warmed}`);

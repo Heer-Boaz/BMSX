@@ -1,6 +1,7 @@
+import type { StockStringIndex } from '../../../../toolchain/ts/firmware/stock_string_index';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { textToByteString } from '../../../../machine/ts/common/byte_string';
-import { isRamStringId, type StringPool } from '../../../../machine/ts/machine/cpu/string_pool';
+import { isRamStringId } from '../../../../machine/ts/machine/cpu/string_pool';
 import { valuePayload, isNil, numberToHost, valueClosure, valueFloat, valueInteger, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../../machine/ts/spec/blua32/execution_domain';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
@@ -236,10 +237,10 @@ export class ActorExecutionService {
 	}
 	private prepareArguments(domain: ResourceDomain, closure: number, direct: Value[],
 		literals: readonly PreparedLuaLiteral[], operation: ActorExecutionOperation): RuntimeGuestCall {
-		const { cpu } = this.runtime.machine, pool = cpu.stringPool;
+		const strings = this.guest.stringIndex;
 		let index = 0;
 		for (; index < literals.length; index++) {
-			const value = borrowedLiteral(literals[index], pool);
+			const value = borrowedLiteral(literals[index], strings);
 			if (value === undefined) break;
 			direct.push(value);
 		}
@@ -255,7 +256,7 @@ export class ActorExecutionService {
 			operands.push(name);
 		}
 		for (; index < literals.length; index++) {
-			const literal = literals[index], value = borrowedLiteral(literal, pool);
+			const literal = literals[index], value = borrowedLiteral(literal, strings);
 			if (value === undefined) operands.push(luaLiteralSource(literal));
 			else {
 				const name = 'p' + (parameters.length - 1);
@@ -348,7 +349,7 @@ export class ActorExecutionService {
 	public shutdown(): Promise<void> { this.closing = true; this.didReplaceMachine(); return this.tasks.join(); }
 }
 
-function borrowedLiteral(literal: PreparedLuaLiteral, strings: StringPool): Value | undefined {
+function borrowedLiteral(literal: PreparedLuaLiteral, strings: StockStringIndex): Value | undefined {
 	if (literal.kind === 'scalar') return literal.value;
 	if (literal.kind === 'string') {
 		const id = strings.find(literal.bytes);

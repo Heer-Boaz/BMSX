@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -75,7 +76,7 @@ test('stock load compiles real table constructors with AOT field semantics and f
 	assert.equal(tables.hashSize(wide), 1);
 	assert.equal(tables.getInteger(wide, 513), valueInteger(0));
 	assert.equal(tables.getInteger(wide, 514), valueInteger(77));
-	assert.equal(tables.getStringKey(wide, cpu.stringPool.find('label')!), valueInteger(88));
+	assert.equal(tables.getStringKey(wide, nativeHeapReference(cpu).stringPool.find('label')!), valueInteger(88));
 	assert.equal(tables.arrayCapacity(empty), 0);
 	assert.equal(tables.hashSize(empty), 0);
 	commands.push('c');

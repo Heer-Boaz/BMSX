@@ -11,7 +11,6 @@ import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machi
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
@@ -21,13 +20,14 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode, BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const nil = valueNil(), payload = valueInteger(707);
 const cases = [
@@ -69,7 +69,7 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 	writeLE32(rom, callee.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, callee.flags | BLUA32_FUNCTION_CODE);
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler } = runtime.machine;
-	const management = cpu.heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
 	const empty = new Uint8Array(end - first);
 	runtime.boot();
 	const commands: string[] = [], expected: string[] = [];
@@ -83,8 +83,8 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 		assert.equal(run, depth === 1 && op === OpCode.RET ? RunResult.Halted : RunResult.Yielded);
 		assert.equal(1 - cpu.instructionBudgetRemaining, cycles, `op=${op} pc=${pc.toString(16)} run=${run} cause=${cpu.readCauseWord()} next=${cpu.activeThread.currentFrame?.pc}`);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		commands.push('E 1');
 		expected.push(`${run} ${cycles} ${memory.ramBusEnd()} -1`);
 	}
@@ -189,7 +189,7 @@ test('bare System ROM enters closures from its own private arena, including a ca
 	function exercise(cpuExecutionBackend: CpuExecutionBackend) {
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, input);
 		const { cpu, memory, scheduler } = runtime.machine;
-		const management = cpu.heapAllocator.managementOffset();
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 		const first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
 		const empty = new Uint8Array(end - first);
 		assert.deepEqual(memory.ramData().subarray(first, end), empty);

@@ -25,7 +25,7 @@ import { HostRewindTimeline, TimelineAction, type TimelineState } from './rewind
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import { RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HostKeyboardInteraction } from './input/host_keyboard_interaction';
 import {
 	create_rect_bounds,
@@ -130,17 +130,17 @@ const MENU_KEYBOARD_BUTTONS = (1 << BUTTON_UP) | (1 << BUTTON_DOWN) | (1 << BUTT
 const TITLE_TEXT = 'CORE OPTIONS';
 const FPS_PREFIX = 'HOST: ';
 const USAGE_BAR_COUNT = 3;
-const USAGE_LABEL_WIDTH = 28;
+const USAGE_LABEL_WIDTH = 44;
 const USAGE_BAR_WIDTH = 54;
 const USAGE_BAR_HEIGHT = 5;
 const USAGE_X = 8;
 const USAGE_BAR_X = USAGE_X + USAGE_LABEL_WIDTH;
 const USAGE_Y = 8;
 const USAGE_Z = 9000;
-const USAGE_PANEL_WIDTH = 112;
+const USAGE_PANEL_WIDTH = USAGE_LABEL_WIDTH + USAGE_BAR_WIDTH + 30;
 const USAGE_PANEL_HEIGHT = 32;
 const USAGE_ROW_HEIGHT = 10;
-const USAGE_LABELS = ['CPU', 'RAM', 'VRAM'] as const;
+const USAGE_LABELS = ['CPU', 'RAM MAP', 'VRAM'] as const;
 const USAGE_LOW_PERCENT_TENTHS_LIMIT = 100;
 const USAGE_PERCENT_TENTHS_FLAG = 1000000;
 const FPS_TEXT_TENTHS_INVALID = -1;
@@ -730,15 +730,11 @@ export class HostOverlayMenu {
 		if (presenter.show_resource_usage_gizmo) {
 			this.layoutUsageGizmo(presenter.visibleViewportBounds);
 			const runtime = this.runtime;
-			const gxGpuVramBytes = runtime.machine.gxGpu.readVramSnapshotBytes().byteLength;
+			const { memory, gxGpu } = runtime.machine;
+			const gxGpuVramBytes = gxGpu.readVramSnapshotBytes().byteLength;
 			this.queueCommand(Host2DKind.Rect, this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
-			this.queueUsageBar(
-				1,
-				runtime.machine.cpu.heapAllocator.floorAddress() - RAM_BASE + RUNTIME_MANAGEMENT_SIZE + runtime.machine.cpu.heapAllocator.occupiedBytes(),
-				runtime.machine.memory.ramByteCount(),
-				font,
-			);
+			this.queueUsageBar(1, memory.ramBusEnd() - RAM_BASE, memory.ramByteCount(), font);
 			this.queueUsageBar(2, gxGpuVramBytes, gxGpuVramBytes, font);
 			queued = true;
 		}

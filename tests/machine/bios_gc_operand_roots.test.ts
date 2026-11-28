@@ -1,5 +1,5 @@
 import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank, GC_DIAGNOSTIC_OFFSET } from '../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -7,7 +7,6 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -21,8 +20,8 @@ const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, [{ path, source, chunk: parseLuaChunk(source, path) }], [{ path, member: 'mark_operand_roots', arity: 5 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const arena = cpu.heapAllocator.allocatorStateOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
 	// The fixture borrows the shape of a parked root-head triple. It does not
 	// set HasPendingAssignment or exercise the distinct parked-root path.
 	const operands = management + GC_DIAGNOSTIC_OFFSET + 52;

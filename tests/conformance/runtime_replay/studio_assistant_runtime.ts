@@ -3,6 +3,7 @@ import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { verifyColorReadback } from './color_readback';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Actual browser machine -> HTTP bridge -> Codex app-server -> deterministic model fixture. */
 export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
@@ -16,13 +17,13 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- uninstalled source, not runtime state\n' }]);
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
-	const position = cycles(), videoTick = runtime.frameScheduler.lastTickSequence, heap = runtime.machine.cpu.luaHeap.usedBytes(), version = model.version;
+	const position = cycles(), videoTick = runtime.frameScheduler.lastTickSequence, heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), version = model.version;
 	const media = ide.sources.currentBlua32Media, conversation = ide.editor.assistant;
 	await test.click(view.composerBounds);
 	await test.clipboard.writeText('Pause and inspect the real world and one object, then show the game frame. Do not execute Lua or modify source.');
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'runtime tools: real model tool round trip');
-	check(cycles() === position && runtime.frameScheduler.lastTickSequence === videoTick && runtime.machine.cpu.luaHeap.usedBytes() === heap,
+	check(cycles() === position && runtime.frameScheduler.lastTickSequence === videoTick && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap,
 		'runtime tool reads do not execute the guest or allocate guest values');
 	check(test.execution.userPaused && model.version === version && ide.sources.currentBlua32Media === media,
 		'runtime tools retain user pause and leave unsaved source/installed media alone');

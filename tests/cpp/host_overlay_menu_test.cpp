@@ -5,6 +5,7 @@
 #include "machine/runtime/runtime.h"
 #include "render/shared/bmsx_font.h"
 #include "render/video_presenter.h"
+#include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
 #include "support/cartridge_fixture.h"
 #include <iostream>
@@ -134,6 +135,12 @@ int main() {
 		input.setInputStateCallback(state);
 		input.setControllerDevice(0, RETRO_DEVICE_JOYPAD);
 		Runtime runtime({{}, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+		Memory& memory = runtime.machine.memory;
+		const auto ramBytes = memory.ramByteCount();
+		memory.setRamBusEnd(RAM_BASE + ramBytes / 2);
+		const auto usage = HostResourceUsage::capture(runtime);
+		require(usage.used[1] == ramBytes / 2 && usage.total[1] == ramBytes,
+			"native HUD reports the hardware RAM mapping without a guest heap");
 		TestVideoOutput output(width, height);
 		VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(width, height, PSX_MACHINE_SPEC.gxGpuVramBytes), width, height);
 		Font font;

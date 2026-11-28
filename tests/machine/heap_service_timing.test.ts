@@ -91,8 +91,8 @@ test('a storage-window exception preserves the resolved operands across a recove
 		assert.equal(gc.tableRecordAddress(garbage), 0);
 		assert.equal(gc.tableRecordAddress(owner), owner);
 		assert.equal(tables.getInteger(owner, slots + 1), payload);
-		assert.equal(cpu.stringPool.find('live-only-through-sett'), valuePayload(payload));
-		assert.equal(cpu.stringPool.find('dead-sett-string-23'), undefined);
+		assert.equal(nativeHeapReference(cpu).stringPool.find('live-only-through-sett'), valuePayload(payload));
+		assert.equal(nativeHeapReference(cpu).stringPool.find('dead-sett-string-23'), undefined);
 		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 		return grants;
 	}

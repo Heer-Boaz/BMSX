@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valueInteger, valueBool, valueIsTable, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -55,14 +56,14 @@ for (const optLevel of [3] as const) test(`preloads use the existing dependency/
 	const { cpu } = createTestSystemCpu(image);
 	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(213), valueInteger(0), valueBool(true)]);
-	const exported = cpu.getSystemGlobalByKey(cpu.stringPool.find(buildModuleExportSlotName('common', []))!);
+	const exported = cpu.getSystemGlobalByKey(nativeHeapReference(cpu).stringPool.find(buildModuleExportSlotName('common', []))!);
 	const common = valuePayload(exported);
 	// Read the retained exported object through the compiler-owned module slot.
 	assert.ok(valueIsTable(exported));
 	cpu.beginCompletionCallInExecutionDomain(-1, image.vectors.initFunctionAddress);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.tables.getStringKey(common, cpu.stringPool.find('calls')!), valueInteger(2134));
-	assert.equal(cpu.tables.getStringKey(common, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
+	assert.equal(cpu.tables.getStringKey(common, nativeHeapReference(cpu).stringPool.find('calls')!), valueInteger(2134));
+	assert.equal(cpu.tables.getStringKey(common, nativeHeapReference(cpu).stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
 });
 
 test('default and explicit empty preloads preserve executable bytes; cycles use require diagnostics', () => {

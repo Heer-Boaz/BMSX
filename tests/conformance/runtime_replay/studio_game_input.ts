@@ -11,6 +11,7 @@ import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection'
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitle, nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { rects_intersect } from '../../../machine/ts/common/rect';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Real host routing and latched ICU words, alongside ordinary cartridge gameplay. */
 export async function runStudioGameInput(test: StudioFixture) {
@@ -160,15 +161,15 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,
 		top: actor.previewBounds.top + pickY * (actor.previewBounds.bottom - actor.previewBounds.top) / test.presenter.offscreenCanvasSize.y, right: 0, bottom: 0 };
 	point.right = point.left; point.bottom = point.top;
-	const pickHeap = runtime.machine.cpu.luaHeap.usedBytes();
+	const pickHeap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	test.movePointer(point);
 	for (let index = 0; index < 5; index++) await frame();
-	check(ide.editor.actorLab.viewportPicker.hit.hashId === pickHashId && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+	check(ide.editor.actorLab.viewportPicker.hit.hashId === pickHashId && cycles() === actorHeld && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === pickHeap,
 		'hover resolves the actual frontmost sprite owner without guest execution or allocation');
 	await test.capture?.('actor-hover');
 	await click(point, 1, 'pointer_secondary');
 	check(actor.actorHashId === pickHashId && actor.outline.rows[actor.outline.selectionIndex].element.node.hashId === pickHashId
-		&& !actor.interaction.running && ide.editor.guestInputRecipient === null && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+		&& !actor.interaction.running && ide.editor.guestInputRecipient === null && cycles() === actorHeld && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === pickHeap,
 		'inspection click reveals the same live actor through the existing tree without injecting game input');
 	await test.capture?.('actor-picked');
 	await runPaletteCommand('Actor Lab: Play / Pause');

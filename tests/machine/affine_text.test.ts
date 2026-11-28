@@ -153,9 +153,9 @@ for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
 	const id = rom.add(fixture);
 	test(`Text ${name} retains local layout and transforms its complete geometry (O3)`, t => {
 		const cpu = rom.run(id, 30_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 		for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-			const kernel = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(lane)!), nativeHeapReference(cpu).gc);
+			const kernel = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 			const profile = profileWarmGuestKernel(cpu, kernel, 256);
 			assert.equal(profile.reservations, 0);
 			assert.equal(profile.reservedBytes, 0);

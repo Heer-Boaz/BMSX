@@ -17,6 +17,7 @@ import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const selection = 0xa5a50001;
 const source = `
@@ -62,7 +63,7 @@ try {
 			const state = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
-			observe(`J ${cycles} 1`, `${state} ${paid} 0 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`J ${cycles} 1`, `${state} ${paid} 0 0 ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return state;
 		};
 		const replay = (commands: readonly string[], rows: readonly string[]) => {

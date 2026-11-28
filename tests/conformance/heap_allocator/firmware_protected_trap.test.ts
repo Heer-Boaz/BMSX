@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -137,9 +138,9 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		const values = [
 			valueBool(false), valueNil(),
-			valueBool(false), valueString(cpu.stringPool.find('Attempted to call a non-function value.')!),
+			valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('Attempted to call a non-function value.')!),
 			valueBool(false), bits, valueNil(),
-			valueBool(false), valueString(cpu.stringPool.find('error in error handling')!),
+			valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('error in error handling')!),
 			valueBool(true), valueInteger(11), valueNil(), valueInteger(17),
 			valueBool(true), valueBool(false), valueInteger(75),
 			valueBool(false), valueInteger(51),

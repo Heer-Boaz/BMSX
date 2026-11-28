@@ -240,9 +240,9 @@ for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 		runGuestToHalt(cpu, 20_000_000);
 		if (optLevel === 3) {
-			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+			const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
-				const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(lane)!), nativeHeapReference(cpu).gc);
+				const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 				const profile = profileWarmGuestKernel(cpu, run, 512);
 				t.diagnostic(JSON.stringify({ lane, ...profile }));
 				assert.equal(profile.reservations, 0);

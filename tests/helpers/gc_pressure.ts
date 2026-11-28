@@ -89,7 +89,7 @@ export function runGcPressureStage(cpu: CPU): void {
 
 export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 	const diagnostics = nativeHeapReference(cpu).gc.diagnostics = new GcDiagnostics();
-	const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+	const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 	runGcPressureStage(cpu);
 	if (compiled) for (const name of ['assign', 'change']) {
 		const fn = cpu.memory.readRamRecordWord(valuePayload(global(name)) + Closure.CLOSURE_PROTOTYPE_ADDRESS);
@@ -104,7 +104,7 @@ export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 	const cell = Closure.captureAddress(cpu.memory, valuePayload(global('change')), 0);
 	assert.equal(Upvalue.isOpen(cpu.memory, cell), false, 'the mutation targets an actual closed cell');
 	cpu.clearHaltUntilIrq(); runGcPressureStage(cpu);
-	const childKey = cpu.stringPool.find('child')!, textKey = cpu.stringPool.find('text')!;
+	const childKey = nativeHeapReference(cpu).stringPool.find('child')!, textKey = nativeHeapReference(cpu).stringPool.find('text')!;
 	const owner = valuePayload(global('owner'));
 	const child = cpu.tables.getStringKey(owner, childKey), text = cpu.tables.getStringKey(owner, textKey);
 	const textId = valuePayload(text), arrayOwner = valuePayload(global('array_owner'));
@@ -112,9 +112,9 @@ export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 	const observe = () => {
 		const depth = cpu.getFrameDepth();
 		return { depth, pc: cpu.readFramePc(depth - 1), pressure: global('pressure'),
-			usedBytes: cpu.luaHeap.usedBytes(), target: cpu.luaHeap.collectionTarget(),
+			usedBytes: nativeHeapReference(cpu).luaHeap.usedBytes(), target: nativeHeapReference(cpu).luaHeap.collectionTarget(),
 			phase: nativeHeapReference(cpu).gc.phase(),
-			retiredText: cpu.stringPool.find(textToByteString('pressure-retired:é😀:37')) };
+			retiredText: nativeHeapReference(cpu).stringPool.find(textToByteString('pressure-retired:é😀:37')) };
 	};
 	const parked = observe(), state = cpu.captureRuntimeState();
 	const history = new RamHistory(); history.start(cpu.memory);
@@ -128,8 +128,8 @@ export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 		assert.equal(cpu.tables.getStringKey(owner, textKey), text);
 		assert.equal(cpu.tables.getInteger(arrayOwner, 1), arrayChild);
 		assert.equal(Upvalue.load(cpu.memory, cell), cellChild, 'the closed cell retains its distinct child');
-		assert.equal(cpu.stringPool.find(textToByteString('pressure-live:é😀:37')), textId);
-		assert.equal(cpu.stringPool.find(textToByteString('pressure-retired:é😀:37')), undefined);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(textToByteString('pressure-live:é😀:37')), textId);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(textToByteString('pressure-retired:é😀:37')), undefined);
 	};
 	let { collections, fullCollections, atomicNanoseconds } = diagnostics;
 	cpu.clearHaltUntilIrq(); runGcPressureStage(cpu); verify(collections, fullCollections, atomicNanoseconds);

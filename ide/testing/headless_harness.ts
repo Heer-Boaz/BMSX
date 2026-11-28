@@ -16,6 +16,7 @@ import {
 import type { RuntimeIdeState } from '../workbench/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { scheduleRuntimeGuestCall } from '../runtime/guest_call';
+import { stockHeapLogicalBytes } from '../runtime/stock_heap_inspection';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';
 import type { ContextMenuController } from '../workbench/services/context_menu/controller';
@@ -95,7 +96,7 @@ export function createHeadlessIdeHarness(
 		getSourceState: () => ide.sources,
 		isWorkbenchActive: () => ide.overlayRenderer.active,
 		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive(),
-		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
+		getTrackedLuaHeapBytes: () => stockHeapLogicalBytes(runtime.machine.memory),
 		getLogMessageCount: () => logOutput.messages.length,
 		getLogMessage: index => logOutput.messages[index],
 		getFaultStack: () => ide.fault.lastLuaCallStack,
@@ -168,7 +169,7 @@ export function createHeadlessIdeHarness(
 				isCurrent: () => ide.execution.revision === revision,
 				prepare: () => ({
 					domain: SYSTEM_EXECUTION_DOMAIN_ID,
-					closure: valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('collectgarbage')!)),
+					closure: valuePayload(ide.guest.global('collectgarbage')),
 					argumentCount: 0,
 					args: () => [],
 				}),
@@ -184,7 +185,7 @@ export function createHeadlessIdeHarness(
 			const sourceState = ide.sources;
 			const executable = blua32ToolingImageForDomain(sourceState.currentBlua32Media, slot)!;
 			return {
-				tracked: cpu.luaHeap.usedBytes(),
+				tracked: stockHeapLogicalBytes(cpu.memory),
 				moduleFunctions: executable.symbols!.moduleFunctions.length,
 				functions: executable.layout.functions.length,
 				constants: executable.layout.constants.length,

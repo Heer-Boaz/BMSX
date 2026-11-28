@@ -823,7 +823,7 @@ while true do end
 	assert.equal(cpu.runUntilDepth(0, 2000), RunResult.Yielded);
 	const baseDepth = cpu.getFrameDepth();
 	const pc = cpu.readFramePc(baseDepth - 1);
-	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('operation')!), nativeHeapReference(cpu).gc);
+	const closure = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('operation')!), nativeHeapReference(cpu).gc);
 	for (const [argument, expected] of [[3, 10], [5, 15]]) {
 		cpu.beginCompletionCall(closure, [valueInteger(argument)]);
 		assert.equal(cpu.runUntilDepth(baseDepth, 2000), RunResult.Halted);
@@ -1125,7 +1125,7 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(systemSeenAddress), IRQ_VBLANK);
 	assert.equal(memory.readMappedU32LE(cartSeenAddress), 0);
 	const saved = cpu.captureRuntimeState();
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	assert.notEqual(memory.readRamRecordWord(management + SYSTEM_GLOBAL_BANK_OFFSET),
 		memory.readRamRecordWord(management + GLOBAL_BANK_OFFSET), 'same-name ordinary and system IRQ slots are in different banks');
 	cpu.restoreRuntimeState(saved);

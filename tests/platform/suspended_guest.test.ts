@@ -18,7 +18,7 @@ test('suspended member reads consume lookup results without executing or chargin
 	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
 	cpu.reset();
 	const guest = new SuspendedGuestSession(runtime), key = nativeHeapReference(cpu).stringPool.intern('member');
-	const index = cpu.stringPool.find('__index')!;
+	const index = nativeHeapReference(cpu).stringPool.find('__index')!;
 	const parent = createReferenceTable(cpu, 0, 1), child = createReferenceTable(cpu, 0, 1), meta = createReferenceTable(cpu, 0, 1);
 	const parentValue = v.valueTable(parent), childValue = v.valueTable(child);
 	nativeHeapReference(cpu).gc.tables.setStringKey(parent, key, v.valueInteger(41));

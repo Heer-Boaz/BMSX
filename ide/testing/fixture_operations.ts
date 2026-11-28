@@ -1,3 +1,4 @@
+import { StockStringIndex } from '../../toolchain/ts/firmware/stock_string_index';
 import { asFloat, asInteger, asStringId, isNil, isTruthy, valueInteger, valueIsInteger, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import type { FixtureTarget } from './target';
 import type { TestInput } from './input';
@@ -19,13 +20,16 @@ type FixtureWait =
 /** Transport for compiled context yields, independent of case outcomes or play lifetime. */
 export class FixtureOperations {
 	private wait: FixtureWait | null = null;
+	private readonly stringIndex: StockStringIndex;
 	public constructor(private readonly target: FixtureTarget, private readonly input: TestInput, private readonly output: FixtureOutput,
-		private readonly bindingChanged: () => void) {}
+		private readonly bindingChanged: () => void) {
+		this.stringIndex = new StockStringIndex(target.runtime.machine.memory);
+	}
 	public get waiting(): boolean { return this.wait !== null; }
 	public get observesPublication(): boolean { return this.wait?.kind === 'boundary'; }
 	public shouldStopAtPublication(): boolean {
 		return this.wait?.kind === 'boundary'
-			&& isTruthy(this.target.runtime.machine.cpu.tables.getStringKey(this.wait.receipt, this.target.runtime.machine.cpu.stringPool.find('reached')!));
+			&& isTruthy(this.target.runtime.machine.cpu.tables.getStringKey(this.wait.receipt, this.stringIndex.find('reached')!));
 	}
 
 	/** The compiled context owns this protocol. Unknown operations are errors, not no-ops. */
@@ -74,7 +78,7 @@ export class FixtureOperations {
 			case 'ticks': ready = runtime.frameScheduler.lastTickSequence >= wait.target; break;
 			case 'input': ready = this.input.samples >= wait.target; break;
 			case 'boundary': {
-				const reached = runtime.machine.cpu.tables.getStringKey(wait.receipt, runtime.machine.cpu.stringPool.find('reached')!);
+				const reached = runtime.machine.cpu.tables.getStringKey(wait.receipt, this.stringIndex.find('reached')!);
 				ready = isTruthy(reached) || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) args[1] = reached;
 				break;

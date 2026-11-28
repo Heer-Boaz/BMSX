@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { load as loadCapture, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { valueInteger } from '../../../machine/ts/machine/cpu/value';
@@ -15,7 +14,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { COP0_EXCEPTION_TARGET as EXCEPTION_TARGET, CPU_CAUSE_IRQ, CPU_STATUS_SYSTEM_ENTRY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -26,6 +25,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const irqPath = 'fixture/irq', eventsPath = 'kernel/interrupts', resetPath = 'fixture/reset';
 const exceptionPath = 'fixture/alternate';
@@ -114,7 +114,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
 		const trace: string[] = [], expected: string[] = [];
-		const arena = cpu.heapAllocator, management = arena.managementOffset();
+		const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 		const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 		const zeroHeap = new Uint8Array(heapEnd - heapFirst), heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -135,14 +135,14 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const elapsed = cycles - cpu.instructionBudgetRemaining;
-			assert.equal(cpu.luaHeap.usedBytes(), 0);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 			assert.equal(arena.occupiedBytes(), 0);
 			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0`);
 			return result;
 		}
 		assert.equal(scheduler.nowCycles, 0);
 		assert.equal(arena.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 		observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 		assert.equal(grant(512), RunResult.Halted);
@@ -219,7 +219,7 @@ try {
 		assert.equal(memory.readRamRecordWord(entered), CPU_CAUSE_IRQ);
 		observe('Z', `${CPU_CAUSE_IRQ} 0 ${resetPc}`);
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS), flags, 'only the eventual handler acknowledges');
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		// Before RAM_END is published, these authored BSS words are visible
 		// to the board vector's CPU data path, not to the ordinary bus.
 		for (let step = 0; step < 64 && memory.readRamRecordWord(dma) === 0; ++step) {

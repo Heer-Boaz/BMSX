@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -42,11 +43,11 @@ last = scenes.instantiate('same')
 	cpu.setInstructionObserver(provenance);
 	try { runGuestToHalt(cpu, 10_000_000); }
 	finally { cpu.setInstructionObserver(null); }
-	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.find('registration_visits')!)), 15);
+	assert.equal(asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('registration_visits')!)), 15);
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');
 	const plans = ['first', 'second', 'third', 'last'].map(name => {
-		const scene = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!));
-		return valuePayload(cpu.tables.getStringKey(scene, cpu.stringPool.find('definition')!));
+		const scene = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
+		return valuePayload(cpu.tables.getStringKey(scene, nativeHeapReference(cpu).stringPool.find('definition')!));
 	});
 	assert.equal(new Set(plans.map(plan => plan)).size, 4, 'plan identity survives repeated registry keys');
 	for (let index = 0; index < plans.length; index++) {

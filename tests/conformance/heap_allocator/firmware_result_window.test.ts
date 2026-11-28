@@ -110,13 +110,13 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 	const top = instruction.a + selected;
 	const required = caller.stackBase + registerWindowBucket(top);
 	assert.ok(caller.stackBase + top > initialCapacity, 'the actual result, not merely its rounded bucket, exceeds backing');
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	if (weak) {
 		assert.equal(valueTag(output[1]), ValueTag.Table);
 		// Start with a clean heap, temporarily keeping the weak member
 		// during setup. The next epoch sees only the actual guest roots.
 		nativeHeapReference(cpu).gc.collect(output[1]);
-		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 		nativeHeapReference(cpu).stringPool.intern(deadText);
 		for (let step = 0; nativeHeapReference(cpu).gc.phase() !== GcPhase.Atomic && step < 4096; ++step)
 			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
@@ -209,7 +209,7 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 			for (let i = 0; i < selected; ++i)
 				assert.equal(cpu.readFrameRegister(depth - 1, instruction.a + i), i < output.length ? output[i] : valueNil());
 			if (weak) {
-				assert.equal(cpu.stringPool.find(deadText), undefined, 'growth collected the extent blocker before retry');
+				assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined, 'growth collected the extent blocker before retry');
 				assert.equal(cpu.tables.getInteger(weakOwner, 1), output[1]);
 				assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(valuePayload(output[1])), valuePayload(output[1]));
 			}

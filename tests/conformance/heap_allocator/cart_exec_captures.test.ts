@@ -31,6 +31,7 @@ import { admitTestHeapServiceCpu } from '../../helpers/heap_service_system';
 import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 local outer = { 31 }
@@ -77,7 +78,7 @@ for (const optLevel of [0, 3] as const) test(`cartridge binding retires captures
 	assert.ok(cpu.isHaltedUntilIrq());
 	const owner = cpu.rootThread.address, depth = cpu.getFrameDepth();
 	const captures = ['saved_outer', 'saved_inner'].map((name, i) => {
-		const keeper = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!));
+		const keeper = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
 		const address = captureAddress(memory, keeper, 0);
 		const frame = depth - 2 + i;
 		assert.equal(cpu.readThreadFrameWord(owner, frame, FrameField.OpenHead), address);
@@ -110,7 +111,7 @@ for (const optLevel of [0, 3] as const) test(`cartridge binding retires captures
 	const backing = memory.readRamRecordWord(owner + ThreadField.StackBlock);
 	const stackBytes = memory.readRamRecordWord(owner + ThreadField.StackCapacity) * THREAD_STACK_SLOT_BYTES;
 	const stack = hash(backing, stackBytes);
-	const occupied = cpu.heapAllocator.occupiedBytes(), used = cpu.luaHeap.usedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 	const paid = 1 - cpu.instructionBudgetRemaining;
 	assert.equal(result, RunResult.Yielded);
@@ -119,8 +120,8 @@ for (const optLevel of [0, 3] as const) test(`cartridge binding retires captures
 	assert.equal(cpu.rootThread.address, owner);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.activeThread.currentFrame!.stackBase, 0);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-	assert.equal(cpu.luaHeap.usedBytes(), used);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 	commands.push('J 1 1');
 	rows.push(`${result} ${paid} 0 ${occupied} ${used}`);
 	assert.deepEqual(captures.map(({ address }) => hash(address, UPVALUE_HEAP_BYTES)), before);
@@ -181,7 +182,7 @@ test('a raw fixed IRQ vector can EXEC into its interrupted physical context', t 
 		assert.equal(paid, BASE_CYCLES[op]);
 		assert.equal(cpu.fixedInterruptActive(), active);
 		commands.push('J 1 1');
-		rows.push(`${result} ${paid} ${+active} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		rows.push(`${result} ${paid} ${+active} ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 	}
 	assert.equal(cpu.activeThread.address, owner);
 	assert.equal(root.frameDepth, 1);

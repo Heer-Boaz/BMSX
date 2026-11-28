@@ -158,12 +158,12 @@ return ok, first, finished, last, read_back()
 	runGuestToHalt(cpu, 1_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.activeThread, cpu.rootThread);
-	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.find('worker')!), nativeHeapReference(cpu).gc);
+	const worker = asThread(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('worker')!), nativeHeapReference(cpu).gc);
 	assert.notEqual(worker, 0);
 	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Suspended);
 	const bodyFrame = Array.from({ length: cpu.readThreadFrameDepth(worker) }, (_, index) => index)
 		.find(index => cpu.readThreadFrameWord(worker, index, FrameField.OpenHead) !== 0)!;
-	const readBack = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('read_back')!), nativeHeapReference(cpu).gc);
+	const readBack = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('read_back')!), nativeHeapReference(cpu).gc);
 	const cell = ClosureRecord.captureAddress(memory, readBack, 0);
 	assert.equal(cpu.readThreadFrameWord(worker, bodyFrame, FrameField.OpenHead), cell);
 	assert.equal(isOpen(memory, cell), true);

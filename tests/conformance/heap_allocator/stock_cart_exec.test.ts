@@ -114,7 +114,7 @@ halt_until_irq
 						&& beforeTransfer(runtime);
 				}, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
 				const frames = runtime.frameScheduler, commands: string[] = [], expected: string[] = [];
-				const systemEnd = RAM_BASE + cpu.heapAllocator.floorOffset(runtime.machine.executionAddressSpace.resolveSystemDomain().staticEnd);
+				const systemEnd = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(runtime.machine.executionAddressSpace.resolveSystemDomain().staticEnd);
 				const pulse = (grant: number) => {
 					if (gxGpu.backendCommandDrainPending()) {
 						gxGpu.retireExecutedCommands();
@@ -148,7 +148,7 @@ halt_until_irq
 			const installed = executionImageBindingOffset(1);
 			let owned = 0, beforeExec: Uint8Array | undefined, beforeBacking: Uint8Array | undefined;
 			const observeBinding = ({ machine: { cpu, memory } }: Runtime) => {
-				owned = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), 1);
+				owned = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), 1);
 				assert.equal(cpu.captureRuntimeState().executionResidencyMask & executionDomainBit(1), 0,
 					'the slot has no host execution image before the transfer');
 				assert.ok(memory.readRamRecordWord(installed) > RAM_BASE);
@@ -166,18 +166,18 @@ halt_until_irq
 			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1];
 			for (let slot = 0; slot < expectedReport.length; ++slot)
 				assert.equal(memory.readMappedU32LE(bssAddress + 4 * (slot + 2)), expectedReport[slot], `report word ${slot + 2}`);
-			const bank = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
+			const bank = nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
 			const bankCapacity = memory.readRamRecordWord(bank + GlobalBankField.Capacity);
 			assert.ok(bankCapacity >= 256);
 			assert.ok(beforeExec !== undefined);
 			assert.deepEqual(memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), beforeExec,
 				'EXEC consumes the installed binding without replacing it');
 			assert.deepEqual(memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), beforeBacking);
-			const constant = cpu.getGlobalByKey(cpu.stringPool.find('selected_payload')!);
+			const constant = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('selected_payload')!);
 			assert.equal(valueTag(constant), ValueTag.String);
 			assert.equal(valuePayload(constant) >>> 31, 1, 'the executed literal belongs to socket 1');
-			const floor = RAM_BASE + cpu.heapAllocator.floorOffset(bssAddress + bssByteCount);
-			assert.ok(cpu.heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount) > floor - RAM_BASE);
+			const floor = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(bssAddress + bssByteCount);
+			assert.ok(nativeHeapReference(cpu).heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount) > floor - RAM_BASE);
 			assert.equal(memory.ramBusEnd(), floor, 'the ordinary mapped selected socket supplies the exact aperture');
 			const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 			const reportBytes = 4 * (2 + expectedReport.length);
@@ -199,7 +199,7 @@ halt_until_irq
 			const unentered = preTransfer.runtime.machine;
 			assert.equal(unentered.cpu.systemResetInhibited(), false);
 			assert.equal(unentered.cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
-			const preparedCharge = unentered.cpu.luaHeap.usedBytes();
+			const preparedCharge = nativeHeapReference(unentered.cpu).luaHeap.usedBytes();
 			const operandBytes = unentered.memory.readRamRecordWord(owned + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 			const seed = join(output, 'pre-exec.state');
 			const prepared = captureRuntimeSaveState(preTransfer.runtime);
@@ -225,10 +225,10 @@ halt_until_irq
 			const absent = executionImageBindingOffset(0);
 			const empty = new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE);
 			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
-			const physicalBytes = attempted.cpu.heapAllocator.occupiedBytes();
+			const physicalBytes = nativeHeapReference(attempted.cpu).heapAllocator.occupiedBytes();
 			const attemptedResult = attempted.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-			assert.equal(attempted.cpu.luaHeap.usedBytes(), preparedCharge, 'a Function lookup does not initialize an unprepared cartridge');
-			assert.equal(attempted.cpu.heapAllocator.occupiedBytes(), physicalBytes);
+			assert.equal(nativeHeapReference(attempted.cpu).luaHeap.usedBytes(), preparedCharge, 'a Function lookup does not initialize an unprepared cartridge');
+			assert.equal(nativeHeapReference(attempted.cpu).heapAllocator.occupiedBytes(), physicalBytes);
 			assert.equal(attemptedResult, RunResult.Halted);
 			assert.equal(attempted.cpu.captureRuntimeState().hardHalted, true);
 			assert.equal(attempted.cpu.isExecutionDomainResident(0), false);
@@ -277,12 +277,12 @@ halt_until_irq
 				(live.machine.memory.readMappedU32LE(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) !== 0);
 			const malformedMachine = malformed.runtime.machine;
 			assert.equal(malformedMachine.cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
-			assert.equal(malformedMachine.cpu.luaHeap.usedBytes(), preparedCharge - operandBytes,
+			assert.equal(nativeHeapReference(malformedMachine.cpu).luaHeap.usedBytes(), preparedCharge - operandBytes,
 				'failure releases the unpublished block and its charge, without undoing namespace effects');
 			assert.deepEqual(malformedMachine.memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE),
 				new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE));
 			assert.deepEqual(malformedMachine.memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), emptyBacking);
-			const charged = malformedMachine.cpu.luaHeap.occupiedOffset;
+			const charged = nativeHeapReference(malformedMachine.cpu).luaHeap.occupiedOffset;
 			malformed.commands.push(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`, `H ${charged} ${charged + 4}`);
 			malformed.expected.push(String(hashBytes(malformedMachine.memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE)),
 				String(hashBytes(malformedMachine.memory.ramData(), charged, 4)));
@@ -329,16 +329,16 @@ halt_until_irq
 				'the BIOS has already reserved the larger selected-socket window');
 			const wideSeed = join(output, 'wide-pre-exec.state');
 			writeFileSync(wideSeed, encodeRuntimeSaveState(captureRuntimeSaveState(wideRuntime)));
-			const occupied = wideMachine.cpu.heapAllocator.occupiedBytes();
-			const chargedBytes = wideMachine.cpu.luaHeap.usedBytes();
+			const occupied = nativeHeapReference(wideMachine.cpu).heapAllocator.occupiedBytes();
+			const chargedBytes = nativeHeapReference(wideMachine.cpu).luaHeap.usedBytes();
 			const entered = wideMachine.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 			const paid = 1 - wideMachine.cpu.instructionBudgetRemaining;
 			assert.equal(entered, RunResult.Yielded);
 			assert.equal(paid, BASE_CYCLES[OpCode.MTC0]);
 			assert.equal(wideMachine.cpu.activeCartridgeSlot(), 1);
 			assert.equal(wideMachine.cpu.rootThread.frameAtDepth(0).stackCapacity, entrySlots);
-			assert.equal(wideMachine.cpu.heapAllocator.occupiedBytes(), occupied);
-			assert.equal(wideMachine.cpu.luaHeap.usedBytes(), chargedBytes);
+			assert.equal(nativeHeapReference(wideMachine.cpu).heapAllocator.occupiedBytes(), occupied);
+			assert.equal(nativeHeapReference(wideMachine.cpu).luaHeap.usedBytes(), chargedBytes);
 			compare('prepared-frame-exec.trace', ['X', 'J 1 1'], [
 				`${entered} ${paid} 0 ${occupied} ${chargedBytes}`,
 			], wideSeed, otherPath, widePath);
@@ -356,12 +356,12 @@ halt_until_irq
 			applyRuntimeSaveState(missingSpace, prepared);
 			const without = missingSpace.machine;
 			assert.ok(without.memory.readRamRecordWord(without.cpu.rootThread.address + ThreadField.StackCapacity) < entrySlots);
-			const unpreparedPhysical = without.cpu.heapAllocator.occupiedBytes();
+			const unpreparedPhysical = nativeHeapReference(without.cpu).heapAllocator.occupiedBytes();
 			const refused = without.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 			assert.equal(refused, RunResult.Halted);
 			assert.equal(without.cpu.captureRuntimeState().hardHalted, true);
-			assert.equal(without.cpu.heapAllocator.occupiedBytes(), unpreparedPhysical);
-			assert.equal(without.cpu.luaHeap.usedBytes(), preparedCharge);
+			assert.equal(nativeHeapReference(without.cpu).heapAllocator.occupiedBytes(), unpreparedPhysical);
+			assert.equal(nativeHeapReference(without.cpu).luaHeap.usedBytes(), preparedCharge);
 			compare('unprepared-frame-exec.trace', ['X', 'J 1 1', 'F'], [
 				`${refused} ${1 - without.cpu.instructionBudgetRemaining} 0 ${unpreparedPhysical} ${preparedCharge}`, '1',
 			], seed, otherPath, widePath);

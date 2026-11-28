@@ -45,7 +45,7 @@ export function returnWindowFixture(level: 0 | 3) {
 	for (let n = 0; n < 65_536 && !atLeafRet(); ++n)
 		assert.equal(grant(cpu.fixedInterruptActive() ? 256 : 1).result, RunResult.Yielded);
 	assert.ok(atLeafRet());
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const thread = cpu.activeThread, callee = thread.currentFrame!, caller = callee.previous!;
 	const issue = callee.pc;
 	const ret = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, issue);

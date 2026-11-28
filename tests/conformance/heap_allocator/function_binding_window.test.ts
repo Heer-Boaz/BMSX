@@ -37,6 +37,7 @@ import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
@@ -136,7 +137,7 @@ return make(7, 8)()
 		memory.writeMappedWord(address, word);
 		observe(`O ${address} ${word}`);
 	}
-	const physical = cpu.heapAllocator.occupiedBytes(), logical = cpu.luaHeap.usedBytes(), faults = memory.readBusFaultSequence();
+	const physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes(), faults = memory.readBusFaultSequence();
 	assert.equal(grant(1), RunResult.Yielded);
 	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.CLOSURE]);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
@@ -161,8 +162,8 @@ return make(7, 8)()
 		assert.equal(signals[index], domain < 0 ? MAPPED_BUS_MASTER_CPU : mappedBusSignalsForCartridgeSlot(domain));
 		assert.equal(frame.openUpvalueHead, open, 'no cell installed while the descriptor is being sampled');
 		assert.equal(frame.registers.get(op.a), original);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
-		assert.equal(cpu.luaHeap.usedBytes(), logical);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), physical);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 		write(descriptor + 4 * index, 0xffffffff);
 	}
 	sample(0);
@@ -248,7 +249,7 @@ return first == second, first() + second(), first, second
 	}
 	const frame = cpu.activeThread.currentFrame!, depth = cpu.getFrameDepth();
 	const decode = () => decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, frame.pc);
-	const initial = cpu.luaHeap.usedBytes(), closures: ReturnType<typeof valueInteger>[] = [];
+	const initial = nativeHeapReference(cpu).luaHeap.usedBytes(), closures: ReturnType<typeof valueInteger>[] = [];
 	let issue = 0;
 	for (let i = 0; i < 2; ++i) {
 		for (let step = 0; decode().op !== OpCode.CLOSURE && step < 64; ++step) assert.equal(grant(1), RunResult.Yielded);
@@ -279,7 +280,7 @@ return first == second, first() + second(), first, second
 		const closure = frame.registers.get(op.a);
 		assert.equal(valueTag(closure), ValueTag.Closure);
 		assert.equal(memory.readRamRecordByte(valuePayload(closure) + CLOSURE_BINDING_FLAGS), 0);
-		assert.equal(cpu.luaHeap.usedBytes() - initial, (i + 1) * closureRecordBytes(0, false));
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes() - initial, (i + 1) * closureRecordBytes(0, false));
 		closures.push(closure);
 	}
 	assert.notEqual(closures[0], closures[1]);
@@ -316,7 +317,7 @@ test('a bare System ROM may decline a Closure without a stock allocator', t => {
 	});
 	const runtime = new Runtime({ systemRomBytes: rom.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = cpu;
+	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = nativeHeapReference(cpu);
 	const state = arena.allocatorStateOffset(), inactive = new Uint8Array(32);
 	assert.deepEqual(memory.ramData().subarray(state, state + inactive.length), inactive);
 	const outcome = scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);

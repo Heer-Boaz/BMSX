@@ -24,6 +24,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const args = Array.from({ length: 320 }, (_, index) => String(index + 1)).join(',');
 const program = `
@@ -73,7 +74,7 @@ for (const level of [0, 3] as const) test(`ordinary CALL retries from EPC and re
 	const prototype = linked.layout.functions.find(candidate => candidate.address === fn)!;
 	const required = caller.stackBase + instruction.a + 1 + 4 + prototype.maxStack;
 	const stack = memory.readRamRecordWord(owner + ThreadField.StackBlock);
-	const charged = cpu.luaHeap.usedBytes();
+	const charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 	assert.ok(required > thread.stackRegisters.capacity());
 
 	const dir = mkdtempSync(join(tmpdir(), 'frame-window-call-'));
@@ -109,7 +110,7 @@ for (const level of [0, 3] as const) test(`ordinary CALL retries from EPC and re
 	assert.equal(cpu.readThreadFrameDepth(owner), depth);
 	assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), issue);
 	assert.equal(memory.readRamRecordWord(owner + ThreadField.StackBlock), stack);
-	assert.equal(cpu.luaHeap.usedBytes(), charged);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 	const fixed = cpu.activeThread.currentFrame!;
 	assert.equal(fixed.argumentCount, 4, 'a retry refers to the ordinary stopped instruction, not a detached placement');
 	assert.equal(fixed.registers.get(0), valueInteger(required));

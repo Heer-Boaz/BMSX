@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { LuaHeap } from "../helpers/native_heap/lua_heap";
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
@@ -17,6 +16,7 @@ import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 
 const path = 'kernel/heap_bootstrap', romString = 'BMSX cold heap ROM directory probe';
 const entrySource = `halt_until_irq
@@ -54,7 +54,7 @@ for (const optLevel of [0, 3] as const) {
 			const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 			const metadata = management + HEAP_STRING_METADATA_OFFSET;
 			const end = state + arenaStateBytes;
-			const floor = oracle.heapAllocator.floorOffset(staticEnd);
+			const floor = nativeHeapReference(oracle).heapAllocator.floorOffset(staticEnd);
 			const expectedBytes = oracle.memory.ramData().subarray(metadata, end);
 			const actualBytes = memory.ramData().subarray(metadata, end);
 			const heads = management + weakClosureHeadsOffset;
@@ -103,7 +103,7 @@ for (const optLevel of [0, 3] as const) {
 			for (let i = 0; i < 4096 && memory.readRamRecordWord(back) !== self; ++i) grant();
 			assert.equal(memory.readRamRecordWord(back), self);
 			assert.equal(cpu.heapServiceActive(), true);
-			assert.equal(cpu.luaHeap.collectionTarget(), 0);
+			assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), 0);
 			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 			assert.equal(nativeHeapReference(cpu).gc.white(), 0);
 			const checkpoint = captureCpuCheckpoint(cpu);
@@ -117,12 +117,12 @@ for (const optLevel of [0, 3] as const) {
 			finish(0);
 			compare();
 			assert.equal(arena.occupiedBytes(), 0);
-			assert.equal(cpu.luaHeap.usedBytes(), 0);
-			assert.equal(cpu.luaHeap.collectionTarget(), nativeBudget.collectionTarget());
-			const linkedString = oracle.stringPool.find(romString)!;
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
+			assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), nativeBudget.collectionTarget());
+			const linkedString = nativeHeapReference(oracle).stringPool.find(romString)!;
 			assert.ok(linkedString > 0 && linkedString < RAM_BASE);
-			assert.equal(cpu.stringPool.find(romString), linkedString);
-			assert.equal(cpu.stringPool.find('impossible-cold-heap-string-never-in-ROM'), undefined);
+			assert.equal(nativeHeapReference(cpu).stringPool.find(romString), linkedString);
+			assert.equal(nativeHeapReference(cpu).stringPool.find('impossible-cold-heap-string-never-in-ROM'), undefined);
 			// The first allocation from the guest-produced bins is directly
 			// usable by the unchanged oracle, but did not depend on a seed.
 			const expected = nativeHeapReference(oracle).heapAllocator.allocate(21, false);

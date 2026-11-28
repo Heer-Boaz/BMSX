@@ -21,6 +21,7 @@ import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../../helpers/
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const locals = Array.from({ length: 4100 }, (_, index) => `slot${index}`).join(',');
@@ -59,7 +60,7 @@ try {
 		}, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		const arena = cpu.heapAllocator;
+		const arena = nativeHeapReference(cpu).heapAllocator;
 		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		const caller = () => cpu.getFrameDepth() - 1;
 		cpu.setExecutionHook((_domain, at) => at === callPc, executionDomainBit(0), 0);
@@ -78,7 +79,7 @@ try {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return spent;
 		}
 		assert.equal(cpu.readFrameRegister(caller(), call.a), valueInteger(0));

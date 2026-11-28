@@ -19,6 +19,7 @@ import { linkRawTestBlua32Pair, linkRawTestSystemBlua32, writeTestBlua32Rom } fr
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const hostInput = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const invalidBuiltin = /BLua32 builtin constant is invalid for this image/;
@@ -56,7 +57,7 @@ try {
 			command.push(`g ${cycles} 0`);
 			const result = runtime.machine.scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const used = cycles - cpu.instructionBudgetRemaining;
-			output.push(`${result} ${used} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			output.push(`${result} ${used} ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return result;
 		}
 		function finish() {
@@ -80,7 +81,7 @@ try {
 	assert.equal(raw.grant(1), RunResult.Yielded);
 	assert.equal(raw.runtime.machine.cpu.readFrameRegister(0, 0), valueBuiltinFunction(BuiltinFunctionId.ToInteger));
 	raw.finish();
-	assert.equal(raw.runtime.machine.cpu.heapAllocator.occupiedBytes(), 0);
+	assert.equal(nativeHeapReference(raw.runtime.machine.cpu).heapAllocator.occupiedBytes(), 0);
 	assert.equal(raw.runtime.machine.memory.readMappedWord(report), 37);
 	raw.command.push(`M ${report}`);
 	raw.output.push('37 0');

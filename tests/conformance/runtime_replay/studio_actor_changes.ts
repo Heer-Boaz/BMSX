@@ -6,6 +6,7 @@ import type { ActorMemberChoice } from '../../../ide/workbench/contrib/actor_lab
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, type StudioFixture } from './studio_fixture';
 import { testBehaviorValueChanges } from './studio_behavior_changes';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Automated authored-source setup; gameplay, actor selection and history use ordinary UI input. */
 export async function runStudioActorChanges(test: StudioFixture) {
@@ -112,14 +113,14 @@ actor_tool_ready = true`)
 	await test.capture?.('next-frame-property-light');
 	await press('Home');
 	await test.capture?.('next-frame-changed-light');
-	const pausedCycles = cycles(), pausedHeap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
+	const pausedCycles = cycles(), pausedHeap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
 	for (let index = 0; index < 6; index++) await frame();
 	check(pin.item.valueChanged && property.valueChanged, 'paused repaints retain both completed-observation decorations');
 	await test.clickTab(sourceTab.id); await test.clickTab(lab.id); await frame();
 	inspector = pane.inspector;
 	check(pin.item.valueChanged && property.valueChanged && cycles() === pausedCycles
-		&& runtime.machine.cpu.luaHeap.usedBytes() === pausedHeap && guest.global('actor_tool_callbacks') === callbacks,
-		`paused tab navigation retains decoration without guest work: pin=${pin.item.valueChanged} property=${property.valueChanged} cycles=${cycles()}/${pausedCycles} heap=${runtime.machine.cpu.luaHeap.usedBytes()}/${pausedHeap} callbacks=${guest.global('actor_tool_callbacks')}/${callbacks}`);
+		&& nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === pausedHeap && guest.global('actor_tool_callbacks') === callbacks,
+		`paused tab navigation retains decoration without guest work: pin=${pin.item.valueChanged} property=${property.valueChanged} cycles=${cycles()}/${pausedCycles} heap=${nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes()}/${pausedHeap} callbacks=${guest.global('actor_tool_callbacks')}/${callbacks}`);
 	await press('ControlLeft', 'AltLeft', 'KeyT');
 	check(getActiveIdeThemeVariant() === 'dark' && pin.item.valueChanged && property.valueChanged,
 		'real theme shortcut preserves the completed observation');
@@ -219,7 +220,7 @@ actor_tool_ready = true`)
 		await test.capture?.(`membership-${action === 1 ? 'removed' : 'inserted'}-dark`);
 		await press('ControlLeft', 'AltLeft', 'KeyT');
 	}
-	const membershipCycles = cycles(), membershipHeap = runtime.machine.cpu.luaHeap.usedBytes();
+	const membershipCycles = cycles(), membershipHeap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	const membershipCallbacks = guest.global('actor_tool_callbacks');
 	const pausedReads = { members: 0, entries: 0 };
 	const readMember = guest.readStringMember, visitEntries = guest.visitTableEntries;
@@ -228,9 +229,9 @@ actor_tool_ready = true`)
 	for (let index = 0; index < 6; index++) await frame();
 	guest.readStringMember = readMember; guest.visitTableEntries = visitEntries;
 	check(pausedReads.members === 0 && pausedReads.entries === 0 && cycles() === membershipCycles
-		&& runtime.machine.cpu.luaHeap.usedBytes() === membershipHeap && guest.global('actor_tool_callbacks') === membershipCallbacks
+		&& nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === membershipHeap && guest.global('actor_tool_callbacks') === membershipCallbacks
 		&& health.valueChanged, 'paused membership-shift repaints retain decoration without guest reads, execution or allocation');
-	const pausedCyclesDelta = cycles() - membershipCycles, pausedHeapBytes = runtime.machine.cpu.luaHeap.usedBytes() - membershipHeap;
+	const pausedCyclesDelta = cycles() - membershipCycles, pausedHeapBytes = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() - membershipHeap;
 	const behaviorChanges = await testBehaviorValueChanges(test);
 	return { changes: 'pass', values: [9, 10, 9, 10], previousFrames, firstActor, sourceVersion: source.version,
 		membership: 'pass', health: [90, 89, 88], membershipFrames, pausedReads, pausedCycles: pausedCyclesDelta, pausedHeapBytes, behaviorChanges };

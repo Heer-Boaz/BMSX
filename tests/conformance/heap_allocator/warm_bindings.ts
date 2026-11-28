@@ -7,7 +7,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GlobalBank } from '../../../machine/ts/machine/cpu/global_bank';
 import { clearReferenceGlobalBank, registerReferenceGlobalName } from '../../helpers/global_bank_reference';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import {
@@ -24,6 +23,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { readNamespaceBank, runGuestToHalt } from '../../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const path = 'kernel/warm_bindings';
 const modules = [path, 'kernel/global_bank'].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));

@@ -53,7 +53,7 @@ return factory
 	const table = createReferenceTable(cpu, 1024, 1);
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, payload, valueString(kept));
 	cpu.beginCompletionCall(factory, [valueTable(table)]);
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.usedBytes());
 	const caller = cpu.rootThread.currentFrame!;
 	assert.equal(cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 	assert.ok(cpu.fixedInterruptActive(), 'the compiled caller entered the architectural System vector');
@@ -107,14 +107,14 @@ test('hot register CLOSURE preserves its prefix and destination on a prototype b
 	const target = image.symbols.functionAddresses[1], bad = 0xdead0000;
 	for (const { cpu } of [left, right]) {
 		seedTestRomClosure(cpu, target);
-		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(target));
+		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('target')!, valueInteger(target));
 		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETGL] + BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const js = left.cpu, ref = right.cpu, frame = js.rootThread.frameAtDepth(0);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.CreateClosure);
 	for (const { cpu } of [left, right]) {
-		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(bad));
+		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('target')!, valueInteger(bad));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(256, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
@@ -140,7 +140,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 		seedTestMappedStaticClosure(cpu, DYNAMIC_RAM_BASE);
-		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
+		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 400);
 	}
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
@@ -149,7 +149,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	for (const address of [DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1], DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1]]) {
 		for (const cpu of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(address));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('target')!, valueInteger(address));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
 		assert.equal(js.captureClosureBinding(frame.registers.getPayload(source)).functionAddress, address);

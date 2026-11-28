@@ -30,7 +30,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
 	runGuestToHalt(cpu, BUDGET);
-	const emit = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const emit = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(emit, [valueInteger(count)]);
 	runGuestToHalt(cpu, BUDGET);
 	const input = new EventViewerInput(history);

@@ -131,7 +131,7 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 			assert.equal(frame.registers.get(0), valueClosure(body));
 			assert.equal(frame.thread.stackRegisters.get(frame.varargBase), valueInteger(41));
 			assert.equal(frame.thread.stackRegisters.get(frame.varargBase + 1), valueTable(box));
-			assert.equal(cpu.stringPool.find(deadText), undefined);
+			assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined);
 		}
 		for (const address of [parent, child]) {
 			const from = address - RAM_BASE;

@@ -9,11 +9,12 @@ import { ValueTag, valuePayload, valueTag, type Value } from '../../machine/ts/m
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { isStockHeapIssuedObject } from './stock_heap_inspection';
 
 /** Inspect executable references on a stopped machine without deciding object liveness. */
 export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: number) => void,
 	visitThread?: (thread: number, frameDepth: number) => void): void {
-	const { memory, tables, heapAllocator } = cpu;
+	const { memory, tables } = cpu;
 	const objects: number[] = [];
 	const upvalues: number[] = [];
 	const seen = new Set<number>();
@@ -25,7 +26,7 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 	const issuedRecord = (reference: number, kind: number) => {
 		const offset = reference & GC_RECORD_MASK;
 		return memory.readRamRecordByte(offset) === kind
-			&& heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0;
+			&& isStockHeapIssuedObject(memory, offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0;
 	};
 	const addRecord = (tag: ValueTag, word: number) => {
 		switch (tag) {

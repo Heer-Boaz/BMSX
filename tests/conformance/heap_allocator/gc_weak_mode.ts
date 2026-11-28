@@ -22,7 +22,7 @@ try {
 		const { cpu, memory, addresses, rom, carts } = createGcWeakModeFixture(optLevel, true);
 		assert.ok(carts);
 		const ids = ['k', 'v', 'kv', 'vk', 'kk', 'vv', 'k0v', '', 'K'].map(text => {
-			const id = cpu.stringPool.find(text);
+			const id = nativeHeapReference(cpu).stringPool.find(text);
 			assert.notEqual(id, undefined, text);
 			return id!;
 		});

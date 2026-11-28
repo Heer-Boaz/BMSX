@@ -25,6 +25,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const systemSource = `
 local irq<const> = require('fixture/irq_words')
@@ -137,7 +138,7 @@ try {
 		const irqStatus = pushStatus(status()), afterNmiStatus = popStatus(pushStatus(irqStatus));
 		const flags = () => memory.readIoU32(IO_IRQ_FLAGS), select = () => memory.readIoU32(IO_CART_SELECT);
 		const reportWords = () => Array.from({ length: 7 }, (_, i) => memory.readRamRecordWord(report + i * 4));
-		const arena = cpu.heapAllocator, heap = cpu.luaHeap;
+		const arena = nativeHeapReference(cpu).heapAllocator, heap = nativeHeapReference(cpu).luaHeap;
 		const occupied = arena.occupiedBytes(), charged = heap.usedBytes();
 		const seedPath = join(dir, `O${optLevel}.seed`), rom = join(dir, `O${optLevel}.rom`);
 		const cart0 = join(dir, `O${optLevel}.0`), cart1 = join(dir, `O${optLevel}.1`);

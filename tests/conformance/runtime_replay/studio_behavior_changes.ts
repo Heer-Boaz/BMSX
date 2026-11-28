@@ -2,6 +2,7 @@ import { getActiveIdeThemeVariant } from '../../../ide/common/constants';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { RuntimeInspectionProperty } from '../../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import { check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Continues the actor fixture at its second recorded guest-input mutation. */
 export async function testBehaviorValueChanges(test: StudioFixture) {
@@ -51,14 +52,14 @@ export async function testBehaviorValueChanges(test: StudioFixture) {
 		check(getActiveIdeThemeVariant() === 'dark' && property.valueChanged === true, 'theme changes preserve the observed marker');
 		await test.capture?.(`behavior-${kind}-changed-dark`);
 		await press('ControlLeft', 'AltLeft', 'KeyT');
-		const pausedCycles = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
+		const pausedCycles = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 		let reads = 0;
 		const read = guest.readStringMember, visit = guest.visitTableEntries;
 		guest.readStringMember = function(value, name) { reads++; return read.call(this, value, name); };
 		guest.visitTableEntries = function(value, visitor) { reads++; visit.call(this, value, visitor); };
 		for (let n = 0; n < 6; n++) await frame();
 		guest.readStringMember = read; guest.visitTableEntries = visit;
-		check(reads === 0 && property.valueChanged === true && cycles() === pausedCycles && runtime.machine.cpu.luaHeap.usedBytes() === heap,
+		check(reads === 0 && property.valueChanged === true && cycles() === pausedCycles && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap,
 			'paused live inspection paints keep the marker without guest reads, cycles or heap changes');
 		await runPaletteCommand('Run: Next Frame');
 		await until(() => ide.frameNavigation.active === undefined && cycles() > pausedCycles, `behavior changes: ${kind} next observation`);

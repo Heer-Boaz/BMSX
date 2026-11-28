@@ -2,10 +2,9 @@ import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -50,7 +49,7 @@ function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, modules, leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	const oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = management + 0x400;
@@ -169,13 +168,13 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(finish(), firstWork);
 		compare();
 
-		const occupied = oracle.heapAllocator.occupiedBytes();
+		const occupied = nativeHeapReference(oracle).heapAllocator.occupiedBytes();
 		for (let i = 0; i < count * 4 && memory.readRamRecordWord(metadata + REHASH_BASE); ++i) step(i % 3 + 1);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_BASE), 0);
 		assert.equal(memory.readRamRecordWord(metadata + CAPACITY), count * 2);
 		assert.equal(memory.readRamRecordWord(metadata + BUCKETS), nextBase);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - oldBytes, 'the old directory storage is released');
-		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i]);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied - oldBytes, 'the old directory storage is released');
+		for (const [i, name] of names.entries()) assert.equal(nativeHeapReference(cpu).stringPool.find(name), ids[i]);
 	});
 
 	test(`BLua sweeps retained and dead Strings and resumes between unlink and release at O${optLevel}`, () => {
@@ -234,7 +233,7 @@ for (const optLevel of [0, 3] as const) {
 		compare(sweep + 4);
 		assert.equal(memory.readRamRecordWord(metadata + SWEEP), cursor);
 		assert.equal(oracle.memory.readRamRecordWord(metadata + SWEEP), 0);
-		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i] === dead ? undefined : ids[i]);
+		for (const [i, name] of names.entries()) assert.equal(nativeHeapReference(cpu).stringPool.find(name), ids[i] === dead ? undefined : ids[i]);
 	});
 
 	test(`BLua sweeps both prepared prefixes without advancing the frozen rehash at O${optLevel}`, () => {
@@ -379,6 +378,6 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), 0);
 		assert.equal(memory.readRamRecordWord(occupied), charged);
 		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(base), backingBytes - 4 * half);
-		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i], name);
+		for (const [i, name] of names.entries()) assert.equal(nativeHeapReference(cpu).stringPool.find(name), ids[i], name);
 	});
 }

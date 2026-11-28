@@ -16,13 +16,12 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { captureCount, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL } from '../../../machine/ts/machine/cpu/closure';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../helpers/firmware_heap_layout';
 const source = `
 require('fixture_sweep_boot')
 local co<const> = require('coroutine')
@@ -79,11 +78,11 @@ try {
 		runGuestToHalt(cpu, 4_194_304);
 		assert.ok(cpu.isHaltedUntilIrq());
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const head = () => memory.readRamRecordWord(control + OBJECT_HEAD);
 		const count = () => memory.readRamRecordWord(control + OBJECT_COUNT);
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
-		const occupied = () => cpu.luaHeap.usedBytes();
+		const occupied = () => nativeHeapReference(cpu).luaHeap.usedBytes();
 		const tail = createReferenceTable(cpu, 6, 16);
 		cpu.clearHaltUntilIrq();
 		const driver = new FullGcConformance(runtime, native, path, rom);
@@ -140,7 +139,7 @@ try {
 		driver.reach(() => liveCapacity() === oldCapacity >>> 1 && liveFrameCapacity() === oldFrameCapacity >>> 1,
 			'published relocated Thread backing and controls');
 		driver.reach(() => memory.readRamRecordByte(deadThread) === 0, 'retire the dead Thread record');
-		assert.ok(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), 'Kind clears before physical record release');
+		assert.ok(nativeHeapReference(cpu).heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), 'Kind clears before physical record release');
 		const issued = deadThread - RAM_BASE - GC_OBJECT_PREFIX - 8;
 		const charge = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		driver.checkpoint('thread-kind-clear', [[control + OBJECT_HEAD, control + SWEEP_LINK + 4],

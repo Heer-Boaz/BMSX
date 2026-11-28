@@ -16,6 +16,7 @@ import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { linkManagedTestSystem } from '../helpers/managed_system';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 const entry = `
 local state<const> = require('fixture/state')
@@ -52,8 +53,8 @@ for (const optLevel of [0, 3] as const) test('ordinary System reset admits the f
 		const { cpu } = runtime.machine;
 		assert.equal(cpu.readFramePc(0), reset.codeAddress);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		return runtime;
 	};
 	const runtime = boot();
@@ -79,7 +80,7 @@ for (const optLevel of [0, 3] as const) test('ordinary System reset admits the f
 	assert.equal(cpu.activeThread.currentFrame!.functionAddress, prepared.address);
 	assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
 	assert.equal(cpu.captureRuntimeState().statusWord & CPU_STATUS_INHIBIT_RESET, CPU_STATUS_INHIBIT_RESET);
-	assert.ok(cpu.heapAllocator.occupiedBytes() > 0 && cpu.luaHeap.usedBytes() > 0, 'firmware has created the first language heap and Thread');
+	assert.ok(nativeHeapReference(cpu).heapAllocator.occupiedBytes() > 0 && nativeHeapReference(cpu).luaHeap.usedBytes() > 0, 'firmware has created the first language heap and Thread');
 	const sequence = memory.readBusFaultSequence();
 	assert.equal(memory.readMappedWord(dataAddress), 1001);
 	assert.equal(memory.readMappedWord(bssAddress), 73);
@@ -150,8 +151,8 @@ cop0.context = ${context}`],
 	}
 	assert.equal(cpu.rootThread.address, context);
 	assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
 	assert.equal(scheduler.runCpuSlice(0, 64, undefined, CpuRunKind.Scheduled), RunResult.Halted);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(73)]);
-	assert.equal(cpu.luaHeap.usedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 });

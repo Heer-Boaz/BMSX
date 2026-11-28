@@ -52,7 +52,7 @@ function fixture() {
 	const input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	return { runtime, history, input, issue };

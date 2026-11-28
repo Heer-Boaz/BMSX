@@ -8,10 +8,9 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_GRAY_INDEX_MASK } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -40,7 +39,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
 	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, context = management + GC_TRACE_CONTEXT_OFFSET;
 	const head = management + GC_DIAGNOSTIC_OFFSET, roots = management + GC_ROOT_BANKS_OFFSET;
 	const epochWork = control + GC_LAST_EPOCH_WORK - 4;
@@ -59,8 +58,8 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
 		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
-			[control, cpu.heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
-				nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
+			[control, nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
+				nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode), nativeHeapReference(cpu).heapAllocator.capacityBytes(), 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);

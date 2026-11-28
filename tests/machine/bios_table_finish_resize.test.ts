@@ -40,8 +40,8 @@ function fixture(optLevel: 0 | 3) {
 	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const state = cpu.heapAllocator.allocatorStateOffset(), occupied = cpu.luaHeap.occupiedOffset;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const state = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), occupied = nativeHeapReference(cpu).luaHeap.occupiedOffset;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);
@@ -142,7 +142,7 @@ for (const opt of [0, 3] as const) {
 				for (const [k, v] of next) store.set(record, k, v);
 				return next;
 			});
-			const oldBase = f.cpu.tables.arrayAddress(record), charged = f.cpu.luaHeap.usedBytes();
+			const oldBase = f.cpu.tables.arrayAddress(record), charged = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 			const expected = f.begin(record, array, hash, keepHash, key, value);
 			let publication: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
@@ -151,7 +151,7 @@ for (const opt of [0, 3] as const) {
 				assert.ok(!f.cpu.isHaltedUntilIrq());
 				assert.equal(f.cpu.tables.arrayCapacity(record), array);
 				assert.equal(f.cpu.tables.arrayAddress(record), oldBase, 'header count changed before its backing lane');
-				assert.equal(f.cpu.luaHeap.usedBytes(), charged);
+				assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), charged);
 				publication = captureCpuCheckpoint(f.cpu);
 				// 31→32 starts with backwards overlapping tag copy. The top byte
 				// moves first while the first destination byte still aliases the source.
@@ -225,7 +225,7 @@ for (const opt of [0, 3] as const) {
 		const key = f.same(target => valueString(nativeHeapReference(target).gc.diagnosticWord(GcDiagnosticField.NewIndex)));
 		f.same(target => {
 			const pending = nativeHeapReference(target).stringPool.intern('a String marked before the table write');
-			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+			const control = nativeHeapReference(target).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 			nativeHeapReference(target).stringPool.markReachable(pending);
 			target.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
@@ -256,7 +256,7 @@ for (const opt of [0, 3] as const) {
 			while (arena.allocate(4088, true)) { /* exhaust page supply */ }
 			while (arena.allocate(TableRecords.hashStorageBytes(hash), true)) { /* exhaust hash fits */ }
 		});
-		const before = f.cpu.heapAllocator.occupiedBytes(), charged = f.cpu.luaHeap.usedBytes();
+		const before = nativeHeapReference(f.cpu).heapAllocator.occupiedBytes(), charged = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 		const oldHash = f.cpu.tables.hashAddress(record);
 		const expected = f.begin(record, 31, hash, false, valueInteger(-1), valueBool(true));
 		assert.equal(expected, HASH_STORE_DECLINED);
@@ -265,8 +265,8 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.cpu.tables.arrayCapacity(record), 32);
 			assert.equal(f.cpu.tables.hashAddress(record), oldHash);
 		}
-		assert.equal(f.cpu.heapAllocator.occupiedBytes(), before);
-		assert.equal(f.cpu.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(f.cpu).heapAllocator.occupiedBytes(), before);
+		assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), charged);
 		f.verify(expected);
 	});
 }

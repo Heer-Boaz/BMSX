@@ -191,7 +191,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	}
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const ram = memory.ramData(), binding = executionImageBindingOffset(0);
 	const systemBinding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 	const backing = firmwareImageBackingOffset(management, 0);
@@ -200,7 +200,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	const oldSystemSpan = memory.readRamRecordWord(systemBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 	const oldBindings = ram.slice(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE);
 	const oldBackings = ram.slice(systemBacking, backing + FIRMWARE_IMAGE_BACKING_SIZE);
-	const readGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+	const readGlobal = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 	const alias = valuePayload(readGlobal('retained_alias'));
 	const oldString = valuePayload(readGlobal('saved_literal'));
 	const probe = valuePayload(readGlobal('replacement_probe'));
@@ -211,7 +211,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.ok(crossing.layout.header.bssAddress + crossing.layout.header.bssByteCount > originalRamEnd,
 		'the refusal crosses the allocator frontier');
 	assert.ok(isRamStringId(alias));
-	assert.equal(cpu.stringPool.find(freshLiteral), undefined);
+	assert.equal(nativeHeapReference(cpu).stringPool.find(freshLiteral), undefined);
 	assert.equal(memory.readRamRecordWord(original.layout.header.bssAddress), 73);
 	const callerDepth = cpu.getFrameDepth();
 	const caller = cpu.readFramePc(callerDepth - 1);
@@ -222,14 +222,14 @@ test('stock firmware binds staged System and cartridge operands together without
 		memory.installSystemRom(bytes);
 		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 		assert.equal(hashBytes(ram, 0, ram.length), before, 'ROM publication must not fill the new RAM binding');
-		observe(`+ ${file}`, `1 0 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		observe(`+ ${file}`, `1 0 0 ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 	}
 	function complete(command: string, begin: () => void, budget = 97): Value[] {
 		begin();
-		observe(command, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		observe(command, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		for (let i = 0; i < 4096 && (cpu.completionCallPending() || cpu.fixedInterruptActive()); ++i) {
 			const result = scheduler.runCpuSlice(callerDepth, budget, cpu.rootThread.address, CpuRunKind.Scheduled);
-			observe(`n ${budget} ${callerDepth}`, `${result} ${budget - cpu.instructionBudgetRemaining} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`n ${budget} ${callerDepth}`, `${result} ${budget - cpu.instructionBudgetRemaining} ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			assert.notEqual(result, RunResult.ExecutionStopped);
 		}
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
@@ -274,7 +274,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.deepEqual(complete(`T c ${probe}`, () => cpu.beginCompletionCall(probe)),
 		[valueInteger(43), valueString(oldString), valueString(alias)]);
 	assert.equal(readGlobal('retained_table'), table);
-	assert.equal(cpu.stringPool.find(freshLiteral), undefined);
+	assert.equal(nativeHeapReference(cpu).stringPool.find(freshLiteral), undefined);
 	assert.equal(memory.readRamRecordWord(original.layout.header.bssAddress), 73);
 	applyRuntimeSaveState(runtime, baseline);
 	commands.push('U');

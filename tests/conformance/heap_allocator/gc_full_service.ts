@@ -79,10 +79,10 @@ try {
 			const owner = cpu.activeThread.address;
 			resizeThreadStackReference(cpu, cpu.activeThread, 512);
 			const weak = createReferenceTable(cpu, 4, 0), metatable = createReferenceTable(cpu, 0, 1), hidden = createReferenceTable(cpu), floating = createReferenceTable(cpu);
-			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
+			gc.tables.set(metatable, valueString(nativeHeapReference(cpu).stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));
-			setReferenceGlobal(cpu, cpu.stringPool.find('full_collection_root')!, valueTable(weak));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('full_collection_root')!, valueTable(weak));
 			const dropped = nativeHeapReference(cpu).stringPool.intern(deadText);
 			assert.equal(gc.phase(), GcPhase.Pause);
 			if (alreadyActive) {
@@ -162,7 +162,7 @@ try {
 				assert.equal(gc.phase(), GcPhase.Pause, 'full collection completes its own final mark and sweep before returning');
 				assert.equal(gc.tableRecordAddress(hidden), 0);
 				assert.equal(gc.tableRecordAddress(floating), 0);
-				assert.equal(cpu.stringPool.find(deadText), undefined);
+				assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined);
 				assert.ok(dropped >= RAM_BASE);
 				assert.equal(cpu.activeThread.stackRegisters.capacity(), 512 >> epochs, 'the guest preserves full-only compaction at each epoch');
 				const collectedBytes = luaHeap.usedBytes(), capacity = luaHeap.capacity();

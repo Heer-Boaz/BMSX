@@ -10,11 +10,10 @@ import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -64,7 +63,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 		return paid;
 	}
 	function compare(extent = GC_WORKSPACE_END) {
-		const first = memory.ramBusEnd() - RAM_BASE, end = cpu.heapAllocator.managementOffset() + extent;
+		const first = memory.ramBusEnd() - RAM_BASE, end = nativeHeapReference(cpu).heapAllocator.managementOffset() + extent;
 		const have = memory.ramData().subarray(first, end), want = oracle.memory.ramData().subarray(first, end);
 		if (Buffer.compare(have, want) === 0) return;
 		const mismatch = have.findIndex((byte, index) => byte !== want[index]);
@@ -83,12 +82,12 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 
 for (const opt of [0, 3] as const) {
 	test(`Thread reservation, cleared backing, publication and charge match native in order at O${opt}`, () => {
-		const f = fixture(opt), { cpu, memory, oracle } = f, management = cpu.heapAllocator.managementOffset();
+		const f = fixture(opt), { cpu, memory, oracle } = f, management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = f.same(cpu => cpu.rootThread.currentFrame!.closure);
 		const oldHead = memory.readRamRecordWord(control + objectHead);
 		const oldCount = memory.readRamRecordWord(control + objectCount);
-		const charge = cpu.luaHeap.usedBytes();
+		const charge = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const record = allocateThreadRecordReference(oracle, entry);
 		const stack = oracle.memory.readRamRecordWord(record + ThreadField.StackBlock);
 		const frames = oracle.memory.readRamRecordWord(record + ThreadField.FrameBlock);
@@ -103,17 +102,17 @@ for (const opt of [0, 3] as const) {
 		assert.equal(memory.readRamRecordByte(stack + valueBytes - 1), dirty, 'frame clear precedes value clear');
 		assert.equal(memory.readRamRecordWord(record + ThreadField.Entry), entry);
 		assert.equal(memory.readRamRecordWord(control + objectHead), oldHead);
-		assert.equal(cpu.luaHeap.usedBytes(), charge);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charge);
 		const checkpoint = captureCpuCheckpoint(cpu);
 		for (let i = 0; i < 8192 && memory.readRamRecordWord(control + objectHead) !== record; ++i) f.grant(1);
 		assert.ok(cpu.heapServiceActive());
 		assert.equal(memory.readRamRecordByte(stack + valueBytes - 1), 0);
 		assert.equal(memory.readRamRecordWord(control + objectHead), record);
-		assert.equal(cpu.luaHeap.usedBytes(), charge, 'logical charge follows inventory publication');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charge, 'logical charge follows inventory publication');
 		const beforeCharge = captureCpuCheckpoint(cpu);
 		let paid = f.finish(record - RAM_BASE);
 		assert.equal(memory.readRamRecordWord(control + objectCount), oldCount + 1);
-		assert.equal(cpu.luaHeap.usedBytes(), charge + THREAD_HEAP_BYTES + valueBytes + frameBytes);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charge + THREAD_HEAP_BYTES + valueBytes + frameBytes);
 		restoreCpuCheckpoint(cpu, beforeCharge);
 		assert.equal(f.finish(record - RAM_BASE), paid);
 		restoreCpuCheckpoint(cpu, checkpoint);
@@ -125,7 +124,7 @@ for (const opt of [0, 3] as const) {
 	test(`failed Thread attempts free precisely the reserved prefixes without publication at O${opt}`, () => {
 		const f = fixture(opt), owner = f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(3 * HEAP_PAGE_SIZE, true)) - RAM_BASE;
 		const floor = (owner + 0x600 + HEAP_PAGE_SIZE - 1) & -HEAP_PAGE_SIZE;
-		const state = owner + (f.cpu.heapAllocator.allocatorStateOffset() - f.cpu.heapAllocator.managementOffset());
+		const state = owner + (nativeHeapReference(f.cpu).heapAllocator.allocatorStateOffset() - nativeHeapReference(f.cpu).heapAllocator.managementOffset());
 		const charge = owner + HEAP_LOGICAL_OCCUPIED_OFFSET, control = owner + HEAP_GC_CONTROL_OFFSET;
 		for (const [extent, canAllocateValues] of [[144, false], [200, true]] as const) {
 			const arena = bindReferenceDlmalloc(f.memory, state), reference = bindReferenceDlmalloc(f.oracle.memory, state);
@@ -198,11 +197,11 @@ for (const opt of [0, 3] as const) {
 		const victim = f.same(cpu => createReferenceTable(cpu, 256, 0));
 		f.same(cpu => {
 			const arena = nativeHeapReference(cpu).heapAllocator;
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}
 		});
-		const before = arena.occupiedBytes(), beforeLogical = cpu.luaHeap.usedBytes(), oldWhite = nativeHeapReference(cpu).gc.white();
+		const before = arena.occupiedBytes(), beforeLogical = nativeHeapReference(cpu).luaHeap.usedBytes(), oldWhite = nativeHeapReference(cpu).gc.white();
 		assert.equal(memory.readRamRecordByte(entry + GC_COLOR_OFFSET), oldWhite);
 		const seed = captureCpuCheckpoint(oracle);
 		nativeHeapReference(oracle).gc.collect();
@@ -219,7 +218,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(cpu.heapServiceActive(), true);
 		assert.equal(memory.readRamRecordByte(entry + GC_COLOR_OFFSET), 2, 'the scoped Closure has actually enqueued');
 		assert.equal(arena.occupiedBytes(), before, 'first refusal retired every provisional extent before starting recovery');
-		assert.equal(cpu.luaHeap.usedBytes(), beforeLogical);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), beforeLogical);
 		const checkpoint = captureCpuCheckpoint(cpu);
 		function drain() {
 			let cycles = 0;
@@ -245,21 +244,21 @@ for (const opt of [0, 3] as const) {
 		const { cpu, oracle, memory } = f, arena = nativeHeapReference(cpu).heapAllocator;
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f), sourceCycles = 21;
-		f.same(cpu => nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes()));
-		const target = cpu.luaHeap.collectionTarget(), occupied = arena.occupiedBytes(), work = nativeHeapReference(cpu).gc.epochWork();
+		f.same(cpu => nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.usedBytes()));
+		const target = nativeHeapReference(cpu).luaHeap.collectionTarget(), occupied = arena.occupiedBytes(), work = nativeHeapReference(cpu).gc.epochWork();
 		const head = memory.readRamRecordWord(control + objectHead);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = sourceCycles;
 		const record = allocateThreadRecordReference(oracle, entry);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
 		assert.ok(nativeHeapReference(oracle).gc.epochWork() > work, 'the old source granted a positive mark quantum');
-		assert.ok(oracle.luaHeap.collectionTarget() > target);
+		assert.ok(nativeHeapReference(oracle).luaHeap.collectionTarget() > target);
 		f.beginWhole(management, entry, sourceCycles);
-		for (let i = 0; i < 8192 && cpu.luaHeap.collectionTarget() === target; ++i) f.grant(1);
+		for (let i = 0; i < 8192 && nativeHeapReference(cpu).luaHeap.collectionTarget() === target; ++i) f.grant(1);
 		assert.equal(cpu.heapServiceActive(), true);
 		assert.equal(arena.occupiedBytes(), occupied);
 		assert.equal(memory.readRamRecordWord(control + objectHead), head);
-		assert.equal(cpu.luaHeap.collectionTarget(), oracle.luaHeap.collectionTarget());
+		assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), nativeHeapReference(oracle).luaHeap.collectionTarget());
 		assert.equal(nativeHeapReference(cpu).gc.epochWork(), nativeHeapReference(oracle).gc.epochWork());
 		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) f.grant(128);
 		assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
@@ -274,7 +273,7 @@ for (const opt of [0, 3] as const) {
 		const entry = detachEntry(f);
 		f.same(cpu => {
 			nativeHeapReference(cpu).gc.collect(valueClosure(entry));
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			while (nativeHeapReference(cpu).heapAllocator.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (nativeHeapReference(cpu).heapAllocator.allocate(16, true)) {}
 		});

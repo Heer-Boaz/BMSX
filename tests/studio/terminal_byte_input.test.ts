@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildLuaStackFrames, readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
@@ -20,7 +21,7 @@ return counter, #text, string.byte(text, 1), string.byte(text, 6), nil, false`, 
 	await tasks.join();
 	assert.equal(scheduler.nowCycles, admittedAt);
 	assert.ok(cpu.readFrameReturnsToCompletionLatch(cpu.getFrameDepth() - 1), 'the byte arguments were admitted');
-	assert.equal(cpu.stringPool.find(`=evaluation:${invalid.id}`), undefined, 'the guest has not yet constructed the chunk name');
+	assert.equal(nativeHeapReference(cpu).stringPool.find(`=evaluation:${invalid.id}`), undefined, 'the guest has not yet constructed the chunk name');
 	await until(() => invalid.result !== undefined);
 	assert.equal(invalid.result!.status, 'lua-error');
 	assert.match(invalid.result!.values[0], new RegExp(`=evaluation:${invalid.id}\\b`));

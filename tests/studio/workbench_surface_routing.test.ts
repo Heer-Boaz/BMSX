@@ -140,7 +140,7 @@ function eventFixture(t: TestContext) {
 	const observed = eventHistoryRuntime(eventImages), f = fixture(t, undefined, observed);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	runGuestToHalt(observed.cpu, 10_000_000);
-	const emitFunction = asClosure(observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(observed.cpu).gc);
+	const emitFunction = asClosure(observed.cpu.getGlobalByKey(nativeHeapReference(observed.cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(observed.cpu).gc);
 	const emit = (count: number) => {
 		observed.cpu.beginCompletionCall(emitFunction, [valueInteger(count)]);
 		runGuestToHalt(observed.cpu, 10_000_000);

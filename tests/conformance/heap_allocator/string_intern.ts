@@ -8,7 +8,6 @@ import { hashBytes, hashText } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
 import { GC_WORK_WORD_CYCLES, GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_STRING_METADATA_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -27,6 +26,7 @@ import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { internStringSliceReference } from '../../helpers/string_slice_reference';
+import { HEAP_STRING_METADATA_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const probe = { path: 'test/intern_probe', source: `module<const>
 local intern<const> = require('kernel/allocate_string_slice')
@@ -135,7 +135,7 @@ try {
 					while (arena.allocate(bytes, true)) { /* saturate physical runs, not the quota */ }
 				assert.equal(arena.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
 			}
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(scenario === 'logical-assist' ? cpu.luaHeap.usedBytes() : cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(scenario === 'logical-assist' ? nativeHeapReference(cpu).luaHeap.usedBytes() : nativeHeapReference(cpu).luaHeap.capacity());
 			const policyCycles = scenario === 'logical-assist' || scenario === 'physical-assist' ? 4096 : 0;
 			const request = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 			if (scenario === 'logical-assist') {
@@ -188,7 +188,7 @@ try {
 				assert.equal(state, RunResult.Yielded);
 				const paid = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(paid > 0);
-				observe(`J ${cycles} 1`, [state, paid, 0, arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
+				observe(`J ${cycles} 1`, [state, paid, 0, arena.occupiedBytes(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 			};
 			const trace = join(directory, 'observations');
 			const reproduce = (label: string, commands: readonly string[], expected: readonly string[], state = seed) => {
@@ -222,18 +222,18 @@ try {
 			const originalWhite = gc.white();
 			const checkpoints = scenario === 'growth' || scenario === 'retry';
 			if (scenario === 'growth') {
-				const logical = cpu.luaHeap.usedBytes(), hash = hashText(text);
-				for (let i = 0; i < 4096 && cpu.luaHeap.usedBytes() === logical; ++i) grant(47);
-				assert.equal(cpu.luaHeap.usedBytes(), logical + BLUA32_STRING_RECORD_HEADER_SIZE + text.length);
+				const logical = nativeHeapReference(cpu).luaHeap.usedBytes(), hash = hashText(text);
+				for (let i = 0; i < 4096 && nativeHeapReference(cpu).luaHeap.usedBytes() === logical; ++i) grant(47);
+				assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + BLUA32_STRING_RECORD_HEADER_SIZE + text.length);
 				for (let i = 0; i < 256 && memory.readRamRecordWord(reference + BLUA32_STRING_HASH_OFFSET) !== hash; ++i) grant(1);
 				assert.equal(memory.readRamRecordWord(reference + BLUA32_STRING_HASH_OFFSET), hash);
 				assert.equal(pool.find(text), undefined, 'partial String header is not a published directory link');
 			} else if (scenario === 'logical-assist' || scenario === 'physical-assist') {
-				const initialWork = gc.epochWork(), originalOccupancy = arena.occupiedBytes(), originalUsed = cpu.luaHeap.usedBytes();
+				const initialWork = gc.epochWork(), originalOccupancy = arena.occupiedBytes(), originalUsed = nativeHeapReference(cpu).luaHeap.usedBytes();
 				for (let i = 0; i < 32768 && cpu.heapServiceActive() && gc.epochWork() === initialWork; ++i) grant(1);
 				assert.ok(gc.epochWork() > initialWork, `${scenario}: collector must run before reservation`);
 				assert.equal(arena.occupiedBytes(), originalOccupancy, 'collector ran before any reservation');
-				assert.equal(cpu.luaHeap.usedBytes(), originalUsed);
+				assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), originalUsed);
 			} else if (scenario === 'retry') {
 				assert.equal(gc.phase(), GcPhase.Pause);
 				for (let i = 0; i < 4096 && gc.phase() < GcPhase.MarkAgain; ++i) grant(113);

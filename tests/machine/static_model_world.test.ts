@@ -133,8 +133,8 @@ probe = {
 for (const optLevel of [3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const method = (name: string) => asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(name)), nativeHeapReference(cpu).gc);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const method = (name: string) => asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, method('check'), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const steady = profileWarmGuestKernel(cpu, method('steady'), 256);
@@ -163,9 +163,9 @@ return {model=function(id) return record end,
 	const { cpu } = createCartlibProgramHarness(source, { optLevel,
 		modules: [...modules, { path: 'cartlib/rom_dir', source: ramDirectory }] });
 	runGuestToHalt(cpu, 10_000_000);
-	const address = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('test_model_address')));
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const packet = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('packet')), nativeHeapReference(cpu).gc);
+	const address = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('test_model_address')));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const packet = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('packet')), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, packet, []);
 	const before = materializeCpuCompletionValues(cpu);
 	const changed: GLTFModel = { ...model, meshes: model.meshes.map((mesh, index) => index !== 0 ? mesh : {
@@ -176,7 +176,7 @@ return {model=function(id) return record end,
 	const replacement = packModelAsset(changed).buffer;
 	assert.equal(replacement.length, bytes.length);
 	cpu.memory.writeBytes(address, replacement);
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('renew')), nativeHeapReference(cpu).gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('renew')), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	runCompletionClosure(cpu, packet, []);
 	const after = materializeCpuCompletionValues(cpu);

@@ -1,4 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { StockStringIndex } from '../../toolchain/ts/firmware/stock_string_index';
 
 import { valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
@@ -22,6 +23,7 @@ export class GuestFixture {
 	private returnThread!: number;
 	private returnDepth = 0;
 	private readonly suiteSlot: string;
+	public readonly stringIndex: StockStringIndex;
 	private readonly stoppedGrant: FrameState = {
 		updateExecuted: false, cycleBudgetRemaining: 0, cycleBudgetGranted: 0,
 		cycleCarryGranted: 0, activeCpuUsedCycles: 0,
@@ -29,6 +31,7 @@ export class GuestFixture {
 
 	public constructor(public readonly runtime: Runtime, public readonly program: BuiltTestCartridge) {
 		this.suiteSlot = buildModuleExportSlotName(program.suite.modulePath, []);
+		this.stringIndex = new StockStringIndex(runtime.machine.memory);
 	}
 
 	/** Composed into the target owner's hook, never installed over its debugger. */
@@ -51,10 +54,10 @@ export class GuestFixture {
 	/** Null binds only the module's shared setup/teardown fixture, not a case body. */
 	public bind(caseName: string | null): void {
 		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
-		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
+		const cpu = this.runtime.machine.cpu;
 		this.initialized = true;
 		// The preloaded suite exports and its literal case keys are already installed.
-		this.beginCall('bind', [cpu.getGlobalByKey(pool.find(this.suiteSlot)!), caseName === null ? valueNil() : valueString(pool.find(caseName)!)]);
+		this.beginCall('bind', [cpu.getGlobalByKey(this.stringIndex.find(this.suiteSlot)!), caseName === null ? valueNil() : valueString(this.stringIndex.find(caseName)!)]);
 	}
 
 	/** A physical exception returns first; it is never truncated to admit a host call. */
@@ -94,23 +97,23 @@ export class GuestFixture {
 
 	public cancelPhase(phase: string): void {
 		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
-		this.beginCall('cancel', [valueString(this.runtime.machine.cpu.stringPool.find(phase)!)]);
+		this.beginCall('cancel', [valueString(this.stringIndex.find(phase)!)]);
 	}
 
 	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
 	public readContext(): number {
-		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
-		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
-		return valuePayload(cpu.tables.getStringKey(execution, pool.find('context')!));
+		const cpu = this.runtime.machine.cpu;
+		const execution = valuePayload(cpu.getGlobalByKey(this.stringIndex.find(EXECUTION_SLOT)!));
+		return valuePayload(cpu.tables.getStringKey(execution, this.stringIndex.find('context')!));
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
-		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
+		const cpu = this.runtime.machine.cpu;
 		// Resolve the current guest module, not closures borrowed from an older heap.
-		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
+		const execution = valuePayload(cpu.getGlobalByKey(this.stringIndex.find(EXECUTION_SLOT)!));
 		this.returnThread = cpu.activeThread.address;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(valuePayload(cpu.tables.getStringKey(execution, pool.find(method)!)), args);
+		cpu.beginCompletionCall(valuePayload(cpu.tables.getStringKey(execution, this.stringIndex.find(method)!)), args);
 		this.callPending = true;
 	}
 }

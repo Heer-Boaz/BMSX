@@ -11,6 +11,7 @@ import { writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../helpers/managed_system';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 function boot(source: string, opt: 0 | 3) {
 	const linked = linkManagedTestSystem(`halt_until_irq\n${source}`, opt);
@@ -23,7 +24,7 @@ function boot(source: string, opt: 0 | 3) {
 	runtime.boot();
 	const { cpu } = runtime.machine;
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
 	runGuestToHalt(cpu, 1_000_000);
 	assert.ok(cpu.isHaltedUntilIrq());
 	assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -39,7 +40,7 @@ blua32.svc_value(ids.string_index, { field = 27 })
 local receiver<const> = 'receiver'
 return receiver.field`;
 		const { cpu, memory } = boot(source, opt);
-		const head = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+		const head = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 		const tag = () => memory.readRamRecordWord(head + GcDiagnosticField.StringIndexTag);
 		const word = () => memory.readRamRecordWord(head + GcDiagnosticField.StringIndexWord);
 		assert.equal(tag(), ValueTag.Nil);
@@ -71,7 +72,7 @@ local protect<const> = blua32.closure(entries.protected_call)
 blua32.svc_value(ids.string_index, { field = 27 })
 return protect(function() blua32.svc_value(ids.string_index, 0) end)`;
 	const { cpu, memory } = boot(source, 3);
-	const head = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+	const head = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 	const word = () => memory.readRamRecordWord(head + GcDiagnosticField.StringIndexWord);
 	for (let grant = 0; grant < 30_000 && word() === 0; ++grant) {
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);

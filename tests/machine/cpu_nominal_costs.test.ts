@@ -140,7 +140,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const pc = frame.pc;
 		resizeThreadStackReference(cpu, cpu.rootThread, 32); // Reserve the exception frame independently of the opcode.
 		seedTestRomClosure(cpu, image.vectors.exceptionFunctionAddress);
-		const before = cpu.heapAllocator.occupiedBytes();
+		const before = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 		frame.registers.setInteger(0, 17);
 		frame.registers.setInteger(1, 2);
 		frame.registers.setInteger(2, 3);
@@ -150,7 +150,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.instructionBudgetRemaining, -1, 'one instruction-supply charge');
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		assert.equal(cpu.readEpcWord(), pc, 'EPC points to WIDE, not the body');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), before);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), before);
 		assert.deepEqual([frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)],
 			[valueInteger(17), valueInteger(2), valueInteger(3)]);
 	});

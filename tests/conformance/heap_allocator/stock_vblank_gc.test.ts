@@ -74,7 +74,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cartridge), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler, gxGpu } = runtime.machine;
-	const frames = runtime.frameScheduler, arena = cpu.heapAllocator;
+	const frames = runtime.frameScheduler, arena = nativeHeapReference(cpu).heapAllocator;
 	const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, reports = linked.layout.header.bssAddress;
 	const report = (field: Report) => memory.readRamRecordWord(reports + field * 4);
 	const flags = () => memory.readIoU32(IO_IRQ_FLAGS);

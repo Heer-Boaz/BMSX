@@ -145,30 +145,30 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: num
 for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
 	runGuestToHalt(cpu, 20_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const exports = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('kernels')!));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const exports = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('kernels')!));
 	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
 	for (const name of ['resolve','write_origin2','write_origin3','write_local2','write_local3','evaluate2','evaluate3','visual']) {
-		const closure = asClosure(cpu.tables.getStringKey(exports, cpu.stringPool.find(name)!), nativeHeapReference(cpu).gc);
+		const closure = asClosure(cpu.tables.getStringKey(exports, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc);
 		const inspected = inspectInstalledKernel(cpu, images.cartImage, closure, name);
 		assert.equal(inspected.methodLookups, 0, `${name}: coefficient work uses direct fields, not method dispatch`);
 		assert.ok(inspected.calls.length <= (name.startsWith('evaluate') ? 0 : 1), `${name}: only one coarse invalidate/evaluate/resolve boundary`);
 		kernels.push(inspected);
 	}
-	const compile = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('compile')!), nativeHeapReference(cpu).gc);
+	const compile = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('compile')!), nativeHeapReference(cpu).gc);
 	const compileBefore = collectReferenceHeapBytes(cpu);
 	cpu.beginCompletionCall(compile);
 	runGuestToHalt(cpu, 100_000_000);
 	const compileCycles = 100_000_000 - cpu.instructionBudgetRemaining;
-	const compileAllocatedBytes = cpu.luaHeap.usedBytes() - compileBefore;
+	const compileAllocatedBytes = nativeHeapReference(cpu).luaHeap.usedBytes() - compileBefore;
 	const compileRetainedBytes = collectReferenceHeapBytes(cpu) - compileBefore;
-	const entries = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('entries')!));
+	const entries = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('entries')!));
 	const groups = [];
 	for (let index = 1; index <= 4; index += 1) {
 		const entry = valuePayload(cpu.tables.getInteger(entries, index));
-		const program = valuePayload(cpu.tables.getStringKey(entry, cpu.stringPool.find('program')!));
-		const tracks = valuePayload(cpu.tables.getStringKey(program, cpu.stringPool.find('tracks')!));
-		const runners = valuePayload(cpu.tables.getStringKey(tracks, cpu.stringPool.find('spatial_runners')!));
+		const program = valuePayload(cpu.tables.getStringKey(entry, nativeHeapReference(cpu).stringPool.find('program')!));
+		const tracks = valuePayload(cpu.tables.getStringKey(program, nativeHeapReference(cpu).stringPool.find('tracks')!));
+		const runners = valuePayload(cpu.tables.getStringKey(tracks, nativeHeapReference(cpu).stringPool.find('spatial_runners')!));
 		const closure = asClosure(cpu.tables.getInteger(runners, 1), nativeHeapReference(cpu).gc);
 		assert.ok(!images.cartImage.functions.some(fn => fn.address === cpu.captureClosureBinding(closure).functionAddress), 'inspect actual RAM firmware output, not an AOT stand-in');
 		const group = inspectInstalledKernel(cpu, images.cartImage, closure, `spatial-group-${index}`);
@@ -176,8 +176,8 @@ for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kerne
 		assert.equal(group.methodLookups, 0);
 		groups.push(group);
 		kernels.push(group);
-		for (const [owner, callback] of [[`values-${index}`, cpu.tables.getStringKey(tracks, cpu.stringPool.find('play_value_runner')!)],
-			['timeline.evaluate_play', cpu.tables.getStringKey(program, cpu.stringPool.find('evaluate_play')!)]] as const) {
+		for (const [owner, callback] of [[`values-${index}`, cpu.tables.getStringKey(tracks, nativeHeapReference(cpu).stringPool.find('play_value_runner')!)],
+			['timeline.evaluate_play', cpu.tables.getStringKey(program, nativeHeapReference(cpu).stringPool.find('evaluate_play')!)]] as const) {
 			const inspected = inspectInstalledKernel(cpu, images.cartImage, asClosure(callback, nativeHeapReference(cpu).gc), owner);
 			assert.equal(inspected.calls.length, 1, `${owner}: one group/values boundary, not one call per coefficient`);
 			assert.equal(inspected.methodLookups, 0);
@@ -188,7 +188,7 @@ for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kerne
 	}
 	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }] as const)));
 	const readSites = new Map(kernels.flatMap(kernel => kernel.reads.map(read => [read.pc, { ...read, owner: kernel.owner }] as const)));
-	const coefficientOwners = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('coefficient_owners')!));
+	const coefficientOwners = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('coefficient_owners')!));
 	const actualOwners = new Set(Array.from({ length: 5 }, (_, index) => cpu.tables.getInteger(coefficientOwners, index + 1)));
 	const coefficients = ['xx','xy','xz','yx','yy','yz','zx','zy','zz','ox','oy','oz'];
 	const coefficientFields = new Set(['','w','attachment_','presentation_','_local_'].flatMap(prefix => coefficients.map(field => prefix + field)));
@@ -233,26 +233,26 @@ for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kerne
 		callees.set(callee, (callees.get(callee) || 0) + 1);
 	} });
 	try {
-		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(name)!), nativeHeapReference(cpu).gc), [valueInteger(8)]);
-		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('sample')!), nativeHeapReference(cpu).gc), [valueInteger(8), valueInteger(index)]);
+		for (const name of ['run2','run3','visual','tick']) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc), [valueInteger(8)]);
+		for (let index = 1; index <= 4; index += 1) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('sample')!), nativeHeapReference(cpu).gc), [valueInteger(8), valueInteger(index)]);
 	} finally { cpu.setInstructionObserver(null); }
 	for (const owner of ['evaluate2','evaluate3','visual','spatial-group-1']) assert.ok(directReads.get(owner)! > 0, `${owner}: exercise real flat coefficient reads`);
 	for (let index = 1; index <= 4; index += 1) {
 		const entry = valuePayload(cpu.tables.getInteger(entries, index));
-		const writer = asClosure(cpu.tables.getInteger(valuePayload(cpu.tables.getStringKey(entry, cpu.stringPool.find('channel_writers')!)), 1), nativeHeapReference(cpu).gc);
+		const writer = asClosure(cpu.tables.getInteger(valuePayload(cpu.tables.getStringKey(entry, nativeHeapReference(cpu).stringPool.find('channel_writers')!)), 1), nativeHeapReference(cpu).gc);
 		const calls = observed.get(`spatial-group-${index}`)!;
 		assert.equal(calls.size, 1);
 		assert.ok(calls.has(cpu.captureClosureBinding(writer).functionAddress), 'the sole group call must be its admitted substantive writer');
 	}
 	const measurements = [];
 	for (const name of ['run2','run3','visual','tick']) {
-		const profile = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(name)!), nativeHeapReference(cpu).gc), 256);
+		const profile = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc), 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);
 		assert.equal(profile.retainedAfter, profile.retainedBefore);
 		measurements.push({ owner: name, ...profile });
 	}
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const addressOwners = new Map(kernels.map(kernel => [cpu.captureClosureBinding(kernel.closure).functionAddress, kernel.owner]));
 	const callOwners = [...observed].map(([owner, targets]) => ({ owner, targets: [...targets].map(([address, calls]) => {

@@ -639,9 +639,9 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 		const run = asClosure(runValue, nativeHeapReference(cpu).gc);
 		const recorder = valuePayload(recorderValue);
 		runCompletionClosure(cpu, run, [valueInteger(20)]);
-		const warmBytes = cpu.luaHeap.usedBytes();
+		const warmBytes = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const cycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
-		assert.equal(cpu.luaHeap.usedBytes(), warmBytes);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), warmBytes);
 		assert.equal(cpu.tables.getInteger(recorder, 4), valueInteger(mode === 'emit' ? 10_023 : 0));
 		measurements.push({ mode, cycles });
 	}

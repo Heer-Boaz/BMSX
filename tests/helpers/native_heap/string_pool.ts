@@ -1,4 +1,8 @@
-import { StringPool as PhysicalStringPool } from '../../../machine/ts/machine/cpu/string_pool';
+import { isRamStringId, storageOffset, type StringId } from '../../../machine/ts/machine/cpu/string_pool';
+import {
+	BUCKETS, CAPACITY, FIRST_CART, MAX_RAM_RECORDS, RAM_BUCKET_EXTENT_MASK, RAM_BUCKET_REHASH, RAM_BUCKET_SHRINK,
+	REHASH_BASE, REHASH_READY, ROM_TABLES, StockStringIndex, USED, romStringId,
+} from '../../../toolchain/ts/firmware/stock_string_index';
 import { writeByteString } from '../../../machine/ts/common/byte_string';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashText } from '../../../machine/ts/common/hash';
@@ -7,49 +11,34 @@ import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
 	BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND,
-	BLUA32_STRING_ROM_ADDRESS_MASK, BLUA32_STRING_ROM_SOCKET_SHIFT,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { CART_ROM_BASE, CART_ROM_SIZE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_SIZE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import type { Memory } from '../../../machine/ts/machine/memory/memory';
-import { HEAP_STRING_MARK_WORK_OFFSET, type HeapAllocator } from './heap_allocator';
+import type { HeapAllocator } from './heap_allocator';
+import { HEAP_STRING_MARK_WORK_OFFSET } from '../firmware_heap_layout';
 import type { LuaHeap } from './lua_heap';
 import { valueNil, valueString } from '../../../machine/ts/machine/cpu/value';
 
-export type StringId = number;
+export { isRamStringId, type StringId } from '../../../machine/ts/machine/cpu/string_pool';
 export const STRING_GC_EPOCH_MASK = 1;
 
-const BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c, SWEEP = 0x10;
-const FIRST_CART = 0x14, ROM_TABLES = 0x18;
-const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
+const EPOCH = 0x0c, SWEEP = 0x10;
+const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34;
 const SWEEP_REHASH = 0x80000000;
 const SWEEP_SHRINK = 0xc0000000;
 const INITIAL_BUCKETS = 16;
 const MIN_SHRINK_BUCKETS = 2 * HEAP_PAGE_SIZE / 4;
 const INTERN_REHASH_WORK = 64;
-const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
-const RAM_BUCKET_EXTENT_MASK = 2 * MAX_RAM_RECORDS - 1;
-const RAM_BUCKET_REHASH = 0x80000000;
-const RAM_BUCKET_SHRINK = 0x40000000;
-export function isRamStringId(address: StringId): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
-function storageOffset(address: number): number {
-	if (address < RAM_BASE) return address;
-	if (address < CART_ROM_BASE) return address & (MAIN_RAM_SIZE - 1);
-	return (address & BLUA32_STRING_ROM_ADDRESS_MASK) - CART_ROM_BASE;
-}
-function romStringId(address: number, cartridgeSlot: number): number {
-	return address >= CART_ROM_BASE ? (address | (cartridgeSlot << BLUA32_STRING_ROM_SOCKET_SHIFT)) >>> 0 : address;
-}
-
 type InternSource = string | Uint8Array;
 
 // All persistent interning and collection state is in the raw machine RAM.
-export class StringPool extends PhysicalStringPool {
+export class StringPool extends StockStringIndex {
 	private readonly localRoots: StringId[] = [];
 	private readonly localRootBases: number[] = [];
 	private readonly markWorkOffset: number;
 
 	public constructor(private readonly heap: LuaHeap, memory: Memory, private readonly arena: HeapAllocator) {
-		super(memory, arena);
+		super(memory);
 		this.markWorkOffset = arena.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
 	}
 	private writeMetadata(field: number, word: number): void { this.memory.writeRamRecordWord(this.metadataOffset + field, word); }

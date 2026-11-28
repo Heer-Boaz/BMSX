@@ -84,7 +84,7 @@ async function fixture(t: TestContext, init = '', systemSource = 'module<entry>'
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });
 	});
-	return { service, sources, runtime, cpu, target, tasks, execution, debuggerState, models, model, source };
+	return { service, sources, runtime, cpu, target, tasks, execution, debuggerState, guest, models, model, source };
 }
 
 test('Hot Resume captures admitted documents, not later typing; no-init installation completes explicitly', async t => {
@@ -155,15 +155,15 @@ test('Hot Resume binds a new global and literal in firmware before running the e
 function probe() return retained end`);
 	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
 	const oldMedia = f.sources.currentBlua32Media;
-	const original = cpu.getGlobalByKey(cpu.stringPool.find('retained')!);
-	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!);
+	const original = cpu.getGlobalByKey(f.guest.stringIndex.find('retained')!);
+	const probe = cpu.getGlobalByKey(f.guest.stringIndex.find('probe')!);
 	const old = 'return retained';
 	f.model.pushEditOperations([{ offset: f.source.indexOf(old), deleteLength: old.length,
 		text: "introduced = 'first seen in this edit'; return retained, introduced" }]);
 	const operation = f.service.resume('workbench');
 	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
 	assert.equal(f.sources.currentBlua32Media, oldMedia);
-	assert.equal(cpu.stringPool.find('introduced'), undefined);
+	assert.equal(f.guest.stringIndex.find('introduced'), undefined);
 	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
 		willExecuteRuntimeDebuggerPlan(f.debuggerState);
 		f.target.advanceGame(10_000);
@@ -174,9 +174,9 @@ function probe() return retained end`);
 	assert.notEqual(f.sources.currentBlua32Media, oldMedia);
 	assert.equal(cpu.activeThread.address, thread);
 	assert.equal(cpu.getFrameDepth(), depth);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), probe);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('retained')!), original);
-	const introduced = cpu.stringPool.find('introduced')!, literal = valueString(cpu.stringPool.find('first seen in this edit')!);
+	assert.equal(cpu.getGlobalByKey(f.guest.stringIndex.find('probe')!), probe);
+	assert.equal(cpu.getGlobalByKey(f.guest.stringIndex.find('retained')!), original);
+	const introduced = f.guest.stringIndex.find('introduced')!, literal = valueString(f.guest.stringIndex.find('first seen in this edit')!);
 	assert.equal(cpu.getGlobalByKey(introduced), valueNil(), 'installing the name does not run the edited function');
 	cpu.beginCompletionCall(valuePayload(probe));
 	assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
@@ -194,7 +194,7 @@ end
 *score = 73`);
 	const { cpu, runtime } = f, { memory } = runtime.machine;
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
-	const read = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+	const read = (name: string) => cpu.getGlobalByKey(f.guest.stringIndex.find(name)!);
 	const probe = valuePayload(read('probe'));
 	const escaped = read('escaped'), address = valuePayload(escaped);
 	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
@@ -271,8 +271,8 @@ test('one Hot Resume publishes new System and cartridge operands without restart
 		'module<entry>\nfunction system_probe() return 38 end');
 	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
 	const oldMedia = f.sources.currentBlua32Media;
-	const systemProbe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('system_probe')!));
-	const cartProbe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('cart_probe')!));
+	const systemProbe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('system_probe')!));
+	const cartProbe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('cart_probe')!));
 	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.path2lua['entry.lua'];
 	const systemModel = f.models.retain({ ...f.model.resource, contextId: TEST_SYSTEM_CONTEXT_ID }, 'lua', system.src);
 	const spelling = 'first bound by two replacement images';
@@ -283,7 +283,7 @@ test('one Hot Resume publishes new System and cartridge operands without restart
 	const operation = f.service.resume('workbench');
 	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
 	assert.equal(f.sources.currentBlua32Media, oldMedia);
-	assert.equal(cpu.stringPool.find(spelling), undefined);
+	assert.equal(f.guest.stringIndex.find(spelling), undefined);
 	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
 		willExecuteRuntimeDebuggerPlan(f.debuggerState);
 		f.target.advanceGame(10_000);
@@ -298,7 +298,7 @@ test('one Hot Resume publishes new System and cartridge operands without restart
 	assert.equal(cpu.activeThread.address, thread);
 	assert.equal(cpu.getFrameDepth(), depth);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const literal = valueString(cpu.stringPool.find(spelling)!);
+	const literal = valueString(f.guest.stringIndex.find(spelling)!);
 	for (const [probe, retained] of [[systemProbe, 38], [cartProbe, 61]]) {
 		cpu.beginCompletionCall(probe);
 		assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
@@ -324,8 +324,8 @@ end
 old_label = 'bygone'`);
 	const { cpu, runtime } = f;
 	const depth = cpu.getFrameDepth();
-	const describe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('describe')!));
-	const label = cpu.stringPool.find('old_label')!;
+	const describe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('describe')!));
+	const label = f.guest.stringIndex.find('old_label')!;
 	const retained = cpu.getGlobalByKey(label);
 	function describeFirst() {
 		cpu.beginCompletionCall(describe, [valueInteger(1)]);
@@ -333,16 +333,16 @@ old_label = 'bygone'`);
 		return runtime.readCompletionValues()[0];
 	}
 	const before = describeFirst();
-	assert.equal(valuePayload(before), cpu.stringPool.find('amber'));
+	assert.equal(valuePayload(before), f.guest.stringIndex.find('amber'));
 	const previous = "'amber' end\n\treturn 'sapphire'\nend\nold_label = 'bygone'";
 	const offset = f.source.indexOf(previous);
 	assert.notEqual(offset, -1);
 	f.model.pushEditOperations([{ offset, deleteLength: previous.length,
 		text: "'sapphire' end\n\treturn 'amber'\nend\nold_label = nil" }]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
-	assert.equal(valuePayload(describeFirst()), cpu.stringPool.find('sapphire'));
+	assert.equal(valuePayload(describeFirst()), f.guest.stringIndex.find('sapphire'));
 	assert.equal(cpu.getGlobalByKey(label), retained, 'live state still refers to the removed literal');
-	assert.equal(valuePayload(retained), cpu.stringPool.find('bygone'));
+	assert.equal(valuePayload(retained), f.guest.stringIndex.find('bygone'));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
@@ -411,7 +411,7 @@ function forget_result() end`);
 	const gc = nativeHeapReference(cpu).gc;
 	const depth = cpu.getFrameDepth();
 	const call = (name: string) => {
-		cpu.beginCompletionCall(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!)));
+		cpu.beginCompletionCall(valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find(name)!)));
 		assert.equal(cpu.runUntilDepth(depth, 250_000), RunResult.Halted);
 		assert.equal(runtime.admitExternalCpuMutation(), true);
 		return runtime.readCompletionValues();
@@ -627,7 +627,7 @@ test('Hot Resume reserves backing for an initializer above an already-full calle
 	while (thread.frameSpaceFits(thread.stackTop + width)) cpu.beginCompletionCallInExecutionDomain(0, entry);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 	const beforeValues = thread.stackRegisters.capacity(), beforeFrames = thread.frameBackingBytes;
-	const key = cpu.stringPool.find('refreshed')!;
+	const key = f.guest.stringIndex.find('refreshed')!;
 	assert.equal(cpu.getGlobalByKey(key), valueNil(), 'pending initializers have not run');
 	const operation = f.service.resume('workbench');
 	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });

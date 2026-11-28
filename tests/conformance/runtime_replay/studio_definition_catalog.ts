@@ -9,6 +9,7 @@ import { RUNTIME_INSPECTION_CALLBACKS_SOURCE } from '../../helpers/runtime_inspe
 import { openRuntimeEffectLens } from './studio_actioneffect_runtime';
 import { openRuntimeStateMachineLens } from './studio_fsm_runtime';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Same unexecuted source lenses; the catalog must not use their rows as runtime candidates. */
 export async function openRegisteredDefinitionPicker(test: StudioFixture, kind: 'effect' | 'fsm',
@@ -24,18 +25,18 @@ export async function openRegisteredDefinitionPicker(test: StudioFixture, kind: 
 
 export async function testEmptyDefinitionCatalog(test: StudioFixture): Promise<void> {
 	for (const [kind, modulePath] of [['effect', 'cartlib/actioneffects/actioneffect_component'], ['fsm', 'cartlib/fsm/fsm_component']] as const) {
-		const before = test.cycles(), heap = test.runtime.machine.cpu.luaHeap.usedBytes();
+		const before = test.cycles(), heap = nativeHeapReference(test.runtime.machine.cpu).luaHeap.usedBytes();
 		const registry = readBehaviorDefinitions(test.ide.sources, test.guest, 0, modulePath);
 		check(registry.available && registry.items.length === 0, 'catalog: initialized empty registry is available before the first registration');
 		await openRegisteredDefinitionPicker(test, kind, '');
 		await test.press('Escape');
-		check(test.cycles() === before && test.runtime.machine.cpu.luaHeap.usedBytes() === heap, 'catalog: empty inspection neither registers nor allocates guest state');
+		check(test.cycles() === before && nativeHeapReference(test.runtime.machine.cpu).luaHeap.usedBytes() === heap, 'catalog: empty inspection neither registers nor allocates guest state');
 	}
 }
 
 export async function openRegisteredDefinition(test: StudioFixture, kind: 'effect' | 'fsm', id: string, stateId = id) {
 	const { guest, runtime, cycles, press } = test;
-	const time = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
+	const time = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRegisteredDefinitionPicker(test, kind);
 	const picker = test.ide.editor.editorParts.activePart.quickInput;
@@ -56,7 +57,7 @@ export async function openRegisteredDefinition(test: StudioFixture, kind: 'effec
 	const row = inspector.model.rows[0], measured = row.value;
 	for (let n = 0; n < 10; n += 1) await test.frame();
 	check(inspector.model.rows[0] === row && row.value === measured, 'catalog: rows and wrapping are retained on idle frames');
-	check(cycles() === time && runtime.machine.cpu.luaHeap.usedBytes() === heap && model.version === version
+	check(cycles() === time && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap && model.version === version
 		&& guest.global('inspection_fsm_callback_count') === callbacks, 'catalog: inspection does not execute setters, callbacks, time or source edits');
 	return inspector;
 }

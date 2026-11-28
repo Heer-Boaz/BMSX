@@ -2,6 +2,11 @@ import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_d
 
 // Locations in the linked BIOS's RAM, inspected by the differential fixtures.
 // They are firmware data, not CPU-visible ports or a console ABI.
+
+export const HEAP_STRING_METADATA_OFFSET = 0x300;
+export const HEAP_COLLECTION_TARGET_OFFSET = 0x340;
+export const HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0;
+export const HEAP_STRING_MARK_WORK_OFFSET = 0x3f4;
 export const FIRMWARE_IMAGE_BACKINGS_OFFSET = 0x250;
 export const FIRMWARE_IMAGE_BACKING_SIZE = 12;
 export const FIRMWARE_IMAGE_BACKING_BYTES_OFFSET = 4;

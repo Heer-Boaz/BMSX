@@ -3,6 +3,7 @@ import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Actual cart source stop -> conversation stack/scopes/values -> shared Terminal continuation. */
 export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
@@ -26,7 +27,7 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	check(ide.debugger.breakpoints.bindings.pcs[1].size !== 0, 'stack tools: breakpoint bound to installed code');
 	await submitAssistantText(test, 'Call active_definition_view in the real Lua Terminal, inspect its stopped stack, locals, upvalues, static addresses/types and self, then continue. Keep my source uninstalled.');
 	await until(() => ide.debugger.source.stop !== undefined && ide.luaEvaluation.active !== undefined, 'stack tools: actual cart method breakpoint');
-	const stoppedAt = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
+	const stoppedAt = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	const inspection = ide.inspection.open();
 	const stopped = inspection.readStack(0, 100);
 	const method = stopped.frames[0];
@@ -40,7 +41,7 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	const storage = staticValues.entries.find(entry => entry.key.display === 'cartlib_render_commands')!;
 	if (storage.value.kind !== 'address') throw new Error('Static storage must be a linked address, not a register or guessed number');
 	const staticAddress = storage.value.address;
-	check(cycles() === stoppedAt && runtime.machine.cpu.luaHeap.usedBytes() === heap, 'stack/scopes reads neither execute nor allocate guest state');
+	check(cycles() === stoppedAt && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap, 'stack/scopes reads neither execute nor allocate guest state');
 	await frame();
 	check(sourceInput.context.executionStopRow === null && model.version === version && model.dirty,
 		'dirty authored source cannot receive a fabricated installed-code stop highlight');

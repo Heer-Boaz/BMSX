@@ -24,9 +24,9 @@ probe = { map = map, count = #keys }
 function probe.clear() clear(map) end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const map = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('map')!));
-		const clear = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('clear')!), nativeHeapReference(cpu).gc);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const map = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('map')!));
+		const clear = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('clear')!), nativeHeapReference(cpu).gc);
 		const next = cpu.tables.nextStoredEntry;
 		let starts = 0, steps = 0;
 		// A destructive clear must advance one physical traversal. Restarting
@@ -38,8 +38,8 @@ function probe.clear() clear(map) end
 		});
 		runCompletionClosure(cpu, clear, []);
 		assert.equal(starts, 1);
-		assert.equal(steps, numberToHost(cpu.tables.getStringKey(probe, cpu.stringPool.find('count')!)) + 1);
-		assert.equal(valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('map')!)), map);
+		assert.equal(steps, numberToHost(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('count')!)) + 1);
+		assert.equal(valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('map')!)), map);
 		cpu.tables.forEachStoredEntry(map, () => assert.fail('cleared map retained a mapping'));
 	});
 
@@ -65,15 +65,15 @@ end
 function probe.clear() clear(map) end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const seed = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('seed')!), nativeHeapReference(cpu).gc);
-		const clear = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('clear')!), nativeHeapReference(cpu).gc);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const seed = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('seed')!), nativeHeapReference(cpu).gc);
+		const clear = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('clear')!), nativeHeapReference(cpu).gc);
 		let warmed = 0;
 		for (let cycle = 0; cycle < 3; cycle++) {
 			runCompletionClosure(cpu, seed, []);
 			runCompletionClosure(cpu, clear, []);
 			const heap = collectReferenceHeapBytes(cpu) - logicalThreadBytes(cpu);
-			const weak = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+			const weak = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('weak')!));
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.tables.getInteger(weak, index), valueNil());
 			if (cycle === 0) warmed = heap;
 			else assert.equal(heap, warmed, 'historical keys must not grow retained clear storage');
@@ -98,7 +98,7 @@ kernel = function(count)
 end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+		const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 128);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

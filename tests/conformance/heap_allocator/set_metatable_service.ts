@@ -9,7 +9,6 @@ import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend } from '../../../machine/
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { asStringId, valueBool, valueBuiltinFunction, valueInteger, valuePayload, ValueTag, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -26,7 +25,7 @@ import { runCompletionClosure, runGuestToHalt } from '../../helpers/cpu_test_har
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_CHANGED_HEAD, GcPhase, asClosure } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
@@ -70,7 +69,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 		const addr = (name: string) => valuePayload(global(name));
 		const normal = asClosure(global('normal_call'), nativeHeapReference(cpu).gc), invalid = asClosure(global('invalid_call'), nativeHeapReference(cpu).gc), clear = asClosure(global('clear_call'), nativeHeapReference(cpu).gc);
 		const operation = global('setmetatable'), receiver = global('receiver'), replacement = global('replacement');
@@ -83,9 +82,9 @@ try {
 		runCompletionClosure(cpu, invalid, warm, 1024);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i) runCompletionClosure(cpu, normal, warm, 1024);
 
-		const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const changed = control + GC_CHANGED_HEAD;
-		const stringMarkWork = cpu.heapAllocator.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
+		const stringMarkWork = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
 		const priorGray = (addr('prior') & RAM_RECORD_WORD_MASK) >>> GC_RECORD_SHIFT;
 		const targetGray = (target & RAM_RECORD_WORD_MASK) >>> GC_RECORD_SHIFT;
 		const color = target + GC_COLOR_OFFSET, link = target + GC_RECORD_LINK, metatable = target + TableHeader.Metatable;
@@ -111,7 +110,7 @@ try {
 		const grant = (cycles = 1) => {
 			const result = run(cycles);
 			observe(`J ${cycles} 1`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.fixedInterruptActive(),
-				cpu.heapAllocator.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
+				nativeHeapReference(cpu).heapAllocator.occupiedBytes(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 			return result;
 		};
 		const completion = () => {

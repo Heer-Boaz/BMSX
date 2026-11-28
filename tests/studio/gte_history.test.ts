@@ -72,7 +72,7 @@ test('retained observation leases, ring reuse, replay and install have separate 
 	assert.equal(history.observing, true);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const pinned = history.snapshot(0), reused = new GteCommandSnapshot();
-	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [valueInteger(2)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	assert.equal(history.count, 2);
@@ -127,7 +127,7 @@ test('detached GTE evidence uses physical checkpoint provenance after ring reuse
 	physical.start({ checkpointCapacity: 2, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
 	physical.captureCheckpoint();
 	const start = runtime.machine.scheduler.nowCycles;
-	let issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc);
+	let issue = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(issue, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const pinned = history.snapshot(0), installedImage = pinned.image;
@@ -152,7 +152,7 @@ test('detached GTE evidence uses physical checkpoint provenance after ring reuse
 	physical.captureCheckpoint();
 	assert.equal(history.canSeek(pinned), false, 'the discarded continuation is no longer physically reachable');
 
-	issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc);
+	issue = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(issue, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const replacement = history.snapshot(endSequence);

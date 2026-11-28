@@ -23,10 +23,10 @@ end
 ${source}
 return first_failed_assertion`;
 	const { cpu, images } = createCartlibProgramHarness(source, { optLevel, modules: WORLD_CPU_MODULES });
-	const initialHeap = cpu.luaHeap.usedBytes();
+	const initialHeap = nativeHeapReference(cpu).luaHeap.usedBytes();
 	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)], 'all guest spatial contract assertions must pass');
-	const allocated = cpu.luaHeap.usedBytes() - initialHeap;
+	const allocated = nativeHeapReference(cpu).luaHeap.usedBytes() - initialHeap;
 	const retained = collectReferenceHeapBytes(cpu) - initialHeap;
 	return { cpu, codeBytes: images.cartImage.textBytes.byteLength, allocated, retained };
 }
@@ -557,10 +557,10 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('run')!), nativeHeapReference(cpu).gc);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('run')!), nativeHeapReference(cpu).gc);
 	const measured = measureWarmKernel(cpu, run, 2048);
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	t.diagnostic(JSON.stringify({ ...measured, codeBytes, allocated, retained }));
 });
@@ -586,10 +586,10 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const read = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('read')!), nativeHeapReference(cpu).gc);
-	const shallow = cpu.tables.getStringKey(probe, cpu.stringPool.find('shallow')!);
-	const deep = cpu.tables.getStringKey(probe, cpu.stringPool.find('deep')!);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const read = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('read')!), nativeHeapReference(cpu).gc);
+	const shallow = cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('shallow')!);
+	const deep = cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('deep')!);
 	runCompletionClosure(cpu, read, [shallow, valueInteger(32)]);
 	runCompletionClosure(cpu, read, [deep, valueInteger(32)]);
 	const shallowCycles = runCompletionClosure(cpu, read, [shallow, valueInteger(2048)]);
@@ -648,11 +648,11 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 	for (const lane of ['root', 'basis'] as const) {
-		const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`run_${lane}`)!), nativeHeapReference(cpu).gc);
+		const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(`run_${lane}`)!), nativeHeapReference(cpu).gc);
 		const measured = measureWarmKernel(cpu, run, 2048);
-		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`check_${lane}`)!), nativeHeapReference(cpu).gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(`check_${lane}`)!), nativeHeapReference(cpu).gc), []);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 		t.diagnostic(JSON.stringify({ lane, ...measured, codeBytes, allocated, retained }));
 	}

@@ -108,6 +108,7 @@ import {
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 const GTE_SF = 1 << 19;
 
@@ -367,7 +368,7 @@ test('GX-GTE observation preserves guest CPU state, heap and cycles and exposes 
 	assert.equal(positions[0].lastPc, expectedPc + INSTRUCTION_BYTES);
 	assert.equal(positions[0].domain, -1);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
-	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+	assert.equal(nativeHeapReference(observed.cpu).luaHeap.usedBytes(), nativeHeapReference(baseline.cpu).luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
 	assert.deepEqual(observed.gte.captureState(), baseline.gte.captureState());
 });
@@ -707,7 +708,7 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 	}
 	assert.deepEqual(events, [['accepted', firstIssue, firstDeadline], ['published', firstDeadline, firstDeadline], ['accepted', firstDeadline, secondDeadline], ['published', secondDeadline, secondDeadline]]);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
-	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+	assert.equal(nativeHeapReference(observed.cpu).luaHeap.usedBytes(), nativeHeapReference(baseline.cpu).luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
 	assert.deepEqual(observed.gte.captureState(), baseline.gte.captureState());
 	observed.gte.setPlusObserver(null);

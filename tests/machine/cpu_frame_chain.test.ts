@@ -159,7 +159,7 @@ test('second-lane physical failure does not publish either replacement or charge
 	frame.registers.setInteger(0, 73); frame.top = 1;
 	nativeHeapReference(cpu).gc.collect();
 	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
-	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
+	const before = fields.map(read), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const newValues = 128, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
 	const frameBytes = 2 * before[3] * FRAME_CONTROL_BYTES;
 	const spare = arena.allocate(frameBytes, true);
@@ -176,7 +176,7 @@ test('second-lane physical failure does not publish either replacement or charge
 	assert.throws(() => reserveThreadFrameReference(cpu, thread, newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.deepEqual(fields.map(read), before);
 	assert.equal(frame.registers.get(0), valueInteger(73));
-	assert.equal(cpu.luaHeap.usedBytes(), used);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 	assert.equal(arena.occupiedBytes(), occupied, 'no destination survives the failed owner allocation');
 });
 
@@ -373,19 +373,19 @@ return pcall(target)
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
 		const live = nativeHeapReference(cpu).stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
-		const trackedBytes = cpu.luaHeap.usedBytes();
+		const trackedBytes = nativeHeapReference(cpu).luaHeap.usedBytes();
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + 6);
 		assert.ok(nativeHeapReference(cpu).gc.active(), 'stack growth triggers an allocation assist');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
-		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
+		assert.equal(nativeHeapReference(cpu).stringPool.find('caller-only-across-admission'), live);
 		prepared.registers.set(7, valueString(nativeHeapReference(cpu).stringPool.intern('retired-frame-only')));
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, prepared);
 		assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
 		nativeHeapReference(cpu).gc.collect();
-		assert.equal(cpu.stringPool.find('retired-frame-only'), undefined, 'unused retained frames and their old windows are not roots');
-		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
+		assert.equal(nativeHeapReference(cpu).stringPool.find('retired-frame-only'), undefined, 'unused retained frames and their old windows are not roots');
+		assert.equal(nativeHeapReference(cpu).stringPool.find('caller-only-across-admission'), live);
 	});
 
 	test(`return growth keeps the callee rooted until results have moved (${backend})`, () => {
@@ -396,11 +396,11 @@ return pcall(target)
 		assert.equal(thread.frameDepth, 2);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
 		const result = nativeHeapReference(cpu).stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
-		const trackedBytes = cpu.luaHeap.usedBytes();
+		const trackedBytes = nativeHeapReference(cpu).luaHeap.usedBytes();
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.ok(nativeHeapReference(cpu).gc.active(), 'caller window growth triggers an allocation assist');
-		assert.equal(cpu.stringPool.find('returning-frame-only'), result);
+		assert.equal(nativeHeapReference(cpu).stringPool.find('returning-frame-only'), result);
 		assert.equal(caller.registers.getStringId(0), result); assert.equal(caller.stackCapacity, 64); assert.equal(caller.top, 62);
 		for (let index = 1; index < 62; ++index) assert.equal(caller.registers.getTag(index), ValueTag.Nil);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, callee);

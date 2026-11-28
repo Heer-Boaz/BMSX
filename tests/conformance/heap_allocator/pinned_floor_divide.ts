@@ -50,7 +50,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 		runGuestToHalt(cpu, 65_536);
-		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 		// Allowance owner is reached during Record, Table and Thread backing
 		// collector assists. These are actual positive work/clock units.
 		const args = [211, 517];
@@ -62,7 +62,7 @@ try {
 			const result = scheduler.runCpuSlice(0, n, undefined, CpuRunKind.Direct);
 			const used = n - cpu.instructionBudgetRemaining;
 
-			return { used, row: `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}` };
+			return { used, row: `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}` };
 		}
 		// Save-state import recreates native image caches. Warm actual
 		// invocations in the same installed System image without restoring.

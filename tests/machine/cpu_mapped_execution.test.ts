@@ -260,7 +260,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 	assert.equal(instantiate(4), retained, 'retiring the moved entry leaves the remaining singleton reusable');
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
-	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
+	const heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()];
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(heap[0] + 16);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, RAM_FUNCTION_ADDRESS);
 	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');

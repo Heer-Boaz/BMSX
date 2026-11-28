@@ -14,7 +14,7 @@ export function writeBlackClosedValueReference(cpu: CPU, cell: number, tag: Valu
 		const work = stringPool.takeMarkWork();
 		// MarkAgain is an active epoch, so this credits only the current-work word.
 		if (work !== 0) {
-			const offset = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK - 4;
+			const offset = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK - 4;
 			memory.writeRamRecordWord(offset, gc.epochWork() + work);
 		}
 	} else {

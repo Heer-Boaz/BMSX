@@ -11,6 +11,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+import { StockStringIndex } from '../../toolchain/ts/firmware/stock_string_index';
 import { observedRecordLifetime, retireObservedRecordLifetimes } from './record_lifetimes';
 
 export type SuspendedGuestValue = Value;
@@ -59,6 +60,7 @@ export class SuspendedGuestSession {
 	/** Borrowed Values are decoded only through this physical CPU's heap. */
 	public readonly cpu: CPU;
 	private readonly stringPool: StringPool;
+	public readonly stringIndex: StockStringIndex;
 	private readonly lookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
@@ -75,14 +77,15 @@ export class SuspendedGuestSession {
 	public constructor(private readonly runtime: Runtime) {
 		this.cpu = runtime.machine.cpu;
 		this.stringPool = this.cpu.stringPool;
+		this.stringIndex = new StockStringIndex(this.cpu.memory);
 	}
 
 	public global(name: string): SuspendedGuestValue {
-		return this.cpu.getGlobalByKey(this.stringPool.find(name)!);
+		return this.cpu.getGlobalByKey(this.stringIndex.find(name)!);
 	}
 
 	public systemGlobal(name: string): SuspendedGuestValue {
-		return this.cpu.getSystemGlobalByKey(this.stringPool.find(name)!);
+		return this.cpu.getSystemGlobalByKey(this.stringIndex.find(name)!);
 	}
 
 	/** Decode semantic String data, without invoking value presentation. */
@@ -218,7 +221,7 @@ export class SuspendedGuestSession {
 		value: SuspendedGuestValue,
 		name: string,
 	): SuspendedGuestValue {
-		const key = this.stringPool.find(name);
+		const key = this.stringIndex.find(name);
 		if (key == null) {
 			return valueNil();
 		}

@@ -72,8 +72,8 @@ try {
 			const atCopy = () => systemVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10020);
 			for (let i = 0; i < 200_000 && !atCopy(); ++i) run(23);
 			assert.ok(atCopy(), 'public Table copy entered the ordinary System vector');
-			const source = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_source')!));
-			const member = cpu.stringPool.find('__newindex')!;
+			const source = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('copy_source')!));
+			const member = nativeHeapReference(cpu).stringPool.find('__newindex')!;
 			const tables = nativeHeapReference(cpu).gc.tables;
 			assert.equal(tables.arrayCapacity(source), 1024);
 			assert.ok(!isNil(tables.getStringKey(source, member)));
@@ -86,7 +86,7 @@ try {
 			// Source is rooted and before the first allocation in the firmware.
 			// Occupy *physical* slots; the recovered case frees a real dead
 			// backing record, not a simulated failed status or logical quota.
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			if (scenario === 'weak_recovered') createReferenceTable(cpu, 1536, 0);
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}
@@ -101,7 +101,7 @@ try {
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
 
-				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 				return result;
 			}
 			for (let i = 0; i < 8192 && gc.phase() !== GcPhase.Strings; ++i) {
@@ -117,7 +117,7 @@ try {
 			const partialRam = history.capture(memory, baseline);
 			writeFileSync(partial, encodeRuntimeSaveState(checkpoint));
 			const prefix = commands.length;
-			const beforeCopy = cpu.luaHeap.usedBytes();
+			const beforeCopy = nativeHeapReference(cpu).luaHeap.usedBytes();
 			function finish() {
 				for (let i = 0; i < 8192 && inCopy(); ++i) grant(151);
 				assert.equal(inCopy(), false);
@@ -129,7 +129,7 @@ try {
 				assert.equal(asInteger(runtime.readCompletionValues()[0]), completion);
 				observe('C', completion);
 				if (scenario !== 'oom') {
-					const copy = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_result')!));
+					const copy = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('copy_result')!));
 					assert.ok(isNil(tables.getStringKey(copy, member)));
 					assert.equal(memory.readRamRecordByte(copy + TableHeader.NewIndexAbsent), 1, 'copy carries the proof from after recovery');
 					assert.equal(tables.hashSize(copy), tables.hashSize(source));
@@ -161,7 +161,7 @@ try {
 			check('ts-to-cpp', partial, ['X', ...tail], tailOutputs);
 			history.restore(memory, history.capture(memory, partialRam), partialRam);
 			applyRuntimeCheckpointState(runtime, checkpoint, RuntimeRestoreOrigin.HistorySeek);
-			assert.equal(cpu.luaHeap.usedBytes(), beforeCopy);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), beforeCopy);
 			commands.length = expected.length = 0;
 			finish();
 			assert.deepEqual(expected, tailOutputs);

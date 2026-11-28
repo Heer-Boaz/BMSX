@@ -7,12 +7,11 @@ import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/ca
 import { initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { bindOpen, close, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
@@ -49,7 +48,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = bootManagedTestSystem(linked), oracle = bootManagedTestSystem(linked).cpu;
 	runGuestToHalt(cpu, 1_000_000);
 	runGuestToHalt(oracle, 1_000_000);
-	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, output = management + GC_WORKSPACE_END - 4;
 	const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);

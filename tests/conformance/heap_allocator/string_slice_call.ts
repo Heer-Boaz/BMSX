@@ -64,7 +64,7 @@ try {
 			const { owner, depth, pc } = call;
 			const inSlice = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
 				&& memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) === owner;
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			if (outcome === 'oom') {
 				for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
 					while (arena.allocate(extent, true)) { /* exhaust this physical size class */ }
@@ -85,7 +85,7 @@ try {
 			function grant(cycles: number) {
 				const result = run(cycles);
 				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${
-					+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+					+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 				return result;
 			}
 			for (let i = 0; i < 8192 && (outcome === 'new' ? arena.occupiedBytes() === physicalBefore : gc.phase() === phaseBefore); ++i) {

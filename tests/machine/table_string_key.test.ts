@@ -195,11 +195,11 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = createReferenceTable(cpu, 0, 1), present = nativeHeapReference(cpu).stringPool.intern('full'), missing = nativeHeapReference(cpu).stringPool.intern('new');
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueInteger(73));
-	const storage = cpu.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
+	const storage = cpu.tables.hashAddress(table), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueNil());
 	assert.equal(nativeHeapReference(cpu).gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
 	assert.equal(cpu.tables.hashAddress(table), storage);
-	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
 	assert.equal(cpu.tables.getStringKey(table, missing), valueInteger(19));
 });
 

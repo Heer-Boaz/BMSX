@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -53,7 +54,7 @@ return park(blua32.float_from_bits(0x80000000), nil, blua32.float_from_bits(0xff
 	const frames = raw.slice(controlsAt(), controlsAt() + depth * FRAME_CONTROL_BYTES);
 	const modeMask = CPU_STATUS_INTERRUPT_ENABLE_CURRENT | CPU_STATUS_USER_MODE_CURRENT;
 	const mode = cpu.captureRuntimeState().statusWord & modeMask;
-	const retired = cpu.stringPool.find('retired')!;
+	const retired = nativeHeapReference(cpu).stringPool.find('retired')!;
 	assert.equal(cpu.getGlobalByKey(retired), valueNil());
 	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], expected: string[] = [];

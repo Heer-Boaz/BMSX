@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { extractErrorMessage } from '../../../../ide/common/errors';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 import * as value from '../../../../machine/ts/machine/cpu/value';
+import { StockStringIndex } from '../../../../toolchain/ts/firmware/stock_string_index';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { InputEventWriter, InputEvt } from '../../../../hosts/common/input/contracts';
 import type { HostControlInputEvent } from '../../../../hosts/common/control/protocol';
@@ -108,13 +109,14 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 
 	log('starting');
 	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-	const factory = new Function('t', 'assert', 'value', `"use strict"; return (async () => {\n${source}\n})();`) as (
+	const factory = new Function('t', 'assert', 'value', 'StockStringIndex', `"use strict"; return (async () => {\n${source}\n})();`) as (
 		ctx: typeof t,
 		assertFn: typeof assert,
 		valueApi: typeof value,
+		stringIndex: typeof StockStringIndex,
 	) => Promise<void>;
 	try {
-		await factory(t, assert, value);
+		await factory(t, assert, value, StockStringIndex);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
 		throw error;

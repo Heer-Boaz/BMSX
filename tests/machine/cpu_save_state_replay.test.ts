@@ -60,7 +60,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	cpu.readCompletionValues(values);
 	assert.equal(values.length, 1);
 	if (name === 'constant') assert.deepEqual(values, [valueInteger(1)]);
-	else assert.ok(values[0] === cpu.tables.getInteger(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
+	else assert.ok(values[0] === cpu.tables.getInteger(valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak')!)), 1));
 });
 
 test('a closure completion value refers to separate physical closure and capture records', () => {
@@ -117,10 +117,10 @@ test('checkpoint capture preserves the authoritative global registers without mu
 		globalNames: ['answer'],
 	}));
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const key = cpu.stringPool.find('answer')!;
-	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
+	const key = nativeHeapReference(cpu).stringPool.find('answer')!;
+	const heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()];
 	const snapshot = cpu.captureRuntimeState();
-	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()], heap);
+	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()], heap);
 	assert.equal(cpu.getGlobalByKey(key), valueInteger(1));
 	cpu.restoreRuntimeState(snapshot);
 	assert.deepEqual(cpu.captureRuntimeState(), snapshot);

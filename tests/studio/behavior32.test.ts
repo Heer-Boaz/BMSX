@@ -82,7 +82,7 @@ for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib
 	assert.equal(readStateMachineInstances(sources, guest, 0).available, false);
 	assert.equal(readBehaviorDefinitions(sources, guest, 0, 'cartlib/actioneffects/actioneffect_component').available, false);
 	runGuestToHalt(cpu, 10_000_000);
-	const before = [cpu.luaHeap.usedBytes(), runtime.machine.scheduler.currentNowCycles(), cpu.instructionBudgetRemaining];
+	const before = [nativeHeapReference(cpu).luaHeap.usedBytes(), runtime.machine.scheduler.currentNowCycles(), cpu.instructionBudgetRemaining];
 	assert.equal(readStateMachineInstances(sources, guest, 1).available, false);
 	assert.equal(readBehaviorDefinitions(sources, guest, 1, 'cartlib/actioneffects/actioneffect_component').available, false);
 	const instances = readStateMachineInstances(sources, guest, 0);
@@ -141,7 +141,7 @@ for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib
 	assert.equal(catalog.items[0].definition, catalog.items[1].definition, 'published aliases remain two entries for one actual definition');
 	assert.ok(properties.some(item => item.source?.resource.path === 'entry.lua'), 'actual retained callback resolves to its compiler source');
 	assert.equal(asInteger(guest.global('callbacks')), 0);
-	assert.deepEqual([cpu.luaHeap.usedBytes(), runtime.machine.scheduler.currentNowCycles(), cpu.instructionBudgetRemaining], before,
+	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), runtime.machine.scheduler.currentNowCycles(), cpu.instructionBudgetRemaining], before,
 		'inspection neither allocates guest storage nor executes the guest');
 
 	guest.invalidate();

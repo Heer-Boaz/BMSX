@@ -92,8 +92,8 @@ return failed
 	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const profile = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('steady')), nativeHeapReference(cpu).gc), 128);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const profile = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('steady')), nativeHeapReference(cpu).gc), 128);
 	assert.equal(profile.reservations, 0, 'warm clipping/order/residency paths allocate no guest heap');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(4)]);
 	t.diagnostic(JSON.stringify(profile));

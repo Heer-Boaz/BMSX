@@ -27,7 +27,7 @@ export function varargWindowFixture(level: 0 | 3) {
 	runGuestToHalt(cpu, 1_000_000);
 	const [value] = runtime.readCompletionValues();
 	const closure = valuePayload(value);
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		return { result, used: cycles - cpu.instructionBudgetRemaining };

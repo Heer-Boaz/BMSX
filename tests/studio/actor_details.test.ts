@@ -158,7 +158,7 @@ test('actor details reads only dirty suspensions and retains warmed property row
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
 	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(reads, 0);
-	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	for (let frame = 0; frame < 1000; frame++) {
 		f.invalidate(); f.update();
 		assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
@@ -166,7 +166,7 @@ test('actor details reads only dirty suspensions and retains warmed property row
 	assert.equal(formatted, 0);
 	assert.ok(reads > 1000);
 	assert.ok(document.every((row, index) => row === rows[index]));
-	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	const previous = document.map(row => row.value);
 	f.execute('change_data');
 	assert.strictEqual(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), document);
@@ -249,7 +249,7 @@ test('locked subject and cross-actor watches share resolved trees and warmed che
 	assert.equal(enumerations.mock.callCount(), 1, 'the locked subject tree is resolved once and reused by its pins');
 	const subject = f.details.subject, title = f.details.title, items = f.details.items.slice();
 	const reads = t.mock.method(f.guest, 'readStringMember'), formatting = t.mock.method(f.guest, 'formatStoredEntries');
-	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	for (let frame = 0; frame < 1000; frame++) {
 		f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, undefined, f.tree);
 		assert.equal(f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false), undefined);
@@ -257,7 +257,7 @@ test('locked subject and cross-actor watches share resolved trees and warmed che
 	assert.equal(f.details.subject, subject); assert.equal(f.details.title, title);
 	assert.ok(items.every((item, index) => f.details.items[index] === item));
 	assert.equal(enumerations.mock.callCount(), 1); assert.equal(reads.mock.callCount(), 0); assert.equal(formatting.mock.callCount(), 0);
-	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 test('explicit selection changes refresh details without execution and mutable members remain authoritative', t => {
@@ -430,7 +430,7 @@ test('watch readback is idle while dirty but unrefreshed, clean reads do no work
 	const read = f.guest.readStringMember.bind(f.guest), format = f.guest.formatStoredEntries.bind(f.guest);
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formats++; return format(value); });
-	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(reads, 0); assert.equal(formats, 0);
 	f.invalidate();
@@ -441,7 +441,7 @@ test('watch readback is idle while dirty but unrefreshed, clean reads do no work
 		f.invalidate();
 	}
 	assert.ok(reads > 0); assert.equal(formats, 0);
-	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 test('cross-actor pins keep their actor membership and reconcile one tree per watched actor, not per pin', t => {
@@ -728,13 +728,13 @@ test('paused Details disclosures refresh without execution and hidden storage re
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	assert.equal(visits.mock.calls.filter(call => call.arguments[0] === dataTable).length, 0);
 	const data = document.find(item => item.identity?.field === 'data')!;
-	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	data.expansion!.setExpanded(true);
 	assert.strictEqual(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.equal(document.find(item => item.label === 'answer')!.value, '42');
 	assert.equal(visits.mock.calls.filter(call => call.arguments[0] === dataTable).length, 1);
 	for (let n = 0; n < 1000; n++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
-	assert.equal(visits.mock.calls.filter(call => call.arguments[0] === dataTable).length, 1); assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.equal(visits.mock.calls.filter(call => call.arguments[0] === dataTable).length, 1); assert.deepEqual([nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	assert.equal(document.find(item => item.label === 'answer')!.watchIdentity, undefined, 'nested stored entries do not invent a logical pin target');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
@@ -794,7 +794,7 @@ test('internal component storage visibility cannot suppress an explicitly retain
 	const f = fixture(); afterTest(t, () => { f.details.dispose(); f.tree.dispose(); });
 	const node = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
-	const key = valueString(f.cpu.stringPool.find('_owner_component_index')!), identity = f.guest.identity(key);
+	const key = valueString(nativeHeapReference(f.cpu).stringPool.find('_owner_component_index')!), identity = f.guest.identity(key);
 	const properties = new BehaviorRuntimeProperties(f.sources, f.guest,
 		(section, _field, entry) => section === 'member' && entry !== undefined && f.guest.matchesIdentity(entry, identity));
 	properties.begin();

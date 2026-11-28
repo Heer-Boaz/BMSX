@@ -15,6 +15,7 @@ import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builde
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 const resetPath = 'kernel/test-reset', irqPath = 'kernel/test-irq', exceptionPath = 'kernel/test-exception';
 const managedSource = 'module<entry>\nreturn 99';
@@ -69,8 +70,8 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	const assertRaw = () => {
 		assert.equal(cpu.activeThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 	};
 	assertRaw();
 	assert.equal(cpu.readFramePc(0), reset.codeAddress);

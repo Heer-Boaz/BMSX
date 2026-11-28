@@ -231,12 +231,12 @@ end
 `, { optLevel, modules });
 	cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
 	runGuestToHalt(cpu, 25_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const repeat = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), nativeHeapReference(cpu).gc);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const repeat = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('repeat_start')!), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, repeat, []);
 	const before = allocatedObjectRecords(cpu).length;
-	const bytes = cpu.luaHeap.usedBytes();
+	const bytes = nativeHeapReference(cpu).luaHeap.usedBytes();
 	runCompletionClosure(cpu, repeat, []);
 	assert.equal(allocatedObjectRecords(cpu).length, before, 'repeated start allocated guest objects');
-	assert.equal(cpu.luaHeap.usedBytes(), bytes, 'repeated start allocated transient guest storage');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bytes, 'repeated start allocated transient guest storage');
 });

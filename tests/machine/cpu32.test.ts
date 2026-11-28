@@ -163,7 +163,7 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	const rom=new Uint8Array(execFileSync(runner!,['--rom-constants']));
 	const memory=new Memory({systemRom:rom,cartridgeSlots:cartridgeSlots()},PSX_MACHINE_SPEC.ramBytes);
 	const cpu=new CPU(memory,new IrqController(memory),new ExecutionAddressSpace(memory),backend);cpu.reset();
-	const saved=cpu.stringPool.find('saved')!, system=cpu.stringPool.find('system')!, graphKey=cpu.stringPool.find('graph')!;
+	const saved=nativeHeapReference(cpu).stringPool.find('saved')!, system=nativeHeapReference(cpu).stringPool.find('system')!, graphKey=nativeHeapReference(cpu).stringPool.find('graph')!;
 	setReferenceGlobal(cpu, saved,v.valueFloatBits(0xffa54321));setReferenceSystemGlobal(cpu, system,v.valueInteger(-2147483648));
 	const table=createReferenceTable(cpu), child=createReferenceTable(cpu);const self=nativeHeapReference(cpu).stringPool.intern('self'),childKey=nativeHeapReference(cpu).stringPool.intern('child');
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, self,v.valueTable(table));nativeHeapReference(cpu).gc.tables.setStringKey(table, childKey,v.valueTable(child));

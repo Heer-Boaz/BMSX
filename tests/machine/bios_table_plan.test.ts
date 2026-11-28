@@ -85,13 +85,13 @@ function fixture(optLevel: 0 | 3) {
 		const { tables } = nativeHeapReference(oracle).gc;
 		tables['planRehash'](record, key, extra, counted);
 		const { array, hash, keepHash } = tables['resizePlan'];
-		const sizes = oracle.heapAllocator.occupiedBytes(), charged = oracle.luaHeap.usedBytes();
+		const sizes = nativeHeapReference(oracle).heapAllocator.occupiedBytes(), charged = nativeHeapReference(oracle).luaHeap.usedBytes();
 		const arrayBase = tables.arrayAddress(record), hashBase = tables.hashAddress(record);
 		begin(0, [record, valueTag(key), valuePayload(key), extra, +(counted !== undefined), scratch]);
 		assert.equal(finish(), 1);
 		assert.deepEqual(out(3), [array, hash, +keepHash]);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), sizes);
-		assert.equal(cpu.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), sizes);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 		assert.equal(cpu.tables.arrayAddress(record), arrayBase);
 		assert.equal(cpu.tables.hashAddress(record), hashBase);
 		return out(3);

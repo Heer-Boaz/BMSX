@@ -11,7 +11,6 @@ import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure } from '../../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { bindOpen, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload } from '../../../machine/ts/machine/cpu/value';
@@ -27,7 +26,7 @@ import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { allocateThreadRecordReference } from '../../helpers/thread_allocation_reference';
 import { GC_THREAD_TRACE_OPEN, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const TRACE = 'kernel/gc_thread_trace', PROBE = 'test/native_gc_thread_trace';
 const entrySource = `local trace<const> = require('${PROBE}')
@@ -61,16 +60,16 @@ try {
 		runtime.boot();
 		const { cpu, memory } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		const management = cpu.heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
 		const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-		const arena = cpu.heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
+		const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
 		memory.writeRamRecordWord(control, GcPhase.Mark | 0x100);
 		const thread = allocateThreadRecordReference(cpu, 0), cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 		initializeCell(memory, cell, nativeHeapReference(cpu).gc.white());
 		nativeHeapReference(cpu).gc.publishObject(cell);
 		bindOpen(memory, cell, thread, 0, 0);
 		const closure = allocateClosureRecordReference(cpu, 0);
-		const prototype = cpu.getGlobalByKey(cpu.stringPool.find('collector_probe')!);
+		const prototype = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('collector_probe')!);
 		initializeClosure(memory, closure, cpu.captureClosureBinding(valuePayload(prototype)), false, nativeHeapReference(cpu).gc.white(), 0);
 		nativeHeapReference(cpu).gc.publishObject(closure);
 		memory.writeRamRecordWord(thread + ThreadField.FrameDepth, 1);

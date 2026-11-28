@@ -224,8 +224,8 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.tables.get(receiver, key), value);
 		assert.equal(f.tables.hashAddress(receiver), backing, 'General takes the old home, before any replan');
 		assert.equal(f.tables.hashAddress(receiver), reference.tables.hashAddress(receiver));
-		assert.equal(f.arena.occupiedBytes(), reference.heapAllocator.occupiedBytes());
-		assert.equal(f.heap.usedBytes(), reference.luaHeap.usedBytes());
+		assert.equal(f.arena.occupiedBytes(), nativeHeapReference(reference).heapAllocator.occupiedBytes());
+		assert.equal(f.heap.usedBytes(), nativeHeapReference(reference).luaHeap.usedBytes());
 		const expected = captureCpuCheckpoint(f.cpu).memory.ram;
 		restoreCpuCheckpoint(f.cpu, checkpoint);
 		f.finish();
@@ -256,7 +256,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.tables.hashSize(receiver), 2, 'the previously refused extra=9 is not restored');
 		assert.equal(f.tables.get(receiver, keep), valueInteger(5));
 		assert.equal(f.tables.get(receiver, key), valueInteger(61));
-		assert.equal(f.arena.occupiedBytes(), reference.heapAllocator.occupiedBytes());
+		assert.equal(f.arena.occupiedBytes(), nativeHeapReference(reference).heapAllocator.occupiedBytes());
 	});
 
 	test(`terminal Scheduled BIOS refusal leaves the original Table unchanged at O${opt}`, () => {

@@ -180,7 +180,7 @@ test.describe('Actor runtime tools', () => {
 		input.detailsSelection = selectedProperty; input.detailsScroll = 37;
 		// This unattached history input has requested intent, not an interactive sash.
 		input.split.requestedSize = 300;
-		const saved = controller.captureSelection(input), heap = f.runtime.machine.cpu.luaHeap.usedBytes();
+		const saved = controller.captureSelection(input), heap = nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes();
 		input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true; controller.refresh(input);
 		const second = controller.captureSelection(input);
 		assert.equal(saved.matches(second), false, 'equal displayed actor IDs do not substitute for physical typed membership');
@@ -191,7 +191,7 @@ test.describe('Actor runtime tools', () => {
 		assert.equal(controller.selected(input)!.kind, 'state');
 		assert.equal(input.detailsWindow.open, true); assert.deepEqual(input.detailsSelection, selectedProperty); assert.equal(input.detailsScroll, 37);
 		assert.equal(input.split.requestedSize, 300);
-		assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
+		assert.equal(nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), heap);
 		assert.equal(input.interaction.running, false);
 		saved.dispose(); second.dispose();
 	});
@@ -216,7 +216,7 @@ test.describe('Actor runtime tools', () => {
 		arrange(narrow); assert.equal(input.layout.previewVisible && input.layout.split === input.rowSplit, true);
 		input.rowSplit.resize(0.45); layoutActorLab(input);
 		const saved = controller.captureSelection(input); resources.add(saved);
-		const cycles = f.runtime.machine.scheduler.nowCycles, heap = f.runtime.machine.cpu.luaHeap.usedBytes();
+		const cycles = f.runtime.machine.scheduler.nowCycles, heap = nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes();
 		arrange(900); input.split.moveTo(bounds.left + 500);
 		arrange(narrow); input.rowSplit.resize(0.6);
 		arrange(narrow, measured.previewMinimumHeight);
@@ -238,7 +238,7 @@ test.describe('Actor runtime tools', () => {
 		arrange(900);
 		assert.equal(input.layout.previewVisible && input.layout.split === input.split, true);
 		assert.equal(input.split.requestedSize, 300);
-		assert.equal(f.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
+		assert.equal(f.runtime.machine.scheduler.nowCycles, cycles); assert.equal(nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), heap);
 	});
 
 	test('Actor Lab pin action enablement uses retained membership without guest reads or identity capture churn', t => {
@@ -253,7 +253,7 @@ test.describe('Actor runtime tools', () => {
 		const displayOnly = { ...unpinned, watchIdentity: undefined };
 		const read = t.mock.method(f.guest, 'readStringMember'), globals = t.mock.method(f.guest, 'global'), systemGlobals = t.mock.method(f.guest, 'systemGlobal');
 		const entries = t.mock.method(f.guest, 'visitTableEntries'), identities = t.mock.method(f.guest, 'identity');
-		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 		for (let frame = 0; frame < 1000; frame++) {
 			assert.equal(controller.canPinProperty(input, displayOnly), false);
 			assert.equal(controller.canUnpinProperty(input, displayOnly), false);
@@ -267,7 +267,7 @@ test.describe('Actor runtime tools', () => {
 		}
 		assert.equal(read.mock.callCount(), 0); assert.equal(globals.mock.callCount(), 0); assert.equal(systemGlobals.mock.callCount(), 0);
 		assert.equal(entries.mock.callCount(), 0); assert.equal(identities.mock.callCount(), 0);
-		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 	});
 
 	test('Actor Lab capture admission publishes guest invalidation without an attached pane', t => {
@@ -290,7 +290,7 @@ test.describe('Actor runtime tools', () => {
 		const controller = f.controller;
 		const input = controller.resolveInput(); resources.add(input);
 		const choices = readActorChoices(f.sources, f.guest, -1);
-		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 		input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 		input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.name === 'idle'); input.rememberSelection();
 		controller.refreshDetails(input);
@@ -317,7 +317,7 @@ test.describe('Actor runtime tools', () => {
 		assert.equal(controller.canPinProperty(input, revealed), false); assert.equal(controller.canUnpinProperty(input, revealed), true);
 		controller.unpinProperty(input, revealed); controller.refreshDetails(input);
 		assert.equal(input.details!.watches.pins.length, 0); assert.equal(controller.canPinProperty(input, revealed), true);
-		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 	});
 
 	test('locked Details property commands target its subject rather than a newly selected actor', t => {
@@ -712,7 +712,7 @@ return world`));
 		const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
 		const target = captureActorTarget(-1, f.guest.identityScalar(runtimeWorld(f.sources, f.guest, -1)!, ValueTag.Table), input.runtime.roots, machine);
 		const graph = input.stateGraph = new ActorStateGraph(target, font);
-		const cpu = f.runtime.machine.cpu, heap = cpu.luaHeap.usedBytes(), alive = captureCpuCheckpoint(cpu);
+		const cpu = f.runtime.machine.cpu, heap = nativeHeapReference(cpu).luaHeap.usedBytes(), alive = captureCpuCheckpoint(cpu);
 		graph.refresh(input.runtime.roots); graph.layout(font);
 		const model = graph.viewport.model, nodes = model.nodes, active = nodes.map(node => node.active);
 		assert.equal(nodes.length, 3); assert.equal(model.edges.length, 2);
@@ -733,7 +733,7 @@ return world`));
 		input.invalidate('history-restored'); restoreCpuCheckpoint(cpu, alive); projection.update(); graph.layout(font);
 		assert.deepEqual(nodes.map(node => node.active), active); assert.ok(graph.viewport.model === model);
 		assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll);
-		assert.equal(cpu.luaHeap.usedBytes(), heap, 'graph projection allocates no guest values');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap, 'graph projection allocates no guest values');
 		graph.viewport.selection = model.edges[0];
 		graph.layout(new Font({ variant: 'msx' }));
 		assert.equal(graph.viewport.selection!.kind, 'edge');
@@ -835,7 +835,7 @@ return world`));
 
 	test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
 		const f = fixture(t); resources.add(f.stop);
-		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 		const first = f.actors.list(0, 1), second = f.actors.list(1, 1);
 		assert.equal(first.status, 'available'); assert.equal(first.total, 2);
 		assert.equal(first.actors![0].id.kind, 'integer'); assert.equal(second.actors![0].id.kind, 'string');
@@ -855,7 +855,7 @@ return world`));
 		assert.equal(projection.update(), true);
 		assert.deepEqual(input.outline.rows.map(row => row.element.node.kind), tree.nodes.map(node => node.kind));
 		assert.deepEqual(input.outline.rows.map(row => f.stop.values.describe(row.element.node.value).reference), tree.nodes.map(node => node.object.reference));
-		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 		input.dispose();
 	});
 
@@ -887,7 +887,7 @@ return world`)); resources.add(f.stop);
 		const cpu = f.runtime.machine.cpu, guest = f.guest;
 		const candidates: Value[] = [valueNil(), valueBool(false), valueBool(true), valueInteger(1), valueFloat(1), valueString(nativeHeapReference(cpu).stringPool.intern('1')),
 			guest.global('probe'), guest.global('rename'), valueThread(cpu.activeThread.address), valueBuiltinFunction(BuiltinFunctionId.RawGet)];
-		const heap = cpu.luaHeap.usedBytes(), identities = candidates.map(value => guest.identity(value));
+		const heap = nativeHeapReference(cpu).luaHeap.usedBytes(), identities = candidates.map(value => guest.identity(value));
 		for (let i = 0; i < candidates.length; i++) for (let j = 0; j < candidates.length; j++) {
 			assert.equal(guest.matchesIdentity(candidates[i], identities[j]), i === j);
 		}
@@ -900,7 +900,7 @@ return world`)); resources.add(f.stop);
 		assert.ok(resolveActorPath(input.runtime.roots, target.path) === selected);
 		input.runtime.roots[0].children.reverse();
 		assert.ok(resolveActorPath(input.runtime.roots, target.path) === selected, 'membership is independent of sibling order');
-		assert.equal(cpu.luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
 		const before = captureCpuCheckpoint(cpu);
 		input.invalidate(); runCompletionClosure(cpu, asClosure(guest.global('rekey'), nativeHeapReference(cpu).gc), []); projection.update();
 		assert.ok(resolveActorPath(input.runtime.roots, target.path) === undefined, 'another typed key cannot retarget a retained request');
@@ -977,14 +977,14 @@ return world`)); resources.add(f.stop);
 		const f = fixture(t); resources.add(f.stop);
 		const actor = f.actors.list(0, 1).actors![0].reference, nodes = f.actors.tree(actor, 0, 100).nodes;
 		const root = nodes[0], state = nodes.find(node => node.kind === 'state')!;
-		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 		assert.equal(f.actors.operations(root.reference).actions[0].name, 'add_tag');
 		assert.equal(f.actors.operations(state.reference).actions[0].name, 'transition_to');
 		assert.equal(f.actors.invocation(root.reference, 'action', 'add_tag', "'inspected'").kind, 'action');
 		assert.throws(() => f.actors.invocation(root.reference, 'action', 'transition_to', ''), /not available/);
 		assert.throws(() => f.actors.invocation(root.reference, 'method', 'absent', ''), /not a stored/);
 		assert.throws(() => f.actors.invocation(root.reference, 'action', 'add_tag', 'os.exit()'));
-		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 		f.guest.invalidate();
 		assert.throws(() => f.actors.operations(root.reference), /expired/);
 		assert.throws(() => f.actors.invocation(root.reference, 'action', 'add_tag', "'inspected'"), /expired/);

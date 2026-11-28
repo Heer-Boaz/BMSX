@@ -9,12 +9,11 @@ import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure, setCaptureAddress } from '../../machine/ts/machine/cpu/closure';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GcTraceContextField, GC_TRACE_CONTEXT_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GcTraceContextField, GC_TRACE_CONTEXT_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
@@ -38,7 +37,7 @@ function fixture(optLevel: 0 | 3) {
 		runGuestToHalt(target, 10_000);
 		nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 	}
-	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const context = management + GC_TRACE_CONTEXT_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE;
@@ -196,7 +195,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const policy of [0, 1]) {
 			const { cpu, memory, control, word, byte, add, string, beginning, finish, frontier } = fixture(optLevel);
 			const table = add(target => createReferenceTable(target, 1, 0)), item = string('raw mode edge');
-			const array = cpu.tables.arrayAddress(table), epoch = memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET + 0xc) & 1;
+			const array = cpu.tables.arrayAddress(table), epoch = memory.readRamRecordByte(nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET + 0xc) & 1;
 			word(array, item);
 			byte(array + 4, ValueTag.String);
 			word(control + GC_TRACE_RECORD, table);

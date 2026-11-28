@@ -92,11 +92,11 @@ try {
 			// collector work from this exact MarkAgain boundary onward.
 			luaHeap.setCollectionTarget(luaHeap.capacity());
 			const weak = createReferenceTable(cpu, slots, 0), meta = createReferenceTable(cpu, 0, 1);
-			gc.tables.set(meta, valueString(cpu.stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
+			gc.tables.set(meta, valueString(nativeHeapReference(cpu).stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(1), valueTable(createReferenceTable(cpu)));
 			gc.tables.set(weak, valueInteger(slots), valueTable(createReferenceTable(cpu)));
-			setReferenceGlobal(cpu, cpu.stringPool.find('final_mark_weak_root')!, valueTable(weak));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('final_mark_weak_root')!, valueTable(weak));
 			if (irq) assert.notEqual(arena.allocate(arena.capacityBytes() >>> 1, true), 0);
 			if (gc.phase() === GcPhase.Pause) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 			for (let i = 0; i < 65536 && gc.phase() === GcPhase.Mark; ++i)
@@ -163,7 +163,7 @@ try {
 				assert.equal(asInteger(runtime.readCompletionValues()[0]), 73);
 				observe('C', '73');
 				if (allocation) {
-					const value = cpu.getGlobalByKey(cpu.stringPool.find('final_mark_result_root')!);
+					const value = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('final_mark_result_root')!);
 					assert.equal(valueTag(value), ValueTag.Table);
 					const record = valuePayload(value);
 					assert.equal(gc.sweepGarbage(record), false, 'the constructor result was marked before the mutator received it');

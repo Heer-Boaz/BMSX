@@ -140,10 +140,10 @@ end
 `);
 	test(`Overlap releases disposed actors, colliders and their stage after ${retire} retirement (O${optLevel})`, () => {
 		const cpu = rom.run(retirement, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('retire')!), nativeHeapReference(cpu).gc), []);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('retire')!), nativeHeapReference(cpu).gc), []);
 		nativeHeapReference(cpu).gc.collect();
-		const weak = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+		const weak = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('weak')!));
 		for (let index = 1; index <= 65; index += 1) {
 			assert.equal(cpu.tables.getInteger(weak, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);
 		}
@@ -163,7 +163,7 @@ end
 `);
 test(`Warm overlap history and scalar contacts allocate nothing while pairs enter and leave (O${optLevel})`, t => {
 	const cpu = rom.run(warmHistory, 20_000_000);
-	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu, kernel, 128, 50_000_000);
 	assert.equal(profile.reservations, 0);
 	assert.equal(profile.reservedBytes, 0);

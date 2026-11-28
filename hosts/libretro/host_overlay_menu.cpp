@@ -45,19 +45,19 @@ constexpr const char* kToggleValues[] = {"OFF", "ON"};
 constexpr const char* kDeviceQuantizeValues[] = {"OFF", "RGB565", "MSX10 3:4:3"};
 constexpr const char* kTitleText = "CORE OPTIONS";
 constexpr const char* kFpsPrefix = "HOST: ";
-constexpr i32 kUsageLabelWidth = 28;
+constexpr i32 kUsageLabelWidth = 44;
 constexpr i32 kUsageBarWidth = 54;
 constexpr i32 kUsageBarHeight = 5;
 constexpr i32 kUsageX = 8;
 constexpr i32 kUsageBarX = kUsageX + kUsageLabelWidth;
 constexpr i32 kUsageY = 8;
 constexpr f32 kUsageZ = 9000.0f;
-constexpr i32 kUsagePanelWidth = 112;
+constexpr i32 kUsagePanelWidth = kUsageLabelWidth + kUsageBarWidth + 30;
 constexpr i32 kUsagePanelHeight = 32;
 constexpr i32 kUsageRowHeight = 10;
 constexpr i32 kUsageLowPercentTenthsLimit = 100;
 constexpr i32 kUsagePercentTenthsFlag = 1000000;
-constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
+constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM MAP", "VRAM"};
 
 constexpr u32 keyboardHostShortcutTargets = (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start));
@@ -476,11 +476,12 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 }
 
 HostResourceUsage HostResourceUsage::capture(const Runtime& runtime) {
+	const Memory& memory = runtime.machine.memory;
 	const f64 vramBytes = static_cast<f64>(runtime.machine.gxGpu.readVramSnapshotBytes().size());
 	return {{static_cast<f64>(runtime.cpuUsageCyclesUsed()),
-		static_cast<f64>(runtime.machine.cpu.heapAllocator().floorAddress() - RAM_BASE + RUNTIME_MANAGEMENT_SIZE + runtime.machine.cpu.heapAllocator().occupiedBytes()), vramBytes},
+		static_cast<f64>(memory.ramBusEnd() - RAM_BASE), vramBytes},
 		{static_cast<f64>(runtime.cpuUsageCyclesGranted()),
-		static_cast<f64>(runtime.machine.memory.ramByteCount()), vramBytes}};
+		static_cast<f64>(memory.ramByteCount()), vramBytes}};
 }
 
 bool HostOverlayMenu::livePresentationRequired(const VideoPresenter& presenter) const {

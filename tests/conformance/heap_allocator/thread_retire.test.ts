@@ -27,6 +27,7 @@ import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_CHANGED_HEAD } from '../../helpers/native_heap/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const path = 'kernel/thread_retire';
 const source = `
@@ -87,9 +88,9 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(cpu.activeThread.frameDepth >= 2);
 		assert.notEqual(relay, root);
 		assert.equal(memory.readRamRecordWord(relay + ThreadField.Resumer), root);
-		const management = cpu.heapAllocator.managementOffset();
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET;
-		const ram = memory.ramData(), physical = cpu.heapAllocator.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+		const ram = memory.ramData(), physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const tracked: Array<[number, number]> = [[control, GC_CHANGED_HEAD + 4]];
 		for (const address of [root, relay, active]) {
 			const capacity = memory.readRamRecordWord(address + ThreadField.StackCapacity);
@@ -101,7 +102,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 		const names = ['saved_object', 'saved_text', 'saved_child', 'saved_relay', 'saved_root'];
 		const cells = names.map(name => {
-			const closure = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!));
+			const closure = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
 			const cell = captureAddress(memory, closure, 0);
 			assert.ok(isOpen(memory, cell), `${name} is genuinely open`);
 			tracked.push([cell & RAM_RECORD_WORD_MASK, UPVALUE_HEAP_BYTES]);
@@ -147,8 +148,8 @@ for (const optLevel of [0, 3] as const) {
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid > 0);
-			assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
-			assert.equal(cpu.luaHeap.usedBytes(), logical);
+			assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), physical);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 			commands.push(`g ${cycles} 0`);
 			results.push(`${result} ${paid} ${physical} ${logical}`);
 		}

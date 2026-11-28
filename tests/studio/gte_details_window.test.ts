@@ -56,7 +56,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	const history = new RuntimeGteHistory(runtime, sources, 2), input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	input.update(); input.select(input.selected.sequence);

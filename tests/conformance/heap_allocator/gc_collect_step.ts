@@ -93,7 +93,7 @@ try {
 			applyRuntimeSaveState(oracle, seed);
 			const ref = oracle.machine.cpu, { gc: refGc } = nativeHeapReference(ref);
 			const before = gc.epochWork(), work = refGc.step(), finished = !refGc.active();
-			const target = finished ? ref.luaHeap.collectionTarget() : ref.luaHeap.usedBytes() + GC_ASSIST_BYTES;
+			const target = finished ? nativeHeapReference(ref).luaHeap.collectionTarget() : nativeHeapReference(ref).luaHeap.usedBytes() + GC_ASSIST_BYTES;
 			if (entry === GcPhase.Atomic) {
 				assert.ok(work > GC_STEP_WORDS, 'the original Atomic admission needs several physical quanta');
 				assert.equal(refGc.phase(), GcPhase.Sweep);

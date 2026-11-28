@@ -59,7 +59,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 	runGuestToHalt(cpu, 1_000_000);
 	runGuestToHalt(oracle, 1_000_000);
 	const first = memory.ramBusEnd() - RAM_BASE;
-	const last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
+	const last = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	const actual = () => memory.ramData().subarray(first, last);
 	const expected = () => oracle.memory.ramData().subarray(first, last);
 	const compare = () => {
@@ -102,12 +102,12 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		const target = installThread(cpu, shape);
 		assert.deepEqual(installThread(oracle, shape), target);
 		compare();
-		const before = cpu.luaHeap.usedBytes();
+		const before = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const layout = new ThreadLayout();
 		nativeHeapReference(oracle).gc.threads.readLayout(target.thread, layout);
 		assert.equal(nativeHeapReference(oracle).gc.threads.shrinkStack(target.thread, layout), retained);
 		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
-			[cpu.heapAllocator.allocatorStateOffset(), cpu.luaHeap.occupiedOffset, target.thread]));
+			[nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), nativeHeapReference(cpu).luaHeap.occupiedOffset, target.thread]));
 		if (index === 0) {
 			const history = new RamHistory();
 			history.start(memory);
@@ -116,7 +116,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 			const copied = memory.readRamRecordWord(target.values + 66 * 4);
 			const tags = observeRewrite(delivery, delivery + 4, copied);
 			assert.equal(memory.readRamRecordWord(target.thread + ThreadField.StackCapacity), 66);
-			assert.equal(cpu.luaHeap.usedBytes(), before);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before);
 			const spare = target.frames + shape.windows.length * FRAME_CONTROL_BYTES;
 			const controls = observeRewrite(spare, spare + 4, 0);
 			const controlsRam = history.capture(memory, baseline);
@@ -135,7 +135,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 			assert.ok(finish() > spent);
 		} else finish();
 		assert.equal(cpu.heapServiceResult(), retained);
-		assert.equal(cpu.luaHeap.usedBytes(), before - debit);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before - debit);
 		for (const [offset, word] of threadPadding) assert.equal(memory.readRamRecordWord(target.thread + offset), word);
 		for (let frame = 0; frame < shape.windows.length; ++frame) {
 			const offset = frame * FRAME_CONTROL_BYTES + 12;

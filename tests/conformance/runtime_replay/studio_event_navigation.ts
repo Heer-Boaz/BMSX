@@ -5,6 +5,7 @@ import { WorkspaceRuntimeTools } from '../../../ide/workbench/services/assistant
 import { RuntimeTaskKind } from '../../../hosts/common/runtime_task_queue';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Authored source is installed through Reboot; observations use the ordinary cartlib emitter. */
 const SOURCE = `module<entry>
@@ -59,10 +60,10 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	for (let index = 0; index < 6; index++) await press('ArrowDown');
 	const selected = view.projection.rows[view.selected], evidence = eventClipboardText(selected);
 	check(ide.events.canSeek(selected), 'selected emission belongs to current retained machine history');
-	const before = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
+	const before = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	await press('ArrowDown'); await press('ArrowUp');
 	await press('ControlLeft', 'KeyC');
-	check(await test.clipboard.readText() === evidence && cycles() === before && runtime.machine.cpu.luaHeap.usedBytes() === heap,
+	check(await test.clipboard.readText() === evidence && cycles() === before && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap,
 		'ordinary selection and copy neither seek nor execute or allocate guest values');
 	await press('Enter'); await test.capture?.('event-snapshot');
 	await test.clickTab(view.id); await press('ArrowDown'); await press('ControlLeft', 'KeyC');

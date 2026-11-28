@@ -1,5 +1,6 @@
+import type { StringPool } from './native_heap/string_pool';
 import { hashBytes } from '../../machine/ts/common/hash';
-import { isRamStringId, type StringId, type StringPool } from '../../machine/ts/machine/cpu/string_pool';
+import { isRamStringId, type StringId } from '../../machine/ts/machine/cpu/string_pool';
 import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_ROM_ADDRESS_MASK } from '../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 

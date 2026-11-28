@@ -116,7 +116,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 	assert.ok(memory.ramBusEnd() >= linked.layout.header.bssAddress + staticBytes);
 	assert.notEqual(resume, issue);
 
-	const faultHead = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+	const faultHead = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 	const faults = memory.readRamRecordWord(faultHead + GcDiagnosticField.FaultIds);
 	const diagnostic = memory.readRamRecordWord(faults + INSTRUCTION_BYTES * LUA_FAULT_REASON_OUT_OF_MEMORY);
 	const error = valueString(diagnostic), captured = valueInteger(marker);
@@ -124,7 +124,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 
 	function inspectFailed(rt: Runtime) {
 		const { cpu, memory } = rt.machine;
-		const observedGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+		const observedGlobal = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 		assert.equal(asThread(observedGlobal('failed_thread'), nativeHeapReference(cpu).gc), failed);
 		assert.equal(cpu.readThreadStatus(failed), ThreadStatus.Failed);
 		assert.equal(cpu.readThreadFrameDepth(failed), depth, 'failure did not unwind the coroutine');

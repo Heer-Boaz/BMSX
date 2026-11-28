@@ -120,7 +120,7 @@ test('live readback retains rows and skips warmed formatting while still reading
 	const format = f.guest.formatStoredEntries.bind(f.guest), read = f.guest.readStringMember.bind(f.guest);
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formatted++; return format(value); });
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
-	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	for (let update = 0; update < 1000; update++) {
 		f.guest.invalidate();
 		assert.equal(f.inspection.refresh(), undefined);
@@ -128,7 +128,7 @@ test('live readback retains rows and skips warmed formatting while still reading
 	assert.equal(formatted, 0);
 	assert.ok(reads > 1000);
 	assert.ok(document.every((row, index) => row === rows[index]));
-	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(f.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	const previous = document.map(row => row.value);
 	f.guest.invalidate(); runCompletionClosure(f.cpu, asClosure(f.guest.global('change_data'), nativeHeapReference(f.cpu).gc), []);
 	assert.strictEqual(f.inspection.refresh(), document);

@@ -1,3 +1,4 @@
+import { StockStringIndex } from '../../../../toolchain/ts/firmware/stock_string_index';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 
 import { isNil, valueToString, type Value, valuePayload } from '../../../../machine/ts/machine/cpu/value';
@@ -24,7 +25,10 @@ export class PlayEvidence implements FixtureOutput {
 	private effects: ActionEffectObservation | undefined;
 	private capture: PlayCapture | undefined;
 	private restored = false;
-	public constructor(private readonly runtime: Runtime, private readonly readContext: () => number) {}
+	private readonly stringIndex: StockStringIndex;
+	public constructor(private readonly runtime: Runtime, private readonly readContext: () => number) {
+		this.stringIndex = new StockStringIndex(runtime.machine.memory);
+	}
 	public get droppedFsmFacts(): number { return this.fsm === undefined ? 0 : this.fsm.droppedCount; }
 	public get droppedEffectFacts(): number { return this.effects === undefined ? 0 : this.effects.droppedCount; }
 	public log(tick: number, value: Value): void {
@@ -62,9 +66,9 @@ export class PlayEvidence implements FixtureOutput {
 	}
 	public drain(): void {
 		if (this.restored) {
-			const cpu = this.runtime.machine.cpu, pool = cpu.stringPool, context = this.readContext();
-			const fsm = cpu.tables.getStringKey(context, pool.find('fsm_recorder')!);
-			const effects = cpu.tables.getStringKey(context, pool.find('actioneffect_recorder')!);
+			const cpu = this.runtime.machine.cpu, context = this.readContext();
+			const fsm = cpu.tables.getStringKey(context, this.stringIndex.find('fsm_recorder')!);
+			const effects = cpu.tables.getStringKey(context, this.stringIndex.find('actioneffect_recorder')!);
 			if (!isNil(fsm)) { this.observeFsm(valuePayload(fsm)); this.fsm!.discardPublished(); }
 			if (!isNil(effects)) { this.observeActionEffects(valuePayload(effects)); this.effects!.discardPublished(); }
 			this.restored = false;

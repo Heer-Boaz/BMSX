@@ -69,18 +69,18 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	runGuestToHalt(cpu, 1_000_000);
 	assert.equal(cpu.getFrameDepth(), 0);
 	const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
-	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const size = memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), base = memory.readRamRecordWord(backing) - RAM_BASE;
 	assert.equal(size, span(initial));
 	assert.ok(base > 0 && size > 0, 'only the running BIOS supplied this descriptor and backing');
 	const ram = memory.ramData(), record = ram.slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
 	const owned = ram.slice(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), operands = ram.slice(base, base + size);
-	const stringId = cpu.stringPool.find(label)!;
+	const stringId = nativeHeapReference(cpu).stringPool.find(label)!;
 	assert.equal(cpu.stringPool.toString(stringId), label);
-	const probeClosure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('publication_probe')!), nativeHeapReference(cpu).gc);
+	const probeClosure = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('publication_probe')!), nativeHeapReference(cpu).gc);
 	assert.equal(cpu.captureClosureBinding(probeClosure).functionAddress, probe);
 	// Exercise the real published Global slot, not a constant-folded initializer.
-	setReferenceGlobal(cpu, cpu.stringPool.find('publication_amount')!, valueInteger(59));
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('publication_amount')!, valueInteger(59));
 	const seed = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], rows: string[] = [];
 	function observe(command: string, result: string | number) {
@@ -89,18 +89,18 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	}
 	function runProbe(marker: number) {
 		cpu.beginCompletionCall(probeClosure);
-		observe(`T c ${probeClosure}`, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		observe(`T c ${probeClosure}`, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).heapAllocator.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		const result = scheduler.runCpuSlice(0, 256, 0, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
-		observe('L 256', `${result} ${256 - cpu.instructionBudgetRemaining} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		observe('L 256', `${result} ${256 - cpu.instructionBudgetRemaining} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		const values = runtime.readCompletionValues();
 		assert.deepEqual(values, [valueInteger(marker), valueInteger(59), valueString(stringId)]);
 		assert.equal(cpu.stringPool.toString(valuePayload(values[2])), label);
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	}
 	function publish(path: string, rom: Uint8Array, admitted: boolean) {
-		const before = hashBytes(ram, 0, ram.length), occupied = cpu.heapAllocator.occupiedBytes(), used = cpu.luaHeap.usedBytes();
+		const before = hashBytes(ram, 0, ram.length), occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const watches = memory.ramWriteWatches();
 		watches.armHistoryWrites();
 		memory.installSystemRom(rom);
@@ -113,8 +113,8 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 		assert.equal(watches.historyPageDirty(0, ram.length >>> MAPPED_PAGE_BYTE_SHIFT), false);
 		watches.disarmHistoryWrites();
 		assert.equal(hashBytes(ram, 0, ram.length), before);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), used);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 		assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), record);
 		assert.deepEqual(ram.subarray(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), owned);
 		assert.deepEqual(ram.subarray(base, base + size), operands);

@@ -52,11 +52,11 @@ try {
 		cpu.clearHaltUntilIrq();
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
-		const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const epochWork = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK - 4);
 		const index = () => memory.readRamRecordWord(control + GC_TRACE_HEAD) & GC_GRAY_INDEX_MASK;
-		const weakValue = cpu.getGlobalByKey(cpu.stringPool.find('fixture_weak')!);
-		const liveValue = cpu.getGlobalByKey(cpu.stringPool.find('fixture_live')!);
+		const weakValue = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_weak')!);
+		const liveValue = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_live')!);
 		assert.equal(valueTag(weakValue), ValueTag.Table);
 		assert.equal(valueTag(liveValue), ValueTag.Table);
 		const weak = valuePayload(weakValue), live = valuePayload(liveValue);

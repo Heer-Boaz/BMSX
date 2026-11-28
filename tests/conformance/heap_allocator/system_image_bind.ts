@@ -20,6 +20,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { readNamespaceBank } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const directory = mkdtempSync(join('tmp', 'system-image-publication-'));
@@ -34,7 +35,7 @@ try {
 		const linked = linkManagedTestSystem(source, opt), bytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator, management = arena.managementOffset();
+		const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 		const ordinary = management + GLOBAL_BANK_OFFSET, system = management + SYSTEM_GLOBAL_BANK_OFFSET;
 		const installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		const backing = firmwareImageBackingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
@@ -52,7 +53,7 @@ try {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			note(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			note(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return result;
 		}
 		assert.equal(arena.occupiedBytes(), 0);
@@ -86,7 +87,7 @@ try {
 			assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 4 * (counts + strings));
 			const firstLiteral = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 			assert.equal(firstLiteral, block + 4 * counts);
-			const diagnostics = ['__index', 'Out of memory.'].map(text => cpu.stringPool.find(text)!);
+			const diagnostics = ['__index', 'Out of memory.'].map(text => nativeHeapReference(cpu).stringPool.find(text)!);
 			assert.ok(diagnostics.every(isRamStringId));
 			const literalWords = Array.from({ length: strings }, (_, n) =>
 				memory.readRamRecordWord(firstLiteral + 4 * n));

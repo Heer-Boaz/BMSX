@@ -79,7 +79,7 @@ for (const level of [0, 3] as const) {
 		}
 		const actual = machine(), oracle = machine(), memory = actual.memory;
 		runGuestToHalt(oracle, 4_194_304);
-		nativeHeapReference(oracle).luaHeap.setCollectionTarget(oracle.luaHeap.capacity());
+		nativeHeapReference(oracle).luaHeap.setCollectionTarget(nativeHeapReference(oracle).luaHeap.capacity());
 		const completion: Value[] = [];
 		oracle.readCompletionValues(completion);
 		oracle.beginCompletionCall(valuePayload(completion[0]), [valueInteger(11), valueInteger(12), valueInteger(13), valueInteger(14), valueInteger(15)]);
@@ -100,7 +100,7 @@ for (const level of [0, 3] as const) {
 		const seed = captureCpuCheckpoint(oracle);
 		restoreCpuCheckpoint(actual, seed);
 		const arena = nativeHeapReference(actual).heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
-		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
+		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = nativeHeapReference(actual).luaHeap.occupiedOffset;
 		const workspace = RAM_BASE + management + FIRMWARE_DATA_OFFSET;
 		const binding = RAM_BASE + management + 0x200, descriptors = binding + 36;
 		const resolved = workspace, cells = workspace + 4 * 1024;
@@ -152,12 +152,12 @@ for (const level of [0, 3] as const) {
 		f.bind(false);
 		const parent = frame.closureAddress, parentCell = frame.captureAddress(0);
 		const oldHead = frame.openUpvalueHead, stackBase = frame.stackBase;
-		const previousBytes = actual.luaHeap.usedBytes();
+		const previousBytes = nativeHeapReference(actual).luaHeap.usedBytes();
 		assert.notEqual(oldHead, 0);
 		// The source descriptor scan occurs before reservation; two Cells are new,
 		// three alias the first closure's Cells, and one is an inherited cell.
 		assert.equal(f.plan(), 2);
-		assert.equal(actual.luaHeap.usedBytes(), previousBytes);
+		assert.equal(nativeHeapReference(actual).luaHeap.usedBytes(), previousBytes);
 		const oracleFrame = oracle.activeThread.currentFrame!;
 		const pc = frame.pc;
 		const result = f.nativeCapture(oracleFrame);
@@ -180,7 +180,7 @@ for (const level of [0, 3] as const) {
 		const checkpoint = actual.captureRuntimeState(), shadow = history.capture(memory, baseline);
 		const cycles = f.finish();
 		assert.equal(actual.heapServiceResult(), result - RAM_BASE);
-		assert.equal(actual.luaHeap.usedBytes(), previousBytes + closureRecordBytes(f.target.upvalues.length, false) + 2 * UPVALUE_HEAP_BYTES);
+		assert.equal(nativeHeapReference(actual).luaHeap.usedBytes(), previousBytes + closureRecordBytes(f.target.upvalues.length, false) + 2 * UPVALUE_HEAP_BYTES);
 		assert.equal(memory.readRamRecordWord(parent + CLOSURE_CAPTURE_WORDS), parentCell);
 		assert.equal(memory.readRamRecordWord(result + CLOSURE_CAPTURE_WORDS + 16), parentCell);
 		assert.equal(frame.openUpvalueHead, oracleFrame.openUpvalueHead);
@@ -270,8 +270,8 @@ for (const level of [0, 3] as const) {
 		f.startWhole();
 		f.finish();
 		assert.equal(RAM_BASE + actual.heapServiceResult(), expected);
-		assert.equal(actual.luaHeap.usedBytes(), oracle.luaHeap.usedBytes());
-		assert.equal(actual.heapAllocator.occupiedBytes(), oracle.heapAllocator.occupiedBytes());
+		assert.equal(nativeHeapReference(actual).luaHeap.usedBytes(), nativeHeapReference(oracle).luaHeap.usedBytes());
+		assert.equal(nativeHeapReference(actual).heapAllocator.occupiedBytes(), nativeHeapReference(oracle).heapAllocator.occupiedBytes());
 		assert.equal(memory.readRamRecordByte(expected + CLOSURE_BINDING_FLAGS), flags);
 		assert.deepEqual(actual.captureClosureBinding(expected), proto);
 		for (let byte = 0; byte < closureRecordBytes(0, true); ++byte)
@@ -284,7 +284,7 @@ for (const level of [0, 3] as const) {
 		const discarded = nativeHeapReference(actual).stringPool.intern(text);
 		while (arena.allocate(4088, true)) { /* fence out the remaining arena pages */ }
 		while (arena.allocate(1, true)) { /* leave no minimum chunk */ }
-		const before = actual.luaHeap.usedBytes(), owner = frame.thread.address, depth = frame.thread.frameDepth - 1;
+		const before = nativeHeapReference(actual).luaHeap.usedBytes(), owner = frame.thread.address, depth = frame.thread.frameDepth - 1;
 		const open = actual.readThreadFrameWord(owner, depth, FrameField.OpenHead);
 		const parentCell = frame.captureAddress(0);
 		assert.equal(actual.runUntilDepth(0, 1), RunResult.Yielded);
@@ -314,8 +314,8 @@ for (const level of [0, 3] as const) {
 			}
 			assert.deepEqual(slots, [4, 3, 2, 1, 0].map(slot => frame.stackBase + slot));
 			assert.equal(memory.readRamRecordWord(address + CLOSURE_CAPTURE_WORDS + 16), parentCell);
-			assert.equal(actual.stringPool.find(text), undefined);
-			assert.ok(actual.luaHeap.usedBytes() < before);
+			assert.equal(nativeHeapReference(actual).stringPool.find(text), undefined);
+			assert.ok(nativeHeapReference(actual).luaHeap.usedBytes() < before);
 			assert.ok(spent > 0);
 			return [spent, address] as const;
 		}
@@ -351,7 +351,7 @@ for (const level of [0, 3] as const) {
 		while (arena.allocate(4088, true)) { /* exhaust complete pages */ }
 		while (arena.allocate(cellBytes, true)) { /* exhaust remaining Cell fits */ }
 		for (const address of [right, left, hole]) arena.free(address);
-		const occupied = arena.occupiedBytes(), charged = actual.luaHeap.usedBytes(), open = frame.openUpvalueHead;
+		const occupied = arena.occupiedBytes(), charged = nativeHeapReference(actual).luaHeap.usedBytes(), open = frame.openUpvalueHead;
 		const count = memory.readRamRecordWord(control + 0x70);
 		restoreCpuCheckpoint(oracle, captureCpuCheckpoint(actual));
 		const native = nativeHeapReference(oracle).heapAllocator;
@@ -369,7 +369,7 @@ for (const level of [0, 3] as const) {
 		const spent = f.finish();
 		function compare() {
 			assert.equal(actual.heapServiceResult(), 0);
-			assert.equal(actual.luaHeap.usedBytes(), charged);
+			assert.equal(nativeHeapReference(actual).luaHeap.usedBytes(), charged);
 			assert.equal(arena.occupiedBytes(), occupied);
 			assert.equal(memory.readRamRecordWord(control + 0x70), count);
 			assert.equal(frame.openUpvalueHead, open);

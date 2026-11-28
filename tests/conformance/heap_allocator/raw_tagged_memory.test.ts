@@ -32,6 +32,7 @@ import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua3
 import { linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -109,8 +110,8 @@ function paired(t: TestContext, rom: Uint8Array, cart: Uint8Array | null = null)
 		const charged = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(result, expectedResult, `PC 0x${pc.toString(16)}`);
 		assert.equal(charged, BASE_CYCLES[op] + (op === OpCode.RET ? b - 1 : op === OpCode.STORE_MEM_WORDS ? c : 0), `PC 0x${pc.toString(16)}`);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		observe('E 1', `${result} ${charged} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 	}
 	function inspect(rt: Runtime, address: number, bytes: readonly number[]) {

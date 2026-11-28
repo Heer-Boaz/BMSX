@@ -86,7 +86,7 @@ return ok, result, trailing
 		const issue = caller.pc, successor = instruction.pc + INSTRUCTION_BYTES;
 		const object = valuePayload(caller.registers.get(writing ? instruction.a : instruction.b));
 		const outer = tables.metatableAddress(object);
-		const selectorId = cpu.stringPool.find(selector)!, key = cpu.stringPool.find('missing')!, guard = cpu.stringPool.find('guard')!;
+		const selectorId = nativeHeapReference(cpu).stringPool.find(selector)!, key = nativeHeapReference(cpu).stringPool.find('missing')!, guard = nativeHeapReference(cpu).stringPool.find('guard')!;
 		const receiver = tables.getStringKey(outer, selectorId);
 		assert.equal(valueTag(receiver), ValueTag.Table);
 		const forward = valuePayload(receiver);
@@ -102,7 +102,7 @@ return ok, result, trailing
 		assert.equal(callee.numParams, 1);
 		assert.equal(memory.readRamRecordWord(invoked), 0);
 
-		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 		if (refusal) {
 			for (let i = 0; i < 4096 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Atomic; ++i)
 				nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
@@ -134,7 +134,7 @@ return ok, result, trailing
 			observe(`E ${budget}`, `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return { result, used };
 		}
-		const charged = cpu.luaHeap.usedBytes();
+		const charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 		assert.deepEqual(grant(runtime, 1), { result: RunResult.Yielded, used: BASE_CYCLES[targetOp] + TABLE_INDEX_VISIT_CYCLES });
 		assert.equal(cpu.fixedInterruptActive(), true);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
@@ -142,7 +142,7 @@ return ok, result, trailing
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 		assert.equal(cpu.readThreadFrameDepth(owner), depth);
 		assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), successor, 'detached issue proceeds only once');
-		assert.equal(cpu.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 
 		const packet = cpu.activeThread.currentFrame!;
 		const argumentCount = 12 + operands.length;

@@ -41,7 +41,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
 	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const context = management + GC_TRACE_CONTEXT_OFFSET;
 	const roots = management + GC_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;
 	const beforeWork = control + GC_LAST_EPOCH_WORK - 4;

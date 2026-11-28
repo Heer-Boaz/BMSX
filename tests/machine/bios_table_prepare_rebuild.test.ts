@@ -39,7 +39,7 @@ function fixture(optLevel: 0 | 3) {
 	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const first = memory.ramBusEnd() - RAM_BASE, last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
+	const first = memory.ramBusEnd() - RAM_BASE, last = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);
@@ -89,7 +89,7 @@ function fixture(optLevel: 0 | 3) {
 		return spent;
 	}
 	function beginPublication(job: TableRebuildReference, allowance: number) {
-		const record = job.record, management = cpu.heapAllocator.managementOffset();
+		const record = job.record, management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 		const expected = advanceTableRebuildReference(nativeHeapReference(oracle).gc, job, allowance);
 		assert.equal(job.record, 0, 'the old operation reached its epilogue');
 		const oracleMemory = oracle.memory;
@@ -280,7 +280,7 @@ for (const opt of [0, 3] as const) {
 
 for (const opt of [0, 3] as const) {
 	test(`staged publication matches native detached Array, retained Hash, in-place shrink and zero Array at O${opt}`, () => {
-		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const f = fixture(opt), control = nativeHeapReference(f.cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		for (const [kind, oldArray, array, keepHash] of [
 			['move', 1024, 2048, false],
 			['keep-hash', 1024, 2048, true],
@@ -322,7 +322,7 @@ for (const opt of [0, 3] as const) {
 				cpu.memory.writeRamRecordPair(control + GC_TRACE_RECORD, record, 45);
 				cpu.memory.writeRamRecordWord(control + GC_MODE_META, record);
 			});
-			const chargedBefore = f.cpu.luaHeap.usedBytes();
+			const chargedBefore = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 			const expected = f.beginPublication(j, 8192);
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.ArrayStorage), oldBase);
 			for (let i = 0; i < 4096 && f.memory.readRamRecordWord(record + TableHeader.Array) === oldArray; ++i) f.grant(1);
@@ -333,13 +333,13 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Array), array);
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.ArrayStorage), array ? base : 0);
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), oldStorage, 'Array publishes before Hash');
-			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore);
+			assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), chargedBefore);
 			const checkpoint = captureCpuCheckpoint(f.cpu), paid = f.finish(expected);
 			assert.equal(f.cpu.tables.get(record, key), value);
 			assert.equal(f.cpu.tables.get(record, valueInteger(-5)), valueInteger(15));
 			assert.equal(f.cpu.tables.get(record, valueInteger(oldArray)), valueInteger(17));
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), keepHash ? oldStorage : storage);
-			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore + TableRecords.allocationCharge(array, keepHash ? oldHash : hash) - TableRecords.allocationCharge(oldArray, oldHash));
+			assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), chargedBefore + TableRecords.allocationCharge(array, keepHash ? oldHash : hash) - TableRecords.allocationCharge(oldArray, oldHash));
 			if (array !== 0) assert.equal(f.memory.readRamRecordWord(record + TableHeader.Length), 3);
 			restoreCpuCheckpoint(f.cpu, checkpoint);
 			assert.equal(f.finish(expected), paid);
@@ -347,7 +347,7 @@ for (const opt of [0, 3] as const) {
 	});
 
 	test(`staged Hash publication invalidates its own method cache before marking inserted String edges at O${opt}`, () => {
-		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const f = fixture(opt), control = nativeHeapReference(f.cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const oldHash = 128, hash = 256, record = f.same(cpu => createReferenceTable(cpu, 0, oldHash));
 		const source = f.same(cpu => cpu.tables.hashAddress(record));
 		const storage = f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));

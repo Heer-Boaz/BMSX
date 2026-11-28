@@ -21,6 +21,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { loadHeapServiceTestModules } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const resetPath = 'fixture/reset';
 const receiverPath = 'fixture/receiver';
@@ -108,7 +109,7 @@ try {
 
 		const romBytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+		const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 		const ram = memory.ramData();
 		const trace: string[] = [], observations: string[] = [];
 		const observe = (command: string, output?: string | number) => {
@@ -120,7 +121,7 @@ try {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
-			observe(`g ${cycles} 0`, `${result} ${paid} 0 ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`g ${cycles} 0`, `${result} ${paid} 0 ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return result;
 		};
 
@@ -140,7 +141,7 @@ try {
 		const frames = memory.readRamRecordWord(address + ThreadField.FrameBlock) - RAM_BASE;
 		const words = memory.readRamRecordWord(address + ThreadField.StackBlock) - RAM_BASE;
 		const tags = words + 4 * window;
-		const physical = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+		const physical = arena.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 		assert.ok(ram.subarray(frames, frames + 2 * FRAME_CONTROL_BYTES).every(byte => byte === 0x5a));
 		assert.ok(ram.subarray(words, words + THREAD_STACK_SLOT_BYTES * window).every(byte => byte === 0xa7));
 		observe(`M ${ready}`, `${address} 0`);
@@ -175,7 +176,7 @@ try {
 			assert.equal(memory.readRamRecordWord(address + ThreadField.FrameDepth), 1);
 			assert.equal(memory.readRamRecordWord(address + ThreadField.StackTop), target.maxStack);
 			assert.equal(arena.occupiedBytes(), physical);
-			assert.equal(cpu.luaHeap.usedBytes(), logical);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 			assert.deepEqual(ram.slice(frames, frames + FRAME_CONTROL_BYTES), expectedFrame);
 			assert.ok(ram.subarray(frames + FRAME_CONTROL_BYTES, frames + 2 * FRAME_CONTROL_BYTES).every(byte => byte === 0x5a));
 			assert.ok(ram.subarray(words, words + 4 * target.numParams).every(byte => byte === 0));

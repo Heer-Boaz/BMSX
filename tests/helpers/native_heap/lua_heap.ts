@@ -1,9 +1,8 @@
-import { LuaHeap as PhysicalLuaHeap } from '../../../machine/ts/machine/cpu/lua_heap';
 import type { HeapAllocator } from './heap_allocator';
 import { assistAllocation, chargeCollectionWork } from './cpu_roots';
 import { nativeHeapReference } from './reference';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
-import { HEAP_GC_CONTROL_OFFSET } from '../firmware_heap_layout';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../firmware_heap_layout';
 import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
@@ -17,13 +16,27 @@ export const GC_ASSIST_BYTES = 256;
 export const enum LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted }
 export const enum LuaAllocationMode { Direct, Scheduled, Retry }
 
-export class LuaHeap extends PhysicalLuaHeap {
+export class LuaHeap {
+	private readonly targetAddress: number;
+	public readonly occupiedOffset: number;
 	private readonly gcControlAddress: number;
 
-	public constructor(private readonly cpu: CPU, arena: HeapAllocator) {
-		super(cpu.memory, arena);
-		this.gcControlAddress = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	public constructor(private readonly cpu: CPU, private readonly arena: HeapAllocator) {
+		const management = arena.managementOffset();
+		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
+		this.occupiedOffset = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
+		this.gcControlAddress = management + HEAP_GC_CONTROL_OFFSET;
 	}
+
+	public collectionTarget(): number {
+		return this.cpu.memory.readRamRecordWord(this.targetAddress);
+	}
+
+	public usedBytes(): number {
+		return this.cpu.memory.readRamRecordWord(this.occupiedOffset);
+	}
+
+	public capacity(): number { return this.arena.capacityBytes(); }
 
 	public setCollectionTarget(bytes: number): void {
 		this.cpu.memory.writeRamRecordWord(this.targetAddress, bytes);
@@ -98,7 +111,7 @@ export class LuaHeap extends PhysicalLuaHeap {
 
 	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number, secondBytes: number, secondField: number): number {
 		const prefix = object ? GC_OBJECT_PREFIX : 0;
-		const arena = nativeHeapReference(this.cpu).heapAllocator;
+		const arena = this.arena;
 		const base = arena.allocate(bytes + prefix, !object);
 		if (base === 0) return 0;
 		const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
@@ -151,7 +164,7 @@ export class LuaHeap extends PhysicalLuaHeap {
 		let recovery = logicalBytes !== 0 ? this.admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery.CurrentOrFresh;
 		this.assistBeforeReservation(bytes, root0, root1, root2, growingThread);
 		for (;;) {
-			const block = nativeHeapReference(this.cpu).heapAllocator.allocate(bytes, true);
+			const block = this.arena.allocate(bytes, true);
 			if (block !== 0) return block;
 			recovery = nativeHeapReference(this.cpu).gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
 		}
@@ -170,7 +183,7 @@ export class LuaHeap extends PhysicalLuaHeap {
 	}
 
 	public releaseRecord(address: number, bytes: number): void {
-		nativeHeapReference(this.cpu).heapAllocator.free(address);
+		this.arena.free(address);
 		const memory = this.cpu.memory;
 		memory.writeRamRecordWord(this.occupiedOffset, memory.readRamRecordWord(this.occupiedOffset) - bytes);
 	}
@@ -181,7 +194,7 @@ export class LuaHeap extends PhysicalLuaHeap {
 	}
 
 	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {
-		if (oldAddress !== 0) nativeHeapReference(this.cpu).heapAllocator.free(oldAddress);
+		if (oldAddress !== 0) this.arena.free(oldAddress);
 		this.resizeRecordCharge(oldBytes, newBytes);
 	}
 

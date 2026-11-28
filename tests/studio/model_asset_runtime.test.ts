@@ -114,8 +114,8 @@ for (const optLevel of [3] as const) test(`model geometry binds ROM streams once
 	const initial = modelCartridge(1.25, 0x100);
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const read = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('read')), nativeHeapReference(cpu).gc);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const read = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('read')), nativeHeapReference(cpu).gc);
 	const observe = () => {
 		runCompletionClosure(cpu, read, []);
 		return materializeCpuCompletionValues(cpu);
@@ -129,13 +129,13 @@ for (const optLevel of [3] as const) test(`model geometry binds ROM streams once
 	];
 	assert.deepEqual(observe(), expected(false, initial.address, 1.25));
 	assert.deepEqual(observe(), expected(true, initial.address, 1.25));
-	const steady = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('steady')), nativeHeapReference(cpu).gc);
+	const steady = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('steady')), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu, steady, 512);
 	assert.equal(profile.reservations, 0, 'warm resource resolution and typed reads allocate no guest heap');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueFloat(512 * 10.25)]);
 	const replacement = modelCartridge(6.5, 0x800);
 	memory.cartridgeController.installRom(0, replacement.bytes);
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('reload')), nativeHeapReference(cpu).gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('reload')), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(observe(), expected(false, replacement.address, 6.5));
 	assert.deepEqual(observe(), expected(true, replacement.address, 6.5));
 });

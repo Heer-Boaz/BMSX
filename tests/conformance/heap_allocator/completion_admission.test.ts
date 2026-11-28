@@ -54,7 +54,7 @@ test('completion calls use admitted backing and preserve borrowed Values across 
 	assert.ok(root.stackRegisters.capacity() < tooWide.maxStack);
 	for (let i = 0; gc.phase() !== GcPhase.Atomic && i < 64; ++i) gc.step(valueClosure(closure));
 	assert.equal(gc.phase(), GcPhase.Atomic, 'a native final-mark call would change this state');
-	const occupied = cpu.heapAllocator.occupiedBytes(), used = cpu.luaHeap.usedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const seed = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], rows: string[] = [];
 	function observe(command: string, row: string | number) {
@@ -76,8 +76,8 @@ test('completion calls use admitted backing and preserve borrowed Values across 
 		assert.equal(cpu.instructionBudgetRemaining, budget);
 		assert.equal(scheduler.nowCycles, now);
 		assert.equal(gc.phase(), GcPhase.Atomic);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), used);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 		observe(command, `${+admitted} 0 0 ${gc.phase()} ${occupied} ${used}`);
 	}
 	function complete(expected: readonly Value[]) {
@@ -85,7 +85,7 @@ test('completion calls use admitted backing and preserve borrowed Values across 
 		assert.equal(result, RunResult.Halted);
 		assert.equal(root.frameDepth, 0);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
-		observe('L 128', `${result} ${128 - cpu.instructionBudgetRemaining} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		observe('L 128', `${result} ${128 - cpu.instructionBudgetRemaining} ${gc.fullEpochs()} ${gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		results(expected);
 	}
 	const before = cpu.captureRuntimeState(), ram = memory.ramData();

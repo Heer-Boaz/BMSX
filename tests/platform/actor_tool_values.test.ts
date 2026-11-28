@@ -5,6 +5,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { asInteger, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { afterTest } from '../helpers/test_cleanup';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 /** Real BIOS, cartlib World admission and the ordinary tool context. This is
  * an in-process headless wire test, not browser UI or an external MCP session. */
@@ -29,7 +30,7 @@ end
 	const { ide, sources, runtime } = f;
 	const cpu = runtime.machine.cpu, guest = ide.guest;
 	t.mock.method(cpu.stringPool, 'intern', () => assert.fail('Actor invocation must not intern in the host'));
-	t.mock.method(cpu.luaHeap, 'allocateRecord', () => assert.fail('Actor invocation must not allocate a Table in the host'));
+	t.mock.method(nativeHeapReference(cpu).luaHeap, 'allocateRecord', () => assert.fail('Actor invocation must not allocate a Table in the host'));
 	const resource = sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!;
 	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);
 	const version = cart.version, text = cart.buffer.getText();
@@ -68,7 +69,7 @@ end
 	assert.equal(wire.status, 'completed'); assert.equal(wire.invoked, true);
 	const expected = [valueInteger(16777217), valueFloat(16777217), valueInteger(-1), valueInteger(-2147483648),
 		valueInteger(1), valueFloat(1), valueFloatBits(0x80000000), valueFloatBits(0), valueFloat(0.25), valueBool(false), valueNil(),
-		valueString(cpu.stringPool.find('32-bit')!)];
+		valueString(nativeHeapReference(cpu).stringPool.find('32-bit')!)];
 	assert.deepEqual(wire.tags, [ValueTag.Integer, ValueTag.Float, ValueTag.Integer, ValueTag.Integer, ValueTag.Integer,
 		ValueTag.Float, ValueTag.Float, ValueTag.Float, ValueTag.Float, ValueTag.False, ValueTag.Nil, ValueTag.String,
 		ValueTag.Table, ValueTag.Closure, ValueTag.Thread]);

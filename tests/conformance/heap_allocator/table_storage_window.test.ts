@@ -68,16 +68,16 @@ return ok, result, ${scenario.read}
 	const issuePc = caller.pc, issue = decode(), successor = issue.pc + INSTRUCTION_BYTES;
 	assert.equal(issue.op, scenario.op);
 	const original = valuePayload(caller.registers.get(issue.a));
-	const key = issue.op === OpCode.SETFIELD ? valueString(cpu.stringPool.find('missing')!)
+	const key = issue.op === OpCode.SETFIELD ? valueString(nativeHeapReference(cpu).stringPool.find('missing')!)
 		: valueInteger(issue.op === OpCode.SETI ? 1 : 1025);
 	if (issue.op === OpCode.SETT) assert.equal(caller.registers.get(issue.b), valueFloat(1025));
 	const receiver = scenario.forwarded ? valuePayload(tables.getStringKey(
-		tables.metatableAddress(original), cpu.stringPool.find('__newindex')!)) : original;
+		tables.metatableAddress(original), nativeHeapReference(cpu).stringPool.find('__newindex')!)) : original;
 	assert.equal(tables.arrayCapacity(receiver), 0);
 	assert.equal(tables.hashSize(receiver), 0);
 	if (scenario.refuse) {
 		nativeHeapReference(cpu).gc.collect();
-		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 		while (nativeHeapReference(cpu).heapAllocator.allocate(4088, true)) { /* occupy page-sized extents */ }
 		while (nativeHeapReference(cpu).heapAllocator.allocate(1, true)) { /* no minimum chunk is available */ }
 	}
@@ -135,7 +135,7 @@ return ok, result, ${scenario.read}
 	commands.push(`H ${offset} ${offset + TableRecords.HEADER_BYTES}`);
 	expected.push(String(hashBytes(memory.ramData(), offset, TableRecords.HEADER_BYTES)));
 	if (outcome !== RunResult.Halted) assert.equal(grant(4096), RunResult.Halted);
-	const result = scenario.refuse ? [valueBool(false), valueString(cpu.stringPool.find('Out of memory.')!), valueNil()]
+	const result = scenario.refuse ? [valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('Out of memory.')!), valueNil()]
 		: [valueBool(true), valueInteger(23), valueInteger(61)];
 	assert.deepEqual(runtime.readCompletionValues(), result);
 	commands.push('c');

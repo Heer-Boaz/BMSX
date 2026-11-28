@@ -161,8 +161,6 @@ import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus } from './thread';
 import { invokeThreadDiagnostic, ThreadField, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
-import { LuaHeap } from './lua_heap';
-import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
@@ -262,8 +260,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly inspectionThreadValues = new ValueSlots(0);
 	public readonly memory: Memory;
 
-	public readonly luaHeap: LuaHeap;
-	public readonly heapAllocator: HeapAllocator;
 	public readonly tables: TableRecords;
 	public readonly stringPool: StringPool;
 	private haltedUntilIrqFrameDepth = -1;
@@ -367,9 +363,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
-		this.heapAllocator = new HeapAllocator(memory);
-		this.luaHeap = new LuaHeap(memory, this.heapAllocator);
-		this.stringPool = new StringPool(this.memory, this.heapAllocator);
+		this.stringPool = new StringPool(memory);
 		this.tables = new TableRecords(memory, this.cop0Words);
 		this.systemGlobalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET);

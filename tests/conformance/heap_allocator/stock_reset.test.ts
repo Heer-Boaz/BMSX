@@ -8,7 +8,6 @@ import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
@@ -21,7 +20,7 @@ import { EXECUTION_DOMAIN_COUNT, EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAG
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, FIRMWARE_IMAGE_BACKINGS_OFFSET, GC_ROOT_BANKS_OFFSET, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, FIRMWARE_IMAGE_BACKINGS_OFFSET, GC_ROOT_BANKS_OFFSET, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -116,7 +115,7 @@ function verifySystemExec(rom: string, native: string, out: string): void {
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.deepEqual(memory.ramData().subarray(first, end), ledger, 'EXEC did not reserve or collect');
 	trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
-		gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	trace.observe('P', `1 ${pc}`);
 	trace.observe(`H ${first} ${end}`, digest);
 	trace.replay('System EXEC consumption of firmware backing', rom, wire);
@@ -139,11 +138,11 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) {
 		const result = scheduler.runCpuSlice(0, 127, 0, CpuRunKind.Scheduled);
 		trace.observe('L 127', [result, 127 - cpu.instructionBudgetRemaining,
-			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	}
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-	assert.equal(cpu.luaHeap.usedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 	assert.equal(memory.readIoU32(IO_SYS_STATUS) & (SYS_STATUS_SUPERVISOR_ACTIVE | SYS_STATUS_SUPERVISOR_RESUMABLE),
 		SYS_STATUS_SUPERVISOR_ACTIVE);
 	memory.writeMappedWord(IO_SYS_CONTROL, SYS_CONTROL_RESET);
@@ -487,7 +486,7 @@ function verifyExceptionBridge(rom: string, native: string, dir: string, optLeve
 	function step() {
 		const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
-			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	}
 	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) step();
 	assert.equal(cpu.activeThread.address, owner);
@@ -559,12 +558,12 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	function rawGrant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Yielded);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	}
 	rt.boot();
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-	assert.equal(cpu.luaHeap.usedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 	// Native executes this same trace from its own reset, not from TS's initial state.
 	trace.observe('P', `1 ${cpu.readFramePc(0)}`);
 	fingerprint(management + HEAP_LOGICAL_OCCUPIED_OFFSET, 4);
@@ -606,7 +605,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const step = frames.stepInstruction(1);
 	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick),
 		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
-		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
+		arena.occupiedBytes(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	assert.equal(scheduler.nowCycles, 0);
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.deepEqual([cpu.captureRuntimeState().previousRootContextWord, cpu.captureRuntimeState().previousActiveContextWord], [root, active]);
@@ -635,7 +634,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 		assert.equal(memory.readRamRecordWord(diagnostics), key);
 		assert.equal(memory.readRamRecordWord(indexTag), ValueTag.Table);
 		assert.notEqual(memory.readRamRecordWord(indexWord), 0);
-		assert.equal(cpu.stringPool.find('warm_gc_orphan'), undefined);
+		assert.equal(nativeHeapReference(cpu).stringPool.find('warm_gc_orphan'), undefined);
 		assert.equal(memory.readMappedWord(canaryAddress), canary);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		trace.observe(`M ${canaryAddress}`, `${canary} 0`);
@@ -671,7 +670,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const held = frames.stepInstruction(1);
 	trace.observe('d', [held, scheduler.nowCycles - secondBefore, +(frames.lastTickSequence !== secondTick),
 		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
-		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
+		arena.occupiedBytes(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	assert.ok(scheduler.nowCycles >= secondBefore);
 	assert.equal(rt.machine.systemController.hasResetRequest(), true, 'a second RESET remains pending');
 	assert.equal(cpu.captureRuntimeState().previousActiveContextWord, active);
@@ -856,7 +855,7 @@ halt_until_irq`;
 	const nativePartial = join(dir, label + '-native.state');
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
 		trace.observe(`H ${offset} ${offset + length}`, hashBytes(memory.ramData(), offset, length));
@@ -869,7 +868,7 @@ halt_until_irq`;
 			&& instructionOpcode(word) === OpCode.MTC0 && instructionLowB(word) === COP0_RAM_END) {
 			root = cpu.rootThread.address;
 			initialFloor = memory.ramBusEnd();
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			if (retainsBlocker) {
 				const spacer = arena.allocate(0x2c0000, true);
 				assert.notEqual(spacer, 0);
@@ -932,8 +931,8 @@ halt_until_irq`;
 		assert.equal(cpu.isHaltedUntilIrq(), retainsBlocker);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		trace.observe('F', 0);
-		assert.equal(cpu.stringPool.find(literal), alias, 'outgoing image-only canonical root survives the stopped pass');
-		if (!retainsBlocker) assert.equal(cpu.stringPool.find(blockerText), undefined);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(literal), alias, 'outgoing image-only canonical root survives the stopped pass');
+		if (!retainsBlocker) assert.equal(nativeHeapReference(cpu).stringPool.find(blockerText), undefined);
 		if (retainsBlocker) {
 			assert.equal(memory.readRamRecordWord(cartBacking), oldImageRecord);
 			assert.equal(memory.readIoU32(IO_SYS_STATUS) & (SYS_STATUS_SUPERVISOR_ACTIVE | SYS_STATUS_SUPERVISOR_RESUMABLE),
@@ -1013,7 +1012,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		assert.equal(result, cpu.isHaltedUntilIrq() ? RunResult.Halted : RunResult.Yielded);
 		assert.ok(cycles - cpu.instructionBudgetRemaining > 0, 'stopped guest work charges ordinary instructions');
 		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining,
-			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
 		trace.observe(`H ${offset} ${offset + length}`, hashBytes(memory.ramData(), offset, length));
@@ -1027,7 +1026,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(gc.phase(), GcPhase.Pause);
 	const root = cpu.rootThread.address, floor = memory.ramBusEnd(), white = gc.white();
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const deadText = 'unreachable warm-reset binding blocker: ' + 'a'.repeat(0x28000);
 	if (reclaim) assert.ok(nativeHeapReference(cpu).stringPool.intern(deadText) >= RAM_BASE);
 	while (arena.allocate(8192, true) !== 0) { /* non-GC allocations eliminate the remaining large free extents */ }
@@ -1069,7 +1068,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		if (reclaim) {
 			assert.equal(cpu.rootThread.address, root);
 			assert.ok(base >= RAM_BASE);
-			assert.equal(cpu.stringPool.find(deadText), undefined);
+			assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), undefined);
 			assert.equal(cpu.isHaltedUntilIrq(), false);
 			assert.equal(memory.readRamRecordWord(base + 4 * (ordinals - 1)), memory.readRamRecordWord(base));
 			fingerprint(base - RAM_BASE, 4 * ordinals);
@@ -1176,12 +1175,12 @@ halt_until_irq
 	const { bssAddress, bssByteCount } = slot1.layout.header;
 	assert.equal(memory.readMappedU32LE(bssAddress), 37);
 	assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
-	const key = cpu.stringPool.find('selected_payload')!;
+	const key = nativeHeapReference(cpu).stringPool.find('selected_payload')!;
 	const value = cpu.getGlobalByKey(key);
 	assert.equal(valueTag(value), ValueTag.String);
 	assert.equal(valuePayload(value) >>> 31, 1, 'the compiled cartridge read the socket-1 String record');
-	const absoluteFloor = RAM_BASE + cpu.heapAllocator.floorOffset(bssAddress + bssByteCount);
-	const otherFloor = RAM_BASE + cpu.heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount);
+	const absoluteFloor = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(bssAddress + bssByteCount);
+	const otherFloor = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount);
 	assert.ok(absoluteFloor < otherFloor);
 	assert.equal(memory.ramBusEnd(), absoluteFloor, 'the selected socket supplies the exact aperture, not the private socket-0 view');
 	const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
@@ -1217,7 +1216,7 @@ function verifyResetAfterRejectedExec(rom: string, native: string, dir: string, 
 	}
 	runtime.boot();
 	const { bssAddress, bssByteCount } = linked.layout.header;
-	const admittedEnd = RAM_BASE + cpu.heapAllocator.floorOffset(bssAddress + bssByteCount);
+	const admittedEnd = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(bssAddress + bssByteCount);
 	assert.ok(admittedEnd > memory.ramBusEnd(), 'the card needs a published aperture change');
 	for (let grant = 0; grant < 2048; ++grant) {
 		runFrame(65536);

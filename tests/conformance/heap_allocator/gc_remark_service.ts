@@ -49,7 +49,7 @@ try {
 		runGuestToHalt(cpu, 4_194_304);
 		assert.ok(cpu.isHaltedUntilIrq());
 		cpu.clearHaltUntilIrq();
-		const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const word = (offset: number) => memory.readRamRecordWord(control + offset);
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();

@@ -747,7 +747,7 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 		assert.deepEqual(observed.gpu.captureSaveState(), baseline.gpu.captureSaveState());
 		assert.equal(observed.scheduler.currentNowCycles(), baseline.scheduler.currentNowCycles());
 		assert.equal(observed.scheduler.nextDeadline(), baseline.scheduler.nextDeadline());
-		assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+		assert.equal(nativeHeapReference(observed.cpu).luaHeap.usedBytes(), nativeHeapReference(baseline.cpu).luaHeap.usedBytes());
 		assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
 		histories.push(records);
 		observed.gpu.setOperationObserver(null);

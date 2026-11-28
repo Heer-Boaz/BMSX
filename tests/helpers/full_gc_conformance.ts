@@ -62,7 +62,7 @@ export class FullGcConformance {
 			this.held();
 		}
 		this.trace.push(`L ${cycles}`);
-		this.expected.push(`${result} ${used} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		this.expected.push(`${result} ${used} ${gc.fullEpochs()} ${gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		return result;
 	}
 

@@ -108,6 +108,6 @@ function scope_probe() return 17 end
 	assert.equal(bindingReturned, rebind);
 	if (rebind) assert.equal(guest.global('scope_introduced'), valueNil(), 'binding must not execute edited code');
 	assert.deepEqual(guest.callClosure(guest.global('scope_probe')), [
-		rebind ? valueString(cpu.stringPool.find(literal)!) : valueInteger(19),
+		rebind ? valueString(nativeHeapReference(cpu).stringPool.find(literal)!) : valueInteger(19),
 	]);
 });

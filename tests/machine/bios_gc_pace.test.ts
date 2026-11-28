@@ -52,9 +52,9 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const state = control + GC_PACE_PAID - 12, scratch = management + 0x680;
-	const occupied = cpu.heapAllocator.occupiedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const beginCall = (index: number, args: readonly number[]) => {
 		issueFirmwareProbe(cpu, args, index);
 	};
@@ -67,7 +67,7 @@ function fixture(optLevel: 0 | 3) {
 		let spent = 0;
 		for (let count = 0; count < 128 && !cpu.isHaltedUntilIrq(); ++count) spent += grant(128);
 		assert.ok(cpu.isHaltedUntilIrq());
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
 		return spent;
 	}
 	function lanes(target = memory): readonly number[] {
@@ -107,7 +107,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua collector pace preserves publication, signed basis and resume at O${optLevel}`, () => {
 		const { cpu, oracle, begin, update, control, occupied, beginCall, grant, finish, lanes } = fixture(optLevel);
-		const capacity = cpu.heapAllocator.capacityBytes();
+		const capacity = nativeHeapReference(cpu).heapAllocator.capacityBytes();
 		for (const [estimate, shift] of [[1, 0], [8192, 1], [513, 0]] as const) {
 			nativeHeapReference(oracle).gc['beginPaceCredit'](estimate, shift);
 			beginCall(begin, [control, occupied, capacity, estimate, shift]);

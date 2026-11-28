@@ -84,7 +84,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 		for (const route of ['forwarded', 'direct'] as const) await t.test(`${route} O${optLevel}`, () => {
 			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine, { heapAllocator: arena } = cpu, { gc } = nativeHeapReference(cpu);
+			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine, { heapAllocator: arena, gc } = nativeHeapReference(cpu);
 			const report = linked.layout.header.bssAddress;
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(report) !== 1; ++i) {
 				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
@@ -131,7 +131,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 			assert.equal(cpu.getFrameDepth(), depth + 1);
 			assert.equal(cpu.readEpcWord(), returnPc);
 
-			const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+			const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 			const getter = asClosure(global('saved_capture'), gc);
 			const cell = Closure.captureAddress(memory, getter, 0), cellOffset = cell & GC_RECORD_MASK;
 			assert.equal(cpu.activeThread.currentFrame!.openUpvalueHead, cell);
@@ -140,7 +140,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 			const edge = capture(memory, cell), child = valuePayload(edge);
 			assert.equal(valueTag(edge), ValueTag.Table);
 			assert.ok(arena.issuedObjectStart((child & GC_RECORD_MASK) - GC_OBJECT_PREFIX));
-			const weak = valuePayload(global('weak')), key = cpu.stringPool.find('target')!;
+			const weak = valuePayload(global('weak')), key = nativeHeapReference(cpu).stringPool.find('target')!;
 			const weakValue = () => gc.tables.getStringKey(weak, key);
 			assert.equal(weakValue(), edge);
 			assert.equal(memory.readRamRecordByte(child + GC_COLOR_OFFSET), gc.white());

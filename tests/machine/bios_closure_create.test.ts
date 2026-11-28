@@ -66,7 +66,7 @@ function fixture(optLevel: 0 | 3) {
 		return cpu;
 	}
 	const cpu = create(), oracle = create(), memory = cpu.memory;
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare(weakMembers: readonly number[] = []) {
 		const actual = memory.ramData(), expected = oracle.memory.ramData();
@@ -82,7 +82,7 @@ function fixture(optLevel: 0 | 3) {
 	function begin(proto: FunctionPrototype, canonical: boolean) {
 		assert.equal(proto.recordUpvalueCount, 0);
 		assert.ok(cpu.beginHeapService(entry.functionAddress,
-			[cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset, proto.functionAddress, proto.executionDomainId >>> 0, +canonical]));
+			[nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), control, nativeHeapReference(cpu).luaHeap.occupiedOffset, proto.functionAddress, proto.executionDomainId >>> 0, +canonical]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -118,14 +118,14 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 				cpu.memory.writeRamRecordWord(f.control + SWEEP_LINK, sweep);
 				cpu.memory.writeRamRecordByte(f.control + 1, 0xa0 | (step & 1));
 			}
-			const occupied = f.cpu.luaHeap.usedBytes();
+			const occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 			const address = f.native(proto, canonical);
 			const kind = ValueTag.Closure | ((step & 1) << 8) | (((proto.executionDomainId + 1) | (canonical ? CLOSURE_CANONICAL : 0)) << 16);
 			f.begin(proto, canonical);
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			if (step === 0) {
-				for (let i = 0; i < 4096 && f.cpu.luaHeap.usedBytes() === occupied; ++i) f.grant(1);
-				assert.equal(f.cpu.luaHeap.usedBytes(), occupied + CLOSURE_CAPTURE_WORDS);
+				for (let i = 0; i < 4096 && nativeHeapReference(f.cpu).luaHeap.usedBytes() === occupied; ++i) f.grant(1);
+				assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), occupied + CLOSURE_CAPTURE_WORDS);
 				assert.notEqual(f.memory.readRamRecordWord(address), kind, 'logical charge precedes the Closure header');
 				for (let i = 0; i < 4096 && f.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) !== proto.functionAddress; ++i) f.grant(1);
 				assert.ok(f.cpu.heapServiceActive());
@@ -137,10 +137,10 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 			}
 			const spent = f.finish();
 			assert.equal(f.cpu.heapServiceResult(), address - RAM_BASE);
-			assert.equal(f.cpu.luaHeap.usedBytes(), occupied + CLOSURE_CAPTURE_WORDS);
+			assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), occupied + CLOSURE_CAPTURE_WORDS);
 			// An unsplittable remainder is charged as part of the actual chunk.
-			assert.equal(f.cpu.heapAllocator.occupiedBytes(), f.oracle.heapAllocator.occupiedBytes());
-			assert.ok(f.cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX));
+			assert.equal(nativeHeapReference(f.cpu).heapAllocator.occupiedBytes(), nativeHeapReference(f.oracle).heapAllocator.occupiedBytes());
+			assert.ok(nativeHeapReference(f.cpu).heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX));
 			assert.equal(f.memory.readRamRecordWord(address), kind);
 			assert.equal(f.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), proto.functionAddress);
 			assert.equal(f.memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE), before);
@@ -173,12 +173,12 @@ for (const canonical of [true, false]) test(`captureless ROM Closure (${canonica
 	while (arena.allocate(4088, true)) { /* leave no complete page supply */ }
 	while (arena.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, true)) { /* exhaust the remaining Closure-size fits */ }
 	restoreCpuCheckpoint(f.oracle, captureCpuCheckpoint(f.cpu));
-	const occupied = f.cpu.luaHeap.usedBytes();
+	const occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 	assert.equal(nativeHeapReference(f.oracle).heapAllocator.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, false), 0);
 	f.begin(f.prototypes[0], canonical);
 	f.finish();
 	assert.equal(f.cpu.heapServiceResult(), 0);
-	assert.equal(f.cpu.luaHeap.usedBytes(), occupied);
+	assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), occupied);
 	f.compare();
 });
 

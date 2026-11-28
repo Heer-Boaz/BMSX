@@ -35,7 +35,7 @@ for (const optLevel of [3] as const) test(`BIOS samples the unsigned millisecond
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
 		runGuestToHalt(cpu, 1_000_000);
-		const sample = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('sample')!), nativeHeapReference(cpu).gc);
+		const sample = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('sample')!), nativeHeapReference(cpu).gc);
 		let reads = 0, word = 0;
 		memory.mapIoRead(IO_SYS_TIME_MS, memory, () => { ++reads; return word; });
 		for (word of [0, 999, 1000, 16777217, 0x7fffffff, 0x80000000, 0x80000080, 0x80000081, 0x80000180, 4294966999, 4294967000, 0xffffffff, 0]) {

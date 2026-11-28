@@ -7,7 +7,6 @@ import { writeLE32 } from '../../machine/ts/common/endian';
 import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
@@ -27,6 +26,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { internStringSliceReference } from '../helpers/string_slice_reference';
+import { HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 
 function createCpu(): CPU {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
@@ -150,7 +150,7 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 	const capacity = 8192;
 	const roots = createReferenceTable(cpu, capacity, 0), key = pool.intern('String growth root');
 	setReferenceGlobal(cpu, key, valueTable(roots));
-	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const metadata = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4) & 0x7fffffff;
 	const count = capacity - memory.readRamRecordWord(metadata + 8);
 	const name = (index: number) => `fill:${index}`;
@@ -184,7 +184,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 	const capacity = 4096;
 	const roots = createReferenceTable(cpu, 4, 0);
 	setReferenceGlobal(cpu, pool.intern('collision rehash root'), valueTable(roots));
-	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+	const metadata = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(metadata + field);
 	let candidate = 0;
 	const collision = () => {
@@ -200,10 +200,10 @@ test('String rehash splits a collision chain across both planes and replays swee
 	assert.equal(read(4), capacity);
 	const oldBase = read(0), trigger = collision();
 	const arena = nativeHeapReference(cpu).heapAllocator;
-	const logicalBefore = cpu.luaHeap.usedBytes(), physicalBefore = arena.occupiedBytes();
+	const logicalBefore = nativeHeapReference(cpu).luaHeap.usedBytes(), physicalBefore = arena.occupiedBytes();
 	const inserted = pool.intern(trigger);
 	const insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + trigger.length;
-	assert.equal(cpu.luaHeap.usedBytes(), logicalBefore + insertedBytes, 'only the String costs budget');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logicalBefore + insertedBytes, 'only the String costs budget');
 	const nextBase = read(0x38);
 	assert.notEqual(nextBase, 0);
 	assert.equal(arena.occupiedBytes(), physicalBefore + arena.allocationBytes(nextBase) + arena.allocationBytes(inserted));
@@ -220,7 +220,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 		logicalRelease += bytes;
 		physicalRelease += arena.allocationBytes(id);
 	}
-	const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
+	const usage = nativeHeapReference(cpu).luaHeap.usedBytes(), occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const archive = new RamHistory(); archive.start(memory);
 	const checkpoint = archive.capture(memory, null), state = cpu.captureRuntimeState();
 	const finish = () => {
@@ -234,8 +234,8 @@ test('String rehash splits a collision chain across both planes and replays swee
 		assert.equal(read(0x38), 0);
 		assert.equal(pool.find(trigger), inserted);
 		for (const { text, id } of entries) assert.equal(pool.find(text), survivors.includes(id) ? id : undefined);
-		assert.equal(cpu.luaHeap.usedBytes(), usage - logicalRelease, 'retirement returns only the dead String charges');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - physicalRelease, 'the old directory is physically reclaimed');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), usage - logicalRelease, 'retirement returns only the dead String charges');
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied - physicalRelease, 'the old directory is physically reclaimed');
 		return memory.captureSaveState().ram;
 	};
 	const expected = finish(), collected = archive.capture(memory, checkpoint);
@@ -285,7 +285,7 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 		for (const [namesToCheck, ids] of [[names, savedIds], [freshNames, freshIds]] as const) {
 			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
 		}
-		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+		const logical = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = arena.occupiedBytes();
 		const oldExtent = arena.allocationBytes(base);
 		for (let step = 0; pool.sweeping() && step < half; ++step) assert.ok(pool.sweepStep(3) <= 3);
 		assert.equal(pool.sweeping(), false);
@@ -294,7 +294,7 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 		const newExtent = arena.allocationBytes(base);
 		assert.ok(newExtent < oldExtent, 'shrinking returns a chunk suffix to the allocator');
 		assert.equal(arena.occupiedBytes(), physical - oldExtent + newExtent);
-		assert.equal(cpu.luaHeap.usedBytes(), logical);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 		for (const [namesToCheck, ids] of [[names, savedIds], [freshNames, freshIds]] as const) {
 			for (let i = 0; i < ids.length; ++i) assert.equal(pool.find(namesToCheck[i]), ids[i]);
 		}
@@ -317,7 +317,7 @@ test('String index growth is optional when only the requested String fits', () =
 	for (let filler = 0; read(8) < capacity; ++filler) pool.intern(`directory filler ${filler}`);
 	assert.equal(read(4), capacity);
 	const base = read(0);
-	const used = cpu.luaHeap.usedBytes(), pending = 'q'.repeat(60);
+	const used = nativeHeapReference(cpu).luaHeap.usedBytes(), pending = 'q'.repeat(60);
 	const spare = arena.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + pending.length, true);
 	assert.notEqual(spare, 0);
 	while (arena.allocate(HEAP_PAGE_SIZE, true) !== 0) {}
@@ -329,7 +329,7 @@ test('String index growth is optional when only the requested String fits', () =
 	assert.equal(read(0), base);
 	assert.equal(read(4), capacity);
 	assert.equal(read(0x38), 0);
-	assert.equal(cpu.luaHeap.usedBytes(), used + BLUA32_STRING_RECORD_HEADER_SIZE + pending.length);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used + BLUA32_STRING_RECORD_HEADER_SIZE + pending.length);
 });
 
 test('empty strings are interned and then collected like non-empty records', () => {
@@ -408,16 +408,16 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 test('long byte strings are reclaimed before an ID is reused', () => {
 	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	nativeHeapReference(cpu).gc.collect();
-	const baseline = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
+	const baseline = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
 	const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
-	assert.equal(cpu.luaHeap.usedBytes(), baseline + bytes);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + nativeHeapReference(cpu).heapAllocator.allocationBytes(old));
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), baseline + bytes);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), physical + nativeHeapReference(cpu).heapAllocator.allocationBytes(old));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.luaHeap.usedBytes(), baseline);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), baseline);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), physical);
 	assert.equal(pool.find(text), undefined);
 	const id = pool.intern(textToByteString('😀'.repeat(65)));
 	assert.equal(pool.byteAt(id, 64), 0xf0);

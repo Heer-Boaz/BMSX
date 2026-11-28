@@ -523,7 +523,7 @@ test('Hot Resume keeps a live ROM String key even after removing its last litera
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(first.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [table] = materializeCpuCompletionValues(cpu);
-	const oldKey = cpu.stringPool.find('prior-key')!;
+	const oldKey = nativeHeapReference(cpu).stringPool.find('prior-key')!;
 	const second = compile("return 'new-literal', 'other-literal'", first);
 	assert.equal([...blua32RomStrings(second.linked.layout)].find(record => record.value === 'prior-key')!.address, oldKey);
 	memory.installSystemRom(writeTestBlua32Rom(second.linked));
@@ -532,5 +532,5 @@ test('Hot Resume keeps a live ROM String key even after removing its last litera
 	assert.equal(cpu.stringPool.toString(oldKey), 'prior-key');
 	const retained = valuePayload(table);
 	assert.equal(cpu.tables.getStringKey(retained, oldKey), valueInteger(42));
-	assert.equal(cpu.stringPool.toString(cpu.stringPool.find('new-literal')!), 'new-literal');
+	assert.equal(cpu.stringPool.toString(nativeHeapReference(cpu).stringPool.find('new-literal')!), 'new-literal');
 });

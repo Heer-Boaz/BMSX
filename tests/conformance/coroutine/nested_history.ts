@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { valueBool } from '../../../machine/ts/machine/cpu/value';
@@ -7,7 +8,7 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 
 export function exerciseNestedHistory(runtime: Runtime): void {
 	const { cpu, memory } = runtime.machine;
-	const root = cpu.rootThread.address, marker = cpu.stringPool.find('nested_progress')!;
+	const root = cpu.rootThread.address, marker = nativeHeapReference(cpu).stringPool.find('nested_progress')!;
 	const history = new RamHistory(); history.start(memory);
 	const initialPages = history.capture(memory, null);
 	const observe = () => {

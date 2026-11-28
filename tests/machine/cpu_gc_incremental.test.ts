@@ -1,5 +1,5 @@
 import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -15,7 +15,6 @@ import { test } from 'node:test';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
@@ -53,7 +52,7 @@ test('incremental marking preserves changed table edges, metatables and final re
 	assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark);
 	assert.equal(nativeHeapReference(cpu).gc.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3, 'the mutation really targets an already traced allocation');
 	assert.equal(cpu.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3);
-	assert.equal(cpu.memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET), GcPhase.Mark);
+	assert.equal(cpu.memory.readRamRecordByte(nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET), GcPhase.Mark);
 	nativeHeapReference(cpu).gc.tables.setStringKey(target, field, valueInteger(1));
 	assert.equal(cpu.memory.readRamRecordByte(target + GC_COLOR_OFFSET), 3);
 	assert.equal(cpu.memory.readRamRecordWord(nativeHeapReference(cpu).gc.changedHeadOffset()), 0, 'scalar replacement does not enqueue a black table');
@@ -106,7 +105,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 	for (const owner of [strong, weak, cells[0], growing])
 		assert.equal(memory.readRamRecordByte(owner + GC_COLOR_OFFSET) & 3, 3, 'the owner is already black');
 
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const onlyClosure = allocateClosureRecordReference(cpu, 0);
 	Closure.initializeRecord(memory, onlyClosure, prototype, false, gc.white(), 0);
 	gc.publishObject(onlyClosure);
@@ -190,7 +189,7 @@ test('completion Values form a resumable root range after the real returning fra
 	cpu.readCompletionValues(results);
 	assert.equal(results.length, args.length);
 	assert.equal(results[args.length - 1], valueTable(target));
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const grant = cpu.instructionBudgetRemaining;
 	assert.equal(nativeHeapReference(cpu).gc.step(), GC_STEP_WORDS, 'completion slot reads consume physical allowance');
 	assert.equal(cpu.instructionBudgetRemaining, grant, 'physical collector work does not debit guest cycles');
@@ -228,7 +227,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	gc.tables.setMetatableAddress(weak, mode);
 	gc.tables.setInteger(weak, 1, valueTable(weakTarget));
 	setReferenceGlobal(cpu, weakRoot, valueTable(weak));
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const work = gc.step();
 	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);
 	assert.equal(gc.phase(), GcPhase.Mark);
@@ -261,7 +260,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 			assert.equal(gc.tableRecordAddress(descendant), descendant, 'detaching Changed must not drop the newly gray parent');
 			assert.equal(gc.tables.getInteger(descendant, 1), valueInteger(73));
 			assert.equal(gc.tables.getInteger(weak, 1), valueTable(weakTarget), 'final roots are visible before weak cleanup');
-			assert.equal(cpu.stringPool.find(appendedName), appendedKey, 'the committed global name is a root even when its Value is scalar');
+			assert.equal(nativeHeapReference(cpu).stringPool.find(appendedName), appendedKey, 'the committed global name is a root even when its Value is scalar');
 			assert.equal(cpu.getGlobalByKey(appendedKey), valueInteger(41));
 			return memory.captureSaveState();
 		};
@@ -312,7 +311,7 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 	const cell = Closure.captureAddress(memory, closure, 0);
 	assert.equal(Upvalue.isOpen(memory, cell), false);
 
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	assert.equal(gc.step(), GC_STEP_WORDS);
 	assert.equal(gc.phase(), GcPhase.Mark);
 	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), closure);
@@ -373,7 +372,7 @@ test('a suspended Thread scan follows closing JMP and RET of a large live captur
 	}
 	child.openUpvalueHead = head;
 	child.top = 4;
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const work = gc.step();
 	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);
 	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), cpu.rootThread.address);
@@ -493,7 +492,7 @@ test('primitive hash displacement withdraws a suspended Table mark cursor', () =
 		assert.ok(seen);
 	};
 	checkVictimAt(count - 1);
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const work = gc.step();
 	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 1);
 	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), table);
@@ -616,7 +615,7 @@ test('remark resumes a real metatable collision chain and withdraws its cursor o
 	}
 	const watched = createReferenceTable(cpu);
 	gc.tables.setInteger(target, 1, valueTable(watched));
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	let work = 0;
 	for (let step = 0; memory.readRamRecordWord(control + GC_MODE_META) === 0 && step < 20; ++step) work = gc.step();
 	assert.equal(work, GC_STEP_WORDS, 'the suspended metatable probe reports its physical work');
@@ -668,7 +667,7 @@ test('final mark rewinds a partly cleared weak Table without retiring unvisited 
 	assert.equal(gc.tables.getInteger(weak, 1), valueNil());
 	assert.equal(gc.tables.getInteger(weak, slots), valueTable(last));
 	assert.equal(gc.tableRecordAddress(first), first, 'object reclamation waits for all weak entries');
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), weak);
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 	const finish = () => {
@@ -714,7 +713,7 @@ for (const reuseHome of [false, true]) test(`weak Table admission uses the survi
 	const storage = gc.tables.hashAddress(weak);
 	// Hold the rest of the logical budget without filling the physical arena.
 	// Keys 2, 3 and 4 would reserve a four-slot array while keeping eight hash slots.
-	cpu.memory.writeRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, heap.capacity());
+	cpu.memory.writeRamRecordWord(nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, heap.capacity());
 	gc.tables.setInteger(weak, incoming, valueInteger(incoming));
 	assert.ok(heap.usedBytes() <= heap.capacity(), 'weak removal must not finance a stale capacity projection');
 	assert.equal(gc.tables.arrayCapacity(weak), 0, 'only two of four positive keys survive');
@@ -747,7 +746,7 @@ test('weak-table remark resumes without consuming list order or losing writes to
 	}
 	const watched = createReferenceTable(cpu);
 	gc.tables.setInteger(watcher, 1, valueTable(watched));
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(control + field);
 	const head = (watcher & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
 	let work = 0;
@@ -897,7 +896,7 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 	}
 	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
 	assert.equal(cpu.rootThread.currentFrame!.registers.getPayload(1), bornDuringSweep);
-	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
+	assert.equal(nativeHeapReference(cpu).stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
 	nativeHeapReference(cpu).gc.collect();
 	assert.equal(allocatedObjectRecords(cpu).length, 1003,
 		'root thread, root table, 1000 children and one sweep-born table remain');
@@ -907,17 +906,17 @@ test('allocation assists advance one graph step without debiting the pending req
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, root = createReferenceTable(cpu, 2048, 0);
 	frame.registers.setTable(0, root); frame.top = 1;
 	for (let i = 1; i <= 2048; ++i) nativeHeapReference(cpu).gc.tables.setInteger(root, i, valueTable(createReferenceTable(cpu)));
-	const before = cpu.luaHeap.usedBytes();
+	const before = nativeHeapReference(cpu).luaHeap.usedBytes();
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 1;
 	const pending = createReferenceTable(cpu);
 	assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark);
 	assert.equal(cpu.instructionBudgetRemaining, 1);
-	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before + 32);
 	frame.registers.setTable(1, pending); frame.top = 2;
 	nativeHeapReference(cpu).luaHeap.collectRuntime();
 	assert.equal(frame.registers.getTag(1), ValueTag.Table);
-	assert.equal(cpu.luaHeap.usedBytes(), before + 32);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before + 32);
 });
 
 
@@ -938,7 +937,7 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	const child = createReferenceTable(cpu), childValue = valueTable(child);
 	nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, childValue);
 	nativeHeapReference(cpu).gc.step();
-	const { memory } = cpu, control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const { memory } = cpu, control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const index = (address: number) => (address & (MAIN_RAM_SIZE - 1)) >>> GC_RECORD_SHIFT;
 	assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark);
 	assert.equal(nativeHeapReference(cpu).gc.memory.readRamRecordByte(weak + GC_COLOR_OFFSET), 3);
@@ -993,13 +992,13 @@ test('changed objects wait for a finite second pass and retain later writes acro
 test('a small allocation assist credits only the work of its small Table scan', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, createReferenceTable(cpu, 8192, 0)); frame.top = 1;
-	const before = cpu.luaHeap.usedBytes();
+	const before = nativeHeapReference(cpu).luaHeap.usedBytes();
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(before);
 	cpu.instructionBudgetRemaining = 0;
 	createReferenceTable(cpu);
 	assert.equal(cpu.instructionBudgetRemaining, 0);
-	assert.equal(cpu.luaHeap.collectionTarget(), before + 1024);
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), before + 1024);
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	assert.equal(cpu.memory.readRamRecordWord(control + GC_TRACE_RECORD), frame.registers.getPayload(0));
 });
 
@@ -1045,7 +1044,7 @@ test('a native Step reference already in Atomic finishes all remaining final-mar
 
 test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {
 	const cpu = machine(), { memory } = cpu, { gc } = nativeHeapReference(cpu);
-	const baselineWork = gc.collect(), baselineBytes = cpu.heapAllocator.occupiedBytes();
+	const baselineWork = gc.collect(), baselineBytes = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const address = allocateThreadRecordReference(cpu, 0);
 	memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
 	const wide = 64;
@@ -1099,7 +1098,7 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(gc.tableRecordAddress(child), 0);
 	assert.equal(memory.readRamRecordByte(address), 0);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), baselineBytes);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), baselineBytes);
 });
 
 test('a collected coroutine releases its object and stack allocations', () => {
@@ -1123,13 +1122,13 @@ test('a collected coroutine releases its object and stack allocations', () => {
 		while (gc.active()) work += gc.step();
 		return work;
 	};
-	const liveWork = sweep(), occupied = cpu.heapAllocator.occupiedBytes();
+	const liveWork = sweep(), occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	assert.equal(gc.threadRecordAddress(address), address);
 	frame.registers.setNil(0);
 	assert.equal(sweep(), liveWork, 'a Thread has the same visit charge whether retained or released');
 	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.equal(cpu.memory.readRamRecordByte(address), 0);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - bytes);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied - bytes);
 	assert.equal(sweep() + 1, liveWork, 'only the surviving Thread is visited at the next collection');
 });
 
@@ -1142,11 +1141,11 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	assert.equal(thread.stackRegisters.capacity(), 1024);
 	assert.equal(thread.stackRegisters.ramOffset(), values, 'incremental collection keeps surviving storage in place');
 	const arena = nativeHeapReference(cpu).heapAllocator;
-	const before = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+	const before = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = arena.occupiedBytes();
 	const oldStackBytes = arena.allocationBytes(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock));
 	nativeHeapReference(cpu).gc.collect();
 	assert.equal(thread.stackRegisters.capacity(), 512);
-	assert.equal(cpu.luaHeap.usedBytes(), before - 512 * THREAD_STACK_SLOT_BYTES);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before - 512 * THREAD_STACK_SLOT_BYTES);
 	const newStackBytes = arena.allocationBytes(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock));
 	assert.ok(newStackBytes < oldStackBytes);
 	assert.equal(arena.occupiedBytes(), physical - oldStackBytes + newStackBytes);
@@ -1195,7 +1194,7 @@ test('allocation pressure advances resumable collection above two MiB retained',
 	assert.ok(pauses >= 2, 'retained data survives repeated automatically paced cycles');
 	assert.equal(diagnostics.fullCollections, 0, 'no allocation required a space-exhausted collection');
 	assert.ok(diagnostics.atomicNanoseconds > 0 && diagnostics.steps > pauses);
-	assert.ok(cpu.luaHeap.usedBytes() <= cpu.luaHeap.capacity());
+	assert.ok(nativeHeapReference(cpu).luaHeap.usedBytes() <= nativeHeapReference(cpu).luaHeap.capacity());
 	assert.equal(frame.registers.getPayload(0), retained);
 });
 

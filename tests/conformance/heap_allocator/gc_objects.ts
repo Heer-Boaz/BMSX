@@ -7,10 +7,9 @@ import { join } from 'node:path';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -64,8 +63,8 @@ try {
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		const management = cpu.heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
-		const arena = cpu.heapAllocator.allocatorStateOffset();
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
+		const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		const table = createReferenceTable(cpu, 3, 8);
 		const colorShift = 8 * GC_COLOR_OFFSET;
@@ -105,7 +104,7 @@ try {
 			assert.equal(cpu.heapServiceActive(), true);
 		}
 		assert.equal(memory.readRamRecordWord(table), retiredHeader);
-		assert.ok(cpu.heapAllocator.issuedObjectStart(table - RAM_BASE - GC_OBJECT_PREFIX), 'kind clears before arena release');
+		assert.ok(nativeHeapReference(cpu).heapAllocator.issuedObjectStart(table - RAM_BASE - GC_OBJECT_PREFIX), 'kind clears before arena release');
 		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), control + OBJECT_HEAD, 'quantum cursor is not published at kind clear');
 		const partial = captureRuntimeSaveState(runtime), intermediate = hashes();
 		const tail = () => {
@@ -113,7 +112,7 @@ try {
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(cycles > 0 && cycles < 65536);
 			assert.equal(cpu.heapServiceResult(), 1);
-			return [`${result} ${cycles} 0 ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`, ...hashes()];
+			return [`${result} ${cycles} 0 ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`, ...hashes()];
 		};
 		const final = tail();
 		assert.deepEqual(final.slice(1), reference.slice(-verify.length),

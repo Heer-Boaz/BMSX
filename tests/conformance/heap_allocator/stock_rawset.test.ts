@@ -18,6 +18,7 @@ import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_CHANGED_HEAD, GcPhase } from '../../helpers/native_heap/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 local t, child, object = {11, 22}, {word = 31}, {}
@@ -59,7 +60,7 @@ for (const optLevel of [0, 3] as const) test(`stock rawset O${optLevel} runs the
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes),
 		machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = cpu;
+	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = nativeHeapReference(cpu);
 	const grant = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	const atVector = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL;
 	const atRawSet = () => atVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10021);

@@ -77,7 +77,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		}
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.ok(cpu.isHaltedUntilIrq());
-		const name = (identifier: string) => cpu.stringPool.find(identifier)!;
+		const name = (identifier: string) => nativeHeapReference(cpu).stringPool.find(identifier)!;
 		const reference = valuePayload(cpu.getGlobalByKey(name('store_reference')));
 		let receiver = valuePayload(cpu.getGlobalByKey(name('store_subject')));
 		let key = mode === 2 ? valueString(name('edge')) : valueInteger(1);
@@ -125,7 +125,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		}
 		const issuePc = cpu.readFramePc(depth), issue = readInstruction(), next = issue.pc + INSTRUCTION_BYTES;
 		assert.equal(issue.op, op);
-		const previous = gc.tables.get(receiver, key), allocated = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+		const previous = gc.tables.get(receiver, key), allocated = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const hashAddress = gc.tables.hashAddress(receiver) - RAM_BASE;
 		const hashBytesCount = TableRecords.hashStorageBytes(gc.tables.hashSize(receiver));
 		const previousHash = hashBytes(memory.ramData(), hashAddress, hashBytesCount);
@@ -163,7 +163,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 			assert.equal(cpu.readEpcWord(), next);
 			assert.equal(cpu.readFramePc(depth), next);
 			assert.equal(arena.occupiedBytes(), allocated);
-			assert.equal(cpu.luaHeap.usedBytes(), charged);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 			if (mode === 3) {
 				assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
 				assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0);

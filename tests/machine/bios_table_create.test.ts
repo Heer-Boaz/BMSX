@@ -26,7 +26,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare() {
 		const left = memory.ramData().subarray(first, last), right = oracle.memory.ramData().subarray(first, last);
@@ -37,7 +37,7 @@ function fixture(optLevel: 0 | 3) {
 	function begin(array: number, hash: number) {
 		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, hash);
 		issueFirmwareProbe(cpu, [
-			cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset,
+			nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), control, nativeHeapReference(cpu).luaHeap.occupiedOffset,
 			array, hash, array * 5, TableRecords.hashStorageBytes(hash), charged,
 		]);
 	}
@@ -148,7 +148,7 @@ for (const optLevel of [0, 3] as const) {
 		arena.free(array);
 		arena.free(record);
 		restoreCpuCheckpoint(oracle, captureCpuCheckpoint(cpu));
-		const occupied = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+		const occupied = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 		const head = memory.readRamRecordWord(control + OBJECT_HEAD), count = memory.readRamRecordWord(control + OBJECT_COUNT);
 		assert.equal(nativeHeapReference(oracle).luaHeap['reserveRecord'](TableRecords.HEADER_BYTES, true, 5, TableHeader.ArrayStorage,
 			TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(1, 8), TableRecords.hashStorageBytes(8), TableHeader.HashStorage), 0);
@@ -156,7 +156,7 @@ for (const optLevel of [0, 3] as const) {
 		finish();
 		assert.equal(firmwareProbeResult(cpu), 0);
 		assert.equal(arena.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 		assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), head);
 		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), count);
 		compare();

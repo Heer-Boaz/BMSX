@@ -11,7 +11,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -34,7 +33,7 @@ import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_CHANGED_HEAD, GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_HEAD, GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const source = `
 ordinary_result = 17
@@ -59,10 +58,10 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena } = nativeHeapReference(cpu);
 	runGuestToHalt(cpu, 4_194_304);
 	assert.ok(cpu.isHaltedUntilIrq());
-	const name = (text: string) => cpu.stringPool.find(text)!;
+	const name = (text: string) => nativeHeapReference(cpu).stringPool.find(text)!;
 	assert.equal(cpu.getGlobalByKey(name('ordinary_result')), valueInteger(17));
 	assert.equal(cpu.getSystemGlobalByKey(name('irq')), valueInteger(29));
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const object = createReferenceTable(cpu);
 	const string = nativeHeapReference(cpu).stringPool.intern('RAM string only in this conformance setup');
 	const references = [valueTable(object), valueString(string)];
@@ -82,7 +81,7 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	memory.writeRamRecordWord(control + GC_TRACE_HEAD, 0);
 	memory.writeRamRecordWord(markWork, 7);
 	const epochWork = gc.epochWork();
-	const allocated = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+	const allocated = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const depth = cpu.getFrameDepth() - 1, owner = cpu.activeThread.address;
 	cpu.clearHaltUntilIrq();
 	const snapshot = (label: string) => {
@@ -162,7 +161,7 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 			assert.equal(memory.readRamRecordWord(markWork), index === 0 ? 7 : 0);
 			assert.equal(gc.epochWork(), epochWork + (index === 0 ? 0 : 8));
 			assert.equal(arena.occupiedBytes(), allocated);
-			assert.equal(cpu.luaHeap.usedBytes(), charged);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 			for (const [first, bytes] of [[bank.base - RAM_BASE, bank.capacity * 17], [control, GC_LAST_EPOCH_WORK + 4],
 				[markWork, 4], [object - RAM_BASE + GC_COLOR_OFFSET, 1], [string - RAM_BASE + 1, 1]]) {
 				commands.push(`H ${first} ${first + bytes}`);

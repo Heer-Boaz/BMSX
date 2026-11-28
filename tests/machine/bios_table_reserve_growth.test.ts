@@ -32,7 +32,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const floor = memory.ramBusEnd() - RAM_BASE;
-	const last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
+	const last = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	function same<T>(action: (target: CPU) => T): T {
 		const actual = action(cpu);
 		assert.deepEqual(action(oracle), actual);
@@ -52,7 +52,7 @@ function fixture(optLevel: 0 | 3) {
 	function begin(record: number, array: number, hash: number, keepHash: boolean, staged: boolean) {
 		same(target => target.memory.writeRamRecordPair(output, ...sentinels));
 		issueFirmwareProbe(cpu, [
-			cpu.heapAllocator.allocatorStateOffset(), record, array, hash, hashBytes(hash), +keepHash, +staged, output - RAM_BASE,
+			nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), record, array, hash, hashBytes(hash), +keepHash, +staged, output - RAM_BASE,
 		]);
 	}
 	function grant(cycles: number) {
@@ -71,7 +71,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(result(), expected === undefined ? sentinels : expected);
 		if (expected !== undefined) oracle.memory.writeRamRecordPair(output, ...expected);
 		assert.deepEqual(header(record), before, 'the semantic Table descriptor is still unpublished');
-		assert.equal(cpu.luaHeap.usedBytes(), occupied, 'reservation does not charge logical occupancy');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), occupied, 'reservation does not charge logical occupancy');
 		compare();
 	}
 	return { cpu, oracle, same, header, compare, begin, grant, finish, verify, result };
@@ -81,16 +81,16 @@ for (const optLevel of [0, 3] as const) {
 	test(`table growth issues hash before array, then resumes and publishes only scratch at O${optLevel}`, () => {
 		const f = fixture(optLevel), array = 9, hash = 8;
 		const record = f.same(target => createReferenceTable(target, 0, 0));
-		const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
+		const before = f.header(record), occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes(), physical = nativeHeapReference(f.cpu).heapAllocator.occupiedBytes();
 		const arena = nativeHeapReference(f.oracle).heapAllocator;
 		const storage = arena.allocate(hashBytes(hash), true);
 		const hashOnly = arena.occupiedBytes();
 		const base = arena.allocate(5 * array, true);
 		assert.ok(storage && base && hashOnly > physical);
 		f.begin(record, array, hash, false, false);
-		for (let i = 0; i < 4096 && f.cpu.heapAllocator.occupiedBytes() === physical; ++i) f.grant(1);
+		for (let i = 0; i < 4096 && nativeHeapReference(f.cpu).heapAllocator.occupiedBytes() === physical; ++i) f.grant(1);
 		assert.ok(!f.cpu.isHaltedUntilIrq());
-		assert.equal(f.cpu.heapAllocator.occupiedBytes(), hashOnly, 'first allocation is the hash');
+		assert.equal(nativeHeapReference(f.cpu).heapAllocator.occupiedBytes(), hashOnly, 'first allocation is the hash');
 		assert.deepEqual(f.result(), sentinels);
 		assert.deepEqual(f.header(record), before);
 		const checkpoint = captureCpuCheckpoint(f.cpu);
@@ -106,7 +106,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const staged of [true, false]) {
 			const oldArray = staged ? 1024 : 8, array = staged ? 2048 : 256, hash = staged ? 16 : 8;
 			const record = f.same(target => createReferenceTable(target, oldArray, hash));
-			const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
+			const before = f.header(record), occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 			const oldBase = f.same(target => target.tables.arrayAddress(record));
 			const oldHash = f.same(target => target.tables.hashAddress(record));
 			f.same(target => target.memory.writeRamRecordWord(oldBase, 0x378422bc));
@@ -124,7 +124,7 @@ for (const optLevel of [0, 3] as const) {
 			f.verify(record, before, occupied, [oldHash, base]);
 			if (!staged) assert.equal(f.cpu.memory.readRamRecordWord(base), 0x378422bc);
 		}
-		const record = f.same(target => createReferenceTable(target, 0, 0)), before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
+		const record = f.same(target => createReferenceTable(target, 0, 0)), before = f.header(record), occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 		f.begin(record, 0, 0, false, false);
 		f.finish();
 		f.verify(record, before, occupied, [0, 0]);
@@ -133,7 +133,7 @@ for (const optLevel of [0, 3] as const) {
 		const base = f.same(target => target.tables.arrayAddress(raw));
 		// The record port still decodes aliases and compares raw unsigned slots.
 		f.same(target => target.memory.writeRamRecordWord(raw + TableHeader.Array, 0x80000001));
-		const rawHeader = f.header(raw), rawOccupied = f.cpu.luaHeap.usedBytes();
+		const rawHeader = f.header(raw), rawOccupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 		assert.ok(f.oracle.tables.arrayCapacity(raw) > 4);
 		f.begin(raw + MAIN_RAM_SIZE, 4, 0, false, false);
 		f.finish();
@@ -144,7 +144,7 @@ for (const optLevel of [0, 3] as const) {
 test('table growth restores only its owned hash block on an array refusal', () => {
 	const f = fixture(3), hash = 8;
 	const record = f.same(target => createReferenceTable(target, 0, hash));
-	const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
+	const before = f.header(record), occupied = nativeHeapReference(f.cpu).luaHeap.usedBytes();
 	const fit = f.same(target => nativeHeapReference(target).heapAllocator.allocate(hashBytes(hash), true));
 	assert.ok(fit && f.same(target => nativeHeapReference(target).heapAllocator.allocate(32, true)));
 	f.same(target => {

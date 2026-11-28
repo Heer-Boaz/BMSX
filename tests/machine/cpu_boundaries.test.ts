@@ -201,14 +201,14 @@ test('captured CLOSURE without verified firmware traps before allocating or open
 		parent.registers.setInteger(0, 73);
 		parent.registers.setInteger(1, 29);
 		parent.registers.setInteger(2, 91);
-		const occupied = cpu.heapAllocator.occupiedBytes(), open = parent.openUpvalueHead, pc = parent.pc;
+		const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), open = parent.openUpvalueHead, pc = parent.pc;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.equal(cpu.readEpcWord(), pc, 'the WIDE head is the faulting instruction');
 		assert.equal(parent.registers.get(2), valueInteger(91), 'the failed CLOSURE leaves its destination untouched');
 		assert.equal(parent.openUpvalueHead, open, 'neither valid descriptor opened a capture without firmware');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'absent firmware never falls back to native allocation');
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied, 'absent firmware never falls back to native allocation');
 	}
 });
 

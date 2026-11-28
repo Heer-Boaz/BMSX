@@ -7,6 +7,7 @@ import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_la
 import type { ActorMemberChoice } from '../../../ide/workbench/contrib/actor_lab/member_choices';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Authored source setup, then real menu/keyboard navigation; invalidation uses physical frame history. */
 export async function runStudioActorFind(test: StudioFixture) {
@@ -49,7 +50,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 	const before = { selection: outline.rows[outline.selectionIndex], path: JSON.stringify(lab.selectionPath),
 		follow: lab.follow.target, scroll: outline.scroll, property: inspector.model.rows[inspector.model.selectionIndex].element,
 		detailsScroll: inspector.model.viewport.scrollTop, details: lab.details, cycles: cycles(),
-		heap: runtime.machine.cpu.luaHeap.usedBytes(), callbacks: guest.global('actor_tool_callbacks') };
+		heap: nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), callbacks: guest.global('actor_tool_callbacks') };
 	await test.capture?.('before-find');
 	pane.focus(); await press('ContextMenu');
 	check(ide.editor.contextMenu.visible && ide.editor.contextMenu.model.rows.some(row => row.command === 'actorLab.find' && row.enabled),
@@ -91,7 +92,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 		&& inspector.visible && lab.details === before.details && pane.detailsWindow.visible && lab.detailsWindow.open
 		&& lab.previewBounds.right > lab.previewBounds.left && lab.previewBounds.bottom > lab.previewBounds.top,
 		'accepted target is visibly revealed while retained Details and the embedded game frame remain available');
-	check(cycles() === before.cycles && runtime.machine.cpu.luaHeap.usedBytes() === before.heap && guest.global('actor_tool_callbacks') === before.callbacks,
+	check(cycles() === before.cycles && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === before.heap && guest.global('actor_tool_callbacks') === before.callbacks,
 		'Find performs no guest execution or guest allocation');
 	await test.capture?.('exact-target-revealed');
 

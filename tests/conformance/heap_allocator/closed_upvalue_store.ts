@@ -69,7 +69,7 @@ return set(incoming)
 
 	// Establish the original algorithm's black-owner / white-child case
 	// without a collector step that would visit the stopped caller's operand.
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	memory.writeRamRecordByte(control, phase);
 	const immediate = phase === GcPhase.MarkAgain, changed = control + GC_CHANGED_HEAD;
 	const originalChanged = memory.readRamRecordWord(changed);

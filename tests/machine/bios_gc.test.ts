@@ -53,7 +53,7 @@ return true, capacity`;
 		for (let i = 0; i < 4096 && result === RunResult.Yielded; ++i) result = runCpuWithinBudget(cpu, 2048);
 		assert.equal(result, RunResult.Halted, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}`);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}, phase ${nativeHeapReference(cpu).gc.phase()}`);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueFloat(cpu.luaHeap.capacity() / 1024)]);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueFloat(nativeHeapReference(cpu).luaHeap.capacity() / 1024)]);
 		assert.equal(nativeHeapReference(cpu).gc.fullEpochs(), 0);
 	});
 }

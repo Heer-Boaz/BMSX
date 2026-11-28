@@ -10,6 +10,7 @@ import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectS
 import { openRuntimeStateInspector, openRuntimeStatePicker, testRuntimeStateSource } from './studio_fsm_runtime';
 import { openRegisteredDefinition, openRegisteredDefinitionPicker, testActorlessDefinitionCatalog, testEmptyDefinitionCatalog } from './studio_definition_catalog';
 import { inspectRuntimeTreeBlackboard, openRuntimeTreeInspector, openRuntimeTreePicker, testRuntimeTreeSource } from './studio_bt_runtime';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -39,9 +40,9 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		&& harness.getActiveCodeContext()!.executionStopRow === recursiveStop - 1, 'inspection: stop belongs to the imported recursive callback');
 	const valueRow = callbackLines.findIndex(line => line.includes('return value + nested'));
 	const valueColumn = callbackLines[valueRow].indexOf('value');
-	const recursiveCycles = cycles(), recursiveVersion = callbacks.version, recursiveHeap = runtime.machine.cpu.luaHeap.usedBytes();
+	const recursiveCycles = cycles(), recursiveVersion = callbacks.version, recursiveHeap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	harness.getHover(valueRow, valueColumn);
-	check(cycles() === recursiveCycles && callbacks.version === recursiveVersion && runtime.machine.cpu.luaHeap.usedBytes() === recursiveHeap,
+	check(cycles() === recursiveCycles && callbacks.version === recursiveVersion && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === recursiveHeap,
 		'inspection: recursive hover does not execute guest code or write source');
 	harness.toggleLuaBreakpoint(callbacks.resource.path, recursiveStop);
 	await press('F5');
@@ -69,10 +70,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		const row = lines.findIndex(line => line.includes(expression));
 		check(row >= 0, `inspection: authored expression ${expression}`);
 		const column = lines[row].indexOf(expression) + expression.length - 1;
-		const position = cycles(), version = model.version, heap = runtime.machine.cpu.luaHeap.usedBytes();
+		const position = cycles(), version = model.version, heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 		const tooltip = harness.getHover(row, column)!;
 		check(harness.getHover(row, column) === tooltip, 'inspection: repeated stationary hover retains its projection');
-		check(model.version === version && cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap
+		check(model.version === version && cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap
 			&& guest.global('inspection_callback_count') === valueInteger(0), 'inspection: read does not mutate source, heap, clock or execute callbacks');
 	};
 	inspect('inspection_effect.definition.period_ms');

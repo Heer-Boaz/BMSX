@@ -68,7 +68,7 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 		while (arena.allocate(bytes, true) !== 0) { /* Reserved backing, not reclaimable objects. */ }
 	}
 	while (arena.allocate(minimum, true) !== 0) { /* Exhaust every block that could hold a Closure. */ }
-	const occupied = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+	const occupied = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const seed = join(directory, 'full-arena.state'), trace = join(directory, 'full-arena.trace'), rom = join(directory, 'full-arena.rom');
 	writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	const commands = ['X'], expected: string[] = [];
@@ -76,7 +76,7 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 		assert.equal(scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled), expectedResult);
 		assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
 		assert.equal(arena.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 		commands.push(`J ${cycles} 1`);
 		expected.push(`${expectedResult} ${paid} 0 ${occupied} ${charged}`);
 	}
@@ -219,7 +219,7 @@ try {
 			assert.ok(floor > oldFloor);
 
 			let dead = 0, deadText = '';
-			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 			if (scenario === 'refused') {
 				// This non-object backing is not on the collector inventory.
 				const backing = heapAllocator.allocate(0x380000, true);
@@ -288,7 +288,7 @@ try {
 				assert.equal(gc.phase(), GcPhase.Sweep, 'checkpoint inside actual dispatched collection, not its caller');
 				assert.equal(arena.floor(), oldFloor - RAM_BASE, 'refusal leaves the arena floor unchanged');
 				assert.equal(memory.readRamRecordWord(traceLimit), 4096, 'tiny host grants do not replace the source work allowance');
-				assert.equal(cpu.stringPool.find(deadText), dead);
+				assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), dead);
 			}
 			assertHeld();
 			const checkpoint = captureRuntimeCheckpointState(runtime), partial = history.capture(memory, baseline);
@@ -309,7 +309,7 @@ try {
 					if (phase === GcPhase.Strings && next === GcPhase.Pause) {
 						++epochs;
 						const survivor = scenario === 'reclaimed' && epochs === 1;
-						assert.equal(cpu.stringPool.find(deadText), survivor ? dead : undefined);
+						assert.equal(nativeHeapReference(cpu).stringPool.find(deadText), survivor ? dead : undefined);
 						observeRam(control, allocatorState);
 					}
 					phase = next;

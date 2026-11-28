@@ -6,7 +6,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { hashCanonicalTableKey, valueInteger, valueNil, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -22,6 +21,7 @@ import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const path = 'kernel/global_bank';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -93,7 +93,7 @@ try {
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid > 0);
-			observe(`J ${cycles} 1`, `${result} ${paid} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`J ${cycles} 1`, `${result} ${paid} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 		}
 		function finish(result: number) {
 			for (let grants = 0; grants < 4096 && cpu.heapServiceActive(); ++grants) grant(37);
@@ -137,7 +137,7 @@ try {
 			assert.deepEqual([memory.readRamRecordWord(bank), memory.readRamRecordWord(bank + 4), memory.readRamRecordWord(bank + 8)],
 				[expect.base, expect.capacity, expect.count]);
 			assert.deepEqual(ram.subarray(base, base + backingBytes * expect.capacity), oldRam.subarray(base, base + backingBytes * expect.capacity));
-			assert.equal(cpu.luaHeap.usedBytes(), old.luaHeap.usedBytes());
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(old).luaHeap.usedBytes());
 			assert.equal(arena.occupiedBytes(), oldArena.occupiedBytes());
 			hash(base, backingBytes * expect.capacity);
 			nativeHash(base, backingBytes * expect.capacity);
@@ -230,7 +230,7 @@ end`, 0);
 		for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i)
 			scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		const key = cpu.stringPool.find('ordinary_counter')!, systemKey = cpu.stringPool.find('irq')!;
+		const key = nativeHeapReference(cpu).stringPool.find('ordinary_counter')!, systemKey = nativeHeapReference(cpu).stringPool.find('irq')!;
 		for (let i = 0; i < 256 * 1024 && cpu.getSystemGlobalByKey(systemKey) !== valueInteger(100); ++i)
 			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		assert.equal(cpu.getGlobalByKey(key), valueInteger(10));
@@ -254,7 +254,7 @@ end`, 0);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid >= cycles);
-			note(`J ${cycles} 1`, `${result} ${paid} 0 0 ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			note(`J ${cycles} 1`, `${result} ${paid} 0 0 ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			const ram = memory.ramData();
 			for (const descriptor of [execution, system]) {
 				const { base, capacity } = readNamespaceBank(memory, descriptor);

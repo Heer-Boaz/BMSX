@@ -123,7 +123,7 @@ return copied, reused, media, ok, reason
 		String(hashBytes(memory.ramData(), offset, 8)),
 	]);
 
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	for (let bytes = MAIN_RAM_SIZE >>> 1; bytes !== 0; bytes >>>= 1) {
 		while (arena.allocate(bytes, true)) { /* exhaust physical backing */ }
 	}

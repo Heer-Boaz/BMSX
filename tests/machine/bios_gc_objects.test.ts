@@ -7,13 +7,12 @@ import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { closureRecordBytes, initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../helpers/firmware_heap_layout';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
@@ -39,9 +38,9 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestSystemCpu(rom), oracle = createTestSystemCpu(rom).cpu;
 	runGuestToHalt(cpu, 1_000_000);
 	runGuestToHalt(oracle, 1_000_000);
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
-	const arena = cpu.heapAllocator.allocatorStateOffset();
+	const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 	const floor = memory.ramBusEnd() - RAM_BASE, end = management + GC_WORKSPACE_END;
 	function compare() {
 		const actual = memory.ramData().subarray(floor, end), expected = oracle.memory.ramData().subarray(floor, end);
@@ -135,7 +134,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory - retire.length);
 		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), 0);
 		assert.equal(memory.readRamRecordByte(keep + GC_COLOR_OFFSET), white, 'survivors receive the full current-white byte');
-		for (const address of retire) assert.equal(cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX), false);
+		for (const address of retire) assert.equal(nativeHeapReference(cpu).heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX), false);
 	});
 
 	test(`BLua preserves the C++ hash-first Table release quantum at O${optLevel}`, () => {
@@ -218,7 +217,7 @@ for (const optLevel of [0, 3] as const) {
 				if (!dead.includes(address) || trace.some(([seen]) => seen === address)) return;
 				trace.push([address, mem.readRamRecordWord(control + OBJECT_COUNT),
 					mem.readRamRecordWord(control + SWEEP_LINK), mem.readRamRecordWord(occupied),
-					+target.heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX)]);
+					+nativeHeapReference(target).heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX)]);
 			});
 		}
 		const valueCapacity = memory.readRamRecordWord(deadThread + ThreadField.StackCapacity);
@@ -234,7 +233,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let i = 0; i < 8192 && memory.readRamRecordByte(fewerCaptures) !== 0; ++i) grant(1);
 		assert.ok(cpu.heapServiceActive());
 		assert.equal(memory.readRamRecordByte(fewerCaptures), 0);
-		assert.equal(cpu.heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX), true,
+		assert.equal(nativeHeapReference(cpu).heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX), true,
 			'the kind byte is cleared before the allocator releases its chunk');
 		assert.equal(memory.readRamRecordByte(liveThread + GC_COLOR_OFFSET), white);
 		assert.equal(memory.readRamRecordWord(liveThread + ThreadField.StackCapacity), liveValueCapacity >>> 1);
@@ -244,7 +243,7 @@ for (const optLevel of [0, 3] as const) {
 
 		function finishWholeQuantum() {
 			// The Closure releases its own extent before the Thread's backing.
-			for (let i = 0; i < 4096 && cpu.heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX); ++i) grant(1);
+			for (let i = 0; i < 4096 && nativeHeapReference(cpu).heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX); ++i) grant(1);
 			let charge = memory.readRamRecordWord(occupied);
 			// Wait for the logical debit of the just-cleared Closure.
 			const closureCharge = prefix[prefix.length - 1][3] - closureRecordBytes(2, true);

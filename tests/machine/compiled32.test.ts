@@ -27,7 +27,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	const cells = new Uint32Array(1);
 	const closure = seedTestCapturedClosure(cpu, firstFrame.functionAddress, cells);
 	firstFrame.closureAddress = closure;
-	const table = createReferenceTable(cpu, 1, 1), field = cpu.stringPool.find('field')!;
+	const table = createReferenceTable(cpu, 1, 1), field = nativeHeapReference(cpu).stringPool.find('field')!;
 	const upvalue = cells[0];
 	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
 	resizeThreadStackReference(cpu, other, 24);
@@ -93,7 +93,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 					return { result, remaining:m.cpu.instructionBudgetRemaining, pc:frame.pc, top:frame.top,
 						registers:Array.from({ length:24 },(_,i)=>frame.registers.get(i)), completion,
 						epc:m.cpu.readEpcWord(),fault:m.cpu.readLuaFaultReasonWord(),upvalue:Upvalue.load(m.cpu.memory, m.upvalue),
-						other:m.other.stackRegisters.get(8),saved:m.cpu.getGlobalByKey(m.cpu.stringPool.find('saved')!),
+						other:m.other.stackRegisters.get(8),saved:m.cpu.getGlobalByKey(nativeHeapReference(m.cpu).stringPool.find('saved')!),
 						memory:[m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x200),m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x204)] };
 				});
 				assert.deepEqual(results[1],results[0],`${scenario} ${source}, value ${v.valueTag(value)}:${v.valuePayload(value)}, grant ${grant}`);

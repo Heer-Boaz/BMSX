@@ -33,7 +33,7 @@ function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: 'publish_table_growth', arity: 8, result: false }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const first = memory.ramBusEnd() - RAM_BASE, management = cpu.heapAllocator.managementOffset();
+	const first = memory.ramBusEnd() - RAM_BASE, management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const last = management + GC_WORKSPACE_END, control = management + HEAP_GC_CONTROL_OFFSET;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
@@ -104,7 +104,7 @@ for (const optLevel of [0, 3] as const) {
 				memory.writeRamRecordPair(f.control + GC_MODE_META, record, 7);
 				memory.writeRamRecordWord(f.control + GC_ROOT_CURSOR - 4, 16);
 			});
-			const logical = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
+			const logical = nativeHeapReference(f.cpu).luaHeap.usedBytes(), physical = nativeHeapReference(f.cpu).heapAllocator.occupiedBytes();
 			f.begin(record + alias, array, hash, false, storage, base, cppMirror);
 			f.finish();
 			assert.equal(memory.readRamRecordWord(record + TableHeader.Free), (hash - 1) >>> 0);
@@ -113,8 +113,8 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(memory.readRamRecordByte(base), dirty, 'array tag and payload planes have not been reshuffled');
 			assert.equal(memory.readRamRecordWord(f.control + GC_TRACE_RECORD), alias === 0 ? 0 : record);
 			assert.equal(memory.readRamRecordByte(record + GC_COLOR_OFFSET), cppMirror ? 2 : alias === 0 ? 0xa2 : 0xa3);
-			assert.equal(f.cpu.luaHeap.usedBytes(), logical);
-			assert.equal(f.cpu.heapAllocator.occupiedBytes(), physical);
+			assert.equal(nativeHeapReference(f.cpu).luaHeap.usedBytes(), logical);
+			assert.equal(nativeHeapReference(f.cpu).heapAllocator.occupiedBytes(), physical);
 		}
 
 		const record = f.same(target => createReferenceTable(target, 1, 8)), array = 7;

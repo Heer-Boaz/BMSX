@@ -27,8 +27,8 @@ function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: symbol, arity: 7 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const first = memory.ramBusEnd() - RAM_BASE, last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const first = memory.ramBusEnd() - RAM_BASE, last = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_WORKSPACE_END;
+	const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	function same<T>(act: (target: CPU) => T): T {
 		const got = act(cpu);
 		assert.deepEqual(act(oracle), got);

@@ -19,7 +19,7 @@ test('a failed thread retains its physical error word, tag and authored frames',
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_EXPLICIT_ERROR);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	const value = cpu.getGlobalByKey(cpu.stringPool.find('failed_thread')!);
+	const value = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('failed_thread')!);
 	const failed = asThread(value, nativeHeapReference(cpu).gc);
 	assert.equal(valuePayload(value), failed);
 	assert.equal(cpu.memory.readRamRecordByte(failed + ThreadField.Header), THREAD_RECORD_KIND);
@@ -35,7 +35,7 @@ test('a dead coroutine is collected after its last stack roots return', () => {
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	nativeHeapReference(cpu).gc.collect();
-	const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak_threads')!));
+	const weak = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak_threads')!));
 	assert.equal(cpu.tables.getInteger(weak, 1), valueNil());
 });
 
@@ -59,13 +59,13 @@ return fixed, padding_a, padding_b, clipped, only, yielded, yield_ok, four, trai
 `, optimize));
 	runGuestToHalt(cpu, 1_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const physical = cpu.heapAllocator.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+	const physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 	cpu.clearHaltUntilIrq();
 	let result = RunResult.Yielded;
 	for (let slice = 0; slice < 8192 && result === RunResult.Yielded; ++slice) {
 		result = cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
-		assert.equal(cpu.luaHeap.usedBytes(), logical);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), physical);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 	}
 	assert.equal(result, RunResult.Halted);
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);

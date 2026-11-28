@@ -3,6 +3,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Automated source setup, then ordinary Details/context menus, actor navigation and physical history. */
 export async function runStudioActorPins(test: StudioFixture) {
@@ -31,7 +32,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane;
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
-	const inspectionCycles = cycles(), inspectionHeap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
+	const inspectionCycles = cycles(), inspectionHeap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
 	const x = inspector.model.rows.findIndex(row => row.element.label === 'health');
 	check(x >= 0, 'actor position has a live Details property');
 	for (let index = 0; index < x; index++) await press('ArrowDown');
@@ -53,7 +54,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 		'selecting another actor preserves the first actor pin instead of retargeting its x');
 	check(inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element.value === '40',
 		'current actor Details remain separate from pinned values');
-	check(cycles() === inspectionCycles && runtime.machine.cpu.luaHeap.usedBytes() === inspectionHeap && guest.global('actor_tool_callbacks') === callbacks,
+	check(cycles() === inspectionCycles && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === inspectionHeap && guest.global('actor_tool_callbacks') === callbacks,
 		'pinning and selecting another actor do not execute guest Lua or allocate guest values');
 	await test.capture?.('pin-other-actor');
 	const held = cycles();

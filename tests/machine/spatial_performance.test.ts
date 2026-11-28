@@ -166,35 +166,35 @@ for (const optLevel of [3] as const) {
 	};
 	test(`spatial CPU: unrelated World size does not tax a changed leaf or dirty branch (O${optLevel})`, t => {
 		const { cpu, images } = newWorldCpu();
-		const initialHeap = cpu.luaHeap.usedBytes();
+		const initialHeap = nativeHeapReference(cpu).luaHeap.usedBytes();
 		runGuestToHalt(cpu, 20_000_000);
 		const bootCycles = 20_000_000 - cpu.instructionBudgetRemaining;
-		const bootAllocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+		const bootAllocatedBytes = nativeHeapReference(cpu).luaHeap.usedBytes() - initialHeap;
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 		const before = collectReferenceHeapBytes(cpu);
 		const beforeObjects = heapObjects(cpu);
-		const admissionCycles = runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
-		const admittedAllocated = cpu.luaHeap.usedBytes() - before;
+		const admissionCycles = runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
+		const admittedAllocated = nativeHeapReference(cpu).luaHeap.usedBytes() - before;
 		const admittedRetained = collectReferenceHeapBytes(cpu) - before;
 		const admittedObjects = heapObjects(cpu);
-		const graph = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('graph')!));
-		const baseCount = cpu.tables.getStringKey(graph, cpu.stringPool.find('_count')!);
+		const graph = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('graph')!));
+		const baseCount = cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_count')!);
 		const rows = [];
 		for (const unrelated of [0, 256]) {
-			if (unrelated !== 0) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('unrelated')!), nativeHeapReference(cpu).gc), [valueInteger(unrelated)]);
+			if (unrelated !== 0) runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('unrelated')!), nativeHeapReference(cpu).gc), [valueInteger(unrelated)]);
 			const leafCycles = [];
 			const branchCycles: number[][] = [];
 			for (const dimension of [2, 3]) {
-				const leaf = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`leaf${dimension}`)!), nativeHeapReference(cpu).gc);
+				const leaf = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(`leaf${dimension}`)!), nativeHeapReference(cpu).gc);
 				const leafProfile = profileWarmGuestKernel(cpu, leaf, 128);
 				assert.equal(leafProfile.reservations, 0);
 				assert.equal(leafProfile.reservedBytes, 0);
 				assert.equal(leafProfile.retainedAfter, leafProfile.retainedBefore);
 				leafCycles.push(leafProfile.cycles);
-				const branch = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`branch${dimension}`)!), nativeHeapReference(cpu).gc);
+				const branch = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(`branch${dimension}`)!), nativeHeapReference(cpu).gc);
 				const widths = [];
 				for (let index = 1; index <= 3; index += 1) {
-					runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('select_width')!), nativeHeapReference(cpu).gc), [valueInteger(index)]);
+					runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('select_width')!), nativeHeapReference(cpu).gc), [valueInteger(index)]);
 					const branchProfile = profileWarmGuestKernel(cpu, branch, 128);
 					widths.push(branchProfile.cycles);
 					assert.equal(branchProfile.reservations, 0);
@@ -211,30 +211,30 @@ for (const optLevel of [3] as const) {
 		}
 		assert.deepEqual(rows[1].leafCycles, rows[0].leafCycles);
 		assert.deepEqual(rows[1].branchCycles, rows[0].branchCycles);
-		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
 		t.diagnostic(JSON.stringify({ optLevel, iterations: 128, widths: [1, 8, 32], baseCount, rows,
 			bootCycles, bootAllocatedBytes, bootRetainedBytes: before - initialHeap, admissionCycles, admittedAllocated, admittedRetained,
 			admittedObjects: admittedObjects.objects - beforeObjects.objects,
 			admittedTables: admittedObjects.tables - beforeObjects.tables,
 			linkedCodeBytes: images.cartImage.textBytes.byteLength, configuredBssBytes: images.cartImage.header.bssByteCount,
-			scratchSlots: cpu.tables.getStringKey(graph, cpu.stringPool.find('_scratch_capacity')!) }));
+			scratchSlots: cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_scratch_capacity')!) }));
 	});
 
 	test(`spatial CPU: World churn retires identities and reuses bounded retained storage (O${optLevel})`, t => {
 		const { cpu, images } = newWorldCpu();
 		runGuestToHalt(cpu, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
-		const churn = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('churn')!), nativeHeapReference(cpu).gc);
-		const graph = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('graph')!));
-		const scratch = cpu.tables.getStringKey(graph, cpu.stringPool.find('_scratch')!);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
+		const churn = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('churn')!), nativeHeapReference(cpu).gc);
+		const graph = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('graph')!));
+		const scratch = cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_scratch')!);
 		// Warm the actual measurement shape, including managed queues and the
 		// event-port weak-key cache's rehash/collection cycle. A shorter warmup
 		// can leave that cache at a different capacity despite equal live keys.
 		profileWarmGuestKernel(cpu, churn, 16);
 		const retained = collectReferenceHeapBytes(cpu);
 		const objects = heapObjects(cpu);
-		const scratchSlots = cpu.tables.getStringKey(graph, cpu.stringPool.find('_scratch_capacity')!);
+		const scratchSlots = cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_scratch_capacity')!);
 		const measurements = [];
 		for (let batch = 0; batch < 3; batch += 1) {
 			const profile = profileWarmGuestKernel(cpu, churn, 16);
@@ -242,14 +242,14 @@ for (const optLevel of [3] as const) {
 			assert.ok(profile.reservedBytes > 0);
 			assert.equal(collectReferenceHeapBytes(cpu), retained, 'retired instances must not accumulate in queues or scratch');
 			assert.deepEqual(heapObjects(cpu), objects);
-			assert.equal(cpu.tables.getStringKey(graph, cpu.stringPool.find('_scratch')!), scratch);
-			assert.equal(cpu.tables.getStringKey(graph, cpu.stringPool.find('_scratch_capacity')!), scratchSlots);
-			const retired = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('retired')!));
+			assert.equal(cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_scratch')!), scratch);
+			assert.equal(cpu.tables.getStringKey(graph, nativeHeapReference(cpu).stringPool.find('_scratch_capacity')!), scratchSlots);
+			const retired = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('retired')!));
 			for (let index = 1; index <= 2; index += 1) assert.equal(cpu.tables.getInteger(retired, index), valueNil());
-			runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
+			runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
 			measurements.push({ ...profile, collectedRetained: retained });
 		}
-		const steady = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('steady')!), nativeHeapReference(cpu).gc), 512);
+		const steady = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('steady')!), nativeHeapReference(cpu).gc), 512);
 		assert.equal(steady.reservations, 0);
 		assert.equal(steady.reservedBytes, 0);
 		assert.equal(steady.retainedAfter, steady.retainedBefore);
@@ -331,16 +331,16 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 			const compiled = compileHeapServiceSystem(source, optLevel, [], 'storage-kernels');
 			const linked = linkTestSystemBlua32(compiled);
 			const { cpu } = createTestSystemCpu(linked);
-			const initialHeap = cpu.luaHeap.usedBytes();
+			const initialHeap = nativeHeapReference(cpu).luaHeap.usedBytes();
 			runGuestToHalt(cpu, 10_000_000);
 			const admissionCycles = 10_000_000 - cpu.instructionBudgetRemaining;
-			const allocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
+			const allocatedBytes = nativeHeapReference(cpu).luaHeap.usedBytes() - initialHeap;
 			const retainedBytes = collectReferenceHeapBytes(cpu) - initialHeap;
 			const objects = heapObjects(cpu);
-			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+			const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 			const kernels = [];
 			for (const name of ['clean', 'motion', 'compose', 'traverse']) {
-				const kernel = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(name)!), nativeHeapReference(cpu).gc);
+				const kernel = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc);
 				const emitted = linked.image.functions.find(fn => fn.address === cpu.captureClosureBinding(kernel).functionAddress)!;
 				let f64Accesses = 0;
 				for (let pc = emitted.codeAddress; pc < emitted.codeAddress + emitted.codeByteCount; pc += INSTRUCTION_BYTES) {

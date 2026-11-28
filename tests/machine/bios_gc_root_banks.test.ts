@@ -8,7 +8,6 @@ import { test } from 'node:test';
 import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -16,7 +15,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_SERVICE_ROOT_PORT_BASE } from '../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -82,7 +81,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		return cpu;
 	}
 	const cpu = makeCpu(), oracle = makeCpu(), memory = cpu.memory;
-	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare(label: string) {
@@ -107,7 +106,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 			assert.ok(target['executionImageForDomain'](slot));
 			const binding = executionImageBindingOffset(slot);
 			const base = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-			const backing = firmwareImageBackingOffset(target.heapAllocator.managementOffset(), slot);
+			const backing = firmwareImageBackingOffset(nativeHeapReference(target).heapAllocator.managementOffset(), slot);
 			const count = target.memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 			return Array.from({ length: count }, (_, i) =>
 				target.memory.readRamRecordWord(base + 4 * i));
@@ -148,13 +147,13 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		const result = new ValueSlots(finished.length);
 		for (const [slot, value] of finished.entries()) result.setEncoded(slot, valueTag(value), valuePayload(value));
 		target['latchCompletionValues'](result, 0, finished.length);
-		const occupied = target.heapAllocator.occupiedBytes(), charged = target.luaHeap.usedBytes();
+		const occupied = nativeHeapReference(target).heapAllocator.occupiedBytes(), charged = nativeHeapReference(target).luaHeap.usedBytes();
 		const descriptorEnd = descriptor + GC_ROOT_BANKS_SIZE;
 		const before = ram.ramData().slice(floor, descriptor);
 		const after = ram.ramData().slice(descriptorEnd, last);
 		target.publishHeapRootBanks();
-		assert.equal(target.heapAllocator.occupiedBytes(), occupied);
-		assert.equal(target.luaHeap.usedBytes(), charged);
+		assert.equal(nativeHeapReference(target).heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(target).luaHeap.usedBytes(), charged);
 		assert.deepEqual(ram.ramData().subarray(floor, descriptor), before);
 		assert.deepEqual(ram.ramData().subarray(descriptorEnd, last), after);
 		if (moved !== null) {

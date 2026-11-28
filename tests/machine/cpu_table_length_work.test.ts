@@ -77,7 +77,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const charges = [2, 2, 3, 8, 2, 2], total = charges.reduce((a, b) => a + b, 0);
 			cpu.runUntilDepth(0, total * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-			const savedSeed = cpu.memory.readRamRecordWord(table + TableHeader.Length), heap = cpu.luaHeap.usedBytes();
+			const savedSeed = cpu.memory.readRamRecordWord(table + TableHeader.Length), heap = nativeHeapReference(cpu).luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); nativeHeapReference(cpu).gc.tables.setInteger(marker, 1, valueInteger(-1));
@@ -89,7 +89,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(cpu.tables.getInteger(marker, 1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
 				assert.equal(frame.registers.get(8), completed >= 5 ? valueInteger(37) : valueNil(), 'cached live Number survives the helper and exact prefix admission');
 			}
-			assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
+			assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), savedSeed); assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			const memory = cpu.memory.captureSaveState(), before = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 5); const after = cpu.captureRuntimeState(), debt = cpu.instructionBudgetRemaining;
 			cpu.memory.restoreSaveState(memory); cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;

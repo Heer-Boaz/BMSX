@@ -56,7 +56,7 @@ test('automatic history wraps and survives pane closure and debugger reconfigura
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
 	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	const pane = new EventViewerInput(events), projection = pane.projection;
 	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	const first = events.at(0);
@@ -101,7 +101,7 @@ test('a source breakpoint stops before trace execution and continuing emits exac
 	const fnIndex = image.symbols!.metadata.functionDisplayNames.indexOf('event_emitter.emit');
 	const pc = image.layout.functions[fnIndex].codeAddress;
 	state.source.install(sources.currentBlua32Media, [new Map(), new Map([[pc, 0]]), new Map()]);
-	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [v.valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.ExecutionStopped);
 	assert.equal(events.count, 0);
@@ -134,13 +134,13 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 	const events = new RuntimeEventHistory(observed.runtime, observed.sources, new RuntimeInstructionObservers(observed.runtime.machine.cpu));
 	for (const { cpu } of [baseline, observed]) {
 		runGuestToHalt(cpu, BUDGET);
-		const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+		const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 		cpu.beginCompletionCall(fn, [v.valueInteger(1000)]);
 		runGuestToHalt(cpu, BUDGET);
 	}
 	assert.equal(events.count, 1000);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
-	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+	assert.equal(nativeHeapReference(observed.cpu).luaHeap.usedBytes(), nativeHeapReference(baseline.cpu).luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
 });
 
@@ -238,7 +238,7 @@ test('independent instruction consumers share physical points and dispose withou
 	let visits = 0;
 	const release = observers.add({ points: [new Set(), new Set(binding.points.map(point => point.pc)), new Set()], observe() { visits++; } });
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [v.valueInteger(2)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.count, 2); assert.equal(visits, 2);
 	events.dispose();

@@ -166,7 +166,7 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 					assert.ok(atIssue());
 					const code = visit < 2 || visit >= 4 ? firstCode : secondCode;
 					writeCodeAddress(code);
-					const previousBytes = cpu.luaHeap.usedBytes(), owner = cpu.activeThread.address, depth = cpu.getFrameDepth() - 1;
+					const previousBytes = nativeHeapReference(cpu).luaHeap.usedBytes(), owner = cpu.activeThread.address, depth = cpu.getFrameDepth() - 1;
 					const previous = cpu.activeThread.currentFrame!.registers.get(decoded.a);
 					assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
 					const miss = !canonical || (visit & 1) === 0;
@@ -192,7 +192,7 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 					for (let n = 0; n < 4096 && cpu.fixedInterruptActive(); ++n) grant(1);
 					assert.equal(cpu.fixedInterruptActive(), false);
 					assert.equal(cpu.readFramePc(depth), decoded.pc + INSTRUCTION_BYTES);
-					assert.equal(cpu.luaHeap.usedBytes(), previousBytes + (miss ? closureRecordBytes(0, true) : 0));
+					assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), previousBytes + (miss ? closureRecordBytes(0, true) : 0));
 					const closure = valuePayload(cpu.activeThread.currentFrame!.registers.get(decoded.a));
 					assert.equal(memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS), (domain === 'cart' ? 1 : 0)
 						| CLOSURE_LATCHED_PROTOTYPE | (canonical ? CLOSURE_CANONICAL : 0));

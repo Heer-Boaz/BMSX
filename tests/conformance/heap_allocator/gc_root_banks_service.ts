@@ -11,10 +11,9 @@ import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueString } from '../../../machine/ts/machine/cpu/value';
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
-import { GC_ROOT_BANK_SIZE, GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, GcRootBankField, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANK_SIZE, GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, GcRootBankField, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -102,7 +101,7 @@ try {
 		driver.checkpoint('cleared-cursor', [[control + GC_ROOT_CURSOR, control + GC_ROOT_CURSOR + 4], [rootThread - RAM_BASE, rootThread - RAM_BASE + 4]]);
 		driver.finish(57, () => {
 			assert.equal(cpu.getGlobalByKey(name), valueString(value));
-			assert.deepEqual(constantTexts.map(text => cpu.stringPool.find(text)), constants);
+			assert.deepEqual(constantTexts.map(text => nativeHeapReference(cpu).stringPool.find(text)), constants);
 		});
 
 		console.log(`BIOS-FULL-GC:gc_root_banks_service:PASS O${opt}`);

@@ -70,12 +70,12 @@ for (const optLevel of [0, 3] as const) {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
+		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 		const receiver = global('receiver');
 		const probe = asClosure(global('probe'), nativeHeapReference(cpu).gc);
 		const args = [receiver, valueInteger(41)];
-		const management = cpu.heapAllocator.managementOffset();
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 		const head = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
 		const originalError = memory.readRamRecordWord(head + GcDiagnosticField.Error);
 		const originalFault = memory.readRamRecordWord(faults + LUA_FAULT_REASON_INDEX_NON_TABLE * 4);
@@ -123,7 +123,7 @@ for (const optLevel of [0, 3] as const) {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 			observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, nativeHeapReference(cpu).gc.fullEpochs(),
-				nativeHeapReference(cpu).gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+				nativeHeapReference(cpu).gc.phase(), nativeHeapReference(cpu).luaHeap.usedBytes()].join(' '));
 			return result;
 		}
 		function hash(first: number, length: number) {
@@ -139,7 +139,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.deepEqual(values, [...methods,
 				valueBool(false), valueString(fault), valueBool(false), valueString(error)],
 				'firmware fault and handler messages change without selecting a different metamethod');
-			assert.equal(cpu.tables.getStringKey(valuePayload(receiver), cpu.stringPool.find('missing_assignment')!), valueNil(),
+			assert.equal(cpu.tables.getStringKey(valuePayload(receiver), nativeHeapReference(cpu).stringPool.find('missing_assignment')!), valueNil(),
 				'the selected __newindex ran instead of publishing a raw field');
 			observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 			observe('Z', [cpu.readCauseWord(), cpu.readLuaFaultReasonWord(), cpu.readEpcWord()].join(' '));

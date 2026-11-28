@@ -8,7 +8,6 @@ import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -19,7 +18,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -28,6 +27,7 @@ import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua3
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const word = INSTRUCTION_BYTES, valueSlots = 16, window = 8;
 const statusA = 0x41, statusB = 0x81;
@@ -194,8 +194,8 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 		const paid = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(paid, BASE_CYCLES[decoded.op] + (decoded.op === OpCode.RET ? 5 : 0),
 			`cycle charge at 0x${pc.toString(16)} for opcode ${decoded.op}`);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		record('E 1', `${run} ${paid} ${memory.ramBusEnd()} -1`);
 		return run;
 	}
@@ -209,7 +209,7 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 		assert.equal(rt.machine.cpu.activeThread.address, address);
 	}
 	const { cpu, memory } = runtime.machine;
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 	const assertEmptyHeap = (rt: Runtime) => {
 		const empty = rt.machine.memory.ramData().subarray(heapFirst, heapEnd);

@@ -9,7 +9,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { initializeRecord, setCaptureAddress } from '../../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -23,7 +22,7 @@ import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const PROBE = 'test/native_gc_capture_trace', entrySource = 'halt_until_irq';
 // Select the C++ whole-color-byte policy explicitly. These fixed wrappers
@@ -71,9 +70,9 @@ try {
 		runtime.boot();
 		const { cpu, memory } = runtime.machine;
 		assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Halted);
-		const management = cpu.heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
 		const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-		const arena = cpu.heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
+		const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
 		memory.writeRamRecordWord(control, GcPhase.Mark | 0x100);
 		const cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 		initializeCell(memory, cell, nativeHeapReference(cpu).gc.white());

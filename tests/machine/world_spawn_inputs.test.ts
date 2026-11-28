@@ -78,13 +78,13 @@ probe = {
 `);
 	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
 		const cpu = rom.run(omittedCase);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const omitted = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('omitted')!), nativeHeapReference(cpu).gc);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const omitted = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('omitted')!), nativeHeapReference(cpu).gc);
 		const state = captureCpuCheckpoint(cpu);
 		const implicitProfile = profileWarmGuestKernel(cpu, omitted, 32);
 		restoreCpuCheckpoint(cpu, state);
-		const restored = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const explicit = asClosure(cpu.tables.getStringKey(restored, cpu.stringPool.find('explicit')!), nativeHeapReference(cpu).gc);
+		const restored = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const explicit = asClosure(cpu.tables.getStringKey(restored, nativeHeapReference(cpu).stringPool.find('explicit')!), nativeHeapReference(cpu).gc);
 		const explicitProfile = profileWarmGuestKernel(cpu, explicit, 32);
 		// Fixed identity and immediate retirement isolate input admission from
 		// ID-string growth; the control reuses one real caller-owned input.
@@ -120,13 +120,13 @@ probe = {
 `);
 	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
 		const cpu = rom.run(hooksCase);
-		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const plain = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('plain')!), nativeHeapReference(cpu).gc);
+		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const plain = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('plain')!), nativeHeapReference(cpu).gc);
 		const state = captureCpuCheckpoint(cpu);
 		const plainProfile = profileWarmGuestKernel(cpu, plain, 32);
 		restoreCpuCheckpoint(cpu, state);
-		const restored = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const hooks = asClosure(cpu.tables.getStringKey(restored, cpu.stringPool.find('hooks')!), nativeHeapReference(cpu).gc);
+		const restored = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const hooks = asClosure(cpu.tables.getStringKey(restored, nativeHeapReference(cpu).stringPool.find('hooks')!), nativeHeapReference(cpu).gc);
 		const hookProfile = profileWarmGuestKernel(cpu, hooks, 32);
 		assert.equal(hookProfile.reservations, plainProfile.reservations);
 		assert.equal(hookProfile.reservedBytes, plainProfile.reservedBytes);

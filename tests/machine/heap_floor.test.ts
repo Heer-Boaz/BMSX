@@ -42,17 +42,17 @@ function bootPair() {
 test('explicit launcher admission maps cartridge sections and RAM restore restores the aperture', () => {
 	const { cpu, memory, systemEnd, cartEnd } = bootPair();
 	const limit = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
-	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(systemEnd));
-	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
+	assert.equal(memory.ramBusEnd(), pageRound(systemEnd));
+	assert.equal(nativeHeapReference(cpu).luaHeap.capacity(), limit - pageRound(systemEnd));
 	const savedMemory = memory.captureSaveState();
 	const savedCpu = cpu.captureRuntimeState();
 	assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.Halted, 'the cartridge clears its BSS and returns');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
-	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(cartEnd));
-	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(cartEnd));
+	assert.equal(memory.ramBusEnd(), pageRound(cartEnd));
+	assert.equal(nativeHeapReference(cpu).luaHeap.capacity(), limit - pageRound(cartEnd));
 	memory.restoreSaveState(savedMemory);
 	cpu.restoreRuntimeState(savedCpu);
-	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
+	assert.equal(nativeHeapReference(cpu).luaHeap.capacity(), limit - pageRound(systemEnd));
 });
 
 test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {
@@ -60,7 +60,7 @@ test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetche
 	// with a RAM Function. No cartridge launcher or managed startup may be pending.
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('return 0', 0));
 	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
-	const pc = cpu.heapAllocator.floorAddress();
+	const pc = memory.ramBusEnd();
 	const prototypeAddress = pc - 2 * BLUA32_FUNCTION_RECORD_SIZE;
 	const prototype = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
 	writeLE32(prototype, BLUA32_FUNCTION_MAX_STACK_OFFSET, 2);

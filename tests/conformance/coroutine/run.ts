@@ -61,7 +61,7 @@ try {
 			runGuestToHalt(cpu, 500_000);
 			assert.ok(cpu.isHaltedUntilIrq());
 			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), nativeHeapReference(cpu).gc));
+			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!), nativeHeapReference(cpu).gc));
 			let result = RunResult.Yielded, windowFault = false;
 			for (let grant = 0; grant < 10_000 && result === RunResult.Yielded; ++grant) {
 				result = cpu.runUntilDepth(depth, 17);
@@ -70,7 +70,7 @@ try {
 			assert.equal(result, RunResult.Halted);
 			assert.ok(windowFault, 'the tooling call must take a synchronous window exception over the dormant HALT');
 			assert.equal(cpu.activeThread, cpu.rootThread);
-			assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('entered')!), valueBool(true));
+			assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('entered')!), valueBool(true));
 			assert.ok(cpu.isHaltedUntilIrq() && cpu.getFrameDepth() === depth && cpu.readFramePc(depth - 1) === pc);
 			const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 			runtime.rebootSystem();
@@ -81,7 +81,7 @@ try {
 			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)]);
 		} else {
 			let result = RunResult.Yielded, admitted = false;
-			const ready = cpu.stringPool.find('interrupt_ready')!;
+			const ready = nativeHeapReference(cpu).stringPool.find('interrupt_ready')!;
 			for (let grant = 0; grant < 20000 && result === RunResult.Yielded; grant++) {
 				if (!admitted && cpu.activeThread !== cpu.rootThread && cpu.getFrameDepth() !== 0
 					&& !cpu.fixedInterruptActive() && cpu.getGlobalByKey(ready) === valueBool(true)) {

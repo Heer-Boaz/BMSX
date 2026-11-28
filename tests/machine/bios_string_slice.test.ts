@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { hashText } from '../../machine/ts/common/hash';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { BUS_FAULT_UNALIGNED_IO, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -57,7 +56,7 @@ function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, [{ path: PROBE, source: probeSource, chunk: parseLuaChunk(probeSource, PROBE) }], leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	const oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset();
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = management + 0x400, floor = memory.ramBusEnd() - RAM_BASE;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
@@ -144,12 +143,12 @@ for (const optLevel of [0, 3] as const) {
 			target.writeRamRecordWord(match + 12, 0);
 		}
 		word(rehashReady, lower);
-		const occupiedBefore = cpu.heapAllocator.occupiedBytes();
+		const occupiedBefore = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 		nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
 		nativeHeapReference(oracle).stringPool.beginReachabilityEpoch();
 		assert.equal(internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length), match);
 		assert.equal(invoke('retain', metadata, source, 2, text.length, hash), match, 'shrink frontier probes upper after lower');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupiedBefore);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupiedBefore);
 		equalArena();
 
 		// Fabricated spans crossing the physical wrap cannot read RAM hidden
@@ -212,7 +211,7 @@ for (const optLevel of [0, 3] as const) {
 		const before = oracle.stringPool.bytes(source);
 		const white = nativeHeapReference(oracle).gc.white();
 		const result = internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length);
-		assert.equal(oracle.stringPool.find(victimText), undefined);
+		assert.equal(nativeHeapReference(oracle).stringPool.find(victimText), undefined);
 		assert.equal(nativeHeapReference(oracle).gc.white(), white ^ 1, 'exactly one fresh recovery epoch suffices');
 		assert.equal(oracle.stringPool.bytes(result), text);
 		assert.equal(oracle.stringPool.bytes(source), before);
@@ -229,6 +228,6 @@ for (const optLevel of [0, 3] as const) {
 		const before = oracle.stringPool.bytes(source);
 		assert.throws(() => internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 		assert.equal(oracle.stringPool.bytes(source), before);
-		assert.equal(oracle.stringPool.find(text), undefined);
+		assert.equal(nativeHeapReference(oracle).stringPool.find(text), undefined);
 	});
 }

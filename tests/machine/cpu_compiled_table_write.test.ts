@@ -55,7 +55,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestHeapServiceCpu(image, mode));
 	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
 	for (const { cpu, memory } of machines) {
-		const key = cpu.stringPool.find('field')!, table = createReferenceTable(cpu, 0, 1);
+		const key = nativeHeapReference(cpu).stringPool.find('field')!, table = createReferenceTable(cpu, 0, 1);
 		nativeHeapReference(cpu).gc.tables.setStringKey(table, key, valueInteger(9));
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setTable(0, table); frame.registers.setInteger(1, 73);
@@ -71,7 +71,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 	const assign = (capacity: number, value: number | null, throughMetatable: boolean, hint: number | null, width: number) => {
 		const cases = machines.map(({ cpu }) => {
 			const tables = nativeHeapReference(cpu).gc.tables, registers = cpu.rootThread.frameAtDepth(0).registers;
-			const table = createReferenceTable(cpu, 0, capacity), oldKey = nativeHeapReference(cpu).stringPool.intern('before'), key = cpu.stringPool.find('field')!;
+			const table = createReferenceTable(cpu, 0, capacity), oldKey = nativeHeapReference(cpu).stringPool.intern('before'), key = nativeHeapReference(cpu).stringPool.find('field')!;
 			tables.setStringKey(table, oldKey, valueInteger(9));
 			const source = throughMetatable ? createReferenceTable(cpu) : table;
 			if (throughMetatable) {
@@ -238,7 +238,7 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const retained = createReferenceTable(cpu, 1024, 1); nativeHeapReference(cpu).gc.tables.setStringKey(retained, nativeHeapReference(cpu).stringPool.intern('payload'), valueString(nativeHeapReference(cpu).stringPool.intern('retained')));
-		const key = cpu.stringPool.find('field')!, receiver = createReferenceTable(cpu, 0, 1);
+		const key = nativeHeapReference(cpu).stringPool.find('field')!, receiver = createReferenceTable(cpu, 0, 1);
 		nativeHeapReference(cpu).gc.tables.setStringKey(receiver, key, valueInteger(71));
 		r.setTable(0, receiver); r.setTable(9, retained); frame.top = 0;
 
@@ -254,6 +254,6 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 		assert.equal(packet.argumentCount, 6);
 		assert.equal(packet.registers.get(2), valueTable(retained));
 		assert.equal(packet.registers.get(5), valueInteger(0));
-		assert.equal(cpu.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueInteger(71));
+		assert.equal(cpu.tables.getStringKey(r.getPayload(0), nativeHeapReference(cpu).stringPool.find('field')!), valueInteger(71));
 	}
 });

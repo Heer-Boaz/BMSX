@@ -32,6 +32,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 // Actual compiler output, deliberately more capture entries than all pinned Value slots.
@@ -78,7 +79,7 @@ try {
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		const arena = cpu.heapAllocator;
+		const arena = nativeHeapReference(cpu).heapAllocator;
 		const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
 		const cells = workspace + newCellsOffset, bits = workspace + missingOffset;
 		const history = new RamHistory();
@@ -105,7 +106,7 @@ try {
 		function grant(cycles: number) {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return spent;
 		}
 		const initialPages = history.capture(memory, null);
@@ -121,7 +122,7 @@ try {
 		const partial = captureRuntimeSaveState(runtime);
 		const plan = partial.ram.slice(workspace, workspace + workspaceBytes);
 		writeFileSync(checkpoint, encodeRuntimeSaveState(partial));
-		const split = commands.length, logicalBeforeReservation = cpu.luaHeap.usedBytes();
+		const split = commands.length, logicalBeforeReservation = nativeHeapReference(cpu).luaHeap.usedBytes();
 		for (let n = 0; n < 8192 && memory.readRamRecordWord(cells + 32 * 4) === 0; ++n) grant(221);
 		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(memory.readRamRecordWord(bits + 64), 1, 'the final descriptor went into the last bitmap word');
@@ -129,7 +130,7 @@ try {
 		assert.equal(memory.readRamRecordWord(cells + (names.length - 1) * 4), 0);
 		const issued = captureRuntimeSaveState(runtime);
 		const issuedPlan = issued.ram.slice(workspace, workspace + workspaceBytes);
-		assert.equal(cpu.luaHeap.usedBytes(), logicalBeforeReservation,
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logicalBeforeReservation,
 			'partial reservation has not published logical ownership');
 		writeFileSync(issueCheckpoint, encodeRuntimeSaveState(issued));
 		const phase = commands.length;
@@ -209,7 +210,7 @@ return make(7, 8)()
 			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine;
-			const arena = cpu.heapAllocator;
+			const arena = nativeHeapReference(cpu).heapAllocator;
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const atIssue = () => {
 				if (cpu.fixedInterruptActive() || cpu.getFrameDepth() === 0) return false;
@@ -253,7 +254,7 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			};
 			grant(1);
 			assert.ok(cpu.fixedInterruptActive());
@@ -359,7 +360,7 @@ return make(7, 8)()
 			const runtime = new Runtime({ systemRomBytes: systemBytes, cartridgeSlots: cartridgeSlots(cartBytes), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine;
-			const arena = cpu.heapAllocator, management = arena.managementOffset();
+			const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const atIssue = () => !cpu.fixedInterruptActive() && cpu.getFrameDepth() !== 0
 				&& cpu.activeCartridgeSlot() === (cart ? 0 : -1) && cpu.readFramePc(cpu.getFrameDepth() - 1) === issuePc;
@@ -388,7 +389,7 @@ return make(7, 8)()
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 				return spent;
 			};
 			let checkpoint = '', cut = 0, rowCut = 0;
@@ -472,7 +473,7 @@ return make(7, 8)()
 				writeLE32(rom, descriptors + 4 * index, invalid && index + 1 === count ? 0xffffffff : originals[0]);
 			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+			const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 
 			const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -488,7 +489,7 @@ return make(7, 8)()
 			const frame = cpu.activeThread.currentFrame!, origin = frame.pc;
 			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, origin);
 			const oldLink = frame.openUpvalueHead, oldValue = frame.registers.get(instruction.a);
-			const physical = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+			const physical = arena.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 			const oldWork = memory.ramData().slice(workspace, workspace + workspaceBytes);
 			const bus = memory.readBusFaultSequence();
 			let sampled = 0;
@@ -505,14 +506,14 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 				return spent;
 			};
 			assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
 			for (let n = 0; n < 4096 && cpu.fixedInterruptActive(); ++n) {
 				if (!fits) {
 					assert.equal(arena.occupiedBytes(), physical);
-					assert.equal(cpu.luaHeap.usedBytes(), logical);
+					assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 				}
 				grant(4096);
 			}

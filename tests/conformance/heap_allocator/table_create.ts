@@ -15,6 +15,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const modulePath = 'kernel/table_create', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', modulePath].map(path => {
@@ -41,8 +42,8 @@ try {
 		});
 		runtime.boot();
 		const { cpu, memory } = runtime.machine;
-		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-		const arena = cpu.heapAllocator.allocatorStateOffset(), occupied = cpu.luaHeap.occupiedOffset;
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+		const arena = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), occupied = nativeHeapReference(cpu).luaHeap.occupiedOffset;
 		const result = management + HEAP_SERVICE_RESULT_OFFSET;
 		const hashRange = `H ${memory.ramBusEnd() - RAM_BASE} ${management + GC_WORKSPACE_END}`;
 		const reference = ['E 1024'], firmware = ['E 1024'];

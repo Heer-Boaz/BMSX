@@ -68,7 +68,7 @@ local run = function(seed, ...)
 end
 return run(7)`;
 	const f = fixture(source, level, 12), cpu = f.runtime.machine.cpu;
-	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(cpu).luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
 	const registers = Array.from({ length: cpu.getFrameDepth() }, (_, index) => t.mock.method(cpu.activeThread.frameAtDepth(index).registers, 'get'));
 	const globals = t.mock.method(f.guest, 'global');
 	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
@@ -106,7 +106,7 @@ return run(7)`;
 	assert.deepEqual(result.data.entries, entries);
 	assert.ok(registers.every(read => read.mock.callCount() === 0));
 	assert.equal(globals.mock.callCount(), 0, 'static declarations never read same-name runtime globals');
-	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	f.guest.invalidate('heap-replaced');
 	assert.throws(() => inspection.read(statics.reference!, 0, 1), /expired/);
 	assert.throws(() => tools.execute('studio_read_runtime_values', { reference: scope.reference, start: 0, count: 1 }), /expired|current suspended/);
@@ -125,7 +125,7 @@ local function descend(depth)
 end
 return descend(2)`, level);
 	const cpu = f.runtime.machine.cpu;
-	const before = [cpu.getFrameDepth(), cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [cpu.getFrameDepth(), nativeHeapReference(cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const reads = t.mock.method(cpu, 'readThreadRegister');
 	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const first = inspection.readStack(0, 1), rest = inspection.readStack(1, 100);
@@ -150,7 +150,7 @@ return descend(2)`, level);
 	}
 	assert.equal(new Set(shared).size, 1, 'all captures share the same actual table reference');
 	assert.equal(inspection.read(shared[0], 0, 100).entries[0].value.display, '42');
-	assert.deepEqual([cpu.getFrameDepth(), cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([cpu.getFrameDepth(), nativeHeapReference(cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 for (const level of [3] as const) test(`O${level}: lexical scopes retain shadowed declarations without reading dead/folded locations`, t => {
@@ -234,7 +234,7 @@ return run(false)`, level);
 	// Editing the declaration cannot alter the installed scope's meaning.
 	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src.replaceAll('<const>', '');
 	const cpu = f.runtime.machine.cpu;
-	const before = [cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'run')!;
 	const scopes = inspection.frameScopes(frame.reference).scopes;
@@ -253,7 +253,7 @@ return run(false)`, level);
 	const field = inspection.read(capture.value.reference!, 0, 1).entries[0];
 	assert.equal(field.value.display, '42');
 	assert.equal(Object.hasOwn(field, 'isConst'), false, 'fields do not inherit declaration attributes');
-	assert.deepEqual([cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 test('inlining preserves declaration constness at the remapped local location', t => {
@@ -370,7 +370,7 @@ local run = function(seed, ...)
 end
 return run(40)`, level, 8);
 	const cpu = f.runtime.machine.cpu;
-	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(cpu).luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
 	const registers = Array.from({ length: cpu.getFrameDepth() }, (_, index) => t.mock.method(cpu.activeThread.frameAtDepth(index).registers, 'get'));
 	const inspection = f.inspection.open(); afterTest(t, () => inspection.dispose());
 	const frames = inspection.readStack(0, 100).frames;
@@ -394,7 +394,7 @@ return run(40)`, level, 8);
 	}
 	const outerCaptures = inspection.read(inspection.frameScopes(outer.reference).scopes[1].reference!, 0, 100).entries;
 	assert.ok(!outerCaptures.some(entry => entry.key.display === 'middle_value'), 'inner bindings never leak into their caller');
-	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 test('eliminated captures stay explicitly unavailable instead of using a same-name global or reading a stale cell', t => {
@@ -436,7 +436,7 @@ return run(1)`, 3, 4);
 	const lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	afterTest(t, () => tools.dispose());
-	const before = [f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const before = [nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
 	const stack = await tools.execute('studio_read_runtime_stack', { inspection: opened.data.inspection, start: 0, count: 100 });
@@ -458,7 +458,7 @@ return run(1)`, 3, 4);
 	const fields = await tools.execute('studio_read_runtime_values', { reference: capture.value.reference, start: 0, count: 100 });
 	assert.ok('entries' in fields.data);
 	assert.equal(fields.data.entries[0].value.display, '42');
-	assert.deepEqual([f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	assert.deepEqual([nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });
 
 test('manual frame contexts retain only installed source identity and expire across real stop generations', t => {

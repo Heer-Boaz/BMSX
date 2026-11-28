@@ -62,8 +62,8 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		}
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
-		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), valueInteger(73));
+		assert.equal(js.getSystemGlobalByKey(nativeHeapReference(js).stringPool.find('copied')!), frame.registers.get(12));
+		assert.equal(js.getGlobalByKey(nativeHeapReference(js).stringPool.find('copied')!), valueInteger(73));
 		assert.equal(frame.top, 3, 'global stores do not extend top to the source register');
 	}
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
@@ -97,7 +97,7 @@ for (const system of [false, true]) test(`generated ${system ? 'SETSYS' : 'SETGL
 	assert.equal(gc.isAlive(target), false);
 	const source = system ? 1 : 0;
 	const bank = system ? cpu['systemGlobalBank'] : cpu['globalBank'];
-	const slot = bank.find(cpu.stringPool.find(system ? 'system-slot' : 'cart-slot')!)!;
+	const slot = bank.find(nativeHeapReference(cpu).stringPool.find(system ? 'system-slot' : 'cart-slot')!)!;
 	const word = RAM_BASE + bank.slots.ramOffset() + 4 * slot;
 	const tag = RAM_BASE + bank.slots.ramOffset() + 4 * bank.slots.capacity() + slot;
 	const successor = pc + (source + 1) * INSTRUCTION_BYTES;
@@ -136,7 +136,7 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.sourceWords, 7);
-	const expected = [valueNil(), valueBool(false), valueBool(true), valueString(js.stringPool.find('literal')!),
+	const expected = [valueNil(), valueBool(false), valueBool(true), valueString(nativeHeapReference(js).stringPool.find('literal')!),
 		valueFloat(-0), valueFloat(NaN), valueFloat(Infinity), valueInteger(7)];
 	for (const [input, index] of [
 		[valueInteger(0), 0], [valueFloat(1.9), 1], [valueFloat(2.9), 2], [valueInteger(3), 3],
@@ -214,7 +214,7 @@ test('fixed selectors must name an entry of the expected kind in their own image
 				const backend = dispatch === 'js' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter;
 				const { cpu } = createTestHeapServiceCpu(image, backend);
 				const frame = cpu.rootThread.frameAtDepth(0);
-				const g = cpu.stringPool.find('g')!, s = cpu.stringPool.find('s')!;
+				const g = nativeHeapReference(cpu).stringPool.find('g')!, s = nativeHeapReference(cpu).stringPool.find('s')!;
 				setReferenceGlobal(cpu, g, valueInteger(81));
 				setReferenceSystemGlobal(cpu, s, valueInteger(91));
 				frame.registers.setInteger(0, 73);
@@ -435,7 +435,7 @@ end
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
-		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
+		const setter = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);
 

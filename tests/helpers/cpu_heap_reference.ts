@@ -19,5 +19,5 @@ export function createReferenceTable(cpu: CPU, arraySize = 0, hashSize = 0): num
 /** Reference measurement after collecting the supplied operands. */
 export function collectReferenceHeapBytes(cpu: CPU, root0 = valueNil(), root1 = valueNil(), root2 = valueNil()): number {
 	nativeHeapReference(cpu).gc.collect(root0, root1, root2);
-	return cpu.luaHeap.usedBytes();
+	return nativeHeapReference(cpu).luaHeap.usedBytes();
 }

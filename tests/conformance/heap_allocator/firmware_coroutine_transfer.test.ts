@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -102,7 +103,7 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	function completed(rt: Runtime, result: RunResult) {
 		assert.equal(result, RunResult.Halted);
 		assert.equal(rt.machine.cpu.captureRuntimeState().hardHalted, false);
-		const values = rt.readCompletionValues(), diagnostic = rt.machine.cpu.stringPool.find('cannot resume non-suspended coroutine')!;
+		const values = rt.readCompletionValues(), diagnostic = nativeHeapReference(rt.machine.cpu).stringPool.find('cannot resume non-suspended coroutine')!;
 		assert.deepEqual(values, [
 			valueBool(true), valueInteger(42), valueNil(), valueInteger(55),
 			valueBool(true), valueInteger(77), valueBool(false), valueNil(), valueInteger(88),

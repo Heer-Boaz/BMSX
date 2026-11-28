@@ -5,6 +5,7 @@ import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behav
 import type { RuntimeInspectionProperty } from '../../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import type { InspectedPropertyRow } from '../../../ide/workbench/ui/property_inspector/model';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Deliberately open the never-executed same-id registration, not the actual definition producer. */
 export async function openRuntimeEffectLens(test: StudioFixture) {
@@ -42,7 +43,7 @@ export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void
 /** The generic live harness drives the real picker, retained inspector and source navigator. */
 export async function openRuntimeEffectInspector(test: StudioFixture, component: 'first' | 'second', period: number) {
 	const { ide, guest, runtime, cycles, press, frame } = test;
-	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
+	const position = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes();
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeEffectPicker(test);
 	const picker = ide.editor.editorParts.activePart.quickInput;
@@ -62,7 +63,7 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 	const first = rows[0], wrapped = first.value;
 	for (let n = 0; n < 20; n += 1) await frame();
 	check(inspector.model.rows[0] === first && first.value === wrapped, 'runtime effect: stationary frames retain projected and measured rows');
-	check(model.version === version && cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap
+	check(model.version === version && cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap
 		&& guest.global('inspection_callback_count') === 0, 'runtime effect: inspection does not mutate text, heap, guest time or callbacks');
 	return inspector;
 }

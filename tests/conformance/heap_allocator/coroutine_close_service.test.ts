@@ -76,7 +76,7 @@ for (const optLevel of [0, 3] as const) {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
 		const target = global('abandoned'), record = valuePayload(target);
 		const capture = Closure.captureAddress(memory, asClosure(global('escaped'), nativeHeapReference(cpu).gc), 0);
 		const read = (field: ThreadField) => memory.readRamRecordWord(record + field);
@@ -87,14 +87,14 @@ for (const optLevel of [0, 3] as const) {
 
 		cpu.beginCompletionCall(asClosure(global('close_fixed'), nativeHeapReference(cpu).gc), [target]);
 		const owner = cpu.activeThread.address;
-		const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
+		const usage = nativeHeapReference(cpu).luaHeap.usedBytes(), occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 		let successor = 0, stopped = false;
 		for (let step = 0; step < 8192 && !stopped; ++step) {
 			assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 			if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL) continue;
 			assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
-			assert.equal(cpu.luaHeap.usedBytes(), usage);
-			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), usage);
+			assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
 			successor = cpu.readEpcWord();
 			stopped = !Upvalue.isOpen(memory, capture) && read(ThreadField.FrameDepth) !== 0;
 		}
@@ -119,7 +119,7 @@ for (const optLevel of [0, 3] as const) {
 					assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), successor, 'RFE resumes the public close function');
 				if (!checkPlacement) {
 					commands.push(`L ${grant}`);
-					expected.push(`${result} ${cycles} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+					expected.push(`${result} ${cycles} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 				}
 				if (result === RunResult.Halted) return total;
 				assert.equal(result, RunResult.Yielded);
@@ -129,8 +129,8 @@ for (const optLevel of [0, 3] as const) {
 
 		finish(true);
 		const want = [valueBool(true), valueNil(), valueNil(), valueNil()];
-		assert.equal(cpu.luaHeap.usedBytes(), usage);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), usage);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
 		assert.deepEqual(runtime.readCompletionValues(), want);
 		assert.equal(status(), ThreadStatus.Dead);
 		assert.equal(Upvalue.load(memory, capture), valueInteger(209));
@@ -164,7 +164,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(runtime.callClosure(asClosure(global('close_protected'), nativeHeapReference(cpu).gc), [failed]),
 			[valueBool(true), valueBool(true), valueNil()]);
 		assert.deepEqual(runtime.callClosure(asClosure(global('close_running'), nativeHeapReference(cpu).gc)),
-			[valueBool(false), valueString(cpu.stringPool.find('Invalid argument.')!)]);
+			[valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('Invalid argument.')!)]);
 		const closeOpen = asClosure(global('close_open'), nativeHeapReference(cpu).gc), failedWithNil = global('failed_with_nil');
 		assert.deepEqual(runtime.callClosure(closeOpen, [failedWithNil]), [valueBool(false), valueNil()],
 			'an actual Nil error retains its second return slot');

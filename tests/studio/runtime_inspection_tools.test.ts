@@ -13,6 +13,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { afterTest } from '../helpers/test_cleanup';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 function fixture() {
 	const compiled = compileLuaSource(`
@@ -34,7 +35,7 @@ return probe
 
 test('installed global values, typed table keys, aliases and cycles are inspected without evaluating Lua', t => {
 	const f = fixture(), cpu = f.runtime.machine.cpu;
-	const before = [f.runtime.machine.scheduler.currentNowCycles(), cpu.getFrameDepth(), cpu.luaHeap.usedBytes()];
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), cpu.getFrameDepth(), nativeHeapReference(cpu).luaHeap.usedBytes()];
 	const original = f.guest.visitTableEntries.bind(f.guest);
 	let visits = 0;
 	t.mock.method(f.guest, 'visitTableEntries', (...args: Parameters<typeof original>) => { visits++; original(...args); });
@@ -58,7 +59,7 @@ test('installed global values, typed table keys, aliases and cycles are inspecte
 	assert.equal(entries.find(e => e.key.kind === 'table')!.value.reference, nested);
 	assert.equal(inspection.read(nested, 0, 1).entries[0].value.display, '42');
 	assert.equal(inspection.read(probe.reference, 100, 1).entries.length, 0);
-	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), cpu.getFrameDepth(), cpu.luaHeap.usedBytes()], before);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), cpu.getFrameDepth(), nativeHeapReference(cpu).luaHeap.usedBytes()], before);
 });
 
 for (const reason of ['execution', 'heap-replaced'] as const) test(`${reason} retires every borrowed table, never refreshes an old handle`, () => {
@@ -94,7 +95,7 @@ test('runtime status exposes the retained host stack without inventing a guest f
 	const f = fixture(), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	afterTest(t, () => { tools.dispose(); f.presenter.dispose(); });
-	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 	const failure = new TypeError('presenter failed');
 	f.fault.hostFrameFailure = failure.stack;
 	const result = await tools.execute('studio_runtime_status', {});
@@ -103,7 +104,7 @@ test('runtime status exposes the retained host stack without inventing a guest f
 	assert.equal(result.data.canInspect, false);
 	assert.equal(result.data.fault, undefined);
 	assert.deepEqual(f.fault.lastLuaCallStack, []);
-	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.getFrameDepth(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 });
 
 for (const abortRequest of [false, true]) test(`Reboot tool retires queued installation on ${abortRequest ? 'request' : 'prompt'} cancellation`, async t => {

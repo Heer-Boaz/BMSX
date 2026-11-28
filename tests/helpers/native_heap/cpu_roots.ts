@@ -41,7 +41,7 @@ export function rootBankSlots(cpu: CPU, bank: GcRootBank): number {
 	if (bank === GcRootBank.SystemGlobals) return cpu['systemGlobalBank'].count;
 	if (bank === GcRootBank.Globals) return cpu['globalBank'].count;
 	if (bank === GcRootBank.Completion) return cpu['completionValueCount'];
-	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
+	const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
 	return cpu.memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 }
 

@@ -5,6 +5,7 @@ import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behav
 import { inspectStateMachineState, readStateMachineInstances, readStateMachineStates } from '../../../ide/workbench/contrib/behavior_lens/state_machine_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Source discovery is deliberately the unexecuted, structurally different same-id registration. */
 export async function openRuntimeStateMachineLens(test: StudioFixture) {
@@ -55,7 +56,7 @@ export async function openRuntimeStatePicker(test: StudioFixture, component: 'fi
 
 export async function openRuntimeStateInspector(test: StudioFixture, component: 'first' | 'second', loadedRevision: number, path = ':/nest') {
 	const { guest, runtime, cycles, press, frame } = test;
-	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
+	const position = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeStatePicker(test, component);
 	const picker = test.ide.editor.editorParts.activePart.quickInput;
@@ -75,7 +76,7 @@ export async function openRuntimeStateInspector(test: StudioFixture, component: 
 	const first = rows[0], wrapped = first.value;
 	for (let n = 0; n < 12; n += 1) await frame();
 	check(inspector.model.rows[0] === first && first.value === wrapped, 'runtime FSM: idle frames retain both projection and measured text');
-	check(model.version === version && cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap
+	check(model.version === version && cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap
 		&& guest.global('inspection_fsm_callback_count') === callbacks, 'runtime FSM: selection and inspection do not execute guest code or mutate source/heap/time');
 	return inspector;
 }

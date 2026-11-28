@@ -11,6 +11,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 import { afterTest } from '../helpers/test_cleanup';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 function fixture(t: TestContext) {
 	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'capture', 0));
@@ -31,7 +32,7 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 	await assert.rejects(f.gameCapture.capture(signal), /No completed game frame/);
 	assert.equal(f.tasks.ready, true, 'unavailable frame is not a host task failure');
 	f.publish();
-	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()];
 	const sequence = f.presenter.gameFrameSequence;
 	f.presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	const renderer = new OverlayRenderer(f.presenter.hostOverlayQueue, { width: 8, height: 6 });
@@ -45,7 +46,7 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 	assert.deepEqual([png.width, png.height], [4, 3]);
 	assert.deepEqual([...png.data], Array.from({ length: 12 }, () => [0x11, 0x22, 0x33, 255]).flat());
 	assert.equal(result.published.presentationSequence, sequence);
-	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes()], before);
 	const owned = await f.presenter.captureGameFrame(); owned.pixels.fill(0);
 	assert.notDeepEqual((await f.presenter.captureGameFrame()).pixels, owned.pixels, 'returned pixels are not a borrow of retained history');
 	f.presenter.rebuildGraph();
@@ -109,7 +110,7 @@ for (const outcome of ['captured', 'prompt-cancelled', 'request-cancelled', 'rep
 		const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 		afterTest(t, () => tools.dispose());
 		const read = t.mock.method(f.backend, 'readColorTexture');
-		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence];
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), f.presenter.gameFrameSequence];
 		const capture = Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target }, request.signal));
 		let settled = false;
 		void capture.then(() => { settled = true; }, () => { settled = true; });
@@ -133,6 +134,6 @@ for (const outcome of ['captured', 'prompt-cancelled', 'request-cancelled', 'rep
 		await f.tasks.join();
 		assert.equal(f.tasks.ready, outcome !== 'history-failed');
 		assert.equal(f.execution.userPaused, outcome !== 'resumed');
-		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence], before);
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), nativeHeapReference(f.runtime.machine.cpu).luaHeap.usedBytes(), f.presenter.gameFrameSequence], before);
 	});
 }

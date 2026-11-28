@@ -26,6 +26,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `bss command: word
 local target = {}
@@ -73,14 +74,14 @@ test('stock hash erasure gives only unresolved String method proofs to firmware'
 		writeFileSync(cartPath, cart);
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { heapAllocator: arena, tables } = cpu;
+		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { tables } = cpu, { heapAllocator: arena } = nativeHeapReference(cpu);
 		for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
 			if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
 			runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
 		}
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.ok(cpu.isHaltedUntilIrq());
-		const receiver = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('table_owner')!));
+		const receiver = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('table_owner')!));
 		assert.equal(tables.metatableAddress(receiver), 0, 'the receiver itself is used as a metatable but has no metatable');
 		const hash = tables.hashSize(receiver), backing = tables.hashAddress(receiver);
 		assert.equal(hash, 128, 'exercise the large hash live-count lane');
@@ -135,11 +136,11 @@ test('stock hash erasure gives only unresolved String method proofs to firmware'
 			assert.ok(atStore(), stage.fn);
 			const frame = cpu.activeThread.currentFrame!, pc = frame.pc, depth = cpu.getFrameDepth();
 			const next = decodeBlua32InstructionAtPc(cart, CART_ROM_BASE, pc).pc + INSTRUCTION_BYTES;
-			const keyId = cpu.stringPool.find(stage.key)!;
+			const keyId = nativeHeapReference(cpu).stringPool.find(stage.key)!;
 			const old = tables.getStringKey(receiver, keyId);
 			assert.equal(old === valueNil(), stage.missing);
 			const before = digest(), oldProof = readProof(), oldLive = memory.readRamRecordWord(liveWord);
-			const occupied = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+			const occupied = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 
 			assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[stage.op]);
@@ -169,7 +170,7 @@ test('stock hash erasure gives only unresolved String method proofs to firmware'
 			assert.equal(readProof(), stage.proof);
 			assert.equal(memory.readRamRecordWord(liveWord), oldLive - +!stage.missing);
 			assert.equal(arena.occupiedBytes(), occupied, 'an erasure never grows or rebuilds the hash');
-			assert.equal(cpu.luaHeap.usedBytes(), charged);
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 			assert.equal(tables.hashAddress(receiver), backing);
 			if (stage.missing) assert.equal(digest(), before);
 			observeErase();

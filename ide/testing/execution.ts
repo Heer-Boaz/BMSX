@@ -156,7 +156,7 @@ export class TestExecution implements FixtureOutput {
 		if (phase === 'teardown') this.cleanupStartCycles = this.target.runtime.machine.scheduler.nowCycles;
 		this.phaseCycles = 0;
 		this.callArgs.length = 1;
-		this.callArgs[0] = valueString(this.target.runtime.machine.cpu.stringPool.find(phase)!);
+		this.callArgs[0] = valueString(this.fixture.stringIndex.find(phase)!);
 	}
 
 	public log(tick: number, value: Value): void {

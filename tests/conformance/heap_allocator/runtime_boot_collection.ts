@@ -31,7 +31,7 @@ try {
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		const heap = cpu.heapAllocator, control = heap.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const heap = nativeHeapReference(cpu).heapAllocator, control = heap.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const work = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK);
 
 		const commands: string[] = [], expected: string[] = [];
@@ -45,13 +45,13 @@ try {
 			const before = scheduler.nowCycles;
 			const result = runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread.address);
 			const elapsed = scheduler.nowCycles - before;
-			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
 			return result;
 		};
 		assert.equal(scheduler.nowCycles, 0);
 		assert.equal(work(), 0, 'the emulator has not collected before the first ROM instruction');
 		assert.equal(heap.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		observeControl();
 

@@ -501,7 +501,7 @@ return actor, advance
 	cpu.readCompletionValues(values);
 	const actor = valuePayload(values[0]);
 	const closure = asClosure(values[1], nativeHeapReference(cpu).gc);
-	const key = cpu.stringPool.find('value')!;
+	const key = nativeHeapReference(cpu).stringPool.find('value')!;
 	const depth = cpu.getFrameDepth();
 	let completed = false;
 	cpu.beginCompletionCall(closure, [values[0], valueInteger(100)]);
@@ -574,7 +574,7 @@ end
 			boundaryCalls++;
 			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] },
 				condition: values => {
-					const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
+					const receipt = valuePayload(values[0]), key = nativeHeapReference(cpu).stringPool.find('reached')!;
 					return () => cpu.tables.getStringKey(receipt, key) === valueBool(true);
 				} };
 		},
@@ -660,7 +660,7 @@ end
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
 		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] },
-			condition: values => { const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
+			condition: values => { const receipt = valuePayload(values[0]), key = nativeHeapReference(cpu).stringPool.find('reached')!;
 				return () => cpu.tables.getStringKey(receipt, key) === valueBool(true); } }),
 		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);

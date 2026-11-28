@@ -47,7 +47,7 @@ function fixture(optLevel: 0 | 3) {
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, indexes);
 	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const root = 'gc step live', dead = 'gc step dead';
 	const addresses = [cpu, oracle].map(target => {
 		// These fixtures splice into an established collector epoch; bare
@@ -151,7 +151,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(f.live), f.live);
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(f.garbage), 0);
-		assert.equal(cpu.stringPool.find(f.dead), undefined);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(f.dead), undefined);
 		f.compare();
 		restoreCpuCheckpoint(cpu, checkpoint);
 		assert.equal(f.finish(work), cycles);
@@ -165,7 +165,7 @@ for (const opt of [0, 3] as const) {
 	test(`scoped Mark visits Table roots after actual bank work fills the source quota at O${opt}`, () => {
 		const f = fixture(opt), { cpu, oracle, memory, control } = f;
 		const receiver = f.garbage, key = f.same(target => createReferenceTable(target, 0, 0));
-		const value = valueString(f.same(target => target.stringPool.find(f.dead)!));
+		const value = valueString(f.same(target => nativeHeapReference(target).stringPool.find(f.dead)!));
 		const operandOffset = f.publishRoots(receiver, valueTable(key), value);
 		f.same(target => {
 			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
@@ -269,7 +269,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), { cpu, oracle } = f;
 		const key = f.same(target => createReferenceTable(target, 0, 0));
 		const unrelated = f.same(target => createReferenceTable(target, 0, 0));
-		const valueId = f.same(target => target.stringPool.find(f.dead)!);
+		const valueId = f.same(target => nativeHeapReference(target).stringPool.find(f.dead)!);
 		const value = valueString(valueId), operandOffset = f.publishRoots(f.garbage, valueTable(key), value);
 		let work = 0;
 		do {
@@ -282,7 +282,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(f.garbage), f.garbage);
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(key), key);
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(unrelated), 0);
-		assert.equal(cpu.stringPool.find(f.dead), valueId);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(f.dead), valueId);
 		f.compare();
 		restoreCpuCheckpoint(cpu, stopped);
 		assert.equal(f.finish(work), cycles);

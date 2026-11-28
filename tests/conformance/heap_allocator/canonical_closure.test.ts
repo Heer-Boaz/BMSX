@@ -21,6 +21,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 local function use()
@@ -53,7 +54,7 @@ for (const opt of [0, 3] as const) test(`firmware canonicalizes and reclaims a R
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, luaHeap: budget } = cpu;
+	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, luaHeap: budget } = nativeHeapReference(cpu);
 	runGuestToHalt(cpu, 4_194_304);
 	assert.ok(cpu.isHaltedUntilIrq());
 	cpu.clearHaltUntilIrq();

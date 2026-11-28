@@ -38,7 +38,7 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 	const cpu = createCpuWithProgram(source);
 	runGuestToHalt(cpu, 100000);
 	const after = collectReferenceHeapBytes(cpu);
-	setReferenceGlobal(cpu, cpu.stringPool.find('saved')!, valueNil());
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('saved')!, valueNil());
 	return { before: collectReferenceHeapBytes(cpu), after };
 }
 
@@ -78,7 +78,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
-	const bank = readNamespaceBank(cpu.memory, cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET);
+	const bank = readNamespaceBank(cpu.memory, nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET);
 	const words = bank.base + 12 * bank.capacity;
 	assert.equal(bank.count, 1);
 	assert.equal(cpu.memory.readRamRecordWord(words), BuiltinFunctionId.Next);
@@ -108,11 +108,11 @@ test('ROM text length does not change decoded constants or global bank allocatio
 
 test('runtime interning reuses a matching ROM record without allocating RAM', () => {
 	const cpu = createCpuWithProgram('return "rom literal"');
-	const before = cpu.luaHeap.usedBytes();
-	const literal = cpu.stringPool.find('rom literal');
+	const before = nativeHeapReference(cpu).luaHeap.usedBytes();
+	const literal = nativeHeapReference(cpu).stringPool.find('rom literal');
 	assert.notEqual(literal, undefined);
 	assert.equal(nativeHeapReference(cpu).stringPool.intern('rom literal'), literal);
-	assert.equal(cpu.luaHeap.usedBytes(), before);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before);
 });
 
 test('unreachable runtime strings are reclaimed by the heap collector', () => {
@@ -124,7 +124,7 @@ test('unreachable runtime strings are reclaimed by the heap collector', () => {
 	nativeHeapReference(cpu).stringPool.intern('transient garbage string');
 
 	assert.equal(collectReferenceHeapBytes(cpu), before);
-	assert.equal(cpu.stringPool.find('transient garbage string'), undefined);
+	assert.equal(nativeHeapReference(cpu).stringPool.find('transient garbage string'), undefined);
 	assert.notEqual(nativeHeapReference(cpu).stringPool.intern('new runtime string'), 0);
 });
 

@@ -12,8 +12,8 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 const source = `
 bss input: word
 *input = 211
@@ -49,21 +49,21 @@ try {
 		driver.reach(() => gc.phase() >= GcPhase.Sweep, 'object sweep phase', 113);
 		driver.reach(() => gc.phase() === GcPhase.Strings, 'String sweep phase');
 		for (const id of dead) assert.equal(memory.readRamRecordByte(id), BLUA32_STRING_RECORD_KIND);
-		let partial = 0, used = cpu.luaHeap.usedBytes();
+		let partial = 0, used = nativeHeapReference(cpu).luaHeap.usedBytes();
 		driver.reach(() => {
 			for (const id of dead) if (memory.readRamRecordByte(id) === 0) {
 				partial = id;
 				return true;
 			}
-			used = cpu.luaHeap.usedBytes();
+			used = nativeHeapReference(cpu).luaHeap.usedBytes();
 			return false;
 		}, 'clear the String record kind');
-		assert.equal(cpu.luaHeap.usedBytes(), used, 'kind clearing precedes the debit');
-		const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used, 'kind clearing precedes the debit');
+		const metadata = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		driver.checkpoint('cleared-kind', [[partial - RAM_BASE, partial - RAM_BASE + 16], [metadata, metadata + 32]]);
 		driver.finish(7, () => {
-			assert.ok(cpu.luaHeap.usedBytes() < used, 'logical debit follows the partial release');
-			for (let i = 0; i < dead.length; ++i) assert.equal(cpu.stringPool.find(`unrooted-intern-${i}`), undefined);
+			assert.ok(nativeHeapReference(cpu).luaHeap.usedBytes() < used, 'logical debit follows the partial release');
+			for (let i = 0; i < dead.length; ++i) assert.equal(nativeHeapReference(cpu).stringPool.find(`unrooted-intern-${i}`), undefined);
 		});
 
 		console.log(`BIOS-FULL-GC:gc_strings:PASS O${opt}`);

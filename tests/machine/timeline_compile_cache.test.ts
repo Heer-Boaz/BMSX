@@ -31,7 +31,7 @@ end
 compile()
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 	assert.notEqual(cpu.tables.getInteger(probe, 1), valueNil());
 	assert.notEqual(cpu.tables.getInteger(probe, 2), valueNil());
 	nativeHeapReference(cpu).gc.collect();
@@ -68,9 +68,9 @@ function probe.exercise()
 end
 `, { optLevel });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('exercise')!), nativeHeapReference(cpu).gc), []);
-	const refs = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('exercise')!), nativeHeapReference(cpu).gc), []);
+	const refs = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('refs')!));
 	assert.notEqual(cpu.tables.getInteger(refs, 1), valueNil());
 	assert.notEqual(cpu.tables.getInteger(refs, 2), valueNil());
 	nativeHeapReference(cpu).gc.collect();
@@ -145,12 +145,12 @@ function probe.recreate()
 end
 `, { optLevel, modules: instrumentedModules });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const refs = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('seed')!), nativeHeapReference(cpu).gc), []);
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const refs = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('refs')!));
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('seed')!), nativeHeapReference(cpu).gc), []);
 	nativeHeapReference(cpu).gc.collect();
 	for (let index = 1; index <= 3; index++) assert.equal(cpu.tables.getInteger(refs, index), valueNil());
-	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('recreate')!), nativeHeapReference(cpu).gc), []);
-	assert.equal(cpu.tables.getStringKey(probe, cpu.stringPool.find('compile_count')!), valueInteger(3),
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('recreate')!), nativeHeapReference(cpu).gc), []);
+	assert.equal(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('compile_count')!), valueInteger(3),
 		'an abandoned generated factory must be collected, then compiled on demand');
 });

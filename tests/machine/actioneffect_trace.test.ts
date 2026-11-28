@@ -253,8 +253,8 @@ function createActionEffectCpu(
 test('ActionEffect fact stream preserves trigger and activity commits in producer order', () => {
 	const { cpu } = createActionEffectCpu('emit');
 	runGuestToHalt(cpu, 10_000_000);
-	const runPlain = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_plain')!), nativeHeapReference(cpu).gc);
-	const runActivity = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_activity')!), nativeHeapReference(cpu).gc);
+	const runPlain = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('run_plain')!), nativeHeapReference(cpu).gc);
+	const runActivity = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('run_activity')!), nativeHeapReference(cpu).gc);
 	const [channelValue, resultsValue, tagChecks, stateChecks,
 		customGateCalls, cooldownCalculations, innerRuns, finalActiveCount] = materializeCpuCompletionValues(cpu);
 	const channel = valuePayload(channelValue), results = valuePayload(resultsValue);
@@ -336,7 +336,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	const stack = cpu.activeThread.stackRegisters;
 	const heapBefore = collectReferenceHeapBytes(cpu) - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const recordedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
-	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, heapBefore);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, heapBefore);
 	assert.equal(cpu.tables.getInteger(channel, 4), valueInteger(10_035));
 	for (let sequence = 10_020; sequence <= 10_035; sequence += 1) {
 		const slot = ((sequence - 1) % 16) + 1;
@@ -349,10 +349,10 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	runCompletionClosure(cpu, runActivity, [valueInteger(20)]);
 	const activityHeapBefore = collectReferenceHeapBytes(cpu) - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const activityRecordedCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
-	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, activityHeapBefore);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, activityHeapBefore);
 	assert.equal(cpu.tables.getInteger(channel, 4), valueInteger(30_075));
 
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(strings.find('dispose')!), nativeHeapReference(cpu).gc), []);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('dispose')!), nativeHeapReference(cpu).gc), []);
 	runGuestToHalt(cpu, 100_000);
 	const unselectedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
 	const unselectedActivityCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
@@ -408,8 +408,8 @@ test('ordinary ActionEffect bytecode contains no trace channel or outcome labels
 	const { cpu, cart } = createActionEffectCpu('erase');
 	runGuestToHalt(cpu, 10_000_000);
 
-	const runPlain = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_plain')!), nativeHeapReference(cpu).gc);
-	const runActivity = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('run_activity')!), nativeHeapReference(cpu).gc);
+	const runPlain = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('run_plain')!), nativeHeapReference(cpu).gc);
+	const runActivity = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('run_activity')!), nativeHeapReference(cpu).gc);
 	const erasedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
 	const erasedActivityCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
 	// Trace erasure must not make this workload dearer than the pre-migration core.

@@ -45,7 +45,7 @@ function fixture(backend: CpuExecutionBackend) {
 	const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 	const reference = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const ref = reference.memory, gc = nativeHeapReference(reference).gc;
-	const referenceControl = reference.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const referenceControl = nativeHeapReference(reference).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	// Finish startup and admit the mailbox's frame before narrowing the bus
 	// to the synthetic records; startup uses the production backing service.
 	runGuestToHalt(cpu, 65_536);

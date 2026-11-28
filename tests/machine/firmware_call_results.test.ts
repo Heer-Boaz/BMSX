@@ -108,7 +108,7 @@ advance = factory()
 test('firmware O3: retained tuple forwarding allocates no guest wrappers', () => {
 	const cpu = callResultRom.run(retainedForward, firmwareCycleLimit);
 	// The warmed probe collects the guest heap between calls.
-	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), nativeHeapReference(cpu).gc);
+	const closure = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('advance')!), nativeHeapReference(cpu).gc);
 	const globals = cpu.globalSlotCount;
 	const profile = profileWarmGuestKernel(cpu, closure, 8, 500_000);
 	assert.equal(profile.reservations, 0, 'forwarding an open tuple must not reserve guest heap storage');

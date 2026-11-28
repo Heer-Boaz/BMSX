@@ -1,5 +1,5 @@
 import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../helpers/native_heap/gc_heap';
-import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET, HEAP_COLLECTION_TARGET_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -14,7 +14,6 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -72,7 +71,7 @@ test('String mark work follows its reached records through a CPU checkpoint', ()
 	const strings = nativeHeapReference(cpu).stringPool;
 	const first = strings.intern('mark-work-before-checkpoint');
 	const second = strings.intern('mark-work-after-checkpoint');
-	const workOffset = cpu.heapAllocator.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
+	const workOffset = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
 
 	strings.beginReachabilityEpoch();
 	strings.markReachable(first);
@@ -99,25 +98,25 @@ test('String mark work follows its reached records through a CPU checkpoint', ()
 
 test('physical GC work counts canonical scans, reclamation and one global bank pass without a cycle debit', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
 	cpu.instructionBudgetRemaining = 7;
 	assert.equal(nativeHeapReference(cpu).gc.collect(), bootCollectionWork, 'object records and the RAM intern index are swept separately');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, createReferenceTable(cpu, 2, 3)); //32+10+4×10=82 logical bytes.
 	frame.registers.setString(1, nativeHeapReference(cpu).stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes + 82 + 22);
 	assert.equal(nativeHeapReference(cpu).gc.collect(), bootCollectionWork + (9 + 2 + 8 + 1) + 2 + 2 * 3,
 		'trace the live Values, scan the Table, mark the String leaf and visit each record');
 	assert.equal(cpu.instructionBudgetRemaining, 7);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
-	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes + 82 + 22);
+	assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), 1048576);
 	cpu.instructionBudgetRemaining = 123; nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
-	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
+	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes + 82 + 22);
 	cpu.reset();
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
@@ -155,18 +154,18 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 
 test('allocation admission and GC use logical bytes, not physical chunk extents', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
+	const logical = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = nativeHeapReference(cpu).heapAllocator.occupiedBytes();
 	const logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(logical + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
 	const first = createReferenceTable(cpu, 2, 3), second = createReferenceTable(cpu, 512, 0);
 	assert.equal(cpu.instructionBudgetRemaining, 23, 'the allocations fit at the exact logical threshold');
-	assert.equal(cpu.luaHeap.usedBytes(), logical + logicalCharge);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + logicalCharge);
 	const arena = nativeHeapReference(cpu).heapAllocator, tables = nativeHeapReference(cpu).gc.tables;
 	const extent = (table: number) => arena.allocationBytes(table - GC_OBJECT_PREFIX) + arena.allocationBytes(tables.arrayAddress(table)) + (tables.hashAddress(table) ? arena.allocationBytes(tables.hashAddress(table)) : 0);
 	assert.equal(arena.occupiedBytes(), physical + extent(first) + extent(second));
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical, 'reclaim the exact charges');
 	assert.equal(arena.occupiedBytes(), physical, 'release both the headers and the backing chunks');
 });
 
@@ -179,14 +178,14 @@ test('table replacement admits just its logical increase, even when both layouts
 		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 9 : 2;
 		tables.setInteger(table, residentKey, valueInteger(100 + residentKey));
 		const arena = nativeHeapReference(cpu).heapAllocator;
-		const logical = cpu.luaHeap.usedBytes(), physical = arena.occupiedBytes();
+		const logical = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = arena.occupiedBytes();
 		const oldStorage = arena.allocationBytes(tables.arrayAddress(table));
 		const target = logical + (packArrayIntoHash ? 0 : 5);
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(target);
 		tables.setInteger(table, trigger, valueInteger(73));
-		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
+		assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
 		assert.equal(nativeHeapReference(cpu).gc.active(), false);
-		assert.equal(cpu.luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
 		const newStorage = arena.allocationBytes(packArrayIntoHash ? tables.hashAddress(table) : tables.arrayAddress(table));
 		assert.equal(arena.occupiedBytes(), physical - oldStorage + newStorage);
 		assert.equal(tables.getInteger(table, residentKey), valueInteger(100 + residentKey));
@@ -204,7 +203,7 @@ test('table growth retries its actual physical reserve before starting a fresh G
 		for (let key = 1; key <= 512; ++key) tables.setInteger(table, key, valueInteger(key));
 		const garbage = pressure !== 'unavailable' ? createReferenceTable(cpu, 1024, 0) : 0;
 		while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
-		assert.ok(cpu.luaHeap.usedBytes() + 2560 < cpu.luaHeap.capacity(), 'the replacement fits the logical budget');
+		assert.ok(nativeHeapReference(cpu).luaHeap.usedBytes() + 2560 < nativeHeapReference(cpu).luaHeap.capacity(), 'the replacement fits the logical budget');
 
 		const white = gc.white();
 		const initialRoot = pressure === 'floating' || pressure === 'explicit' ? valueTable(garbage) : valueNil();
@@ -334,32 +333,32 @@ test('physical occupancy advances a large live epoch before a table replacement 
 
 test('allocation assist target is only restored by the RAM checkpoint', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	const target = cpu.heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;
+	const target = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;
 	const ram = cpu.memory.captureSaveState(), checkpoint = cpu.captureRuntimeState();
 	cpu.memory.writeRamRecordWord(target, 2048);
 	cpu.restoreRuntimeState(checkpoint);
-	assert.equal(cpu.luaHeap.collectionTarget(), 2048);
+	assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), 2048);
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(checkpoint);
-	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(nativeHeapReference(cpu).luaHeap.collectionTarget(), 1048576);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes);
 });
 
 test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	const doomed = createReferenceTable(cpu, 16384, 0), used = cpu.luaHeap.usedBytes();
+	const doomed = createReferenceTable(cpu, 16384, 0), used = nativeHeapReference(cpu).luaHeap.usedBytes();
 	cpu.instructionBudgetRemaining = 1;
 	for (const active of [false, true]) {
 		if (active) nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-		assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+		assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(nativeHeapReference(cpu).luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 		assert.equal(nativeHeapReference(cpu).gc.active(), active);
 		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(doomed), doomed);
-		assert.equal(cpu.luaHeap.usedBytes(), used);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used);
 	}
 	// Exactly capacity is not oversized. Recovery must reclaim before it can fault.
-	assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(cpu.luaHeap.capacity()), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(nativeHeapReference(cpu).luaHeap.capacity()), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(doomed), 0);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes);
 	assert.equal(cpu.instructionBudgetRemaining, 1, 'host admission is outside guest execution');
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
@@ -377,7 +376,7 @@ test('ROM constants need no collector visits even with multiple resident images'
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (4 + 12) + (4 + 12) + 2 * 9, 'each card charges its String bindings, name-slot map and new unique global');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes + (4 + 12) + (4 + 12) + 2 * 9, 'each card charges its String bindings, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
 	const work = bootCollectionWork + 3 * 2;
 	assert.equal(nativeHeapReference(cpu).gc.collect(), work, 'only the registered namespace slots add root work');
@@ -485,13 +484,13 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const empty = createTestHeapServiceCpu(bare, backend).cpu;
-		const occupied = empty.heapAllocator.occupiedBytes();
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-		assert.equal(cpu.luaHeap.usedBytes(), empty.luaHeap.usedBytes());
+		const occupied = nativeHeapReference(empty).heapAllocator.occupiedBytes();
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(empty).luaHeap.usedBytes());
 		const installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		assert.ok(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID));
 		assert.deepEqual(memory.ramData().subarray(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE));
-		const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 		assert.deepEqual(memory.ramData().subarray(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), new Uint8Array(FIRMWARE_IMAGE_BACKING_SIZE));
 		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 		for (let replay = 0; replay < 2; ++replay) {
@@ -500,10 +499,10 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
 			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 			assert.deepEqual(memory.captureSaveState().ram, ram.ram, 'restoring the literal cache performs no guest writes');
-			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+			assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
 		}
 		cpu.reset(); cpu.reset();
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
 	}
 });
 
@@ -523,7 +522,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		admitTestHeapServiceCpu(cpu, addresses);
 		const beforeCartridge = captureCpuCheckpoint(cpu);
 		const binding = executionImageBindingOffset(0);
-		const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), 0);
+		const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), 0);
 		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 		const count = () => memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 		const activate = () => {
@@ -561,7 +560,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		assert.equal(count(), 1);
 		assert.equal(memory.readRamRecordWord(strings()), first);
 		nativeHeapReference(cpu).gc.collect();
-		assert.equal(cpu.stringPool.find(literal), first);
+		assert.equal(nativeHeapReference(cpu).stringPool.find(literal), first);
 		cpu.runUntilDepth(0, 4096);
 		assert.equal(cpu.readFrameRegister(0, 0), valueString(first));
 	}
@@ -612,14 +611,14 @@ test('replacement consumes newly published global planes without changing firmwa
 	writeLE32(previousMedia, next.image.address + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1);
 	const { cpu, memory, executionAddressSpace } = createTestHeapServiceCpu({ romBytes: previousMedia });
 	const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
-	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const before = memory.readRamRecordWord(binding);
 	assert.notEqual(before, 0);
 	assert.equal(memory.readRamRecordWord(backing), before);
 	assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 8);
 	const key = nativeHeapReference(cpu).stringPool.intern('__index');
 	setReferenceGlobal(cpu, key, valueInteger(73));
-	const used = cpu.luaHeap.usedBytes();
+	const used = nativeHeapReference(cpu).luaHeap.usedBytes();
 
 	memory.installSystemRom(next.romBytes);
 	assert.equal(memory.readRamRecordWord(binding), before, 'mounting new bytes alone does not change installed operand ownership');
@@ -630,7 +629,7 @@ test('replacement consumes newly published global planes without changing firmwa
 	assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 16);
 	const published = memory.ramData().slice();
 	cpu.replaceExecutionImages([boot]);
-	assert.equal(cpu.luaHeap.usedBytes(), used + 16, 'CPU publication does not release either allocation');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), used + 16, 'CPU publication does not release either allocation');
 	assert.deepEqual(memory.ramData(), published);
 	const replacement = captureCpuCheckpoint(cpu);
 	for (let repeat = 0; repeat < 2; ++repeat) {
@@ -650,7 +649,7 @@ test('growing a fully traced strong table publishes just the inserted edges duri
 	frame.registers.setTable(0, table);
 	frame.registers.setTable(1, pending);
 	frame.top = 2;
-	const cursor = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
+	const cursor = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
 	const color = (address: number) => memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK;
 	const step = () => gc.step(valueNil(), valueNil(), valueNil(), 0, false, 256);
 	for (let i = 0; i < 256 && (color(pending) !== 3 || memory.readRamRecordWord(cursor) === pending); ++i) step();
@@ -681,14 +680,14 @@ test('growing a fully traced strong table publishes just the inserted edges duri
 test('temporary roots survive unbilled admission; unreachable allocations only add physical reclamation work', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const table = createReferenceTable(cpu), id = nativeHeapReference(cpu).stringPool.intern(textToByteString('é😀'));
-	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 22);
+	const heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 22);
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
 	nativeHeapReference(cpu).luaHeap.admit(0, valueTable(table), valueString(id));
 	assert.equal(cpu.instructionBudgetRemaining, 1);
 	assert.equal(nativeHeapReference(cpu).gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
 	while (nativeHeapReference(cpu).gc.active()) nativeHeapReference(cpu).gc.step(valueTable(table), valueString(id));
 	assert.equal(nativeHeapReference(cpu).gc.collect(), bootCollectionWork + 2);
 	assert.equal(cpu.instructionBudgetRemaining, 1);
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bootBytes);
 });

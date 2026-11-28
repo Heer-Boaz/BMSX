@@ -103,14 +103,14 @@ score = 0
 advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score'))
 `);
 	runGuestToHalt(cpu, 2_000_000);
-	const name = cpu.stringPool.find('advance')!, score = cpu.stringPool.find('score')!;
+	const name = nativeHeapReference(cpu).stringPool.find('advance')!, score = nativeHeapReference(cpu).stringPool.find('score')!;
 	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
 		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), nativeHeapReference(cpu).gc), []);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
 		assert.equal(cpu.globalSlotCount, globals);
-		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
 		const stackBytes = logicalThreadBytes(cpu);
 		const collected = collectReferenceHeapBytes(cpu);
 		assert.equal(heap - collected, stackBytes - logicalThreadBytes(cpu));

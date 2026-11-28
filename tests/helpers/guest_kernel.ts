@@ -2,10 +2,10 @@ import { nativeHeapReference } from './native_heap/reference';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { runCompletionClosure } from './cpu_test_harness';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from './firmware_heap_layout';
 
 /** The guest budget charges the Thread record and capacities, not allocator overhead. */
 export function logicalThreadBytes(cpu: CPU, address = cpu.rootThread.address): number {
@@ -26,7 +26,7 @@ export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: num
 	const retainedBefore = heap.usedBytes();
 	const stackCapacityBefore = cpu.activeThread.stackRegisters.capacity();
 	const { memory } = cpu;
-	const occupied = cpu.heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET;
+	const occupied = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const writeWord = memory.writeRamRecordWord;
 	let reservations = 0;
 	let reservedBytes = 0;

@@ -5,6 +5,7 @@ import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behav
 import { inspectBehaviorTreeInstance, readBehaviorTreeInstances } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Open the unexecuted same-id registration: its wait node is not the running program. */
 export async function openRuntimeTreePicker(test: StudioFixture, expectedCount = 4): Promise<void> {
@@ -34,7 +35,7 @@ export async function openRuntimeTreePicker(test: StudioFixture, expectedCount =
 
 export async function openRuntimeTreeInspector(test: StudioFixture, component: 'first' | 'second' | 'bare' | 'empty') {
 	const { runtime, guest, cycles, press, frame } = test;
-	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), calls = guest.global('inspection_bt_callback_count');
+	const position = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), calls = guest.global('inspection_bt_callback_count');
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_trees.lua' })!, version = model.version;
 	await openRuntimeTreePicker(test);
 	await test.clipboard.writeText(`inspection.bt.${component}`);
@@ -46,7 +47,7 @@ export async function openRuntimeTreeInspector(test: StudioFixture, component: '
 	const first = inspector.model.rows[0], wrapped = first.value;
 	for (let n = 0; n < 10; n += 1) await frame();
 	check(inspector.model.rows[0] === first && first.value === wrapped, 'runtime BT: paint retains projection and measured text');
-	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && guest.global('inspection_bt_callback_count') === calls
+	check(cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap && guest.global('inspection_bt_callback_count') === calls
 		&& model.version === version, 'runtime BT: no guest execution, allocation, source edit or callback call during inspection');
 	return inspector;
 }

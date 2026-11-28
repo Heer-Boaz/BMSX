@@ -28,6 +28,7 @@ import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 test('Thread diagnostics use independent firmware RAM, not allocator ownership', t => {
 	const owner = CPU_FIXED_STACK_BASE - 0x4000, frame = owner + 0x100, values = owner + 0x200;
@@ -163,7 +164,7 @@ test('Thread diagnostics use independent firmware RAM, not allocator ownership',
 	assert.deepEqual(runtime.readCompletionValues(), expected);
 	trace.push('c');
 	rows.push([expected.length, ...expected.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
-	const ram = memory.ramData(), allocator = cpu.heapAllocator.allocatorStateOffset();
+	const ram = memory.ramData(), allocator = nativeHeapReference(cpu).heapAllocator.allocatorStateOffset();
 	assert.deepEqual(ram.subarray(allocator, allocator + 32), new Uint8Array(32), 'the stock allocator was never initialized');
 	for (const [offset, length] of [[allocator, 32], [owner - RAM_BASE, cell + 16 - owner]]) {
 		trace.push(`H ${offset} ${offset + length}`);

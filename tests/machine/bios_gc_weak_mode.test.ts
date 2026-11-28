@@ -23,11 +23,11 @@ function finish(cpu: CPU, budget = 64) {
 }
 
 function call(cpu: CPU, address: number, args: readonly number[]) {
-	const occupied = cpu.heapAllocator.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+	const occupied = nativeHeapReference(cpu).heapAllocator.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
 	assert.ok(cpu.beginHeapService(address, args));
 	finish(cpu);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
-	assert.equal(cpu.luaHeap.usedBytes(), charged);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), occupied);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
 	return cpu.heapServiceResult();
 }
 
@@ -53,7 +53,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const selected of [0, 1]) {
 			memory.writeMappedU32LE(IO_CART_SELECT, selected);
 			for (const [text, result, bank] of cases) {
-				const id = cpu.stringPool.find(text);
+				const id = nativeHeapReference(cpu).stringPool.find(text);
 				assert.notEqual(id, undefined);
 				assert.equal(id! < RAM_BASE ? 0 : ((id! >>> 31) + 1), bank, text);
 				if (bank !== 0) assert.ok((id! & 0x7fffffff) >= CART_ROM_BASE);

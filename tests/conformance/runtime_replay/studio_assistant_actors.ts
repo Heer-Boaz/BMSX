@@ -9,6 +9,7 @@ import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { sourcePane, check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 /** Automated source setup; actual Save/Reboot, native Codex calls and ordinary Actor Lab controls. */
 export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
@@ -39,13 +40,13 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	check(lab.outline.rows.length > 0, 'opening an actor publishes its inspection hierarchy');
 	const topology = lab.outline.rows.map(row => ({ label: row.element.node.label, kind: row.element.node.kind, active: row.element.node.active }));
-	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), media = ide.sources.currentBlua32Media, version = source.version;
+	const position = cycles(), heap = nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes(), media = ide.sources.currentBlua32Media, version = source.version;
 	await renderer.capture!('ordinary-tree');
 	await runPaletteCommand('View: Codex Assistant');
 	await submitAssistantText(test, 'Inspect both live actors and their FSM, BT, ActionEffect and timeline state. Expand the actual values; do not execute Lua, mutate or install source.');
 	const conversation = ide.editor.assistant;
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'actor tools: native model exchanges finish');
-	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && guest.global('actor_tool_callbacks') === valueInteger(0),
+	check(cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap && guest.global('actor_tool_callbacks') === valueInteger(0),
 		'actor tools only read: unchanged guest heap, clock and callback counter');
 	check(source.version === version && ide.sources.currentBlua32Media === media, 'actor tools do not conflate dirty source and installed instances');
 	await renderer.capture!('conversation');
@@ -90,7 +91,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(inspector.visible && inspector.model.rows[inspector.model.selectionIndex].element.label === 'UPDATE'
 		&& inspector.model.viewport.scrollTop === callbackScroll && ide.editor.editorParts.activeGroup.model.activeTab === lab && lab.actorHashId === callbackActor
 		&& JSON.stringify(lab.selectionPath) === JSON.stringify(callbackMember), 'Back from callback Source restores the selected actor, typed member and Details context');
-	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && source.version === callbackVersion
+	check(cycles() === position && nativeHeapReference(runtime.machine.cpu).luaHeap.usedBytes() === heap && source.version === callbackVersion
 		&& ide.sources.currentBlua32Media === media, 'source and Back navigation do not execute guest code or change source/installations');
 	await renderer.capture!('details-source-return');
 	await press('AltLeft', 'ArrowRight'); await frame();

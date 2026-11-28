@@ -111,7 +111,7 @@ return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
 		runGuestToHalt(cpu, 1_000_000);
 		assert.ok(cpu.isHaltedUntilIrq());
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('waiting_to_resume')!), valueBool(true));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('waiting_to_resume')!), valueBool(true));
 		const saved = captureCpuCheckpoint(cpu);
 		let expected: ReturnType<typeof captureCpuCheckpoint>;
 		for (let replay = 0; replay < 2; ++replay) {
@@ -290,7 +290,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			}
 			const lookup = (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 8 * (depth - 1);
 			const charges = [2, lookup, 2, 2], total = charges.reduce((a, b) => a + b, 0);
-			const heap = cpu.luaHeap.usedBytes();
+			const heap = nativeHeapReference(cpu).luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 				frame.registers.setInteger(6, 91); frame.registers.setNil(7); frame.registers.setInteger(8, 57);
@@ -311,7 +311,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 				assert.equal(frame.registers.get(8), completed >= 3 ? valueBool(false) : valueInteger(57), 'following marker obeys the inherited-read frontier');
 				assert.equal(frame.registers.get(7), op === OpCode.SELF && completed >= 2 ? valueTable(root) : valueNil());
 			}
-			assert.equal(cpu.luaHeap.usedBytes(), heap, 'warm/cold hints and repeated reads allocate no guest storage');
+			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap, 'warm/cold hints and repeated reads allocate no guest storage');
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 			const memory = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 			cpu.runUntilDepth(0, 3); const debt = cpu.instructionBudgetRemaining, after = cpu.captureRuntimeState();

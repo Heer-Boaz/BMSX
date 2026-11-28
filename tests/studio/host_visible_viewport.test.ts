@@ -12,6 +12,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { hostSystemAtlasImage } from '../../machine/ts/render/host_overlay/atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RectRenderKind, type GlyphRenderSubmission, type HostImageRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -194,9 +195,15 @@ test('closed-menu FPS and usage HUD translate within retained safe bounds withou
 	}
 	key('ArrowRight', true); tick(); key('ArrowRight', false); tick();
 	key('Escape', true); tick(); key('Escape', false); tick();
+	const { memory } = host.runtime.machine;
+	memory.setRamBusEnd(RAM_BASE + memory.ramByteCount() / 2);
 	assert.equal(menu.queueFrameOverlayCommands(60), true);
 	const frame = queue.consumeHostMenuFrame();
 	assertVisible(frame, presenter.visibleViewportBounds);
+	const ramLabel = frame.commandKinds.findIndex((kind, index) => index < frame.commandCount
+		&& kind === Host2DKind.Glyphs && (frame.commandRefs[index] as GlyphRenderSubmission).items === 'RAM MAP');
+	assert.ok(ramLabel >= 0);
+	assert.equal((frame.commandRefs[ramLabel + 1] as GlyphRenderSubmission).items, '50%', 'the HUD reports the hardware RAM mapping without a guest heap');
 	const fps = frame.commandRefs[0] as GlyphRenderSubmission;
 	assert.equal(fps.items, 'HOST: 60.0');
 	assert.equal(fps.x + presenter.default_font.measure('HOST: 60.0'), output.visibleViewportBounds.right - 8);

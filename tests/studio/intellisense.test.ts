@@ -567,7 +567,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
-	nativeHeapReference(cpu).gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
+	nativeHeapReference(cpu).gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), nativeHeapReference(cpu).stringPool.find('value')!, valueInteger(99));
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
 	const resolved = readRuntimeLuaValue(
@@ -643,7 +643,7 @@ halt_until_irq`;
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
 		runGuestToHalt(cpu, 1000);
-		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		const bytes = nativeHeapReference(cpu).luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const callback = guest.global('callback');
 		const location = runtimeLuaFunctionSource(bridge.sources, guest, callback)!;
 		assert.deepEqual(location.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'cart.lua' });
@@ -706,7 +706,7 @@ halt_until_irq`;
 			{ kind: 'unavailable', reason: 'not_loaded' });
 		assert.deepEqual(readRuntimeLuaModuleExport(bridge.sources, guest, 1, 'not_loaded'),
 			{ kind: 'unavailable', reason: 'not_loaded' });
-		assert.equal(cpu.luaHeap.usedBytes(), bytes);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bytes);
 		assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.readFramePc(depth - 1), pc);
 	});
@@ -729,13 +729,13 @@ halt_until_irq`;
 		cpu.reset();
 		runGuestToHalt(cpu, 100000);
 		const subject = guest.global('subject');
-		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		const bytes = nativeHeapReference(cpu).luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const methods = readActorMethods(bridge.sources, guest, subject);
 		assert.deepEqual(methods.map(method => method.name), ['inherited', 'overridden', 'own']);
 		assert.equal(methods[1].source!.resource.path, 'cart.lua'); assert.equal(methods[1].source!.range.start.line, 7);
 		assert.deepEqual(readActorMethods(bridge.sources, guest, guest.global('dynamic')), []);
 		assert.equal(guest.global('index_calls'), valueInteger(0));
-		assert.equal(cpu.luaHeap.usedBytes(), bytes);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), bytes);
 		assert.equal(cpu.readFramePc(depth - 1), pc);
 		cpu.beginCompletionCall(asClosure(guest.readStringMember(subject, 'inherited'), nativeHeapReference(guest.cpu).gc), [subject, valueInteger(5)]);
 		assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);

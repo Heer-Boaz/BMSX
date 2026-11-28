@@ -27,10 +27,10 @@ owner.events = events.events_of(owner)
 probe[1], probe[2] = owner, owner.events
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
+	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
 	nativeHeapReference(cpu).gc.collect();
 	assert.notEqual(cpu.tables.getInteger(probe, 2), valueNil());
-	setReferenceGlobal(cpu, cpu.stringPool.find('owner')!, valueNil());
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('owner')!, valueNil());
 	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.tables.getInteger(probe, 1), valueNil());
 	assert.equal(cpu.tables.getInteger(probe, 2), valueNil());
@@ -235,7 +235,7 @@ return true`, { optLevel });
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
 		nativeHeapReference(cpu).gc.collect();
-		const resume = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('resume_emission')!), nativeHeapReference(cpu).gc);
+		const resume = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('resume_emission')!), nativeHeapReference(cpu).gc);
 		cpu.beginCompletionCall(resume);
 		let result = RunResult.Yielded;
 		for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant++) {
@@ -262,8 +262,8 @@ function failure_kernel(count)
 end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('failure_kernel')!), nativeHeapReference(cpu).gc);
-		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
+		const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('failure_kernel')!), nativeHeapReference(cpu).gc);
+		const weak = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak')!));
 		let first = 0;
 		for (let batch = 0; batch < 128; batch++) {
 			cpu.beginCompletionCall(kernel, [valueInteger(32)]);
@@ -310,10 +310,10 @@ end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		nativeHeapReference(cpu).gc.collect();
-		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
+		const weak = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak')!));
 		for (let index = 1; index <= 3; index++) assert.equal(cpu.tables.getInteger(weak, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!), nativeHeapReference(cpu).gc));
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('finish_traversal')!), nativeHeapReference(cpu).gc));
 		assert.equal(runCpuWithinBudget(cpu, 100000), RunResult.Halted);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 	});
@@ -354,13 +354,13 @@ port:on({ event = 'fault', handler = faulty_handler })
 function emit_fault() port:emit('fault'); error('faulty handler returned normally') end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_fault')!), nativeHeapReference(cpu).gc));
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_fault')!), nativeHeapReference(cpu).gc));
 		for (let grant = 0; grant < 10000 && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
 			cpu.runUntilDepth(0, 1);
 		}
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_CALL_NON_FUNCTION,
 			'event dispatch must not catch and rethrow a native fault as an explicit error');
-		const handler = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('faulty_handler')!), nativeHeapReference(cpu).gc);
+		const handler = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('faulty_handler')!), nativeHeapReference(cpu).gc);
 		assert.ok(Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFrameFunctionAddress(index)).includes(cpu.captureClosureBinding(handler).functionAddress),
 			'original listener frame remains available to the fault debugger');
 	});
@@ -378,7 +378,7 @@ function success_kernel(rounds)
 end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
-		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('success_kernel')!), nativeHeapReference(cpu).gc);
+		const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('success_kernel')!), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 1024);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

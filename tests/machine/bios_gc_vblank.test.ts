@@ -33,7 +33,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const arena = nativeHeapReference(cpu).heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const occupied = arena.occupiedBytes(), free = arena.unoccupiedBytes();
-	assert.equal(oracle.heapAllocator.occupiedBytes(), occupied);
+	assert.equal(nativeHeapReference(oracle).heapAllocator.occupiedBytes(), occupied);
 	function seed(phase: number, sampled: number, credit: number, done: number, last: number, epochs: number) {
 		for (const target of [cpu, oracle]) {
 			target.memory.writeRamRecordByte(control, phase);

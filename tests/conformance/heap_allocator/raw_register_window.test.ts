@@ -25,6 +25,7 @@ import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua3
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const word = INSTRUCTION_BYTES, owner = CPU_FIXED_STACK_BASE - 0x4000;
 const control = owner + 0x100, oldBlock = owner + 0x200, newBlock = owner + 0x300, report = owner + 0x400;
@@ -178,8 +179,8 @@ for (const operation of ['CALL', 'VARARG', 'RET'] as const) test(`bare System RO
 		assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), outcome, `PC 0x${pc.toString(16)}`);
 		const paid = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(paid, BASE_CYCLES[op] + extra, `PC 0x${pc.toString(16)}`);
-		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
-		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.occupiedBytes(), 0);
+		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), 0);
 		record('E 1', `${outcome} ${paid} 0 ${memory.ramBusEnd()} -1`);
 	}
 	const issueDepth = returning ? 2 : 1, issuer = control + (issueDepth - 1) * FRAME_CONTROL_BYTES;

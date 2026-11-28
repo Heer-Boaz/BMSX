@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -22,6 +21,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const source = `
 bss report: word[4]
@@ -80,12 +80,12 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.ok(cpu.isHaltedUntilIrq());
 	assert.equal(memory.readMappedU32LE(report), 1, 'the unpressured pass warmed the same frames');
-	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	for (let bytes = MAIN_RAM_SIZE >>> 1; bytes !== 0; bytes >>>= 1) {
 		while (arena.allocate(bytes, true)) { /* exhaust physical backing */ }
 	}
 	assert.equal(arena.allocate(1, true), 0, 'no physical allocation fits');
-	const occupied = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+	const occupied = arena.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 	const first = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const end = arena.allocatorStateOffset();
 	const ledger = hashBytes(memory.ramData(), first, end - first);
@@ -102,7 +102,7 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 	}
 	assert.ok(cpu.isHaltedUntilIrq());
 	assert.equal(arena.occupiedBytes(), occupied);
-	assert.equal(cpu.luaHeap.usedBytes(), logical);
+	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logical);
 	assert.equal(hashBytes(memory.ramData(), first, end - first), ledger, 'no string index or collector administration changed');
 
 	const trace = join(dir, 'trace');

@@ -50,12 +50,12 @@ for (const optLevel of [0, 3] as const) {
 				assert.deepEqual(action(oracle), result);
 				return result;
 			}
-			const management = cpu.heapAllocator.managementOffset(), job = management, jobSize = 64;
+			const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), job = management, jobSize = 64;
 			const reservation = both(target => nativeHeapReference(target).heapAllocator.allocate(40, true)) - RAM_BASE;
 			const record = both(target => createReferenceTable(target, oldArray, oldHash));
 			assert.ok(reservation > 0);
 			const oldWords = cpu.tables.arrayAddress(record), oldStorage = cpu.tables.hashAddress(record);
-			const blocked = 5 * array > cpu.heapAllocator.capacityBytes();
+			const blocked = 5 * array > nativeHeapReference(cpu).heapAllocator.capacityBytes();
 			const collisions: Value[] = [];
 			if (oldArray === 0) {
 				for (let key = -1; collisions.length < 4; --key) {

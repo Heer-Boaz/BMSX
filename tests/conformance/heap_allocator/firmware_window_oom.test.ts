@@ -21,6 +21,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -109,7 +110,7 @@ return protect(descend)
 	assert.equal(cpu.fixedInterruptActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 
-	const head = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+	const head = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 	const faults = memory.readRamRecordWord(head + GcDiagnosticField.FaultIds);
 	const diagnostic = memory.readRamRecordWord(faults + INSTRUCTION_BYTES * LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(cpu.stringPool.toString(diagnostic), 'Out of memory.');
