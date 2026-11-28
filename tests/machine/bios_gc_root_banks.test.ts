@@ -158,11 +158,11 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		assert.deepEqual(ram.ramData().subarray(descriptorEnd, last), after);
 		if (moved !== null) {
 			const bank = moved === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
-			const previous = ram.readRamRecordWord(namespace + GlobalBankField.Base);
+			const previous = ram.readRamRecordWord(namespace + GlobalBankField.Values);
 			const capacity = ram.readRamRecordWord(namespace + GlobalBankField.Capacity);
 			for (let i = bank.count; i < capacity; ++i) registerReferenceGlobalName(nativeHeapReference(target).gc, bank, nativeHeapReference(target).stringPool.intern(`namespace filler ${i}`));
 			writeReferenceGlobalSlot(nativeHeapReference(target).gc, bank, registerReferenceGlobalName(nativeHeapReference(target).gc, bank, lateName), valueString(lateValue));
-			assert.notEqual(ram.readRamRecordWord(namespace + GlobalBankField.Base), previous);
+			assert.notEqual(ram.readRamRecordWord(namespace + GlobalBankField.Values), previous);
 		}
 		nativeHeapReference(target).stringPool.takeMarkWork();
 		nativeHeapReference(target).stringPool.beginReachabilityEpoch();

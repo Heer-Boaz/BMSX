@@ -89,9 +89,12 @@ export function restoreCpuCheckpoint(cpu: CPU, checkpoint: ReturnType<typeof cap
 
 
 export function readNamespaceBank(memory: Memory, descriptor: number) {
+	const capacity = memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
+	const values = memory.readRamRecordWord(descriptor + GlobalBankField.Values);
 	return {
-		base: memory.readRamRecordWord(descriptor + GlobalBankField.Base),
-		capacity: memory.readRamRecordWord(descriptor + GlobalBankField.Capacity),
+		base: values - 12 * capacity,
+		values,
+		capacity,
 		count: memory.readRamRecordWord(descriptor + GlobalBankField.Count),
 	};
 }

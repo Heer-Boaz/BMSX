@@ -327,10 +327,18 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	const auto management = machine.cpu.heapAllocator().managementOffset();
 	const auto systemBank = management + bmsx::SYSTEM_GLOBAL_BANK_OFFSET, ordinaryBank = management + bmsx::GLOBAL_BANK_OFFSET;
 	const auto count = static_cast<bmsx::u32>(bmsx::GlobalBankField::Count);
+	const auto values = static_cast<bmsx::u32>(bmsx::GlobalBankField::Values);
+	const auto capacity = static_cast<bmsx::u32>(bmsx::GlobalBankField::Capacity);
+	const auto systemValues = machine.memory.readRamRecordWord(systemBank + values);
+	const auto ordinaryValues = machine.memory.readRamRecordWord(ordinaryBank + values);
 	require(machine.memory.readRamRecordWord(systemBank + count) == 1u
 		&& machine.memory.readRamRecordWord(ordinaryBank + count) == 1u
-		&& machine.memory.readRamRecordWord(systemBank) != machine.memory.readRamRecordWord(ordinaryBank),
+		&& systemValues != ordinaryValues,
 		"the namespaces have distinct physical banks");
+	require(machine.memory.readRamRecordWord(systemValues) == 11u && machine.memory.readRamRecordWord(ordinaryValues) == 22u
+		&& machine.memory.readRamRecordByte(systemValues + 4u * machine.memory.readRamRecordWord(systemBank + capacity)) == static_cast<bmsx::u8>(bmsx::ValueTag::Integer)
+		&& machine.memory.readRamRecordByte(ordinaryValues + 4u * machine.memory.readRamRecordWord(ordinaryBank + capacity)) == static_cast<bmsx::u8>(bmsx::ValueTag::Integer),
+		"each descriptor points directly at its Value payload plane followed by tags");
 	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "media remount preserves the system registerfile");
 	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
 
@@ -338,6 +346,9 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueInteger(44));
 	machine.memory.restoreSaveState(savedRam);
 	machine.cpu.restoreRuntimeState(saved);
+	require(machine.memory.readRamRecordWord(systemBank + values) == systemValues
+		&& machine.memory.readRamRecordWord(ordinaryBank + values) == ordinaryValues,
+		"restore retains both physical Value addresses");
 	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "save-state restores the system registerfile independently");
 	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "save-state restores the ordinary global independently");
 }

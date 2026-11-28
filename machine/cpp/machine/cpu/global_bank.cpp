@@ -13,8 +13,7 @@ void GlobalBank::bind() {
 		m_values = {};
 		return;
 	}
-	const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
-	const u32 payloads = base + 12u * capacity;
+	const u32 payloads = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values));
 	if (m_values.size() == capacity && m_values.wordAddress() == (payloads & RAM_RECORD_WORD_MASK)) return;
 	m_values = ValueSpan(m_memory, payloads, payloads + 4u * capacity, capacity);
 }

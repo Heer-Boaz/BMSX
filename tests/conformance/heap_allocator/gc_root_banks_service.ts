@@ -64,12 +64,12 @@ try {
 		const globals = management + GLOBAL_BANK_OFFSET;
 		driver.reach(() => rootCursor() !== 0, 'root scan admitted');
 		const globalSlot = cpu['globalBank'].find(name)!;
-		const globalBase = memory.readRamRecordWord(globals + GlobalBankField.Base);
+		const globalValues = memory.readRamRecordWord(globals + GlobalBankField.Values);
 		const capacity = memory.readRamRecordWord(globals + GlobalBankField.Capacity);
 		assert.equal(memory.readRamRecordWord(globals + GlobalBankField.Count), cpu.globalSlotCount);
-		assert.equal(memory.readRamRecordWord(globalBase + 4 * globalSlot), name);
-		assert.equal(memory.readRamRecordWord(globalBase + 12 * capacity + 4 * globalSlot), value);
-		assert.equal(memory.readRamRecordByte(globalBase + 16 * capacity + globalSlot), ValueTag.String);
+		assert.equal(memory.readRamRecordWord(globalValues - 12 * capacity + 4 * globalSlot), name);
+		assert.equal(memory.readRamRecordWord(globalValues + 4 * globalSlot), value);
+		assert.equal(memory.readRamRecordByte(globalValues + 4 * capacity + globalSlot), ValueTag.String);
 		const constantBank = management + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE
 			+ (GcRootBank.Cart0Constants - GcRootBank.SystemConstants) * GC_ROOT_BANK_SIZE;
 		assert.equal(memory.readRamRecordWord(constantBank + GcRootBankField.Count), constants.length);

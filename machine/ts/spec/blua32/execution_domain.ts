@@ -10,10 +10,10 @@ export const EXECUTION_IMAGE_BINDING_SPAN_OFFSET = 4;
 export const EXECUTION_IMAGE_BINDING_STRINGS_OFFSET = 8;
 export const EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET = 12;
 
-// Physical namespace descriptors, shared with the firmware's namespace_bank.
+// Physical global register windows: payload words followed by their tags.
 export const SYSTEM_GLOBAL_BANK_OFFSET = 0x230;
 export const GLOBAL_BANK_OFFSET = 0x23c;
-export const enum GlobalBankField { Base = 0, Capacity = 4, Count = 8 }
+export const enum GlobalBankField { Values = 0, Capacity = 4, Count = 8 }
 
 export function executionImageBindingOffset(management: number, domain: ExecutionDomainId): number {
 	return management + EXECUTION_IMAGE_BINDINGS_OFFSET + EXECUTION_IMAGE_BINDING_SIZE * (domain + 1);

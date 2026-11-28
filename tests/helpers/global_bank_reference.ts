@@ -36,9 +36,10 @@ export function writeReferenceGlobalSlot(gc: GcHeap, bank: GlobalBank, slot: num
 
 export function clearReferenceGlobalBank(gc: GcHeap, bank: GlobalBank): void {
 	const memory = bank['memory'], descriptor = bank['descriptor'];
-	const base = memory.readRamRecordWord(descriptor + GlobalBankField.Base);
+	const base = memory.readRamRecordWord(descriptor + GlobalBankField.Values)
+		- 12 * memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
 	if (base !== 0) gc.budget.releaseRecord(base, GLOBAL_NAME_BUDGET_BYTES * bank.count);
-	memory.writeRamRecordWord(descriptor + GlobalBankField.Base, 0);
+	memory.writeRamRecordWord(descriptor + GlobalBankField.Values, 0);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Capacity, 0);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Count, 0);
 	bank.slots.unbind();
@@ -51,7 +52,7 @@ function growReferenceBank(bank: GlobalBank, oldBase: number, base: number, capa
 	ram.fill(0, offset, offset + 12 * capacity);
 	ram.copyWithin(offset, source, source + 4 * count);
 	memory.invalidateRamWrite(offset, 12 * capacity);
-	memory.writeRamRecordWord(descriptor + GlobalBankField.Base, base);
+	memory.writeRamRecordWord(descriptor + GlobalBankField.Values, base + 12 * capacity);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Capacity, capacity);
 	bank.slots.bindRam(memory, offset + 12 * capacity, capacity, true);
 	for (let slot = 0; slot < count; ++slot) {
@@ -62,8 +63,8 @@ function growReferenceBank(bank: GlobalBank, oldBase: number, base: number, capa
 
 export function registerReferenceGlobalName(gc: GcHeap, bank: GlobalBank, key: StringId, pending: Value = valueNil()): number {
 	const memory = bank['memory'], descriptor = bank['descriptor'];
-	let base = memory.readRamRecordWord(descriptor + GlobalBankField.Base);
 	let capacity = memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
+	let base = memory.readRamRecordWord(descriptor + GlobalBankField.Values) - 12 * capacity;
 	const prior = bank['findSlot'](base, capacity, key);
 	if (prior !== undefined) return prior;
 	const slot = bank.count;

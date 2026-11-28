@@ -505,9 +505,9 @@ void hotGlobalWritesDeferTheirReferences() {
 		&& !heap.isAlive(child.address()), "the table graphs are genuinely white after the initial global scan");
 	const auto slots = [&](u32 offset) {
 		const u32 descriptor = cpu.heapAllocator().managementOffset() + offset;
-		const u32 base = machine.memory.readRamRecordWord(descriptor);
+		const u32 payloads = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Values));
 		const u32 capacity = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Capacity));
-		return ValueSpan(machine.memory, base + 12u * capacity, base + 16u * capacity, capacity);
+		return ValueSpan(machine.memory, payloads, payloads + 4u * capacity, capacity);
 	};
 	auto globals = slots(GLOBAL_BANK_OFFSET), systemGlobals = slots(SYSTEM_GLOBAL_BANK_OFFSET);
 	for (const bool systemStore : {false, true}) {

@@ -5,16 +5,16 @@ import type { StringId } from './string_pool';
 import { hashCanonicalTableKey, valueInteger } from './value';
 import { ValueSlots } from './value_slots';
 
-// The triples are owned by RAM. Ordinals are stable even when the backing moves:
-// name words, two hash buckets per slot, payloads, then tags.
+// Ordinals are stable even when firmware relocates the Value planes.
 export class GlobalBank {
 	public readonly slots = new ValueSlots(0);
 
 	public constructor(private readonly memory: Memory, private readonly descriptor: number) {}
 	public get count(): number { return this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Count); }
 	public name(slot: number): StringId {
-		const base = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Base);
-		return this.memory.readRamRecordWord(base + 4 * slot);
+		const capacity = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Capacity);
+		const names = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Values) - 12 * capacity;
+		return this.memory.readRamRecordWord(names + 4 * slot);
 	}
 
 	// Refresh the view of the RAM descriptor without moving its contents.
@@ -24,8 +24,8 @@ export class GlobalBank {
 			if (this.slots.capacity() !== 0) this.slots.unbind();
 		}
 		else {
-			const base = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Base);
-			this.slots.bindRam(this.memory, (base + 12 * capacity) & RAM_RECORD_WORD_MASK, capacity);
+			const values = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Values);
+			this.slots.bindRam(this.memory, values & RAM_RECORD_WORD_MASK, capacity);
 		}
 	}
 
@@ -50,7 +50,8 @@ export class GlobalBank {
 	}
 
 	public find(key: StringId): number | undefined {
-		return this.findSlot(this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Base),
-			this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Capacity), key);
+		const capacity = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Capacity);
+		const names = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Values) - 12 * capacity;
+		return this.findSlot(names, capacity, key);
 	}
 }

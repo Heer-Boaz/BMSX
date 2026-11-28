@@ -7,7 +7,7 @@ local mark<const> = require('kernel/gc_mark') -- T:307-309,331-338 U:5087,5092,5
 local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5099,5104 P:3157,3169,3174 C:636
 local string_bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; peel the ordinal bit from the physical payload
 local layout<const> = require('kernel/gc_runtime_layout') -- O:6; addresses are relative to the existing System management region
-local _global_bank<const> = require('kernel/global_bank') -- G:21-22,31 B:23-24,34; reuse the namespace owner
+local name_index_slot_bytes<const> = require('kernel/global_bank').internal.name_index_slot_bytes -- G:21-22,31 B:23-24,34
 local ram_base<const> = 0x08000000 -- O:6
 local ram_word_mask<const> = 0x003ffffc -- G:21 B:23; preserve record address normalization
 local ram_byte_mask<const> = 0x003fffff -- G:22 B:24
@@ -20,8 +20,8 @@ local system_constants<const> = 3 -- T:69,594 H:20 C:626
 local completion<const> = 6 -- T:69 U:5076,5091 H:20 P:3146,3162
 local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
--- GlobalBank owns the physical Base/Capacity/Count and its b, b+12*c,
--- b+16*c backing planes. No global root descriptor is published.
+-- The Value-bank record points at the payload plane. Firmware also scans
+-- its private names immediately before that plane. No roots are copied.
 -- Installed operand records own the compact RAM-String prefix, in pool
 -- ordinal order, not all constant slots. Completion reads the live
 -- host-return observation through its private descriptor.
@@ -80,11 +80,11 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 		local bank_end, payloads, tags, names -- T:593 C:624-625 U:5073-5079 P:3143-3149
 		if globals then -- U:5083 P:3153
 			local namespace<const>: *namespace_bank = ram_base + control - layout.control_offset + layout.system_global_bank_offset + (kind - system_globals) * sizeof(namespace_bank) -- U:5074-5075,5084 P:3144-3145,3154
-			local base<const>, capacity<const> = namespace.base, namespace.capacity -- U:5084 P:3154 G:21-22,31 B:23-24,34
+			local values<const>, capacity<const> = namespace.values, namespace.capacity -- U:5084 P:3154 G:21-22,31 B:23-24,34
 			bank_end = namespace.count -- U:5074-5075 P:3144-3145
-			names = ram_base + (base & ram_word_mask) -- U:5087 P:3157 G:31 B:34
-			payloads = ram_base + ((base + 12 * capacity) & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
-			tags = ram_base + ((base + 16 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
+			names = ram_base + ((values - name_index_slot_bytes * capacity) & ram_word_mask) -- U:5087 P:3157 G:31 B:34
+			payloads = ram_base + (values & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
+			tags = ram_base + ((values + 4 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
 		elseif kind < completion then -- U:5078-5079,5103-5104 P:3148-3149,3173-3174
 			local installed<const>: *installed_image_binding = ram_base + control - layout.control_offset + layout.installed_image_bindings_offset -- T:593 C:625 U:5078-5079 P:3148-3149
 			local image<const>: *installed_image_binding = &installed[kind - system_constants] -- U:5078-5079,5103 P:3148-3149,3173

@@ -12,11 +12,12 @@ local _bindings<const> = require('kernel/image_string_bindings') -- I:348-349 J:
 
 local retire_namespace<const> = function(management, address) -- G:50 H:32
 	local bank<const>: *namespace_bank = address -- G:9,50 H:32
-	local base<const> = bank.base -- G:51 H:33
-	if base ~= 0 then -- G:51 H:33
+	local values<const> = bank.values -- G:51 H:33
+	if values ~= 0 then -- G:51 H:33
+		local base<const> = values - names.internal.name_index_slot_bytes * bank.capacity
 		records.bmsx_dlmalloc_release_record(management + layout.arena_offset, base - layout.ram_base, names.name_charge * bank.count, management + layout.occupied_offset) -- G:10,51 H:9,33 L:289-291 N:292-294
 	end
-	bank.base = 0 -- G:52 H:34
+	bank.values = 0 -- G:52 H:34
 	bank.capacity = 0 -- G:52 H:34
 	bank.count = 0 -- G:52-53 H:34; CPU releases its host view at its ownership boundary
 end

@@ -112,8 +112,8 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 		assert.equal(issue.op, opcode);
 		const reference = references[index], kind = valueTag(reference), address = valuePayload(reference);
 		const bank = readNamespaceBank(memory, management + bankOffset);
-		const wordAddress = bank.base + bank.capacity * 12 + issue.bx * 4;
-		const tagAddress = bank.base + bank.capacity * 16 + issue.bx;
+		const wordAddress = bank.values + issue.bx * 4;
+		const tagAddress = bank.values + bank.capacity * 4 + issue.bx;
 		const word = () => memory.readRamRecordWord(wordAddress - RAM_BASE);
 		const tag = () => memory.readRamRecordByte(tagAddress - RAM_BASE);
 		const checkBeforeMark = () => {

@@ -10,8 +10,7 @@ namespace bmsx {
 
 class GcHeap;
 
-// The triples are owned by RAM. Ordinals are stable even when the backing moves:
-// name words, two hash buckets per slot, payloads, then tags.
+// Main RAM owns the Value payload address, capacity and live slot count.
 class GlobalBank {
 public:
 	GlobalBank(Memory& memory, u32 descriptor) : m_memory(memory), m_descriptor(descriptor) {}
@@ -22,17 +21,14 @@ public:
 	}
 	u32 capacity() const { return static_cast<u32>(m_values.size()); }
 	u32 count() const { return m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(GlobalBankField::Count)); }
-	StringId name(u32 slot) const {
-		const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(GlobalBankField::Base));
-		return m_memory.readRamRecordWord(base + 4u * slot);
-	}
 	ConstValueSpan values() const { return m_values; }
 	const ValueSpan& values() { return m_values; }
-	std::optional<u32> find(StringId key) const;
 	void bind();
 	void detach() { m_values = {}; }
 
 	// Definitions live in the native fixture reference target.
+	StringId name(u32 slot) const;
+	std::optional<u32> find(StringId key) const;
 	void writeSlot(GcHeap&, u32 slot, Value value);
 	u32 registerName(GcHeap&, StringId key, Value pending = valueNil());
 	void clear(GcHeap&);

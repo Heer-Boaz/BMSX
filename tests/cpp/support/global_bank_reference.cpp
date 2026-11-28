@@ -7,6 +7,7 @@ namespace bmsx {
 
 namespace {
 constexpr u32 GLOBAL_NAME_BUDGET_BYTES = 9u;
+constexpr u32 NAME_AND_BUCKET_BYTES_PER_SLOT = 12u;
 using Bank = GlobalBankField;
 }
 
@@ -32,9 +33,15 @@ std::optional<u32> GlobalBank::findSlot(u32 base, u32 capacity, StringId key) co
 }
 
 std::optional<u32> GlobalBank::find(StringId key) const {
-	const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
+	const u32 payloads = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values));
 	const u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
-	return findSlot(base, capacity, key);
+	return findSlot(payloads - NAME_AND_BUCKET_BYTES_PER_SLOT * capacity, capacity, key);
+}
+
+StringId GlobalBank::name(u32 slot) const {
+	const u32 payloads = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values));
+	const u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
+	return m_memory.readRamRecordWord(payloads - NAME_AND_BUCKET_BYTES_PER_SLOT * capacity + 4u * slot);
 }
 
 void GlobalBank::writeSlot(GcHeap& heap, u32 slot, Value value) {
@@ -43,9 +50,11 @@ void GlobalBank::writeSlot(GcHeap& heap, u32 slot, Value value) {
 }
 
 void GlobalBank::clear(GcHeap& heap) {
-	if (const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base)))
-		heap.budget.releaseRecord(base, GLOBAL_NAME_BUDGET_BYTES * count());
-	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base), 0u);
+	if (const u32 payloads = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values))) {
+		const u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
+		heap.budget.releaseRecord(payloads - NAME_AND_BUCKET_BYTES_PER_SLOT * capacity, GLOBAL_NAME_BUDGET_BYTES * count());
+	}
+	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values), 0u);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity), 0u);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Count), 0u);
 	m_values = {};
@@ -54,13 +63,13 @@ void GlobalBank::clear(GcHeap& heap) {
 void GlobalBank::grow(u32 oldBase, u32 base, u32 capacity, u32 count) {
 	const ConstValueSpan prior = m_values;
 	const u32 offset = base & RAM_RECORD_WORD_MASK;
-	std::memset(m_memory.ramData() + offset, 0, 12u * capacity);
+	std::memset(m_memory.ramData() + offset, 0, NAME_AND_BUCKET_BYTES_PER_SLOT * capacity);
 	if (count != 0u)
 		std::memcpy(m_memory.ramData() + offset, m_memory.ramData() + (oldBase & RAM_RECORD_WORD_MASK), 4u * count);
-	m_memory.invalidateRamWrite(offset, 12u * capacity);
-	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base), base);
+	m_memory.invalidateRamWrite(offset, NAME_AND_BUCKET_BYTES_PER_SLOT * capacity);
+	const u32 payloads = base + NAME_AND_BUCKET_BYTES_PER_SLOT * capacity;
+	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values), payloads);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity), capacity);
-	const u32 payloads = base + 12u * capacity;
 	m_values = ValueSpan(m_memory, payloads, payloads + 4u * capacity, capacity);
 	m_values.copyFrom(prior, 0, 0, count);
 	m_values.clear(count, capacity - count);
@@ -71,8 +80,9 @@ void GlobalBank::grow(u32 oldBase, u32 base, u32 capacity, u32 count) {
 }
 
 u32 GlobalBank::registerName(GcHeap& heap, StringId key, Value pending) {
-	u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
+	const u32 payloads = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Values));
 	u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
+	u32 base = payloads - NAME_AND_BUCKET_BYTES_PER_SLOT * capacity;
 	if (const auto slot = findSlot(base, capacity, key)) return *slot;
 	const u32 slot = count();
 	u32 oldBase = 0u;
