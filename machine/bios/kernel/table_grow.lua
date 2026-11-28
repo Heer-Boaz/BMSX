@@ -283,16 +283,9 @@ end
 -- publishes the operands for allocation assistance and recovery.
 local store_resolved<const> = function(receiver, key, value, extra, cycles, selected)
 	local management<const> = layout.management_offset
-	local scratch<const> = ram_base + management + layout.value_cell_offset
-	local operand<const>: *value = scratch
-	local word<const>: *u32 = scratch
-	local tag<const>: *u8 = scratch + layout.value_cell_tag_offset
-	*operand = receiver
-	local record<const> = *word
-	*operand = key
-	local kt<const>, kw<const> = *tag, *word
-	*operand = value
-	local vt<const>, vw<const> = *tag, *word
+	local record<const> = blua32.payload(receiver)
+	local kt<const>, kw<const> = blua32.tag(key), blua32.payload(key)
+	local vt<const>, vw<const> = blua32.tag(value), blua32.payload(value)
 	local header<const>: *growth_receiver = record
 	if selected == array_store then
 		local words<const> = header.array_storage

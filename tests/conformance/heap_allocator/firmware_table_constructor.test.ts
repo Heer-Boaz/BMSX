@@ -140,9 +140,15 @@ test('a RAM-compiled child closure resumes from the sampled code word on both co
 	t.after(() => rmSync(output, { recursive: true, force: true }));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const { images } = compileCartlibProgram(`
-local build<const> = assert(load('local saved = 31; return function(step) return saved + step end'))
+local build<const> = assert(load([=[
+local saved = 31
+return function(step)
+	return saved + step, blua32.payload(blua32.float_from_bits(0xff812345))
+end
+]=]))
 local add<const> = build()
-return add(5), add
+local sum<const>, raw<const> = add(5)
+return sum, add, raw, blua32.payload(false)
 `, { optLevel: 3 });
 	const system = join(output, 'system.rom'), cart = join(output, 'cart.rom'), trace = join(output, 'trace');
 	const seed = join(output, 'seed.state'), tsState = join(output, 'ts-mid.state'), cppState = join(output, 'cpp-mid.state');
@@ -225,10 +231,11 @@ return add(5), add
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.deepEqual(reads, fields);
 		const values = runtime.readCompletionValues();
-		assert.equal(values.length, 2);
+		assert.equal(values.length, 4);
 		assert.equal(values[0], valueInteger(36));
 		assert.equal(valueTag(values[1]), ValueTag.Closure);
 		assert.equal(cpu.captureClosureBinding(valuePayload(values[1])).codeAddress, code);
+		assert.deepEqual(values.slice(2), [valueInteger(0xff812345), valueInteger(0)]);
 		commands.push('c');
 		rows.push([values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	}

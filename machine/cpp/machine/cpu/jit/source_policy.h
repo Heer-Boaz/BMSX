@@ -138,7 +138,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
 		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);
 		case OpCode::JMP: return instruction.a == 0;
 		case OpCode::JREG: return instruction.c <= static_cast<int>(RegisterJumpMode::LeaveWindowFromRegister);
-		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::SetTop);
+		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Payload);
 		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 		default: return nativeBlockSupports(instruction.op);
 	}

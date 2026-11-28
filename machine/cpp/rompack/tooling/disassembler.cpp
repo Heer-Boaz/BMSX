@@ -241,6 +241,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 				case ValueMoveKind::ReadIndexed: return "MOV r" + std::to_string(decoded.a) + ", r[r" + std::to_string(decoded.b) + "]";
 				case ValueMoveKind::WriteIndexed: return "MOV r[r" + std::to_string(decoded.a) + "], r" + std::to_string(decoded.b);
 				case ValueMoveKind::SetTop: return "MOV top, r" + std::to_string(decoded.b);
+				case ValueMoveKind::Payload: return "MOV r" + std::to_string(decoded.a) + ", payload(r" + std::to_string(decoded.b) + ")";
 				default: return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
 					+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
 			}

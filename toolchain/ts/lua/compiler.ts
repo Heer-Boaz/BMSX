@@ -6144,17 +6144,18 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 			return true;
 		}
-		if (operation === 'tag' || operation === 'float_bits' || operation === 'float_from_bits') {
+		if (operation === 'tag' || operation === 'payload' || operation === 'float_bits' || operation === 'float_from_bits') {
 			if (expression.arguments.length !== 1) throw new Error(`blua32.${operation} expects one argument.`);
 			const argument = expression.arguments[0];
 			let source = target;
-			if (operation === 'tag' && argument.kind === LuaSyntaxKind.IdentifierExpression) {
+			if ((operation === 'tag' || operation === 'payload') && argument.kind === LuaSyntaxKind.IdentifierExpression) {
 				const reference = getResolvedIdentifierReference(this.semantics, argument);
 				if (!this.resolveReferenceVisibleBinding(reference)?.moduleBinding)
 					source = this.resolveReferenceLocal(reference) ?? target;
 			}
 			if (source === target) this.compileExpressionInto(argument, target, 1);
 			const mode = operation === 'tag' ? ValueMoveKind.Tag
+				: operation === 'payload' ? ValueMoveKind.Payload
 				: operation === 'float_bits' ? ValueMoveKind.FloatBits : ValueMoveKind.FloatFromBits;
 			this.emitABC(OpCode.MOV, target, source, mode);
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);

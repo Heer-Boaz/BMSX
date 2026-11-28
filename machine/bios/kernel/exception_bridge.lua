@@ -111,11 +111,7 @@ local transfer_context<const> = function(address, operand)
 		return true, pc, address, nil
 	end
 	if fn == vectors.coroutine_resume then
-		local cell_address<const> = layout.ram_base + layout.management_offset + layout.value_cell_offset
-		local value_cell<const>: *value = cell_address
-		local word<const>: *u32 = cell_address
-		*value_cell = operand
-		local pc<const>, thread<const>, reason<const> = coroutine_transfer.resume(address, frame, *word)
+		local pc<const>, thread<const>, reason<const> = coroutine_transfer.resume(address, frame, blua32.payload(operand))
 		return true, pc, thread, reason
 	end
 	if fn == vectors.coroutine_yield then
@@ -215,12 +211,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 	if raised then
 		if reason == explicit_error then
 			-- The architectural argument is a Value, including a supplied Nil.
-			local address<const> = layout.ram_base + layout.management_offset + layout.value_cell_offset
-			local cell<const>: *value = address
-			local word<const>: *u32 = address
-			local kind<const>: *u8 = address + layout.value_cell_tag_offset
-			*cell = values
-			payload, tag = *word, *kind
+			payload, tag = blua32.payload(values), blua32.tag(values)
 		else
 			-- Numeric traps supply only their reason. The BIOS owns these
 			-- boot-interned diagnostics and their root lifetime.

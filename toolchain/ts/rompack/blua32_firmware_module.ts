@@ -77,6 +77,7 @@ export const BLUA32_FIRMWARE_MODULE_SOURCE = [
 	`\top_mov = ${OpCode.MOV},`,
 	`\tmove_float_bits = ${ValueMoveKind.FloatBits},`,
 	`\tmove_float_from_bits = ${ValueMoveKind.FloatFromBits},`,
+	`\tmove_payload = ${ValueMoveKind.Payload},`,
 	`\top_knil = ${OpCode.KNIL},`,
 	`\top_kfalse = ${OpCode.KFALSE},`,
 	`\top_ktrue = ${OpCode.KTRUE},`,

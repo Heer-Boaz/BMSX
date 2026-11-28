@@ -2,7 +2,7 @@ local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
 -- Statement-only operations use the complement of their argument count.
-local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1, svc = -2, rfe = -1 }
+local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, payload = 1, argument_count = 0, argument_suffix = 1, svc = -2, rfe = -1 }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '

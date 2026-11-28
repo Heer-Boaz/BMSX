@@ -218,7 +218,9 @@ struct NativeTypePropagation::Transfer {
 	}
 
 	void operator()(NativeMove& op) {
-		if (op.conversion == ValueMoveKind::Copy || op.conversion == ValueMoveKind::Tag) {
+		if (op.conversion == ValueMoveKind::Payload) {
+			result(ValueTag::Integer);
+		} else if (op.conversion == ValueMoveKind::Copy || op.conversion == ValueMoveKind::Tag) {
 			const auto type = input(0);
 			// Reading bits requires no speculative admission check.
 			if (type && type->assumption == 0) op.sourceTag = type->tag;

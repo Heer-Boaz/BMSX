@@ -249,7 +249,7 @@ export function deriveBlua32FixedStack(
 							if (source === undefined) branches.delete(a);
 							else branches.set(a, source);
 						}
-					} else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits
+					} else if (c === ValueMoveKind.Tag || c === ValueMoveKind.Payload || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits
 						|| c === ValueMoveKind.ReadTop || c === ValueMoveKind.ReadIndexed) {
 						registers[a] = 0;
 						branches?.delete(a);

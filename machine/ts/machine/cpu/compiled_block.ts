@@ -136,8 +136,13 @@ export function compiledBlockAdmits(block: CompiledBlock, frame: CallFrame, rema
 type StatementEmitter = (page: DecodedInstructionPage, word: number,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
-emitters[OpCode.MOV] = (p, w, r) => p.c[w] === ValueMoveKind.Tag
-	? r.writeInteger(p.a[w], r.tagOperand(p.b[w])) : r.copy(p.a[w], p.b[w]);
+emitters[OpCode.MOV] = (p, w, r) => {
+	switch (p.c[w]) {
+		case ValueMoveKind.Tag: return r.writeInteger(p.a[w], r.tagOperand(p.b[w]));
+		case ValueMoveKind.Payload: return r.writeInteger(p.a[w], r.wordOperand(p.b[w]));
+		default: return r.copy(p.a[w], p.b[w]);
+	}
+};
 emitters[OpCode.LOADK] = (p, w, r) => r.copy(p.a[w], -p.bx[w] - 1);
 emitters[OpCode.KNIL] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
 emitters[OpCode.KFALSE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
@@ -163,7 +168,7 @@ emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.SetTop || op === OpCode.JMP && a !== 0
+	if (op === OpCode.MOV && c > ValueMoveKind.Payload || op === OpCode.JMP && a !== 0
 		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.LeaveWindowFromRegister) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
@@ -275,7 +280,7 @@ export function emitJavaScriptBlock(
 		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
 		const windowJump = op === OpCode.JREG && page.c[word] > RegisterJumpMode.Link;
 		const moveKind = page.c[word];
-		const windowMove = op === OpCode.MOV && moveKind > ValueMoveKind.Tag;
+		const windowMove = op === OpCode.MOV && moveKind >= ValueMoveKind.ReadTop && moveKind <= ValueMoveKind.SetTop;
 		if (windowMove) {
 			// These moves observe or set the exact frontier before the instruction.
 			if (resetsRegisterTop) source.push(`T=Math.max(F.top,${registerTop});`);

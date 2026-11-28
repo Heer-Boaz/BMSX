@@ -45,7 +45,8 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindowFromRegister), true);
 	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindowFromRegister + 1), false);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.SetTop), true);
-	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.SetTop + 1), false);
+	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.Payload), true);
+	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.Payload + 1), false);
 });
 
 test('generated JREG samples an aliased target and faults before writing its link', () => {
@@ -188,19 +189,20 @@ test('generated indexed moves and indirect window leave publish the exact tagged
 		[OpCode.MOV, 6, 3, ValueMoveKind.Copy],
 		[OpCode.MOV, 63, 2, ValueMoveKind.SetTop],
 		[OpCode.MOV, 1, 63, ValueMoveKind.ReadTop],
+		[OpCode.MOV, 4, 0, ValueMoveKind.Payload],
 		[OpCode.JREG, 63, 1, RegisterJumpMode.LeaveWindowFromRegister],
 		[OpCode.HALT, 0, 0, 0], [OpCode.RFE, 0, 0, 0],
 	];
 	const text = new Uint8Array(instructions.length * INSTRUCTION_BYTES);
 	for (const [i, instruction] of instructions.entries()) writeInstruction(text, i, ...instruction);
 	const rom = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
-		functions: [{ firstWord: 0, wordCount: 2, maxStack: 12 }, { firstWord: 2, wordCount: 8, maxStack: 8 },
-			{ firstWord: 10, wordCount: 2 }], exceptionFunctionIndex: 2 });
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: 12 }, { firstWord: 2, wordCount: 9, maxStack: 8 },
+			{ firstWord: 11, wordCount: 2 }], exceptionFunctionIndex: 2 });
 	const [caller, child, handler] = rom.image.functions;
 	const js = createTestSystemCpu(rom, CpuExecutionBackend.JavaScript).cpu;
 	const scalar = createTestSystemCpu(rom, CpuExecutionBackend.Interpreter).cpu;
 	const sentinel = valueFloatBits(0x7fc00019);
-	const grant = instructions.slice(2, 10).reduce((cycles, [op]) => cycles + BASE_CYCLES[op], -1);
+	const grant = instructions.slice(2, 11).reduce((cycles, [op]) => cycles + BASE_CYCLES[op], -1);
 	for (let visit = 0; visit <= 14; ++visit) {
 		for (const cpu of [js, scalar]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, caller.address, caller.codeAddress);
@@ -230,13 +232,13 @@ test('generated indexed moves and indirect window leave publish the exact tagged
 		assert.equal(parent.pc, caller.codeAddress + INSTRUCTION_BYTES);
 		assert.equal(parent.top, 9, 'the indirect leave accepts the frontier saved before writing its result');
 		assert.deepEqual([5, 6, 7, 8, 10].map(i => parent.registers.get(i)),
-			[valueInteger(5), valueInteger(5), sentinel, valueBool(true), sentinel]);
+			[valueInteger(5), valueInteger(5), sentinel, valueInteger(0x7fc00019), sentinel]);
 	}
 	const frame = js.rootThread.frameAtDepth(0);
 	const page = frame.executionImage.compiledCodeLookup?.find(child.codeAddress, 0);
 	const entry = page?.compiledBlocks?.entries[(child.codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
 	assert.equal(entry?.terminal.exit, CompiledBlockExit.RegisterWindowJump);
-	assert.equal(entry?.sourceWords, 8, 'one generated segment retires all the window moves');
+	assert.equal(entry?.sourceWords, 9, 'one generated segment retires all the window moves');
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

@@ -8,6 +8,7 @@ namespace bmsx {
 enum class ValueMoveKind : uint32_t {
 	Copy = 0, FloatBits = 1, FloatFromBits = 2, Tag = 3,
 	ReadTop = 4, ReadIndexed = 5, WriteIndexed = 6, SetTop = 7,
+	Payload = 8,
 };
 enum class ReturnSource : uint32_t { Registers = 0, ExtraArguments = 1 };
 enum class RegisterJumpMode : uint32_t { Jump = 0, Link = 1, EnterWindow = 2, LeaveWindow = 3, LeaveWindowFromRegister = 4 };

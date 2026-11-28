@@ -122,10 +122,10 @@ test('fixed stack uses ordinary bus formats and permits the issuing context only
 
 test('fixed stack admits the ordinary scalar moves', () => {
 	for (const kind of [ValueMoveKind.Copy, ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits, ValueMoveKind.Tag,
-		ValueMoveKind.ReadIndexed, ValueMoveKind.WriteIndexed, ValueMoveKind.SetTop])
+		ValueMoveKind.ReadIndexed, ValueMoveKind.WriteIndexed, ValueMoveKind.SetTop, ValueMoveKind.Payload])
 		assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, kind), [0]), { valueSlots: 2, frames: 1 });
 	assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 63, ValueMoveKind.ReadTop), [0]), { valueSlots: 2, frames: 1 });
-	assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, ValueMoveKind.SetTop + 1), [0]), /invalid register move format/);
+	assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, ValueMoveKind.Payload + 1), [0]), /invalid register move format/);
 });
 
 test('indexed transfers preserve proved targets only when their physical lanes are known', () => {

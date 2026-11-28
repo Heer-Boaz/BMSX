@@ -2226,7 +2226,8 @@ export class CPU implements MappedPageInvalidator {
 							const dispatchOp = page.dispatchOps[pageOffset];
 							this.currentInstructionPc = pc;
 							nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
-							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.Tag)) {
+							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV
+								&& (page.c[pageOffset] <= ValueMoveKind.Tag || page.c[pageOffset] === ValueMoveKind.Payload))) {
 								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
 								scalarFrame = frame;
 							} else {
@@ -3248,7 +3249,8 @@ export class CPU implements MappedPageInvalidator {
 				// Mode and selector faults precede these register operands.
 				case OpCode.MFC0: case OpCode.MTC0: break;
 				case OpCode.MOV:
-					if (page.c[pageOffset] <= ValueMoveKind.Tag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					if (page.c[pageOffset] <= ValueMoveKind.Tag || page.c[pageOffset] === ValueMoveKind.Payload)
+						throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				// F64LE bills its format before it reads a register.
@@ -3289,6 +3291,7 @@ export class CPU implements MappedPageInvalidator {
 					const kind = page.c[pageOffset], b = page.b[pageOffset];
 					if (kind === ValueMoveKind.Copy) this.copyRegisterFast(frame, registers, a, b);
 					else if (kind === ValueMoveKind.Tag) this.setRegisterIntegerFast(frame, registers, a, registers.getTag(b));
+					else if (kind === ValueMoveKind.Payload) this.setRegisterIntegerFast(frame, registers, a, registers.getPayload(b));
 					else if (kind === ValueMoveKind.FloatBits || kind === ValueMoveKind.FloatFromBits) {
 						const sourceTag = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
 						if (registers.getTag(b) !== sourceTag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);

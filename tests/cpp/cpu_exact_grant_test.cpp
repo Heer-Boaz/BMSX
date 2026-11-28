@@ -664,8 +664,8 @@ void exactPhysicalWindowMoves() {
 	const auto jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	image.text.resize(13u * INSTRUCTION_BYTES);
-	image.functions = {{.firstWord = 0, .wordCount = 11, .maxStack = 10}, {.firstWord = 11, .wordCount = 2}};
+	image.text.resize(15u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 13, .maxStack = 10}, {.firstWord = 13, .wordCount = 2}};
 	image.exceptionFunctionIndex = 1;
 	const auto move = [&](u32 word, u8 a, u8 b, ValueMoveKind kind) {
 		writeInstruction(image.text, word, mov, a, b, static_cast<u8>(kind));
@@ -679,16 +679,19 @@ void exactPhysicalWindowMoves() {
 	move(6, 0, 63, ValueMoveKind::ReadTop);
 	move(7, 2, 2, ValueMoveKind::ReadIndexed);
 	move(8, 5, 63, ValueMoveKind::ReadTop);
-	writeInstruction(image.text, 9, static_cast<u8>(OpCode::JMP), 0, 0, 0);
-	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	writeInstruction(image.text, 11, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 12, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	move(9, 7, 2, ValueMoveKind::Payload);
+	move(10, 8, 8, ValueMoveKind::Payload);
+	writeInstruction(image.text, 11, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 12, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 13, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 14, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 	Machine native(image, false), scalar(image, true);
 	const auto floatBits = valueFromTag(ValueTag::Float, 0xff812345u);
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->currentFrame;
 		frame.registers.set(1, floatBits);
 		frame.registers.set(6, valueFromTag(ValueTag::Float, 1u));
+		frame.registers.set(8, valueFromTag(ValueTag::False, 0x80000005u));
 		frame.setTop(2);
 	}
 	auto& cpu = native.cpu;
@@ -698,18 +701,21 @@ void exactPhysicalWindowMoves() {
 	const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
 	const auto* page = lookup.find(pc, 0);
 	const auto& entry = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(entry && entry->sourceWords == 10
+	require(entry && entry->sourceWords == 12
 		&& std::ranges::count(entry->sideExits, NativeBlockExit::ReservedInstruction, &NativeBlockExitSite::exit) == 4,
 		"both frontier and indexed operations have actual generated code with precise bounds-fault side exits");
 #endif
-	require(test::runCpuParity(cpu, scalar.cpu, 2 * loadCycles + 7 * movCycles + jumpCycles) == RunResult::Yielded
-		&& cpu.readFramePc(0) == pc + 10u * INSTRUCTION_BYTES && cpu.instructionBudgetRemaining == 0
+	const auto grant = 2 * loadCycles + 9 * movCycles + jumpCycles;
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+		&& cpu.readFramePc(0) == pc + 12u * INSTRUCTION_BYTES && cpu.instructionBudgetRemaining == 0
 		&& cpu.readFrameRegister(0, 3) == valueInteger(10)
 		&& cpu.readFrameRegister(0, 0) == valueInteger(1)
 		&& cpu.readFrameRegister(0, 5) == valueInteger(3)
 		&& cpu.readFrameRegister(0, 9) == floatBits
 		&& cpu.readFrameRegister(0, 4) == floatBits
 		&& cpu.readFrameRegister(0, 2) == floatBits
+		&& cpu.readFrameRegister(0, 7) == valueFromTag(ValueTag::Integer, 0xff812345u)
+		&& cpu.readFrameRegister(0, 8) == valueFromTag(ValueTag::Integer, 0x80000005u)
 		&& test::sameLanguageRam(cpu, scalar.cpu),
 		"indexed lanes, aliases and decreases to the live frontier are exact inside an ordinary generated grant");
 	for (auto* machine : {&native, &scalar}) {
@@ -723,7 +729,7 @@ void exactPhysicalWindowMoves() {
 	const auto reserved = static_cast<size_t>(NativeBlockExit::ReservedInstruction);
 	const auto beforeFault = cpu.nativeGateProfile().exits[reserved].entries;
 #endif
-	test::runCpuParity(cpu, scalar.cpu, 2 * loadCycles + 7 * movCycles + jumpCycles);
+	test::runCpuParity(cpu, scalar.cpu, grant);
 	const auto fault = cpu.captureRuntimeState();
 	require(fault.epcWord == pc + 5u * INSTRUCTION_BYTES && fault.causeWord == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
 		&& cpu.rootThread()->frameAtDepth(0)->readWindow(FrameField::Top) == 10

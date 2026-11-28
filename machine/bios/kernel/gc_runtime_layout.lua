@@ -26,7 +26,6 @@ return {
 	remark_receiver_offset = 52,
 	trace_context_offset = 0x740,
 	trace_string_work_offset = 12,
-	value_cell_offset = 0x7a0, -- firmware scratch; only this module owns the placement
 	value_cell_tag_offset = 4,
 	thread_entry_code_bit = 1, -- immutable Function payload; heap Closure addresses remain untagged
 }

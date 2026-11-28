@@ -336,7 +336,7 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		case OpCode.MOV:
 			if (c === ValueMoveKind.ReadTop) return a + 1;
 			if (c === ValueMoveKind.SetTop) return b + 1;
-			if (c > ValueMoveKind.SetTop) return 0;
+			if (c > ValueMoveKind.Payload) return 0;
 			break;
 		case OpCode.MFC0:
 			return cop0FieldImplemented(b) ? a + 1 : 0;

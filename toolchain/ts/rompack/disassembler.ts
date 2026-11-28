@@ -427,6 +427,7 @@ const formatInstruction = (
 				case ValueMoveKind.ReadIndexed: return `MOV r${a}, r[r${b}]`;
 				case ValueMoveKind.WriteIndexed: return `MOV r[r${a}], r${b}`;
 				case ValueMoveKind.SetTop: return `MOV top, r${b}`;
+				case ValueMoveKind.Payload: return `MOV r${a}, payload(r${b})`;
 				default: return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
 			}
 		case OpCode.KNIL:

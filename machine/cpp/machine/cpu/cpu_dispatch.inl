@@ -13,6 +13,7 @@ DISPATCH_LABEL(MOV) {
 	const auto kind = static_cast<ValueMoveKind>(decoded->c);
 	if (kind == ValueMoveKind::Copy) { SET_REGISTER_FAST(a, REG(b)); }
 	else if (kind == ValueMoveKind::Tag) { SET_REGISTER_FAST(a, valueInteger(static_cast<u8>(FRAME.registers.tag(b)))); }
+	else if (kind == ValueMoveKind::Payload) { SET_REGISTER_FAST(a, valueFromTag(ValueTag::Integer, FRAME.registers.payload(b))); }
 	else if (kind == ValueMoveKind::FloatBits || kind == ValueMoveKind::FloatFromBits) {
 		const Value value = REG(b);
 		const ValueTag source = kind == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;

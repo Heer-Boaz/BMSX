@@ -159,14 +159,9 @@ end
 -- Value lanes, and has not written either one. No name lookup or growth.
 local store_reference<const> = function(word_address, tag_address, reference) -- T:26 H:27
 	local management<const> = layout.management_offset -- H:30 G:202; firmware owns the control base
-	local scratch<const> = layout.ram_base + management + layout.value_cell_offset -- T:27 H:28-30; tagged argument transport
-	local sampled<const>: *value = scratch -- T:27 H:28-30
-	local sampled_word<const>: *u32 = scratch -- T:27 H:28
-	local sampled_tag<const>: *u8 = scratch + layout.value_cell_tag_offset -- T:27 H:29
 	local word<const>: *u32 = word_address -- T:28 H:28 W:32,48
 	local tag<const>: *u8 = tag_address -- T:29 H:29 W:33,48
-	*sampled = reference -- T:27 H:28-30
-	local payload<const>, kind<const> = *sampled_word, *sampled_tag -- T:27 H:28-29 W:49-50
+	local payload<const>, kind<const> = blua32.payload(reference), blua32.tag(reference) -- T:27 H:28-29 W:49-50
 	*word = payload -- T:28 H:28 W:49
 	*tag = kind -- T:29 H:29 W:50
 	mark_written_reference(management, kind, payload) -- T:30 H:30

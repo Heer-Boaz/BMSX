@@ -175,6 +175,13 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 		}
 		return;
 	}
+	if (mode == ValueMoveKind::Payload) {
+		emitPayload(instruction.source, SLJIT_R0);
+		const auto target = m_cache.write(instruction.result, ValueTag::Integer);
+		if (target.reg != SLJIT_R0)
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
+		return;
+	}
 	const ValueTag required = mode == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
 	if (instruction.conversionCheck == NativeTagCheck::Dynamic)
 		fault(guardTag(instruction.source, required, SLJIT_R0), *sideExit(row.slow), m_cache.state());
