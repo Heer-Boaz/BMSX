@@ -38,5 +38,5 @@ test('warm retirement pins both native boundaries and maps every guest backing r
 	assert.equal(pair.fields.get('base')?.offset, 0);
 	assert.equal(pair.fields.get('bytes')?.offset, 4);
 	assert.equal(pair.fields.get('strings')?.offset, 8);
-	assert.equal(pair.fields.get('ram_strings')?.offset, 12);
+	assert.equal(pair.fields.get('ram_string_end')?.offset, 12);
 });

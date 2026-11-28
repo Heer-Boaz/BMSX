@@ -9,7 +9,7 @@ local admission<const> = require('kernel/boot_image_admission') -- L:75-98,132-1
 local slices<const> = require('kernel/string_slice') -- S:161-230 R:176-235
 local string_record<const> = require('kernel/string_record')
 local strings<const> = require('kernel/gc_strings') -- S:244-254,438-442 R:247-253,427-430
-local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; compact physical root prefix
+local _bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; physical String operand record
 local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
 local names<const> = require('kernel/global_bank') -- G:71-109 H:59-101
 local frame_storage<const> = require('kernel/thread_frame_storage')
@@ -163,7 +163,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 		metadata.rom_tables[2 * directory + 1] = bucket_count
 		if metadata.first_cart == 0 then metadata.first_cart = directory end
 	end
-	local base, strings_base, ram_count = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
+	local base, strings_base, ram_string_end = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
 	local view<const>: *installed_image_binding = installed -- T:1139-1144 C:420-426
 	if extent ~= 0 then -- T:1139 C:420
 		local accepted, offset
@@ -180,14 +180,16 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 		end
 		if fault == 0 then
 			strings_base = system_base + 4 * system_count -- T:1147 C:440
+			local literals<const>: *u32 = strings_base -- T:1003 C:289
 			local slot = 0 -- T:1005-1006 C:282,291
 			for index = 0, count - 1 do -- T:968,996 C:282; copy only the decoded String ordinals into binding RAM
 				if constants[index].tag == string_constant_tag then -- T:996 C:270-272
 					local id
 					id, fault = resolve_initial_string(management, constants[index].word, socket, system_bytes, cart0_bytes, cart1_bytes) -- T:1001-1003 C:287-289
 					if fault ~= 0 then break end -- S:253 R:253; malformed external operand
-					ram_count = string_bindings.store_binding(strings_base, strings_count, slot, ram_count, id) -- T:1003,1009 C:289,301
+					literals[slot] = id -- T:1003 C:289
 					slot = slot + 1 -- T:1005 C:291
+					if string_record.is_ram_string_id(id) then ram_string_end = slot end -- T:1009 C:301
 				end
 			end
 		end
@@ -198,8 +200,8 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 			return fault
 		end
 	end
-	view.strings = strings_base -- T:1147 C:440; compact prefix belongs to this installed binding
-	view.ram_strings = ram_count -- T:1005-1006 C:282,291
+	view.strings = strings_base -- T:1147 C:440; literal plane belongs to this installed binding
+	view.ram_string_end = ram_string_end -- T:1005-1006 C:282,291
 	view.base = base -- T:1178 C:421; the actual installed operand block
 	view.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
 	return 0, source_cycles -- T:1167-1181 C:441

@@ -1,7 +1,7 @@
 import { GcPhase, GcDiagnosticField, GcRootBank } from '../../../machine/ts/machine/cpu/gc_heap';
 export { GcPhase, GcDiagnosticField, GcRootBank };
 import { GcHeap as PhysicalGcHeap } from '../../../machine/ts/machine/cpu/gc_heap';
-import { assistAllocation, chargeCollectionWork, markRootHead, rootBankSlots, markRootBank, markRootThreads } from './cpu_roots';
+import { assistAllocation, chargeCollectionWork, markRootHead, rootBankSlots, markLiteralRootBatch, markRootBank, markRootThreads } from './cpu_roots';
 import { nativeHeapReference } from './reference';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
@@ -506,10 +506,17 @@ export class GcHeap extends PhysicalGcHeap {
 					this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | next);
 					return work;
 				}
-				const stop = Math.min(end, next + Math.max(1, ((limit - work) / worst) | 0));
-				markRootBank(this.cpu, this, kind, next, stop);
-				work += (stop - next) * words + strings.takeMarkWork();
-				next = stop;
+				const amount = Math.max(1, ((limit - work) / worst) | 0);
+				if (kind >= GcRootBank.SystemConstants && kind < GcRootBank.Completion) {
+					const batch = markLiteralRootBatch(this.cpu, this, kind, next, end, amount);
+					work += batch.marked + strings.takeMarkWork();
+					next = batch.next;
+				} else {
+					const stop = Math.min(end, next + amount);
+					markRootBank(this.cpu, this, kind, next, stop);
+					work += (stop - next) * words + strings.takeMarkWork();
+					next = stop;
+				}
 			}
 		}
 		this.memory.writeRamRecordWord(this.controlOffset + GC_ROOT_CURSOR, 0);

@@ -8,7 +8,7 @@ local layout<const> = require('kernel/gc_runtime_layout') -- L:26-29 N:22-25 M:6
 local records<const> = require('kernel/dlmalloc_record') -- L:288-292 N:291-295
 local names<const> = require('kernel/global_bank') -- G:9-10,50-53 H:9,32-35
 
-local _bindings<const> = require('kernel/image_string_bindings') -- I:348-349 J:192; installed record owns its String prefix
+local _bindings<const> = require('kernel/image_string_bindings') -- I:348-349 J:192; installed record owns its String operands
 
 local retire_namespace<const> = function(management, address) -- G:50 H:32
 	local bank<const>: *namespace_bank = address -- G:9,50 H:32
@@ -39,8 +39,8 @@ local retire_images<const> = function(management, installed) -- T:930-935 C:219,
 			local bytes<const> = bindings[lane].bytes -- 4b2ca9763 CPU C++:231-236; retain charge for release
 			bindings[lane].base = 0 -- T:1018 C:303; no backing in an empty lane
 			bindings[lane].bytes = 0 -- 4b2ca9763 CPU C++:233; a retired lane has no installed extent
-			bindings[lane].strings = 0 -- T:1018 C:303; detach the prefix with its backing
-			bindings[lane].ram_strings = 0 -- T:1018 C:303
+			bindings[lane].strings = 0 -- T:1018 C:303; detach the literal plane with its backing
+			bindings[lane].ram_string_end = 0 -- T:1018 C:303
 			records.bmsx_dlmalloc_release_record(arena, base - layout.ram_base, bytes, occupied) -- T:1017 C:304 L:289-291 N:292-294
 		end
 	end

@@ -1,5 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/upvalue.h"
+#include "firmware_heap_layout.h"
 
 #include <algorithm>
 
@@ -132,34 +133,44 @@ void CPU::markScopedRoots(GcHeap& heap) {
 	}
 }
 
-size_t CPU::rootBankSlots(GcRootBank bank) const {
+size_t CPU::rootBankEnd(GcRootBank bank) const {
 	if (bank == GcRootBank::SystemGlobals) return m_systemGlobalBank.count();
 	if (bank == GcRootBank::Globals) return m_globalBank.count();
 	if (bank == GcRootBank::Completion) return m_completionValueCount;
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(),
 		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
-	return m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+	return m_memory.readRamRecordWord(binding + test::FIRMWARE_IMAGE_BINDING_RAM_STRING_END_OFFSET);
 }
 
-void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) {
+size_t CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t& next, size_t end, size_t allowance) {
+	const size_t stop = std::min(end, next + allowance);
+	const size_t slotsVisited = stop - next;
 	if (bank < GcRootBank::SystemConstants) {
 		const auto& names = bank == GcRootBank::SystemGlobals ? m_systemGlobalBank : m_globalBank;
 		const auto slots = names.values();
-		for (size_t slot = first; slot < end; ++slot) {
-			heap.markString(names.name(slot));
-			heap.markValue(slots.get(slot));
+		for (; next < stop; ++next) {
+			heap.markString(names.name(next));
+			heap.markValue(slots.get(next));
 		}
-		return;
+		return slotsVisited;
 	}
 	if (bank == GcRootBank::Completion) {
-		for (size_t slot = first; slot < end; ++slot) heap.markValue(m_completionValues.get(slot));
-		return;
+		for (; next < stop; ++next) heap.markValue(m_completionValues.get(next));
+		return slotsVisited;
 	}
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(),
 		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
 	const u32 roots = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-	for (size_t slot = first; slot < end; ++slot)
-		heap.markString(m_memory.readRamRecordWord(roots + static_cast<u32>(slot) * 4u) & ~IMAGE_STRING_RAM_ORDINAL);
+	size_t marked = 0;
+	// A literal bank resumes at a physical ordinal. As in the original
+	// compact root scan, only the RAM String roots consume this allowance.
+	for (; next < end && marked < allowance; ++next) {
+		const StringId id = m_memory.readRamRecordWord(roots + static_cast<u32>(next) * 4u);
+		if (!isRamStringId(id)) continue;
+		heap.markString(id);
+		++marked;
+	}
+	return marked;
 }
 
 void CPU::markRootThreads(GcHeap& heap) {

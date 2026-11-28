@@ -9,7 +9,7 @@ local names<const> = require('kernel/global_bank')
 local hashes<const> = require('kernel/table_reinsert').internal
 local slices<const> = require('kernel/string_slice')
 local strings<const> = require('kernel/gc_strings')
-local binding<const> = require('kernel/image_string_bindings')
+local _binding_types<const> = require('kernel/image_string_bindings')
 local string_record<const> = require('kernel/string_record')
 local _image_types<const> = require('kernel/system_image_bind')
 
@@ -33,13 +33,12 @@ struct image_operand_plan
 	offset: u32
 	extent: u32
 	constant_count: u32
-	string_count: u32
 	global_count: u32
 	system_count: u32
 	global_prior: u32
 	system_prior: u32
 	string_prior: u32
-	ram_count: u32
+	ram_string_end: u32
 end
 
 -- One System vector owns this storage through every allocation and grant.
@@ -81,7 +80,7 @@ local prepare_plan<const> = function(index, staged, mounted)
 	plan.delta = delta
 	local extent<const> = 4 * (replacement.global_count + replacement.system_count + string_count)
 	if extent ~= installed.bytes then plan.extent = extent end
-	plan.constant_count, plan.string_count, plan.string_prior = count, string_count, string_prior
+	plan.constant_count, plan.string_prior = count, string_prior
 	plan.global_count, plan.global_prior = replacement.global_count, prior.global_count
 	plan.system_count, plan.system_prior = replacement.system_count, prior.system_count
 	return true, bss_start, bss_end
@@ -183,29 +182,24 @@ local stage_strings<const> = function(index, plan_address, system, cart0, cart1)
 		+ index * sizeof(installed_image_binding)
 	local constants<const>: *constant_record = image.constants + plan.delta
 	local prior<const>: *u32 = installed.strings
-	local pool<const> = layout.ram_base + plan.offset + 4 * (plan.global_count + plan.system_count)
-	local string_count<const>, string_prior<const> = plan.string_count, plan.string_prior
-	local ram_count, ordinal, old_ram, old_rom = 0, 0, 0, string_prior - 1
+	local pool<const>: *u32 = layout.ram_base + plan.offset + 4 * (plan.global_count + plan.system_count)
+	local string_prior<const> = plan.string_prior
+	local ram_string_end, ordinal = 0, 0
 	for slot = 0, plan.constant_count - 1 do
 		if constants[slot].tag == string_constant then
 			local id
 			if ordinal < string_prior then
-				if (prior[ordinal] & binding.ordinal_ram_bit) ~= 0 then
-					id = prior[old_ram] & ~binding.ordinal_ram_bit
-					old_ram = old_ram + 1
-				else
-					id = prior[old_rom] & ~binding.ordinal_ram_bit
-					old_rom = old_rom - 1
-				end
+				id = prior[ordinal]
 			else
 				id = resolve(constants[slot].word, index, system, cart0, cart1)
 			end
 			if id == 0 then return false end
-			ram_count = binding.store_binding(pool, string_count, ordinal, ram_count, id)
+			pool[ordinal] = id
 			ordinal = ordinal + 1
+			if string_record.is_ram_string_id(id) then ram_string_end = ordinal end
 		end
 	end
-	plan.ram_count = ram_count
+	plan.ram_string_end = ram_string_end
 	return true
 end
 
@@ -246,16 +240,16 @@ local publish_operand_bank<const> = function(index, plan_address)
 	local base<const> = plan.offset == 0 and 0 or layout.ram_base + plan.offset
 	local pool_address<const> = base + 4 * (plan.global_count + plan.system_count)
 	local pool<const>: *u32 = pool_address
-	local ram_count<const> = plan.ram_count
+	local ram_string_end<const> = plan.ram_string_end
 	local work = 0
-	for index = 0, ram_count - 1 do
-		work = work + strings.mark(metadata, pool[index] & ~binding.ordinal_ram_bit)
+	for index = 0, ram_string_end - 1 do
+		work = work + strings.mark(metadata, pool[index])
 	end
 	if work ~= 0 then
 		local latch<const>: *u32 = state + layout.string_mark_work_offset
 		*latch = *latch + work
 	end
-	installed.strings, installed.ram_strings = pool_address, ram_count
+	installed.strings, installed.ram_string_end = pool_address, ram_string_end
 	installed.base, installed.bytes = base, plan.extent
 	if previous ~= 0 then
 		records.bmsx_dlmalloc_release_record(allocator, previous - layout.ram_base, previous_bytes, occupied)

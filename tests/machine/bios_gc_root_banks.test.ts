@@ -4,9 +4,7 @@ import assert from 'node:assert/strict';
 import { registerReferenceGlobalName, writeReferenceGlobalSlot } from '../helpers/global_bank_reference';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding } from '../../machine/ts/machine/cpu/execution_image';
-import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
@@ -18,7 +16,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_SERVICE_ROOT_PORT_BASE } from '../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, storeImageStringBinding } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, IMAGE_RAM_STRING_END_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -107,9 +105,9 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 			assert.ok(target['executionImageForDomain'](slot));
 			const binding = executionImageBindingOffset(target.heapAllocator.managementOffset(), slot);
 			const base = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-			const count = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+			const count = target.memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
 			return Array.from({ length: count }, (_, i) =>
-				target.memory.readRamRecordWord(base + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL);
+				target.memory.readRamRecordWord(base + 4 * i));
 		}), slot === 0 ? constants.slice(0, 2) : constants.slice(2));
 	assert.equal(cpu.rootBankSlots(GcRootBank.SystemConstants), 0);
 	assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 2);
@@ -285,26 +283,3 @@ for (const operation of ['read_byte', 'write_word'] as const) {
 		assert.throws(() => f.finish(), operation === 'read_byte' ? /outside installed RAM and ROM/ : /outside its private RAM port/);
 	});
 }
-
-
-test('compact resident String bindings preserve ordinal identity and root order over dirty backing', () => {
-	const { memory } = fixture(0);
-	const base = RAM_BASE + 0x20000, count = 7;
-	for (let mask = 0; mask < 1 << count; ++mask) {
-		for (let slot = 0; slot < count; ++slot) memory.writeRamRecordWord(base + 4 * slot, 0xfffffff9);
-		const words = Array.from({ length: count }, (_, i) => ((mask & (1 << i)) !== 0
-			? RAM_BASE + 0x20000 + 8 * i : (((i & 1) === 0 ? 0x90000000 : 0x10000000) + 8 * i)));
-		let ram = 0;
-		for (const [slot, word] of words.entries()) ram = storeImageStringBinding(memory, base, count, slot, ram, word);
-		const roots = words.filter(isRamStringId);
-		assert.equal(ram, roots.length);
-		assert.deepEqual(roots, Array.from({ length: ram }, (_, i) =>
-			memory.readRamRecordWord(base + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL));
-		ram = 0;
-		for (const [slot, word] of words.entries()) {
-			const original = loadImageStringBinding(memory, base, count, slot, ram);
-			assert.equal(original, word);
-			ram += +isRamStringId(original);
-		}
-	}
-});

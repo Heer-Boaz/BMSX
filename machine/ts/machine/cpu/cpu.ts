@@ -4,7 +4,7 @@ import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operati
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
 import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { isRamStringId, StringPool, type StringId } from './string_pool';
+import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
 	type MappedPageBinding,
@@ -153,7 +153,6 @@ import {
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
-	loadImageStringBinding,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
@@ -672,8 +671,7 @@ export class CPU implements MappedPageInvalidator {
 		stringBinding: number,
 		constantStringSlots: Uint32Array,
 	): void {
-		let stringIndex = 0, ramCount = 0;
-		const stringCount = constantStringSlots.length;
+		let stringIndex = 0;
 		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
@@ -710,8 +708,7 @@ export class CPU implements MappedPageInvalidator {
 						constTags[index] = ValueTag.UnboundStringLiteral;
 						break;
 					}
-					const id = loadImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount);
-					ramCount += +isRamStringId(id);
+					const id = this.memory.readRamRecordWord(stringBinding + 4 * stringIndex);
 					constantStringSlots[stringIndex++] = index;
 					constTags[index] = ValueTag.String;
 					constWords[index] = id;
@@ -787,12 +784,10 @@ export class CPU implements MappedPageInvalidator {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.
 			({ constWords, constTags, constantStringSlots } = reused);
-			let ramStringCount = 0;
 			for (let i = 0; i < constantStringSlots.length; ++i) {
-				const id = stringBinding === 0 ? 0 : loadImageStringBinding(this.memory, stringBinding, stringCount, i, ramStringCount);
+				const id = stringBinding === 0 ? 0 : this.memory.readRamRecordWord(stringBinding + 4 * i);
 				constTags[constantStringSlots[i]] = stringBinding === 0 ? ValueTag.UnboundStringLiteral : ValueTag.String;
 				constWords[constantStringSlots[i]] = id;
-				ramStringCount += +isRamStringId(id);
 			}
 		}
 		return {
@@ -1492,12 +1487,10 @@ export class CPU implements MappedPageInvalidator {
 		const image = this.systemImage;
 		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 		const strings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), slots = image.constantStringSlots;
-		let ramCount = 0;
 		for (let index = 0; index < slots.length; ++index) {
-			const id = loadImageStringBinding(memory, strings, slots.length, index, ramCount), slot = slots[index];
+			const id = memory.readRamRecordWord(strings + 4 * index), slot = slots[index];
 			image.constTags[slot] = ValueTag.String;
 			image.constWords[slot] = id;
-			ramCount += +isRamStringId(id);
 		}
 		this.compiledCodeCache.retireAll();
 		for (const page of image.decodedPages.values()) {

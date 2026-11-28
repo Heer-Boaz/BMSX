@@ -533,6 +533,55 @@ void romLiteralsDoNotUseGuestRam() {
 	}
 }
 
+void directStringOperandsFollowTheRestoredBank() {
+	auto source = image();
+	source.constants = {std::string("literal before RAM"), i32{37}, std::string("__index"),
+		std::string("literal between RAM roots"), std::string("__newindex"), std::string("literal after RAM")};
+	source.functions[0].wordCount = 7;
+	for (u32 i = 0u; i < source.constants.size(); ++i)
+		writeInstruction(source.text, i, static_cast<u8>(OpCode::LOADK), i, 0, i);
+	writeInstruction(source.text, 6, static_cast<u8>(OpCode::RET), 0, 7, 0);
+	for (bool scalar : {false, true}) {
+		Machine machine(source, scalar);
+		auto& cpu = machine.cpu;
+		auto& memory = machine.memory;
+		auto& strings = cpu.stringPool();
+		const auto descriptor = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const u32 words = memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+		const std::array literalIds{*strings.find("literal before RAM"), *strings.find("__index"),
+			*strings.find("literal between RAM roots"), *strings.find("__newindex"), *strings.find("literal after RAM")};
+		require(!isRamStringId(literalIds[0]) && isRamStringId(literalIds[1]) && !isRamStringId(literalIds[2])
+			&& isRamStringId(literalIds[3]) && !isRamStringId(literalIds[4]), "the bank interleaves real ROM and RAM String ids");
+		for (u32 i = 0; i < literalIds.size(); ++i)
+			require(memory.readRamRecordWord(words + 4u * i) == literalIds[i], "every physical word is the literal's exact String id");
+		require(memory.readRamRecordWord(descriptor + test::FIRMWARE_IMAGE_BINDING_RAM_STRING_END_OFFSET) == 4u,
+			"the stock root frontier ends at the last RAM ordinal, not the RAM root count");
+		const auto state = cpu.captureRuntimeState();
+		const auto ramA = memory.captureSaveState();
+		const StringId replacement = strings.intern("a different published RAM operand");
+		memory.writeRamRecordWord(words + 4u, replacement);
+		const auto ramB = memory.captureSaveState();
+		const auto* decodedWords = cpu.activeThread()->currentFrame->executionImage->decodedConstants.words();
+		const auto run = [&](StringId expected) {
+			require(cpu.runUntilDepth(0, 4096) == RunResult::Halted, "the literal ROM returns");
+			const auto result = cpu.readCompletionValues();
+			require(result.size() == 6u && result.get(0) == valueString(literalIds[0]) && result.get(1) == valueInteger(37)
+				&& result.get(2) == valueString(expected) && result.get(3) == valueString(literalIds[2])
+				&& result.get(4) == valueString(literalIds[3]) && result.get(5) == valueString(literalIds[4]),
+				"LOADK preserves the raw String words as well as interleaved numeric constants");
+		};
+		run(literalIds[1]);
+		for (const auto* ram : {&ramB, &ramA}) {
+			memory.restoreSaveState(*ram);
+			cpu.restoreRuntimeState(state);
+			require(cpu.activeThread()->currentFrame->executionImage->decodedConstants.words() == decodedWords
+				&& memory.captureSaveState().ram == ram->ram,
+				"restore reuses immutable literal decoding and does not rewrite guest RAM");
+			run(ram == &ramA ? literalIds[1] : replacement);
+		}
+	}
+}
+
 void replacementRetiresInstalledBindingSpan() {
 	auto source = image();
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
@@ -1832,6 +1881,7 @@ int main(int argc, char** argv) {
 			std::cout << "raw Thread GC work test passed\n";
 			return 0;
 		}
+		directStringOperandsFollowTheRestoredBank();
 		canonicalPoolAndRootRanges();
 		stringMarkWorkSurvivesCheckpoint();
 		collectorWorkIgnoresInactiveThreadFrames();

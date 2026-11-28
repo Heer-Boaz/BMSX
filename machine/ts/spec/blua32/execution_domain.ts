@@ -2,13 +2,12 @@ export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;
 export const EXECUTION_DOMAIN_COUNT = 3;
 
-// Installed operand backing and its compact RAM-String prefix per physical domain.
+// Installed operand backing and direct String literal slots per physical domain.
 // RAM (not the host image/cache) owns these words through replacement and rewind.
 export const EXECUTION_IMAGE_BINDINGS_OFFSET = 0x200;
 export const EXECUTION_IMAGE_BINDING_SIZE = 16;
 export const EXECUTION_IMAGE_BINDING_SPAN_OFFSET = 4;
 export const EXECUTION_IMAGE_BINDING_STRINGS_OFFSET = 8;
-export const EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET = 12;
 
 // Physical global register windows: payload words followed by their tags.
 export const SYSTEM_GLOBAL_BANK_OFFSET = 0x230;

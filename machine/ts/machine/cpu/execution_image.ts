@@ -19,7 +19,6 @@ import type { Memory, MemoryByteView } from '../memory/memory';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
-import type { StringId } from './string_pool';
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
@@ -331,18 +330,6 @@ export type DecodedInstructionPage = MappedPageBinding & {
 	refreshState: Uint8Array;
 	compiledBlocks: CompiledBlockPage | null;
 };
-
-// Each word contributes one unused alignment bit to the original String
-// ordinal's partition. RAM identities grow from the low end in ordinal
-// order; ROM identities grow from the high end. No arena extension or
-// unpublished root array is needed.
-export const IMAGE_STRING_RAM_ORDINAL = 1;
-
-export function loadImageStringBinding(memory: Memory, base: number, count: number, slot: number, ramCount: number): StringId {
-	const word = memory.readRamRecordWord(base + 4 * slot);
-	const source = (word & IMAGE_STRING_RAM_ORDINAL) !== 0 ? ramCount : count - 1 - (slot - ramCount);
-	return ((slot === source ? word : memory.readRamRecordWord(base + 4 * source)) & ~IMAGE_STRING_RAM_ORDINAL) >>> 0;
-}
 
 export type Blua32ExecutionImage = {
 	executionDomainId: ExecutionDomainId;

@@ -9,12 +9,13 @@ import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_DIAGNOSTIC_OFFSET } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
-import { ValueTag, valueBool, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	EXECUTION_IMAGE_BINDING_SPAN_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
+	EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField,
+	SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
 } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET,
@@ -27,6 +28,7 @@ import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_bui
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { IMAGE_RAM_STRING_END_OFFSET } from '../../helpers/firmware_heap_layout';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 // These addresses deliberately overlap the stock BIOS's software state, not
@@ -35,7 +37,7 @@ const collector = CPU_FIXED_STACK_BASE + 0x344;
 const allocator = CPU_FIXED_STACK_BASE + 0x400;
 const slotBytes = 0x80, slotWords = slotBytes / 4;
 const first = CPU_FIXED_STACK_BASE - 0x200, second = first + slotBytes, unreachable = second + slotBytes;
-const context = first - 0x200, frames = context + 0x60, values = frames + 2 * FRAME_CONTROL_BYTES, valueCount = 32;
+const context = first - 0x200, frames = context + 0x60, values = frames + 2 * FRAME_CONTROL_BYTES, valueCount = 48;
 const stringKey = second + 0x10;
 const array = unreachable + 0x30, hash = unreachable + 0x40;
 const meta = first + 0x10, metaHash = first + 0x30, lookupKey = first + 0x50;
@@ -47,7 +49,7 @@ const globalValues = CPU_FIXED_STACK_BASE - 0x60, globalCapacity = 4, globalOrdi
 const globalNeighborTags = ValueTag.Integer | (ValueTag.Integer << 8);
 const initialGlobalTags = globalNeighborTags | (ValueTag.False << 16);
 const updatedGlobalTags = globalNeighborTags | (ValueTag.Integer << 16);
-const ordinalMap = first - 0x10;
+const ordinalMap = first - 0x10, literalIds = ordinalMap + 4;
 const signature = 0x61b10f4d, sweeping = 0x5a51000d, settled = 0x5a510015, tableReady = 0x5a510020;
 const reset = `
 local startup<const> = require('bmsx/startup')
@@ -108,8 +110,11 @@ local global_values<const>: *u32 = ${globalValues}
 global_values[0], global_values[1], global_values[${globalOrdinal}], global_values[${globalCapacity}] = 23, 47, 0, ${initialGlobalTags}
 local ordinal<const>: *u32 = ${ordinalMap}
 *ordinal = ${globalOrdinal}
+local literal_ids<const>: *u32 = ${literalIds}
+literal_ids[0], literal_ids[1] = ${lookupKey}, ${stringKey}
 local installed<const>: *u32 = ${systemBinding}
-installed[0], installed[${EXECUTION_IMAGE_BINDING_SPAN_OFFSET / 4}] = ${ordinalMap}, 4
+installed[0], installed[${EXECUTION_IMAGE_BINDING_SPAN_OFFSET / 4}] = ${ordinalMap}, 12
+installed[${EXECUTION_IMAGE_BINDING_STRINGS_OFFSET / 4}] = ${literalIds}
 initialize()
 collect(${first})
 local reused<const>, exhausted<const> = take(), take()
@@ -178,7 +183,7 @@ return function(reused, exhausted, reclaimed)
 	independent_counter = 158
 	return reused, exhausted, nodes[2], nodes[${slotWords + 2}], reclaimed, old_array, old_field,
 		own_array, own_field, size, key_size, string_field, inherited, disabled, target[3],
-		initial_global, independent_counter
+		initial_global, independent_counter, 'read', 'k'
 end`;
 const modules = [['main', 'module<entry>\nreturn 0'], ['reset', reset],
 	['table-exercise', tableExercise], ['irq', 'halt_until_irq'], ['exception', 'halt_until_irq']].map(([path, source]) =>
@@ -195,6 +200,8 @@ try {
 			managedEntries: [{ path: 'table-exercise', symbol: 'table_exercise' }],
 		});
 		assert.equal(linked.layout.header.globalNameCount, 1, 'the independent firmware supplies exactly one linked ordinary ordinal');
+		const stringSlots = linked.layout.constants.flatMap((value, slot) => typeof value === 'string' ? [slot] : []);
+		assert.deepEqual(stringSlots.map(slot => linked.layout.constants[slot]), ['read', 'k']);
 		const romBytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
@@ -221,7 +228,7 @@ try {
 		}
 		function fingerprint() {
 			for (const [offset, count] of [[allocatorOffset, 32], [collectorOffset, 4], [first - RAM_BASE, 3 * slotBytes], [diagnostics, 36],
-				[globalOffset - 48, globalBytes + 96], [globalDescriptor - RAM_BASE, 12], [systemBinding - RAM_BASE, 16], [ordinalMap - RAM_BASE, 4]]) {
+				[globalOffset - 48, globalBytes + 96], [globalDescriptor - RAM_BASE, 12], [systemBinding - RAM_BASE, 16], [ordinalMap - RAM_BASE, 12]]) {
 				commands.push(`H ${offset} ${offset + count}`);
 				observations.push(String(hashBytes(raw, offset, count)));
 			}
@@ -243,7 +250,7 @@ try {
 		writeFileSync(tsState, encodeRuntimeSaveState(midpoint));
 		commands.push('S', `x ${nativeState}`);
 		const result = [unreachable, 0, 31, 59, 73, 59, 79, 91, 107, 2, 1, 113, 113, 0, 137].map(valueInteger);
-		result.push(valueBool(false), valueInteger(158));
+		result.push(valueBool(false), valueInteger(158), valueString(lookupKey), valueString(stringKey));
 		const ownOps = [OpCode.GETI, OpCode.GETT, OpCode.SETI, OpCode.SETT, OpCode.GETI, OpCode.GETT, OpCode.LEN, OpCode.LEN, OpCode.GETI];
 		const expectedTableOps = [...ownOps.map(op => [op, BASE_CYCLES[op]]),
 			[OpCode.GETI, BASE_CYCLES[OpCode.GETI] + TABLE_INDEX_VISIT_CYCLES],
@@ -264,19 +271,23 @@ try {
 			fingerprint();
 			const tableOps: [OpCode, number][] = [];
 			const globalOps: [OpCode, number][] = [];
+			const literalLoads: [number, number][] = [];
 			for (let step = 0; step < 128; ++step) {
 				const pc = cpu.readFramePc(0);
-				const { op } = decodeBlua32InstructionAtPc(romBytes, SYSTEM_ROM_BASE, pc);
+				const { op, bx } = decodeBlua32InstructionAtPc(romBytes, SYSTEM_ROM_BASE, pc);
 				const paid = grant(1, op === OpCode.RET ? RunResult.Halted : RunResult.Yielded);
 				if (op === OpCode.RET) break;
 				if (op === OpCode.GETI || op === OpCode.GETT || op === OpCode.SETI || op === OpCode.SETT || op === OpCode.LEN) {
 					tableOps.push([op, paid]);
 				} else if (op === OpCode.GETGL || op === OpCode.SETGL) {
 					globalOps.push([op, paid]);
+				} else if (op === OpCode.LOADK && stringSlots.includes(bx)) {
+					literalLoads.push([bx, paid]);
 				}
 			}
 			assert.deepEqual(tableOps, expectedTableOps, 'the custom key controls exactly one extra charged visit');
 			assert.deepEqual(globalOps, [OpCode.GETGL, OpCode.SETGL, OpCode.GETGL].map(op => [op, BASE_CYCLES[op]]));
+			assert.deepEqual(literalLoads, stringSlots.map(slot => [slot, BASE_CYCLES[OpCode.LOADK]]));
 			assert.deepEqual(runtime.readCompletionValues(), result);
 			assert.equal(cpu.captureRuntimeState().hardHalted, false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -293,6 +304,9 @@ try {
 			assert.deepEqual(raw.subarray(globalOffset - 48, globalOffset), new Uint8Array(48));
 			assert.deepEqual(raw.subarray(globalOffset + globalBytes, globalOffset + globalBytes + 48), new Uint8Array(48),
 				'neither former compound-storage lane is needed by the CPU');
+			assert.deepEqual([0, 4].map(offset => memory.readRamRecordWord(literalIds + offset)), [lookupKey, stringKey]);
+			assert.equal(memory.readRamRecordWord(systemBinding + IMAGE_RAM_STRING_END_OFFSET), 0,
+				'the alternative firmware does not publish a stock collector range');
 			fingerprint();
 			commands.push('c');
 			observations.push([result.length, ...result.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
@@ -311,7 +325,7 @@ try {
 		assert.deepEqual(out, observations);
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		assert.deepEqual(finish(), ending);
-		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (independent allocator, collector, table keys and numeric globals; identical RAM and cycles after portable restore)`);
+		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (private allocator and collector, local table keys, direct globals and String literals; portable RAM and cycle parity)`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

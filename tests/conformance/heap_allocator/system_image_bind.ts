@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
+import { IMAGE_RAM_STRING_END_OFFSET } from '../../helpers/firmware_heap_layout';
 import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
 import { asStringId, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -83,11 +83,11 @@ try {
 			const diagnostics = ['__index', 'Out of memory.'].map(text => cpu.stringPool.find(text)!);
 			assert.ok(diagnostics.every(isRamStringId));
 			const literalWords = Array.from({ length: strings }, (_, n) =>
-				memory.readRamRecordWord(firstLiteral + 4 * n) & ~IMAGE_STRING_RAM_ORDINAL);
-			const firstRom = literalWords.findIndex(id => !isRamStringId(id));
-			assert.ok(firstRom >= diagnostics.length, 'RAM and ROM String IDs share the backing');
-			assert.ok(diagnostics.every(id => literalWords.slice(0, firstRom).includes(id)));
-			assert.ok(literalWords.slice(firstRom).every(id => !isRamStringId(id)), 'no RAM alias follows the ROM partition');
+				memory.readRamRecordWord(firstLiteral + 4 * n));
+			assert.ok(literalWords.some(id => !isRamStringId(id)), 'RAM and ROM String IDs share the backing');
+			assert.ok(diagnostics.every(id => literalWords.includes(id)));
+			assert.equal(memory.readRamRecordWord(installed + IMAGE_RAM_STRING_END_OFFSET),
+				literalWords.findLastIndex(isRamStringId) + 1, 'only firmware tracks the last RAM alias');
 
 			for (const [descriptor, start, count, offset] of [
 				[ordinary, header.globalNameTableAddress, header.globalNameCount, 0],
@@ -130,7 +130,7 @@ try {
 		commands.length = expected.length = 0;
 		finish();
 		assert.deepEqual(expected, observations);
-		console.log(`SYSTEM-IMAGE-BIND:PASS O${opt} actual reset publishes both namespaces and installs packed String aliases; native and cross-core continuation during growth`);
+		console.log(`SYSTEM-IMAGE-BIND:PASS O${opt} actual reset publishes both namespaces and direct String slots; native and cross-core continuation during growth`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

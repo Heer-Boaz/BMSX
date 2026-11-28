@@ -33,11 +33,6 @@ namespace bmsx {
 struct Blua32ExecutionImage;
 class Memory;
 
-// The String binding's low alignment bit describes the source ordinal.
-// The payloads are packed RAM-first, with reverse ordinal order for ROM.
-constexpr u32 IMAGE_STRING_RAM_ORDINAL = 1u;
-StringId loadImageStringBinding(const Memory&, u32 base, u32 count, u32 slot, u32 ramCount);
-
 // The directory is scoped to one mounted execution image. A version names a
 // checked ROM span, not a latched copy of physical RAM or MMIO code.
 struct Blua32RomFunctionVersion {

@@ -9,7 +9,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
-import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
@@ -19,11 +18,11 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_STORAGE_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
-import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, IMAGE_RAM_STRING_END_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -821,12 +820,17 @@ function verifyWarmFloor(rom: string, native: string, dir: string, optLevel: Opt
 	// Put its only canonical root below the proposed floor with an ordinary
 	// allocator extent, and release that extent before the binding.
 	const literal = retainsBlocker ? shortLiteral + 's'.repeat(0x3000) : shortLiteral;
+	const leadingRom = 'Mounted before the warm-floor RAM alias';
+	const trailingRom = 'Mounted after the warm-floor RAM alias';
 	const source = `bss booted: word
 mem[${IO_IRQ_MASK}] = 0
+warm_rom_marker = "${leadingRom}"
 local literal = "${literal}"
 *booted = #literal
+warm_rom_marker = "${trailingRom}"
 halt_until_irq`;
 	const linked = compileCartridge(original, source, 'warm-floor-cart.lua', optLevel);
+	assert.deepEqual(linked.layout.constants.filter(value => typeof value === 'string'), [leadingRom, literal, trailingRom]);
 	const cart = writeTestBlua32Rom(linked);
 	const cartPath = join(dir, label + '.cart');
 	writeFileSync(cartPath, cart);
@@ -880,9 +884,12 @@ halt_until_irq`;
 	const oldImageRecord = memory.readRamRecordWord(cartBinding);
 	const outgoingStrings = memory.readRamRecordWord(cartBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	assert.equal(outgoingStrings, oldImageRecord + 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount));
-	assert.equal(memory.readRamRecordWord(cartBinding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), 1);
-	assert.equal(memory.readRamRecordWord(outgoingStrings) & ~IMAGE_STRING_RAM_ORDINAL, alias, 'outgoing ROM uploaded the exact canonical RAM id');
-	assert.equal(memory.readRamRecordWord(cartBinding + 4), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 1));
+	assert.equal(memory.readRamRecordWord(cartBinding + IMAGE_RAM_STRING_END_OFFSET), 2, 'stop immediately after the last RAM literal, not at the end of the pool');
+	const beforeAlias = memory.readRamRecordWord(outgoingStrings), afterAlias = memory.readRamRecordWord(outgoingStrings + 8);
+	assert.ok(beforeAlias >= CART_ROM_BASE && afterAlias >= CART_ROM_BASE);
+	assert.deepEqual([beforeAlias, afterAlias].map(id => cpu.stringPool.toString(id)), [leadingRom, trailingRom]);
+	assert.equal(memory.readRamRecordWord(outgoingStrings + 4), alias, 'the outgoing binding directly names its canonical RAM literal');
+	assert.equal(memory.readRamRecordWord(cartBinding + 4), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 3));
 	if (!retainsBlocker) {
 		nativeHeapReference(cpu).gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(cpu.gc.phase(), GcPhase.Mark);

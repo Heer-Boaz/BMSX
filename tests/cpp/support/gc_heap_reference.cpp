@@ -521,7 +521,7 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 	size_t next = cursor & TRACE_CURSOR_MASK;
 	for (; kind < static_cast<u32>(stop); ++kind, next = 0u) {
 		const auto bank = static_cast<GcRootBank>(kind);
-		const size_t end = m_cpu.rootBankSlots(bank);
+		const size_t end = m_cpu.rootBankEnd(bank);
 		const bool globals = bank < GcRootBank::SystemConstants;
 		const size_t words = globals ? 3u : 1u, worst = words + (globals ? 2u : 1u);
 		while (next < end) {
@@ -529,11 +529,9 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 				memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, (kind << TRACE_CURSOR_BITS) | static_cast<u32>(next));
 				return work;
 			}
-			const size_t stop = std::min(end, next + std::max(size_t{1}, (limit - work) / worst));
-			m_cpu.markRootBank(*this, bank, next, stop);
-			work += (stop - next) * words;
+			const size_t allowance = std::max(size_t{1}, (limit - work) / worst);
+			work += m_cpu.markRootBank(*this, bank, next, end, allowance) * words;
 			work += m_stringPool.takeMarkWork();
-			next = stop;
 		}
 	}
 	memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, 0u);

@@ -11,12 +11,6 @@
 
 namespace bmsx {
 
-StringId loadImageStringBinding(const Memory& memory, u32 base, u32 count, u32 slot, u32 ramCount) {
-	const u32 word = memory.readRamRecordWord(base + 4u * slot);
-	const u32 source = (word & IMAGE_STRING_RAM_ORDINAL) != 0u ? ramCount : count - 1u - (slot - ramCount);
-	return (slot == source ? word : memory.readRamRecordWord(base + 4u * source)) & ~IMAGE_STRING_RAM_ORDINAL;
-}
-
 RomCallBinding* Blua32ExecutionImage::loadRomFunction(const Memory& memory, u32 address, RomCallBinding& binding) {
 	FunctionEntry entry;
 	if (romFunctions.mappedCode) {

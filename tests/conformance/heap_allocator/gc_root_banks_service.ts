@@ -3,7 +3,6 @@ import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -56,7 +55,7 @@ try {
 		for (const id of [name, value, ...constants]) assert.ok(id >= RAM_BASE);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 0);
 		const image = cpu['executionImageForDomain'](0)!;
-		assert.deepEqual(constants.map((_, i) => memory.readRamRecordWord(image.constantStringBase + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL), constants);
+		assert.deepEqual(constants.map((_, i) => memory.readRamRecordWord(image.constantStringBase + 4 * i)), constants);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), constants.length);
 
 		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress({ image: system.systemImage, symbols: system.systemSymbols }, 'kernel/gc_full', 'collect_full'), cartRom);

@@ -246,18 +246,17 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 
 void CPU::bindConstantStrings(Blua32ExecutionImage& image, u32 stringBinding) {
 	auto& storage = image.decodedConstants;
-	const u32 count = static_cast<u32>(image.constantStringSlots.size());
-	u32 ramCount = 0, slot = 0;
-	for (const u32 index : image.constantStringSlots) {
-		if (stringBinding == 0u) {
+	if (stringBinding == 0u) {
+		for (const u32 index : image.constantStringSlots) {
 			storage.tags()[index] = static_cast<u8>(ValueTag::UnboundStringLiteral);
 			storage.words()[index] = 0u;
-			continue;
 		}
-		storage.tags()[index] = static_cast<u8>(ValueTag::String);
-		const StringId id = loadImageStringBinding(m_memory, stringBinding, count, slot++, ramCount);
-		ramCount += isRamStringId(id);
-		storage.words()[index] = id;
+	} else {
+		for (const u32 index : image.constantStringSlots) {
+			storage.tags()[index] = static_cast<u8>(ValueTag::String);
+			storage.words()[index] = m_memory.readRamRecordWord(stringBinding);
+			stringBinding += sizeof(u32);
+		}
 	}
 	image.constPool = ConstValueSpan(storage.words(), storage.tags(), storage.capacity());
 }

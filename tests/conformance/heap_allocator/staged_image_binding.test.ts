@@ -15,7 +15,6 @@ import { parseSystemRomImage } from '../../../machine/ts/rompack/image';
 import {
 	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID,
 	GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET, GlobalBankField, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET,
-	EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET,
 } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE,
@@ -284,8 +283,13 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.equal(memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), oldSystemSpan + 8);
 	assert.equal(memory.readRamRecordWord(ordinaryCount), beforeNameCount + 1, 'the shared new global owns one namespace slot');
 	const systemStrings = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-	const systemRamStrings = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
-	const canonical = memory.readRamRecordWord(systemStrings + 4 * systemRamStrings) & ~1;
+	const freshOrdinal = currentSystem.layout.constants.filter(value => typeof value === 'string').length;
+	const canonical = memory.readRamRecordWord(systemStrings + 4 * freshOrdinal);
+	const cartStrings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	const aliasOrdinal = newStrings.indexOf(ramAlias);
+	assert.ok(aliasOrdinal >= 0);
+	assert.equal(memory.readRamRecordWord(cartStrings + 4 * aliasOrdinal), alias,
+		'the installed literal directly names its preexisting RAM alias');
 	observe(`H ${systemBinding} ${binding + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(ram, systemBinding, 2 * EXECUTION_IMAGE_BINDING_SIZE));
 	publishSystem(newSystemPath, replacementSystemRom);
 	cartridgeController.installRom(0, newCart);

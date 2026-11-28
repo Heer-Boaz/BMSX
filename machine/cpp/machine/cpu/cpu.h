@@ -514,8 +514,8 @@ private:
 	void markRootHead(GcHeap& heap);
 	void markScopedRoots(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);
-	size_t rootBankSlots(GcRootBank bank) const;
-	void markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end);
+	size_t rootBankEnd(GcRootBank bank) const;
+	size_t markRootBank(GcHeap& heap, GcRootBank bank, size_t& next, size_t end, size_t allowance);
 
 	std::array<
 		std::unique_ptr<Blua32ExecutionImage>,

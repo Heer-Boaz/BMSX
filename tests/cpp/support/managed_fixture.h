@@ -5,6 +5,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/opcode.h"
 #include "blua32_test_rom.h"
+#include "firmware_heap_layout.h"
 #include "thread_allocation_reference.h"
 
 #include <algorithm>
@@ -123,24 +124,17 @@ inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addres
 	bindNames(field(BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), names, GLOBAL_BANK_OFFSET, base);
 	bindNames(field(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), systemNames, SYSTEM_GLOBAL_BANK_OFFSET, base + 4u * names);
 	const u32 stringBase = base + 4u * (names + systemNames);
-	for (u32 i = 0u; i < stringCount; ++i) memory.writeRamRecordWord(stringBase + 4u * i, 0u);
-	u32 slot = 0u, ramCount = 0u, nextRom = stringCount;
+	u32 slot = 0u, ramEnd = 0u;
 	for (u32 i = 0u; i < constantCount; ++i) {
 		const auto* record = constants.data() + i * BLUA32_CONSTANT_RECORD_SIZE;
 		if (!isString(record)) continue;
 		const StringId id = strings.resolveImageRecord(domain, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-		const bool ram = isRamStringId(id);
-		const u32 dest = stringBase + 4u * (ram ? ramCount++ : --nextRom);
-		// Bit 0 belongs to the input ordinal; the remaining bits belong to the packed ID.
-		if (ram) {
-			const u32 ordinal = stringBase + 4u * slot;
-			memory.writeRamRecordWord(ordinal, memory.readRamRecordWord(ordinal) | IMAGE_STRING_RAM_ORDINAL);
-		}
-		memory.writeRamRecordWord(dest, memory.readRamRecordWord(dest) | id);
+		memory.writeRamRecordWord(stringBase + 4u * slot, id);
 		++slot;
+		if (isRamStringId(id)) ramEnd = slot;
 	}
 	const u32 binding = executionImageBindingOffset(management, domain);
-	memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBase, ramCount);
+	memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBase, ramEnd);
 	memory.writeRamRecordPair(binding, base, bytes);
 }
 

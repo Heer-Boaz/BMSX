@@ -1,8 +1,9 @@
 import { type CPU, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
-import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
+import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
+import { IMAGE_RAM_STRING_END_OFFSET } from '../firmware_heap_layout';
 import { valueFromTag, type Value } from '../../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_EXPLICIT_ERROR, LUA_FAULT_REASON_INDEX_NAN } from '../../../machine/ts/spec/blua32/cop0';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, type ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, type ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
 import { GcHeap, GcDiagnosticField, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { nativeHeapReference } from './reference';
 
@@ -41,7 +42,7 @@ export function rootBankSlots(cpu: CPU, bank: GcRootBank): number {
 	if (bank === GcRootBank.Globals) return cpu['globalBank'].count;
 	if (bank === GcRootBank.Completion) return cpu['completionValueCount'];
 	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
-	return cpu.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+	return cpu.memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
 }
 
 export function markRootBank(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
@@ -53,14 +54,21 @@ export function markRootBank(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: nu
 		}
 		return;
 	}
-	if (bank === GcRootBank.Completion) {
-		for (let slot = first; slot < end; ++slot) heap.markSlot(cpu['completionValueSlots'], slot);
-		return;
-	}
+	for (let slot = first; slot < end; ++slot) heap.markSlot(cpu['completionValueSlots'], slot);
+}
+
+export function markLiteralRootBatch(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: number, end: number, amount: number) {
 	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
-	const strings = cpu.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-	for (let slot = first; slot < end; ++slot)
-		heap.markString(cpu.memory.readRamRecordWord(strings + 4 * slot) & ~IMAGE_STRING_RAM_ORDINAL);
+	const literals = cpu.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	let next = first, marked = 0;
+	while (next < end && marked < amount) {
+		const id = cpu.memory.readRamRecordWord(literals + 4 * next++);
+		if (isRamStringId(id)) {
+			heap.markString(id);
+			++marked;
+		}
+	}
+	return { next, marked };
 }
 
 export function markRootThreads(cpu: CPU, heap: GcHeap): void {

@@ -1,3 +1,4 @@
+import { IMAGE_RAM_STRING_END_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -11,7 +12,6 @@ import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
-import { IMAGE_STRING_RAM_ORDINAL } from '../../machine/ts/machine/cpu/execution_image';
 import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -25,7 +25,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
@@ -524,7 +524,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		const beforeCartridge = captureCpuCheckpoint(cpu);
 		const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
 		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-		const count = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
+		const count = () => memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
 		const activate = () => {
 			// There are no cartridge names or other references to this RAM
 			// String. The ROM literal is its only root after activation.
@@ -532,7 +532,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 			assert.ok(id >= RAM_BASE);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
 			assert.equal(count(), 1);
-			assert.equal(memory.readRamRecordWord(strings()) & ~IMAGE_STRING_RAM_ORDINAL, id);
+			assert.equal(memory.readRamRecordWord(strings()), id);
 			return id;
 		};
 		const first = activate();
@@ -555,7 +555,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		const restored = cpu['executionImageForDomain'](0)!;
 		assert.equal(restored.constWords, words, 'same mounted literals reuse their decoded backing');
 		assert.equal(count(), 1);
-		assert.equal(memory.readRamRecordWord(strings()) & ~IMAGE_STRING_RAM_ORDINAL, first);
+		assert.equal(memory.readRamRecordWord(strings()), first);
 		nativeHeapReference(cpu).gc.collect();
 		assert.equal(cpu.stringPool.find(literal), first);
 		cpu.runUntilDepth(0, 4096);

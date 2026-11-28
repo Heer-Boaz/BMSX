@@ -5,7 +5,7 @@ module<const>
 -- Q/R: Thread records; O: RAM map.
 local mark<const> = require('kernel/gc_mark') -- T:307-309,331-338 U:5087,5092,5108-5109 P:3157-3158,3163,3178-3181
 local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5099,5104 P:3157,3169,3174 C:636
-local string_bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; peel the ordinal bit from the physical payload
+local _bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; read installed String ordinals directly
 local layout<const> = require('kernel/gc_runtime_layout') -- O:6; addresses are relative to the existing System management region
 local name_index_slot_bytes<const> = require('kernel/global_bank').internal.name_index_slot_bytes -- G:21-22,31 B:23-24,34
 local ram_base<const> = 0x08000000 -- O:6
@@ -22,8 +22,8 @@ local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
 -- The Value-bank record points at the payload plane. Firmware also scans
 -- its private names immediately before that plane. No roots are copied.
--- Installed operand records own the compact RAM-String prefix, in pool
--- ordinal order, not all constant slots. Completion reads the live
+-- Installed operand records point at all String IDs in ordinal order.
+-- Only RAM IDs count as roots or collector work. Completion reads the live
 -- host-return observation through its private descriptor.
 struct root_bank
 	count: u32 -- U:5073-5079 P:3143-3149
@@ -54,20 +54,13 @@ local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_
 		end
 		return work -- U:5089 P:3160 T:603 C:636
 	end
-	if kind == completion then -- U:5091 P:3162
-		local tags<const>: *u8 = tags_base -- U:5092 P:3163
-		while first < stop do -- U:5092 P:3163
-			local _<const>, string_work<const> = mark.mark_value(control, arena, metadata, tags[first], words[first], trace_head, replace_color_byte) -- U:5092 P:3163
-			work = work + string_work -- T:603 C:636
-			first = first + 1 -- U:5092 P:3163
-		end
-		return work -- U:5093 P:3164 T:603 C:636
+	local tags<const>: *u8 = tags_base -- U:5091-5092 P:3162-3163
+	while first < stop do -- U:5092 P:3163
+		local _<const>, string_work<const> = mark.mark_value(control, arena, metadata, tags[first], words[first], trace_head, replace_color_byte) -- U:5092 P:3163
+		work = work + string_work -- T:603 C:636
+		first = first + 1 -- U:5092 P:3163
 	end
-	while first < stop do -- U:5104 P:3174
-		work = work + strings.mark(metadata, words[first] & ~string_bindings.ordinal_ram_bit) -- U:5104 P:3174
-		first = first + 1 -- U:5104 P:3174
-	end
-	return work -- U:5104 P:3174 T:603 C:636
+	return work -- U:5093 P:3164 T:603 C:636
 end
 
 local trace_root_banks<const> = function(control, arena, metadata, descriptor, limit, work, stop, replace_color_byte) -- T:588 C:619
@@ -77,6 +70,7 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 	local kind, next = saved >> cursor_bits, saved & cursor_mask -- T:590,592 C:621-622
 	while kind < stop do -- T:592 C:623
 		local globals<const> = kind < system_constants -- T:594 C:626
+		local literal_bank<const> = not globals and kind < completion -- U:5078-5079 P:3148-3149
 		local bank_end, payloads, tags, names -- T:593 C:624-625 U:5073-5079 P:3143-3149
 		if globals then -- U:5083 P:3153
 			local namespace<const>: *namespace_bank = ram_base + control - layout.control_offset + layout.system_global_bank_offset + (kind - system_globals) * sizeof(namespace_bank) -- U:5074-5075,5084 P:3144-3145,3154
@@ -85,10 +79,10 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			names = ram_base + ((values - name_index_slot_bytes * capacity) & ram_word_mask) -- U:5087 P:3157 G:31 B:34
 			payloads = ram_base + (values & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
 			tags = ram_base + ((values + 4 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
-		elseif kind < completion then -- U:5078-5079,5103-5104 P:3148-3149,3173-3174
+		elseif literal_bank then -- U:5078-5079,5103-5104 P:3148-3149,3173-3174
 			local installed<const>: *installed_image_binding = ram_base + control - layout.control_offset + layout.installed_image_bindings_offset -- T:593 C:625 U:5078-5079 P:3148-3149
 			local image<const>: *installed_image_binding = &installed[kind - system_constants] -- U:5078-5079,5103 P:3148-3149,3173
-			bank_end, payloads = image.ram_strings, image.strings -- U:5078-5079,5104 P:3148-3149,3174
+			bank_end, payloads = image.ram_string_end, image.strings -- U:5078-5079,5104 P:3148-3149,3174
 		else -- U:5076-5077 P:3146-3147
 			local bank<const>: *root_bank = &roots.banks[kind - completion] -- T:593 C:624-625
 			bank_end, payloads, tags = bank.count, bank.payloads, bank.tags -- T:593 C:625 U:5076-5077,5091-5092,5095-5099 P:3146-3147,3162-3163,3166-3169
@@ -102,11 +96,25 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			end
 			local amount = (limit - work) // worst -- T:601 C:633; positive work difference, floor equals truncation
 			if amount < 1 then amount = 1 end -- T:601 C:633
-			local next_stop = next + amount -- T:601 C:633
-			if next_stop > bank_end then next_stop = bank_end end -- T:601 C:633
-			local string_work<const> = mark_root_bank(control, arena, metadata, payloads, tags, names, kind, next, next_stop, replace_color_byte) -- T:602 C:634
-			work = work + (next_stop - next) * words + string_work -- T:603 C:635-636
-			next = next_stop -- T:604 C:637
+			if literal_bank then -- U:5103 P:3173
+				local literals<const>: *u32 = payloads -- U:5103-5104 P:3173-3174
+				-- The quantum counts RAM roots; the cursor names a physical slot.
+				-- The bound ends on a RAM root, so a pause always has work left.
+				repeat -- T:601 C:633 U:5104 P:3174
+					local id<const> = literals[next] -- U:5104 P:3174
+					if strings.internal.is_ram_string_id(id) then -- U:5104 P:3174
+						work = work + words + strings.mark(metadata, id) -- T:603 C:635-636 U:5104 P:3174
+						amount = amount - 1 -- T:601 C:633
+					end
+					next = next + 1 -- T:604 C:637
+				until amount == 0 or next == bank_end -- T:601 C:633
+			else -- T:601 C:633
+				local next_stop = next + amount -- T:601 C:633
+				if next_stop > bank_end then next_stop = bank_end end -- T:601 C:633
+				local string_work<const> = mark_root_bank(control, arena, metadata, payloads, tags, names, kind, next, next_stop, replace_color_byte) -- T:602 C:634
+				work = work + (next_stop - next) * words + string_work -- T:603 C:635-636
+				next = next_stop -- T:604 C:637
+			end
 		end
 		kind, next = kind + 1, 0 -- T:592 C:623
 	end

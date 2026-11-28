@@ -1,4 +1,5 @@
 import { nativeHeapReference } from './native_heap/reference';
+import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
 import { bindReferenceDlmalloc } from './native_heap/dlmalloc_wasm';
 import { type OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_DIAGNOSTIC_FAULTS_OFFSET, storeImageStringBinding } from './firmware_heap_layout';
+import { GC_DIAGNOSTIC_FAULTS_OFFSET } from './firmware_heap_layout';
 import { registerReferenceGlobalName } from './global_bank_reference';
 import { EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import {
@@ -181,15 +182,16 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 				output += 4;
 			}
 		}
-		let ordinal = 0, ramCount = 0;
+		let ordinal = 0, ramEnd = 0;
 		for (let slot = 0; slot < constantCount; ++slot) {
 			const word = c + slot * BLUA32_CONSTANT_RECORD_SIZE;
 			if (readLE32(constants, word + BLUA32_CONSTANT_TAG_OFFSET) !== Blua32ConstantTag.String) continue;
 			const id = stringPool.resolveImageRecord(domain, readLE32(constants, word + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-			ramCount = storeImageStringBinding(memory, output, stringCount, ordinal++, ramCount, id);
+			memory.writeRamRecordWord(output + 4 * ordinal++, id);
+			if (isRamStringId(id)) ramEnd = ordinal;
 		}
 		const binding = executionImageBindingOffset(management, domain);
-		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, output, ramCount);
+		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, output, ramEnd);
 		memory.writeRamRecordPair(binding, base, bytes);
 	}
 	cpu.replaceExecutionImages([boot]);
