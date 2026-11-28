@@ -58,6 +58,30 @@ report[3] = namespace_preserved
 namespace_preserved = 144
 report[4] = getglobal('namespace_preserved')
 report[5] = getglobal('dynamic global 256')
+setglobal('dynamic global 256', false)
+report[6] = getglobal('dynamic global 256') == false and 1 or 0
+setglobal('dynamic global 256', nil)
+report[7] = getglobal('dynamic global 256') == nil and 1 or 0
+report[8] = getglobal('never registered') == nil and select('#', getglobal('never registered')) or 0
+
+-- A loaded closure uses the live ordinary names, not the public reader
+-- binding or a snapshot of the slots which existed when it was loaded.
+local reader<const> = getglobal
+getglobal = false
+local compiled<const> = assert(load('return namespace_preserved, introduced_later'))
+local first<const>, absent<const> = compiled()
+report[9] = first
+report[10] = absent == nil and 1 or 0
+namespace_preserved = 233
+setglobal('introduced_later', 347)
+local second<const>, introduced<const> = compiled()
+report[11], report[12] = second, introduced
+getglobal = reader
+
+local invalid<const>, invalid_message<const> = pcall(reader, 17)
+local missing<const>, missing_message<const> = pcall(reader)
+report[13] = not invalid and not missing and invalid_message == 'Invalid argument.'
+	and missing_message == invalid_message and 1 or 0
 mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
@@ -134,7 +158,9 @@ halt_until_irq
 			const { bssAddress, bssByteCount } = slot1.layout.header;
 			assert.equal(memory.readMappedU32LE(bssAddress), 37);
 			assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
-			assert.deepEqual([2, 3, 4, 5].map(slot => memory.readMappedU32LE(bssAddress + 4 * slot)), [51, 89, 144, 256]);
+			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1];
+			for (let slot = 0; slot < expectedReport.length; ++slot)
+				assert.equal(memory.readMappedU32LE(bssAddress + 4 * (slot + 2)), expectedReport[slot], `report word ${slot + 2}`);
 			const bank = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
 			const bankCapacity = memory.readRamRecordWord(bank + GlobalBankField.Capacity);
 			assert.ok(bankCapacity >= 256);
@@ -148,10 +174,12 @@ halt_until_irq
 			assert.ok(cpu.heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount) > floor - RAM_BASE);
 			assert.equal(memory.ramBusEnd(), floor, 'the ordinary mapped selected socket supplies the exact aperture');
 			const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-			commands.push('E 1', `H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + 24}`, `H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
+			const reportBytes = 4 * (2 + expectedReport.length);
+			commands.push('E 1', `H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + reportBytes}`,
+				`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
 			expected.push([result, 1 - cpu.instructionBudgetRemaining,
 				memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
-			expected.push(String(hashBytes(memory.ramData(), bssAddress - RAM_BASE, 24)),
+			expected.push(String(hashBytes(memory.ramData(), bssAddress - RAM_BASE, reportBytes)),
 				String(hashBytes(memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE)));
 			const unused = join(output, 'unused');
 			compare('launch.trace', commands, expected, unused, otherPath, selectedPath);

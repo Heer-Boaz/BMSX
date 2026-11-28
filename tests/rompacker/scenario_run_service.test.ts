@@ -46,7 +46,7 @@ return { kind = 'unit', tests = {
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, other], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])\ngetglobal = __bmsx_getglobal` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])\ngetglobal = require([[kernel/get_global_entry]])` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,

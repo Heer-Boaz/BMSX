@@ -124,6 +124,9 @@ void rawGetDistinguishesExplicitKeysFromMissingArguments() {
 
 void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	Program program(OpCode::GETT, false);
+	constexpr u32 handler = 72;
+	program.put(handler, OpCode::RET, 0, 2, 0);
+	program.image.functions.push_back({.firstWord=handler, .wordCount=1, .numParams=2, .maxStack=4});
 	Machine generated(program, false), scalar(program, true);
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
@@ -131,8 +134,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		const auto index = cpu.stringPool().intern("__index");
 		const Value forwarded = valueString(cpu.stringPool().intern("proxy"));
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
-		cpu.setGlobalByKey(asStringId(forwarded), valueInteger(73));
-		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::GetGlobal)); methods.setMetatableAddress(methodsMeta.address());
+		methodsMeta.setStringKey(index, m->bindHandler()); methods.setMetatableAddress(methodsMeta.address());
 		auto state = cpu.captureRuntimeState();
 		state.stringIndexTableWord = methods.address();
 		cpu.restoreRuntimeState(state);
@@ -143,11 +145,16 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.cpu.prepareSystemNativeCode();
 #endif
+	const auto receiver = generated.cpu.readFrameRegister(0, 2);
 	parity(generated, scalar, 1);
-	const auto result = generated.cpu.readFrameRegister(0, 0);
-	require(result == valueInteger(73)
+	require(generated.cpu.getFrameDepth() == 2
+		&& generated.cpu.readFrameRegister(1, 0) == receiver && isNil(generated.cpu.readFrameRegister(1, 1))
 		&& generated.cpu.instructionBudgetRemaining == 1 - cycles(OpCode::GETT) - TABLE_INDEX_VISIT_CYCLES - 2,
-		"a String forwarding target enters its installed Table but passes the String itself to its function");
+		"a String forwarding target enters its installed Table but passes the original String and raw key to its function");
+	parity(generated, scalar, 1);
+	require(generated.cpu.getFrameDepth() == 1 && generated.cpu.readFrameRegister(0, 0) == receiver
+		&& generated.cpu.instructionBudgetRemaining == 1 - cycles(OpCode::RET) - 1,
+		"the ordinary handler returns the original String through the indexed read's single result placement");
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		auto r = cpu.activeThread()->currentFrame->registers;

@@ -7,12 +7,11 @@ export const enum BuiltinFunctionId {
 	Error = 5,
 	CoroutineStatus = 6,
 	CoroutineRunning = 7,
-	GetGlobal = 8,
-	FrameCount = 9,
-	GetFrameRegister = 10,
-	SetFrameRegister = 11,
-	GetFrameUpvalue = 12,
-	FrameHeader = 13,
+	FrameCount = 8,
+	GetFrameRegister = 9,
+	SetFrameRegister = 10,
+	GetFrameUpvalue = 11,
+	FrameHeader = 12,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 14;
+export const BUILTIN_FUNCTION_COUNT = 13;

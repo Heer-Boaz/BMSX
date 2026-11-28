@@ -8,9 +8,8 @@ local syntax<const> = require('compiler/syntax')
 local compiler<const> = {}
 
 local op_getup<const> = isa.op_getup
--- Boot-only registers are cleared after firmware initialization. Retain the
--- primitives, not the mutable public getglobal/setglobal bindings.
-local read_global<const> = __bmsx_getglobal
+-- Generated functions use the namespace operations, not the mutable public bindings.
+local read_global<const> = require('kernel/get_global_entry')
 local write_global<const> = require('kernel/set_global_entry')
 
 local opcode_by_binary_operator<const> = {

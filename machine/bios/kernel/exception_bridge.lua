@@ -171,7 +171,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 				or (values >= firmware_ids.string_slice and values <= firmware_ids.string_index) then
 				handled = true
 				fault = strings.receive(*interrupted, values, depth, instruction)
-			elseif values >= table_ids.copy and values <= table_ids.set_global then
+			elseif values >= table_ids.copy and values <= table_ids.namespace then
 				handled = true
 				fault = table_calls.receive(*interrupted, values, depth, instruction)
 			elseif values >= thread_ids.create and values <= thread_ids.set_frame_upvalue then

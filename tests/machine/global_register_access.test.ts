@@ -56,7 +56,7 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 });
 
 test('named access cannot alias the system bank and invalid names use guest errors', () => {
-	const source = `local get<const> = __bmsx_getglobal
+	const source = `local get<const> = require('kernel/get_global_entry')
 local set<const> = require('kernel/set_global_entry')
 local startup<const> = require('bmsx/startup')
 local pcall<const> = blua32.closure(startup.protected_call)

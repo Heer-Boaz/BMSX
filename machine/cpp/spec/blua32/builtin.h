@@ -18,14 +18,13 @@ enum class BuiltinFunctionId : uint8_t {
 
 	CoroutineStatus = 6,
 	CoroutineRunning = 7,
-	GetGlobal = 8,
-	FrameCount = 9,
-	GetFrameRegister = 10,
-	SetFrameRegister = 11,
-	GetFrameUpvalue = 12,
-	FrameHeader = 13,
+	FrameCount = 8,
+	GetFrameRegister = 9,
+	SetFrameRegister = 10,
+	GetFrameUpvalue = 11,
+	FrameHeader = 12,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 14u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 13u;
 
 } // namespace bmsx

@@ -429,16 +429,6 @@ FunctionPrototype CPU::readClosureBinding(u32 closure) {
 	return ClosureRecord::readBinding(m_memory, closure, binding, executionImageForDomain(binding.domain())->romFunctions);
 }
 
-Value CPU::getSystemGlobalByKey(StringId key) const {
-	return m_systemGlobalBank.values().get(*m_systemGlobalBank.find(key));
-}
-
-Value CPU::getGlobalByKey(StringId key) const {
-	const auto slot = m_globalBank.find(key);
-	return slot ? m_globalBank.values().get(*slot) : valueNil();
-}
-
-
 void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
@@ -1077,10 +1067,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(result);
 			break;
 		}
-		case BuiltinFunctionId::GetGlobal:
-			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(getGlobalByKey(asStringId(args[0])));
-			break;
 		case BuiltinFunctionId::FrameCount:
 		case BuiltinFunctionId::FrameHeader:
 		case BuiltinFunctionId::GetFrameRegister:

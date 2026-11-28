@@ -3030,7 +3030,7 @@ export class CPU implements MappedPageInvalidator {
 		if (!(graph.flags[entryIndex] & SourceWord.Available)) { page.dispatchOps[word] = page.ops[word]; return; }
 		const plans = graph.plan(pages);
 		const region = compileJavaScriptRegion(plans, image, this.memory, this.stringPool,
-			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.gc);
+			this.globalBank.slots, this.systemGlobalBank.slots, this.cop0Words, this.tables);
 		if (!this.compiledCodeCache.install(region, merged)) {
 			page.dispatchOps[word] = page.ops[word];
 			return;
@@ -3798,15 +3798,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.RawGet:
 				this.runBuiltinRawGet(args, out);
 				break;
-			case BuiltinFunctionId.GetGlobal: {
-				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				const slot = this.globalBank.find(args.registers.getPayload(args.base));
-				if (slot === undefined) out.push(valueNil());
-				else out.push(this.globalBank.slots.get(slot));
-				break;
-			}
 			case BuiltinFunctionId.FrameCount:
 			case BuiltinFunctionId.FrameHeader:
 			case BuiltinFunctionId.GetFrameRegister:

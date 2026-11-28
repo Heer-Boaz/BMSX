@@ -21,6 +21,15 @@ CPU::LocalRootsScope::~LocalRootsScope() {
 	}
 }
 
+Value CPU::getSystemGlobalByKey(StringId key) const {
+	return m_systemGlobalBank.values().get(*m_systemGlobalBank.find(key));
+}
+
+Value CPU::getGlobalByKey(StringId key) const {
+	const auto slot = m_globalBank.find(key);
+	return slot ? m_globalBank.values().get(*slot) : valueNil();
+}
+
 void CPU::setGlobalByKey(StringId key, const Value& value) {
 	const u32 slot = m_globalBank.registerName(m_heap, key, value);
 	m_globalBank.writeSlot(m_heap, slot, value);

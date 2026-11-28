@@ -41,7 +41,7 @@ rawset = function(target, key, value)
 	end
 	return target
 end
-getglobal = __bmsx_getglobal
+getglobal = require('kernel/get_global_entry')
 setglobal = require('kernel/set_global_entry')
 select = select_arguments
 error = raise_error

@@ -15,7 +15,7 @@ export function emitControl(op: OpCode.MFC0 | OpCode.MTC0, page: DecodedInstruct
 	const mode = guardPrivilege ? `if((cp[${COP0_STATUS}]&${CPU_STATUS_USER_MODE_CURRENT})!==0) ${fault}` : '';
 	if (op === OpCode.MFC0) return mode + (cop0FieldImplemented(field)
 		? r.writeInteger(page.a[word], field === COP0_CURRENT ? 'F.thread.address' : field === COP0_RAM_END
-			? 'h.memory.ramBusEnd()' : cop0ReadAsZero(field) ? '0' : `cp[${field}]`) : fault);
+			? 'h.ramBusEnd()' : cop0ReadAsZero(field) ? '0' : `cp[${field}]`) : fault);
 	// Control writes convert at retirement; other selectors must
 	// admit the word even when the register ignores writes.
 	if (cop0WriteRetiresControl(field)) return mode;

@@ -25,7 +25,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.CoroutineStatus, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.CoroutineRunning, cost: BUILTIN_COST_TIER4 },
-	{ id: BuiltinFunctionId.GetGlobal, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.FrameCount, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.GetFrameRegister, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.SetFrameRegister, cost: BUILTIN_COST_TIER1 },

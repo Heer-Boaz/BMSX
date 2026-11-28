@@ -50,6 +50,16 @@ local find_name<const> = function(address, key) -- T:71-76 C:59-64
 	return stored ~= 0 and names[slot] == key and slot or -1 -- T:75 C:63
 end
 
+local read_name<const> = function(address, key)
+	local slot<const> = find_name(address, key)
+	if slot < 0 then return 0, 0 end
+	local bank<const>: *namespace_bank = address
+	local base<const>, capacity<const> = bank.base, bank.capacity
+	local words<const>: *u32 = base + 12 * capacity
+	local tags<const>: *u8 = base + 16 * capacity
+	return words[slot], tags[slot]
+end
+
 local grow<const> = function(address, backing, capacity) -- T:78-87 C:66-79
 	local bank<const>: *namespace_bank = address -- T:79,82,84 C:67,75
 	local count<const>, old<const>, prior<const> = bank.count, bank.base, bank.capacity -- T:79,82,85 C:67-68
@@ -160,7 +170,7 @@ end
 
 return {
 	internal = { bucket_for = bucket_for, grow = grow, mark_written_reference = mark_written_reference },
-	find_name = find_name, growth_capacity = growth_capacity, commit_name = commit_name,
+	find_name = find_name, read_name = read_name, growth_capacity = growth_capacity, commit_name = commit_name,
 	write_slot = write_slot, store_reference = store_reference,
 	name_charge = name_charge, backing_slot_bytes = backing_slot_bytes,
 }

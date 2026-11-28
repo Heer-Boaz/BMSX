@@ -39,7 +39,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.SETUP: {
 			const load = op === OpCode.GETUP;
 			const failure = registers.exit(exit);
-			const base = `const m=h.memory,cap=(F.closureAddress+${CLOSURE_CAPTURE_WORDS + b * 4})&${RAM_RECORD_WORD_MASK};
+			const base = `const m=h,cap=(F.closureAddress+${CLOSURE_CAPTURE_WORDS + b * 4})&${RAM_RECORD_WORD_MASK};
 				const c=m.rd(cap)&${UPVALUE_ADDRESS_MASK};`;
 			if (load) {
 				const published = registers.writeBack(true);

@@ -19,7 +19,7 @@ export function emitWordStores(page: DecodedInstructionPage, word: number, addre
 	const count = page.c[word], source = page.a[word];
 	if (count === 0) return `{const a=${address}; if((a&3)!==0) ${exit}}`;
 	return `{const a=${address},o=(a-${RAM_BASE})>>>0;
-if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${count * 4}>h.memory.ramBusEnd()-${RAM_BASE}) ${exit}
+if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${count * 4}>h.ramBusEnd()-${RAM_BASE}) ${exit}
 const end=(o+${count * 4 - 4})>>>${MAPPED_PAGE_BYTE_SHIFT};
 for(let p=o>>>${MAPPED_PAGE_BYTE_SHIFT};p<=end;++p) if(g[p]!==0) ${exit}
 ${registers.publishRange(source, source + count)}
@@ -64,7 +64,7 @@ export function emitMemoryAccess(page: DecodedInstructionPage, word: number, add
 			? registers.writeFloatBits(a, 'v') : registers.writeInteger(a, 'v');
 		return `{const a=${address}; let o=(a-${RAM_BASE})>>>0,v;
 ${alignment === 0 ? '' : `if((a&${alignment})!==0) ${exit}`}
-if(o>=${IO_SLOT_COUNT * IO_WORD_SIZE}&&o+${width}<=h.memory.ramBusEnd()-${RAM_BASE}){const d=m; ${read}}
+if(o>=${IO_SLOT_COUNT * IO_WORD_SIZE}&&o+${width}<=h.ramBusEnd()-${RAM_BASE}){const d=m; ${read}}
 else if(a<=${SYSTEM_ROM_SIZE - width}){o=a; ${emitRomStorageRead('s', read, width, exit)}}
 else {o=(a-${CART_ROM_BASE})>>>0; if(o>${CART_ROM_SIZE - width}) ${exit}
 if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${result}}`;
@@ -72,7 +72,7 @@ if(c.selectedSlot()===0){${slot0}}else{${slot1}}}${result}}`;
 	const watches = `||g[o>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0`
 		+ (width === 8 ? `||g[(o+4)>>>${MAPPED_PAGE_BYTE_SHIFT}]!==0` : '');
 	const guard = `{const a=${address}; const o=(a-${RAM_BASE})>>>0;
-if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${width}>h.memory.ramBusEnd()-${RAM_BASE}${watches}) ${exit}`;
+if(${alignment === 0 ? '' : `(a&${alignment})!==0||`}o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o+${width}>h.ramBusEnd()-${RAM_BASE}${watches}) ${exit}`;
 	const tag = registers.tagOperand(a), value = registers.wordOperand(a);
 	let conversion: string;
 	if (kind === MemoryAccessKind.F32LE) conversion = `const mt=${tag},mw=${value};if(mt!==${ValueTag.Integer}&&mt!==${ValueTag.Float}) ${numericFault}const v=mt===${ValueTag.Integer}?fb(mw|0):mw;`;

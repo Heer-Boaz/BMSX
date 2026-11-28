@@ -1,7 +1,6 @@
 import { TableRecords } from './table';
 import { f32BitsToNumber, numberToF32Bits } from '../../common/float32';
 import { luaFloatResultBits, luaFloatToInteger, luaFloatToWord, luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits, luaShiftLeft, luaShiftRight } from '../../spec/blua32/numeric';
-import type { GcHeap } from './gc_heap';
 import { ValueSlots } from './value_slots';
 import type { CallFrame } from './call_state';
 import { Memory } from '../memory/memory';
@@ -45,7 +44,7 @@ export class CompiledRegion {
 
 export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
-	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, heap: GcHeap): CompiledRegion {
+	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array, tables: TableRecords): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
 	const { requiredSlots, requiredCaptures, blocks: registers } = planRegionRegisters(plans), residents = registers.map(plan => plan.entry);
 	const tableCaches = new Map<DecodedInstructionPage, string>();
@@ -145,7 +144,7 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 		cartridges.romStorage(0), cartridges.romStorage(1), strings, image.constTags, globalSlots, systemGlobalSlots,
 		f32BitsToNumber, numberToF32Bits, luaFloatResultBits, luaFloatToInteger, luaFloatToWord,
 		luaIntegerModulo, luaIntegerFloorDivide, luaFloatModuloBits, luaFloatFloorDivideBits,
-		luaShiftLeft, luaShiftRight, luaPow, cop0Words, heap, exits, heap.tables,
+		luaShiftLeft, luaShiftRight, luaPow, cop0Words, memory, exits, tables,
 		...[...tableCaches.keys()].map(page => page.tableCacheSlots)) as RegionBody;
 	const region = new CompiledRegion(execute, exits, functionSource.length, requiredSlots, requiredCaptures);
 	for (let entry = 0; entry < blocks.length; ++entry) {

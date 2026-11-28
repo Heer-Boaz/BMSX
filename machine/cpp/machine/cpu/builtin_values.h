@@ -31,7 +31,6 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 2, 0, 0 },
 	{ 4, 0, 0 },
 	{ 4, 0, 0 },
-	{ 1, 0, 0 }, // GetGlobal
 	{ 1, 0, 0 }, // FrameCount
 	{ 1, 0, 0 }, // GetFrameRegister
 	{ 1, 0, 0 }, // SetFrameRegister
