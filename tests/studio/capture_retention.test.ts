@@ -143,6 +143,20 @@ function names(revision: ReturnType<typeof compile>, suffix: string) {
 	return metadata.upvalueBindingsByFunction[index].map(slot => metadata.lexicalDeclarations[slot].name);
 }
 
+test('a live lexical function Cell is kept when an edit removes its last value escape', () => {
+	const before = `local function increment(value) return value + 1 end
+local function read(value) return increment(value) end
+return read, increment`;
+	const after = before.replace('return read, increment', 'return read');
+	const installed = compile(before);
+	assert.deepEqual(names(installed, '/local:read'), ['increment']);
+	const fresh = compile(after);
+	assert.deepEqual(names(fresh, '/local:read'), []);
+	const live = compile(after, installed);
+	assert.deepEqual(names(live, '/local:read'), ['increment']);
+	assert.doesNotThrow(() => prove(installed, live));
+});
+
 test('live capture prefixes survive removal, permutation, complete disuse and repeated undo', () => {
 	const before = 'local first = 11\nlocal second = 22\nfunction read() return first, second end';
 	let previous = compile(before);

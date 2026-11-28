@@ -96,6 +96,7 @@ import { extractAssignmentPath } from './compiler/passes/expression_paths';
 import { appendModuleExportPathKey, buildModuleExportSlotName, buildModuleInitializedSlotName } from './module_path';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
+import { collectLexicalFunctions, type LexicalFunction } from './compiler/passes/lexical_functions';
 import { validateInitParticipantPlacement } from './compiler/passes/init_participants';
 import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/passes/static_proto_contract';
 import { toLuaModulePath } from './module_path';
@@ -510,6 +511,7 @@ class ProgramBuilder {
 	public readonly protoDisplayNames: string[] = [];
 	// These facts only guide same-program optimization; neither enters Proto nor the linked image.
 	private readonly protoReturnsOneValue: boolean[] = [];
+	private readonly lexicalFunctionProtos = new Set<number>();
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
 	private readonly biosFunctionImportIndexBySymbol = new Map<string, number>();
 	public readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
@@ -550,6 +552,7 @@ class ProgramBuilder {
 		public readonly types: StructTypes,
 		public readonly tableShapes: TableShapes | undefined,
 		public readonly managedEntries: ReadonlyMap<string, ManagedEntry>,
+		public readonly constModulePaths: ReadonlySet<string>,
 		public readonly captureLayout?: LuaCaptureLayout,
 		installedConstants?: readonly LinkedProgramConstant[],
 		public readonly installedBss?: CompileOptionsBase['installedBss'],
@@ -880,6 +883,12 @@ class ProgramBuilder {
 		return index;
 	}
 
+	public reserveLexicalFunctionProto(): number {
+		const index = this.protos.length++;
+		this.lexicalFunctionProtos.add(index);
+		return index;
+	}
+
 	public addProto(
 		proto: Proto,
 		code: Uint8Array,
@@ -897,28 +906,29 @@ class ProgramBuilder {
 		semantics: LuaSemanticFrontendFile,
 		definition: SourceRange | null = null,
 		physicalCodeOwner?: FunctionBuilder,
+		reservedIndex?: number,
 	): number {
 		if (this.protoIndexById.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
-		const index = this.protos.length;
+		const index = reservedIndex ?? this.protos.length;
 		this.protoIndexById.set(protoId, index);
 		this.protoSemantics.set(protoId, semantics);
-		this.protos.push(proto);
-		this.protoCode.push(code);
+		this.protos[index] = proto;
+		this.protoCode[index] = code;
 		if (this.linkedStaticExports !== undefined && this.optLevel === 3) this.physicalCodeOwners[index] = physicalCodeOwner;
-		this.protoRanges.push(ranges);
-		this.functionDefinitions.push(definition);
-		this.protoInlineCallSites.push(inlineCallSites);
-		this.protoConstRelocs.push(constRelocs);
-		this.protoStatementPoints.push(statementPoints);
-		this.protoResumePoints.push(resumePoints);
-		this.protoLocalSlots.push(localSlots);
-		this.protoOuterBindings.push(outerBindings);
-		this.protoUpvalueBindings.push(upvalueBindings);
-		this.protoInstructionSets.push(instructionSet);
-		this.protoIds.push(protoId);
-		this.protoDisplayNames.push(displayName);
+		this.protoRanges[index] = ranges;
+		this.functionDefinitions[index] = definition;
+		this.protoInlineCallSites[index] = inlineCallSites;
+		this.protoConstRelocs[index] = constRelocs;
+		this.protoStatementPoints[index] = statementPoints;
+		this.protoResumePoints[index] = resumePoints;
+		this.protoLocalSlots[index] = localSlots;
+		this.protoOuterBindings[index] = outerBindings;
+		this.protoUpvalueBindings[index] = upvalueBindings;
+		this.protoInstructionSets[index] = instructionSet;
+		this.protoIds[index] = protoId;
+		this.protoDisplayNames[index] = displayName;
 		let returnsOneValue = true;
 		for (let instructionIndex = 0; instructionIndex < instructionSet.instructions.length; instructionIndex += 1) {
 			const instruction = instructionSet.instructions[instructionIndex];
@@ -928,7 +938,7 @@ class ProgramBuilder {
 				break;
 			}
 		}
-		this.protoReturnsOneValue.push(returnsOneValue);
+		this.protoReturnsOneValue[index] = returnsOneValue;
 		return index;
 	}
 
@@ -1092,7 +1102,7 @@ class ProgramBuilder {
 	}
 
 	private lowerPhysicalWindowCalls(): void {
-		const escaped = new Set<number>(), staticProtos = new Set<number>();
+		const escaped = new Set<number>(), staticProtos = new Set(this.lexicalFunctionProtos);
 		for (const id of Object.values(this.exportProtoIdBySlot)) staticProtos.add(this.protoIndexById.get(id)!);
 		for (const { path, exportPathKey } of this.linkedStaticExports!) {
 			const index = this.exportProtoIndex(path, exportPathKey);
@@ -1438,6 +1448,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly initializerValueRegs: number[] = [];
 	private readonly initializerClosureProtoIndices: number[] = [];
 	private readonly initializerModuleBindings: ModuleBinding[] = [];
+	private lexicalFunctions?: ReadonlyMap<string, LexicalFunction & { readonly protoIndex: number }>;
 
 	constructor(
 		program: ProgramBuilder,
@@ -1458,6 +1469,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	) {
 		this.program = program;
 		this.parent = parent;
+		this.lexicalFunctions = parent?.lexicalFunctions;
 		this.rawSystemCode = params.rawSystemCode ?? parent?.rawSystemCode ?? false;
 		this.semantics = params.semantics;
 		this.frontend = params.frontend;
@@ -1513,6 +1525,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	public compileChunk(chunk: LuaChunk): void {
 		this.bindFunctionBody(chunk.body);
+		if (this.program.optLevel === 3 && !this.rawSystemCode && this.reuseScopedRegisters) {
+			const layout = this.program.captureLayout;
+			const proof = collectLexicalFunctions(chunk, this.semantics, this.program.constModulePaths,
+				({ declaration, expression }) => this.registerLifetimes.hasRawWindow(expression)
+					|| layout?.retainsClosure(chunk.locations.range(declaration.span), chunk.locations.range(expression.span)) === true);
+			if (proof.size !== 0) this.lexicalFunctions = new Map(Array.from(proof, ([id, fn]) =>
+				[id, { ...fn, protoIndex: this.program.reserveLexicalFunctionProto() }]));
+		}
 		this.pushScope(chunk.locations.range(chunk.span));
 		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			this.compileStatement(cursor.statement);
@@ -1635,7 +1655,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const range = this.semantics.locations.range(expression.span), start = range.start;
 		for (const declaration of this.semantics.getVisibleDeclarationsAt(start.line, start.column)) {
 			if (declaration.isGlobal || declaration.kind === 'type' || declaration.kind === 'bss'
-				|| declaration.kind === 'data' || declaration.kind === 'rodata') continue;
+				|| declaration.kind === 'data' || declaration.kind === 'rodata'
+				|| this.lexicalFunctions?.has(declaration.id)) continue;
 			let owner = this.parent!;
 			let binding = owner.localBindings.get(declaration.id);
 			while (binding === undefined) {
@@ -2971,14 +2992,24 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (truthy?.kind === 'export_proto' && falsy?.kind === 'export_proto') return { condition: first.left, truthy, falsy };
 	}
 
+	private resolveLexicalFunction(expression: LuaExpression) {
+		if (this.lexicalFunctions === undefined || expression.kind !== LuaSyntaxKind.IdentifierExpression) return;
+		const reference = getResolvedIdentifierReference(this.semantics, expression);
+		if (reference.kind === 'lexical') return this.lexicalFunctions.get(reference.decl.id);
+	}
+
 	private resolveCallProtoIndex(expression: LuaCallExpression): number | null {
 		if (expression.method !== null) {
 			return null;
 		}
 		if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
-			const binding = this.resolveReferenceConstClosureBinding(
-				getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression),
-			);
+			const lexical = this.resolveLexicalFunction(expression.callee);
+			if (lexical !== undefined) {
+				const index = lexical.protoIndex;
+				// Link forward/self references, but only inline a body after it exists.
+				return this.program.protoInstructionSets[index] === undefined ? null : index;
+			}
+			const binding = this.resolveReferenceConstClosureBinding(getResolvedIdentifierReference(this.semantics, expression.callee));
 			if (binding !== null) {
 				return binding.constClosureProtoIndex;
 			}
@@ -3983,6 +4014,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const attributes = statement.attributes;
 		const pointerTypeRefs = statement.pointerTypeRefs;
 		const values = statement.values;
+		if (names.length === 1) {
+			const lexical = this.lexicalFunctions?.get(getResolvedDeclaration(this.semantics, names[0]).id);
+			if (lexical !== undefined) {
+				if (values[0] === lexical.expression)
+					this.compileLexicalFunction(lexical, this.createLocalFunctionHint(lexical.name));
+				return;
+			}
+		}
 		if (isRecursiveConstClosureDeclaration(statement)) {
 			const decl = getResolvedDeclaration(this.semantics, names[0]);
 			const name = decl.name;
@@ -4184,6 +4223,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
+		if (this.lexicalFunctions !== undefined && statement.left.length === 1) {
+			const lexical = this.resolveLexicalFunction(statement.left[0]);
+			if (lexical !== undefined && statement.right[0] === lexical.expression) {
+				this.compileLexicalFunction(lexical, buildAssignmentHint([lexical.name]));
+				return;
+			}
+		}
 		const targets = this.compileAssignmentTargets(statement.left);
 		const targetPaths: Array<string[] | null> = new Array(statement.left.length);
 		for (let index = 0; index < statement.left.length; index += 1) {
@@ -4874,9 +4920,20 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		});
 	}
 
+	private compileLexicalFunction(lexical: LexicalFunction & { readonly protoIndex: number }, hint: string): void {
+		const id = buildProtoId(this.protoId, hint);
+		compileFunctionExpression(this.program, lexical.expression, this, false, id, lexical.name, this.moduleId,
+			this.semantics, this.frontend, lexical.protoIndex);
+	}
+
 	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
 		const decl = getResolvedDeclaration(this.semantics, statement.name);
 		const name = decl.name;
+		const lexical = this.lexicalFunctions?.get(decl.id);
+		if (lexical !== undefined) {
+			this.compileLexicalFunction(lexical, this.createLocalFunctionHint(name));
+			return;
+		}
 		const reg = this.declareLocalFromDecl(decl, this.semantics.locations.range(statement.name.span));
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = buildProtoId(this.protoId, hint);
@@ -6019,6 +6076,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
 		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
 		const ownStaticFunctionExportTarget = methodName ? undefined : this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
+		const lexicalFunction = methodName ? undefined : this.resolveLexicalFunction(expression.callee);
 		const targetChoice = methodName ? undefined : this.resolveStaticCallChoice(expression.callee);
 		if (constModuleValueCallee) {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
@@ -6055,6 +6113,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			for (const jump of falseJumps) this.patchJump(jump, this.code.length);
 			this.emitFunctionCode(callBase, targetChoice.falsy);
 			this.patchJump(done, this.code.length);
+		} else if (lexicalFunction !== undefined) {
+			this.emitFunctionCode(callBase, { kind: 'proto', protoIndex: lexicalFunction.protoIndex });
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
@@ -6447,6 +6507,7 @@ function compileFunctionExpression(
 	moduleId: string,
 	semantics: LuaSemanticFrontendFile,
 	frontend: LuaSemanticFrontend,
+	reservedIndex?: number,
 ): number {
 	const builder = new FunctionBuilder(program, parent, {
 		moduleId,
@@ -6457,6 +6518,10 @@ function compileFunctionExpression(
 	});
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
+	const upvalueDescs = builder.getUpvalueDescs();
+	if (reservedIndex !== undefined && upvalueDescs.length !== 0) {
+		throw new Error(`Internal compiler error: lexical code symbol '${protoId}' still has an activation capture.`);
+	}
 	const ranges = builder.getRanges();
 	const constRelocs = builder.getConstRelocs();
 	const instructionSet = builder.getInstructionSet();
@@ -6467,9 +6532,9 @@ function compileFunctionExpression(
 		numParams: expression.parameters.length + (implicitSelf ? 1 : 0),
 			isVararg: expression.hasVararg,
 			maxStack: builder.getMaxStack(),
-			upvalueDescs: builder.getUpvalueDescs(),
-			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics, semantics.locations.range(expression.span), builder);
+			upvalueDescs,
+			staticClosure: reservedIndex !== undefined,
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics, semantics.locations.range(expression.span), builder, reservedIndex);
 	return protoIndex;
 }
 
@@ -6713,6 +6778,7 @@ export function compileLuaChunkToProgram(
 		new StructTypes(frontend.snapshot, createCompilerStaticBindings(frontend.snapshot, moduleCompileContext)),
 		tableShapes,
 		managedEntryBySymbol,
+		new Set([...moduleCompileContext.modulesByPath.values()].filter(info => info.constModule).map(info => info.path)),
 		options.captureLayout,
 		options.installedConstants,
 		options.installedBss,

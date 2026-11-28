@@ -16,6 +16,7 @@ export class LuaCaptureLayout {
 	private readonly functions = new Map<string, readonly number[]>();
 	private readonly functionIdsByDefinition = new Map<string, Map<string, string>>();
 	private readonly definitions = new Map<number, SourceRange>();
+	private retainedDeclarations?: ReadonlySet<string>;
 
 	constructor(
 		public readonly baseline: LuaCaptureBaseline,
@@ -43,6 +44,23 @@ export class LuaCaptureLayout {
 	public hasFunction(id: string): boolean { return this.functions.has(id); }
 
 	public slots(id: string): readonly number[] | undefined { return this.functions.get(id); }
+
+	public retainsClosure(declaration: SourceRange, expression: SourceRange): boolean {
+		const id = this.functionId(expression);
+		if (id !== undefined && this.functions.get(id)!.length !== 0) return true;
+		if (this.retainedDeclarations === undefined) {
+			const slots = new Set(this.baseline.upvalueBindingsByFunction.flat());
+			const retained = new Set<string>();
+			for (const slot of slots) {
+				const previous = this.baseline.lexicalDeclarations[slot];
+				if (previous.definition === null || previous.kind !== LexicalDeclarationKind.Local) continue;
+				const mapped = this.sources.declaration(previous.definition);
+				if (mapped !== undefined) retained.add(`${mapped.path}:${sourceRangeKey(mapped)}`);
+			}
+			this.retainedDeclarations = retained;
+		}
+		return this.retainedDeclarations.has(`${declaration.path}:${sourceRangeKey(declaration)}`);
+	}
 
 	public definition(index: number): SourceRange {
 		let definition = this.definitions.get(index);
