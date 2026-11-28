@@ -50,8 +50,6 @@ local function descend(n)
 end
 failed_thread = coroutine.create(function() return descend(0) end)
 local ok<const>, err<const> = coroutine.resume(failed_thread)
-resume_ok = ok
-resume_error = err
 halt_until_irq
 local close_ok<const>, close_error<const> = coroutine.close(failed_thread)
 return ok, err, close_ok, close_error, escaped_cell()
@@ -81,7 +79,8 @@ return ok, err, close_ok, close_error, escaped_cell()
 		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return run;
 	}
-	let run = RunResult.Yielded, required = 0, issues = 0, depth = 0, issue = 0, resume = 0, failed = 0;
+	let run = RunResult.Yielded, required = 0, issues = 0, depth = 0, issue = 0, failed = 0;
+	let resumePc = 0, resumeFrame = 0, resumeBase = 0;
 	for (let count = 0; count < 8192 && run !== RunResult.Halted; ++count) {
 		run = grant(runtime);
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW) continue;
@@ -106,7 +105,13 @@ return ok, err, close_ok, close_error, escaped_cell()
 		issues++;
 		depth = frameCount;
 		issue = pc;
-		resume = cpu.readThreadFrameWord(resumer, cpu.readThreadFrameDepth(resumer) - 1, FrameField.Pc);
+		// The SVC transport frame retains the ordinary CALL's result placement.
+		// It is retired by the vector, which returns to the caller's PC.
+		const transport = cpu.readThreadFrameDepth(resumer) - 1;
+		resumeFrame = transport - 1;
+		resumePc = cpu.readThreadFrameWord(resumer, resumeFrame, FrameField.Pc);
+		resumeBase = cpu.readThreadFrameWord(resumer, transport, FrameField.ReturnBase) & FRAME_WINDOW_MASK;
+		assert.equal(cpu.readThreadFrameWord(resumer, transport, FrameField.ReturnCount) & FRAME_WINDOW_MASK, 3);
 		failed = interrupted;
 		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${issue}`);
 		hash(runtime, issuer, FRAME_CONTROL_BYTES);
@@ -114,7 +119,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 	assert.equal(run, RunResult.Halted);
 	assert.ok(issues > 1, 'real recursive growth preceded the terminal shortage');
 	assert.ok(memory.ramBusEnd() >= linked.layout.header.bssAddress + staticBytes);
-	assert.notEqual(resume, issue);
+	assert.notEqual(resumePc, issue);
 
 	const faultHead = nativeHeapReference(cpu).heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 	const faults = memory.readRamRecordWord(faultHead + GcDiagnosticField.FaultIds);
@@ -138,15 +143,16 @@ return ok, err, close_ok, close_error, escaped_cell()
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		assert.equal(cpu.readEpcWord(), resume);
-		assert.equal(observedGlobal('resume_ok'), valueBool(false));
-		assert.equal(observedGlobal('resume_error'), error);
+		assert.equal(cpu.readEpcWord(), resumePc);
+		assert.equal(cpu.readThreadFrameDepth(cpu.rootThread.address), resumeFrame + 1);
+		assert.equal(cpu.readThreadRegister(cpu.rootThread.address, resumeFrame, resumeBase), valueBool(false));
+		assert.equal(cpu.readThreadRegister(cpu.rootThread.address, resumeFrame, resumeBase + 1), error);
 		const closure = asClosure(observedGlobal('escaped_cell'), nativeHeapReference(cpu).gc);
 		const cell = captureAddress(memory, closure, 0);
 		assert.ok(isOpen(memory, cell));
 		assert.equal(memory.readRamRecordWord((cell & UPVALUE_ADDRESS_MASK) + UPVALUE_OWNER), failed);
 		assert.equal(load(memory, cell), captured);
-		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${resume}`);
+		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${resumePc}`);
 		hash(rt, failed, THREAD_HEAP_BYTES);
 		hash(rt, memory.readRamRecordWord(failed + ThreadField.FrameBlock), depth * FRAME_CONTROL_BYTES);
 		hash(rt, RAM_BASE + (cell & UPVALUE_ADDRESS_MASK), UPVALUE_HEAP_BYTES);
