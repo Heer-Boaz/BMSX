@@ -186,7 +186,7 @@ function probe() return retained end`);
 	assert.equal(readStockGlobalValue(cpu.memory, introduced), literal);
 });
 
-test('Hot Resume appends cartridge BSS without clearing or relocating escaped live addresses', async t => {
+test('Hot Resume keeps installed cartridge BSS addresses when inserting declarations before them', async t => {
 	const f = await fixture(t, `bss score: word
 escaped = &score
 function probe()
@@ -202,7 +202,7 @@ end
 	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
 	const tail = old.bssAddress + old.bssByteCount, ramEnd = memory.ramBusEnd();
 	assert.equal(address, old.bssAddress);
-	assert.ok(tail + 8 <= ramEnd);
+	assert.ok(tail + 12 <= ramEnd);
 	memory.writeMappedWord(tail, 0x11223344);
 	memory.writeMappedWord(tail + 4, 0x55667788);
 
@@ -232,14 +232,96 @@ end
 	assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
 	assert.deepEqual(runtime.readCompletionValues(), [escaped, valueInteger(73), valueInteger(0)]);
 
-	const installed = f.sources.currentBlua32Media;
-	const offset = f.model.buffer.getText().indexOf('bss score');
-	f.model.pushEditOperations([{ offset, deleteLength: 0, text: 'bss earlier: word\n' }]);
+	// Give both retained words live state. The second insertion is earlier
+	// in the source but must get its own zero-initialized slot at the end.
+	memory.writeMappedWord(tail, 67);
+	memory.writeMappedWord(tail + 8, 0x22334455);
+	const appendedSource = f.model.buffer.getText();
+	const appendedReturn = 'return escaped, *pointer, *extra';
+	f.model.pushEditOperations([
+		{ offset: appendedSource.indexOf('bss score'), deleteLength: 0, text: 'bss earlier: word\n' },
+		{ offset: appendedSource.indexOf(appendedReturn), deleteLength: appendedReturn.length,
+			text: 'return escaped, *pointer, &extra, *extra, &earlier, *earlier' },
+	]);
+	const insertion = f.service.resume('workbench');
+	assert.deepEqual(await insertion.admission, { status: 'accepted', mode: 'deferred' });
+	for (let grant = 0; grant < 128 && insertion.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(insertion.result, { status: 'completed', applied: true });
+	const installed = f.sources.currentBlua32Media, revised = installed.cartridgeSlots[0]!.layout.header;
+	assert.equal(revised.bssAddress, old.bssAddress);
+	assert.equal(revised.bssByteCount, old.bssByteCount + 8);
+	assert.equal(memory.ramBusEnd(), ramEnd);
+	assert.equal(memory.readMappedU32LE(tail + 8), 0x22334455);
+	assert.equal(cpu.activeThread.address, thread);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(valuePayload(read('probe')), probe);
+	cpu.beginCompletionCall(probe);
+	assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
+	assert.deepEqual(runtime.readCompletionValues(),
+		[escaped, valueInteger(73), valueInteger(tail), valueInteger(67), valueInteger(tail + 4), valueInteger(0)]);
+
+	const insertedSource = f.model.buffer.getText();
+	const earlierDeclaration = 'bss earlier: word';
+	const earlierRead = '&earlier, *earlier';
+	f.model.pushEditOperations([
+		{ offset: insertedSource.indexOf(earlierDeclaration), deleteLength: earlierDeclaration.length, text: 'bss earlier: word[2]' },
+		{ offset: insertedSource.indexOf(earlierRead), deleteLength: earlierRead.length, text: '&earlier[0], earlier[0]' },
+	]);
 	const refusal = await f.service.resume('workbench').completion;
 	assert.equal(refusal.status, 'rejected');
 	assert.match(String(refusal.error), /cannot change the static storage layout/);
 	assert.equal(f.sources.currentBlua32Media, installed);
 	assert.equal(memory.readMappedU32LE(address), 73);
+	assert.equal(memory.readMappedU32LE(tail), 67);
+	assert.equal(memory.readMappedU32LE(tail + 4), 0);
+
+	// The installed revision is itself bootable. Its first source
+	// declaration is last in RAM, but startup still clears the full BSS.
+	memory.writeMappedWord(tail + 4, 91);
+	runtime.rebootSystem();
+	for (let grant = 0; grant < 100 && (!cpu.isCartridgeExecutionActive() || !cpu.isHaltedUntilIrq()); ++grant) {
+		f.target.advanceGame(10_000);
+	}
+	assert.equal(cpu.isCartridgeExecutionActive(), true);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(read('escaped'), escaped);
+	assert.equal(memory.readMappedU32LE(address), 73);
+	assert.equal(memory.readMappedU32LE(tail), 0);
+	assert.equal(memory.readMappedU32LE(tail + 4), 0);
+});
+
+test('Hot Resume preserves separate BSS bindings with the same spelling in different scopes', async t => {
+	const f = await fixture(t, `bss slot: word
+*slot = 11
+function read_outer() return &slot, *slot end
+do
+	bss slot: word
+	*slot = 23
+	function read_inner() return &slot, *slot end
+end`);
+	const { cpu, runtime } = f, depth = cpu.getFrameDepth();
+	const { memory } = runtime.machine;
+	const base = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header.bssAddress;
+	const readers = ['read_outer', 'read_inner'].map(name => valuePayload(readStockGlobalValue(memory, f.guest.stringIndex.find(name)!)));
+	assert.equal(memory.readMappedU32LE(base), 11);
+	assert.equal(memory.readMappedU32LE(base + 4), 23);
+
+	const previous = 'return &slot, *slot';
+	f.model.pushEditOperations([{ offset: f.source.lastIndexOf(previous), deleteLength: previous.length,
+		text: 'return &slot, *slot, 59' }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+
+	const results = [[base, 11], [base + 4, 23, 59]];
+	for (let index = 0; index < readers.length; ++index) {
+		cpu.beginCompletionCall(readers[index]);
+		assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
+		assert.deepEqual(runtime.readCompletionValues(), results[index].map(valueInteger));
+	}
 });
 
 test('Hot Resume publishes a larger RAM aperture only after firmware claims the BSS extension', async t => {

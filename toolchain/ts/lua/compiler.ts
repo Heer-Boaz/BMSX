@@ -50,6 +50,7 @@ import { OpCode, decodeValueCount, encodeFixedValueCount } from '../../../machin
 import { integerConstant, numberConstantKey, numberConstantValue, numberConstantInteger, numberConstantText, type NumberConstant } from './number';
 import type { SourcePosition, SourceRange } from './source_range';
 import { sourceRangesEqual } from './source_range';
+import { sourceRangeKey } from './semantic/source_range';
 import type { LuaCaptureLayout } from './compiler/capture_layout';
 import type {
 	LexicalDeclarationDebug,
@@ -286,6 +287,8 @@ type CompileOptionsBase = {
 	captureLayout?: LuaCaptureLayout;
 	/** Keep the String slots of an installed image. Other constants can be rebuilt. */
 	installedConstants?: readonly ProgramConstant[];
+	/** Preserve addresses of retained BSS declarations in a live build. */
+	installedBss?: { byteCount: number; offsets: ReadonlyMap<string, number> };
 };
 
 export type ManagedEntry = { readonly symbol: string; readonly path: string; readonly callable?: true };
@@ -521,7 +524,7 @@ class ProgramBuilder {
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private readonly linkValueRelocSlotByKey = new Map<string, number>();
-	private bssByteCount = 0;
+	private bssByteCount: number;
 	private dataByteCount = 0;
 	private dataBytes = new Uint8Array(0);
 	private rodataByteCount = 0;
@@ -551,11 +554,13 @@ class ProgramBuilder {
 		public readonly tableShapes: TableShapes | undefined,
 		public readonly captureLayout?: LuaCaptureLayout,
 		installedConstants?: readonly ProgramConstant[],
+		public readonly installedBss?: CompileOptionsBase['installedBss'],
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
 		this.programDomain = programDomain;
 		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
+		this.bssByteCount = installedBss?.byteCount ?? 0;
 		this.constSlotByValue = new Map();
 		if (installedConstants !== undefined) {
 			for (let slot = 0; slot < installedConstants.length; ++slot) {
@@ -672,12 +677,12 @@ class ProgramBuilder {
 			: { system: false, slot: this.resolveGlobalSlot(slotName) };
 	}
 
-	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType): BssBinding {
+	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, installedOffset: number | undefined): BssBinding {
 		const existing = this.bssBindingsBySymbolHandle.get(symbolHandle);
 		if (existing) {
 			return existing;
 		}
-		const offset = this.alignStorageOffset(this.bssByteCount, type.alignment);
+		const offset = installedOffset ?? this.alignStorageOffset(this.bssByteCount, type.alignment);
 		const binding: BssBinding = {
 			symbolHandle,
 			name,
@@ -689,7 +694,7 @@ class ProgramBuilder {
 			type,
 		};
 		this.bssBindingsBySymbolHandle.set(symbolHandle, binding);
-		this.bssByteCount = this.alignStorageOffset(offset + type.size, 4);
+		this.bssByteCount = Math.max(this.bssByteCount, this.alignStorageOffset(offset + type.size, 4));
 		return binding;
 	}
 
@@ -3762,7 +3767,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private recordBssDeclaration(statement: LuaBssDeclarationStatement, declaration: Decl): void {
 		const type = this.program.types.storage(declaration);
-		this.program.recordBss(declaration.id, this.moduleId, statement.name.name, type);
+		let installedOffset: number | undefined;
+		if (this.program.installedBss !== undefined) {
+			const definition = this.semantics.locations.range(declaration.span);
+			installedOffset = this.program.installedBss.offsets.get(`${definition.path}:${sourceRangeKey(definition)}`);
+		}
+		this.program.recordBss(declaration.id, this.moduleId, statement.name.name, type, installedOffset);
 	}
 
 	private compileDataDeclaration(statement: LuaDataDeclarationStatement): void {
@@ -6529,6 +6539,7 @@ export function compileLuaChunkToProgram(
 		tableShapes,
 		options.captureLayout,
 		options.installedConstants,
+		options.installedBss,
 	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;

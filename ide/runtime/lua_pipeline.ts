@@ -1,6 +1,8 @@
 import { LuaCaptureLayout } from '../../toolchain/ts/lua/compiler/capture_layout';
+import { StaticDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import { compiledBlua32Sources } from '../../toolchain/ts/rompack/blua32_sources';
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
+import { sourceRangeKey } from '../../toolchain/ts/lua/semantic/source_range';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type { ProgramObjectImage } from '../../toolchain/ts/lua/compiler/program_object';
@@ -356,6 +358,18 @@ export function buildBlua32Media(
 			),
 		);
 		const sourceCorrespondence = new LuaSourceCorrespondence(cartridge.installedBlua32Sources, programSources.sources);
+		let installedBss: { byteCount: number; offsets: Map<string, number> } | undefined;
+		const { bssAddress, bssByteCount } = installed.layout.header;
+		if (mode === 'live' && bssByteCount !== 0) {
+			const offsets = new Map<string, number>();
+			for (const declaration of metadata.staticScopes.declarations) {
+				if (declaration.kind !== StaticDeclarationKind.Bss) continue;
+				const definition = sourceCorrespondence.declaration(declaration.definition);
+				if (definition !== undefined)
+					offsets.set(`${definition.path}:${sourceRangeKey(definition)}`, declaration.address! - bssAddress);
+			}
+			installedBss = { byteCount: bssByteCount, offsets };
+		}
 		const compiled = compileLuaChunkToProgram(
 			programSources.entry.chunk,
 			programSources.modules,
@@ -368,6 +382,7 @@ export function buildBlua32Media(
 				preloadModules: installed.symbols!.metadata.preloadModules,
 				captureLayout: mode === 'live' ? new LuaCaptureLayout(installed.symbols!.metadata, sourceCorrespondence) : undefined,
 				installedConstants: mode === 'live' ? installed.layout.constants : undefined,
+				installedBss,
 			},
 		);
 		const cartObject = encodeCompiledProgramObject(compiled);

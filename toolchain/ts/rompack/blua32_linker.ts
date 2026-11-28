@@ -676,6 +676,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const rodata = object.sections.rodata;
 	const data = object.sections.data;
 	const bss = object.sections.bss;
+	// Object order indexes relocations; layout identity follows physical storage.
+	const bssSymbols = input.previous === undefined ? bss.symbols : bss.symbols.slice().sort((a, b) => a.offset - b.offset);
 	const globalNameLayout = layoutGlobalNames(
 		input.globalNames,
 		input.previous?.image.globalNames,
@@ -965,7 +967,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		data.symbols,
 		input.bssAddress,
 		bss.byteCount,
-		bss.symbols,
+		bssSymbols,
 		object.link.symbols.initParticipants,
 	);
 	let retainedBssToken: Blua32StaticLayoutToken | null = null;
@@ -974,10 +976,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		const prefix = prior.bssByteCount;
 		if (input.dataAddress === prior.dataAddress && data.bytes.byteLength === prior.dataByteCount
 			&& input.bssAddress === prior.bssAddress && bss.byteCount > prefix
-			&& !bss.symbols.some(symbol => symbol.offset < prefix && symbol.offset + symbol.byteCount > prefix)) {
+			&& !bssSymbols.some(symbol => symbol.offset < prefix && symbol.offset + symbol.byteCount > prefix)) {
 			retainedBssToken = buildStaticLayoutToken(rodataAddress, rodataByteCount, rodata.symbols,
 				input.dataAddress, data.bytes.byteLength, data.symbols,
-				input.bssAddress, prefix, bss.symbols.filter(symbol => symbol.offset < prefix),
+				input.bssAddress, prefix, bssSymbols.filter(symbol => symbol.offset < prefix),
 				object.link.symbols.initParticipants);
 		}
 	}
