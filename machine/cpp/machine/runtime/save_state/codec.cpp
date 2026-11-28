@@ -1180,6 +1180,10 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(state.epcWord);
 	writer.u32(state.badAddressWord);
 	writer.u32(state.luaFaultReasonWord);
+	writer.u32(state.tableLookupKeyWord);
+	writer.u32(state.tableAssignKeyWord);
+	writer.u32(state.tableLengthKeyWord);
+	writer.u32(state.stringIndexTableWord);
 	writer.u32(state.exceptionDomainWord);
 	writer.u32(state.nmiReturnCauseWord);
 	writer.u32(state.nmiReturnEpcWord);
@@ -1223,6 +1227,10 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.epcWord = reader.u32();
 	state.badAddressWord = reader.u32();
 	state.luaFaultReasonWord = reader.u32();
+	state.tableLookupKeyWord = reader.u32();
+	state.tableAssignKeyWord = reader.u32();
+	state.tableLengthKeyWord = reader.u32();
+	state.stringIndexTableWord = reader.u32();
 	state.exceptionDomainWord = reader.u32();
 	state.nmiReturnCauseWord = reader.u32();
 	state.nmiReturnEpcWord = reader.u32();

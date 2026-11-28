@@ -7,7 +7,7 @@ namespace bmsx {
 u32 CPU::tableIndexAddress(Value base) const {
 	if (valueIsTable(base)) return valuePayload(base);
 	if (valueIsString(base)) {
-		if (const u32 index = m_heap.diagnosticWord(GcDiagnosticField::StringIndexWord)) return index;
+		if (const u32 index = m_cop0Words[COP0_STRING_INDEX_TABLE]) return index;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
@@ -33,7 +33,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 	while (result.status == TableLookupStatus::Forward) {
 		carried += result.extraVisits;
 		base = result.value;
-		const u32 index = valueIsString(base) ? m_heap.diagnosticWord(GcDiagnosticField::StringIndexWord) : 0u;
+		const u32 index = valueIsString(base) ? m_cop0Words[COP0_STRING_INDEX_TABLE] : 0u;
 		if (index == 0u) {
 			instructionBudgetRemaining -= static_cast<int>(carried) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
@@ -44,7 +44,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 			instructionBudgetRemaining -= (TABLE_INDEX_CHAIN_LIMIT - 1) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		}
-		instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, index).resolveIndex(key,
+		instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, index).resolveIndex(key, m_cop0Words[COP0_TABLE_LOOKUP_KEY],
 			result, TABLE_INDEX_CHAIN_LIMIT - carried));
 	}
 	instructionBudgetRemaining -= static_cast<int>(carried + result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
@@ -61,13 +61,13 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 
 bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value key) {
 	TableLookupResult result;
-	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(key, result));
+	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIndex(key, m_cop0Words[COP0_TABLE_LOOKUP_KEY], result));
 	return finishTableRead(frame, destination, base, key, result);
 }
 
 bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index) {
 	TableLookupResult result;
-	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(index, result));
+	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(index, m_cop0Words[COP0_TABLE_LOOKUP_KEY], result));
 	return finishTableRead(frame, destination, base, valueInteger(index), result);
 }
 
@@ -102,7 +102,7 @@ bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) 
 	const TableRecord table(m_heap, receiver);
 	if (table.metatableAddress() != 0u) {
 		TableLookupResult result;
-		table.resolveAssignment(key, result);
+		table.resolveAssignment(key, m_cop0Words[COP0_TABLE_ASSIGN_KEY], result);
 		if (finishTableAssignment(frame, key, value, result)) return true;
 		receiver = result.receiver;
 		position = result.slot;
@@ -120,7 +120,7 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 	const TableRecord table(m_heap, receiver);
 	if (table.metatableAddress() != 0u) {
 		TableLookupResult result;
-		table.resolveIntegerAssignment(index, result);
+		table.resolveIntegerAssignment(index, m_cop0Words[COP0_TABLE_ASSIGN_KEY], result);
 		if (finishTableAssignment(frame, key, value, result)) return true;
 		receiver = result.receiver;
 		position = result.slot;
@@ -133,7 +133,7 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result, predictedSlot);
+	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, m_cop0Words[COP0_TABLE_ASSIGN_KEY], result, predictedSlot);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
 	if (result.extraVisits != 0u) extraHashSlots = 0;
 	const Value field = valueString(key);
@@ -144,7 +144,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 
 bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {
 	if (valueIsTable(operand)) {
-		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(GcDiagnosticField::Length);
+		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(m_cop0Words[COP0_TABLE_LENGTH_KEY]);
 		if (!isNil(method)) {
 			const std::array args{operand, operand};
 			invokeImplicit(frame, CallResultPlacement::single(destination), method, args);

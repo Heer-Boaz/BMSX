@@ -17,7 +17,7 @@ namespace bmsx::test {
 // admission. Reset semantics are tested separately with compiled BIOS ROMs.
 // The following allocator, diagnostic keys and Thread are test data; none
 // of this code is part of CPU reset or linked into a shipping core.
-inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd) {
+inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd, CpuRuntimeState& state) {
 	auto& memory = cpu.memory();
 	auto& arena = cpu.heapAllocator();
 	const u32 management = arena.managementOffset();
@@ -32,6 +32,9 @@ inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd) {
 	const StringId index = strings.intern("__index");
 	const StringId newIndex = strings.intern("__newindex");
 	const StringId length = strings.intern("__len");
+	state.tableLookupKeyWord = index;
+	state.tableAssignKeyWord = newIndex;
+	state.tableLengthKeyWord = length;
 	const StringId mode = strings.intern("__mode");
 	const StringId errorInHandler = strings.intern("error in error handling");
 	std::array<StringId, LUA_FAULT_REASON_INDEX_NAN + 1u> faultIds{};
@@ -64,7 +67,7 @@ inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd) {
 // Heap-only reference tests have no executable image or frame to admit.
 inline void seedManagedHeapFixture(CPU& cpu) {
 	auto state = cpu.captureRuntimeState();
-	const u32 root = provisionManagedFixture(cpu, DYNAMIC_RAM_BASE);
+	const u32 root = provisionManagedFixture(cpu, DYNAMIC_RAM_BASE, state);
 	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
 	cpu.restoreRuntimeState(state);
 }
@@ -149,7 +152,7 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	const auto& rawFrame = *raw.currentFrame;
 	const auto boot = addresses.resolveSystemDomain();
 	auto& memory = cpu.memory();
-	const u32 root = provisionManagedFixture(cpu, boot.staticEnd);
+	const u32 root = provisionManagedFixture(cpu, boot.staticEnd, state);
 	installFixtureOperands(cpu, addresses, boot);
 	Thread prepared(memory, root);
 	prepared.bindStack();
@@ -170,6 +173,17 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::StackTop), 0u);
 	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
 	cpu.restoreRuntimeState(state);
+}
+
+// A standalone native entry receives its detached registerfile explicitly.
+inline std::array<u32, 32> fixtureTableControls(const CPU& cpu) {
+	const auto state = cpu.captureRuntimeState();
+	std::array<u32, 32> words{};
+	words[COP0_TABLE_LOOKUP_KEY] = state.tableLookupKeyWord;
+	words[COP0_TABLE_ASSIGN_KEY] = state.tableAssignKeyWord;
+	words[COP0_TABLE_LENGTH_KEY] = state.tableLengthKeyWord;
+	words[COP0_STRING_INDEX_TABLE] = state.stringIndexTableWord;
+	return words;
 }
 
 // Publish the original subject's exact logical MaxStack, not the rounded

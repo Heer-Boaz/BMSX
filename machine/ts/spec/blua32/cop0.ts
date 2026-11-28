@@ -12,6 +12,10 @@ export const COP0_EXCEPTION_TARGET = 20;
 export const COP0_IRQ_VECTOR = 21;
 export const COP0_CURRENT = 22;
 export const COP0_EVENT_CYCLES = 23;
+export const COP0_TABLE_LOOKUP_KEY = 24;
+export const COP0_TABLE_ASSIGN_KEY = 25;
+export const COP0_TABLE_LENGTH_KEY = 26;
+export const COP0_STRING_INDEX_TABLE = 27;
 // Only the target control word carries a physical socket; execution PCs stay mapped addresses.
 export const CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31;
 export const CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffff;
@@ -22,14 +26,16 @@ export function cop0ReadAsZero(field: number): boolean { return field === COP0_E
 export function cop0WriteRetiresControl(field: number): boolean {
 	return field === COP0_STATUS || field === COP0_EXEC || field === COP0_CONTEXT
 		|| field === COP0_RAM_END || field === COP0_SYSTEM_VECTOR || field === COP0_EXCEPTION_TARGET
-		|| field === COP0_IRQ_VECTOR || field === COP0_CURRENT;
+		|| field === COP0_IRQ_VECTOR || field === COP0_CURRENT
+		|| (field >= COP0_TABLE_LOOKUP_KEY && field <= COP0_STRING_INDEX_TABLE);
 }
 
 const cop0Fields = (1 << COP0_BAD_ADDRESS) | (1 << COP0_LUA_FAULT_REASON)
-	| (1 << COP0_STATUS) | (1 << COP0_CAUSE) | (1 << COP0_EPC) | (1 << COP0_EXEC) | (1 << COP0_CONTEXT) | (1 << COP0_RAM_END) | (1 << COP0_SYSTEM_VECTOR) | (1 << COP0_PREVIOUS_ACTIVE) | (1 << COP0_EXCEPTION_TARGET) | (1 << COP0_IRQ_VECTOR) | (1 << COP0_CURRENT) | (1 << COP0_EVENT_CYCLES);
+	| (1 << COP0_STATUS) | (1 << COP0_CAUSE) | (1 << COP0_EPC) | (1 << COP0_EXEC) | (1 << COP0_CONTEXT) | (1 << COP0_RAM_END) | (1 << COP0_SYSTEM_VECTOR) | (1 << COP0_PREVIOUS_ACTIVE) | (1 << COP0_EXCEPTION_TARGET) | (1 << COP0_IRQ_VECTOR) | (1 << COP0_CURRENT) | (1 << COP0_EVENT_CYCLES)
+	| (1 << COP0_TABLE_LOOKUP_KEY) | (1 << COP0_TABLE_ASSIGN_KEY) | (1 << COP0_TABLE_LENGTH_KEY) | (1 << COP0_STRING_INDEX_TABLE);
 
 export function cop0FieldImplemented(field: number): boolean {
-	return field >= 0 && field <= COP0_EVENT_CYCLES && ((cop0Fields >>> field) & 1) !== 0;
+	return field >= 0 && field <= COP0_STRING_INDEX_TABLE && ((cop0Fields >>> field) & 1) !== 0;
 }
 
 export const CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1 << 0;

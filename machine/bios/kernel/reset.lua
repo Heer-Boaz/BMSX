@@ -87,6 +87,9 @@ else
 	end
 	bindings.retire_images(management, installed)
 end
+cop0.table_lookup_key = head.index
+cop0.table_assign_key = head.new_index
+cop0.table_length_key = head.length
 cop0.ram_end = ram_base + floor
 heap.publish_system_directory(management, image.buckets, image.bucket_count)
 if image_bind.bind_initial_image(management, header, ordinary_bank, system_bank, installed, *system_fit, *cart0_fit, address) ~= 0 then stop_reset() end

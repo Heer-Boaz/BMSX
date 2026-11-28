@@ -67,7 +67,9 @@ local receive<const> = function(owner, token, destination, count)
 			if count ~= 1 or types[0] ~= tags.table_tag then return invalid_argument end
 			local head<const>: *root_head_input = layout.ram_base + management + layout.remark_head_offset
 			head.string_index_tag = tags.table_tag
-			head.string_index_word = words[0]
+			local index<const> = words[0]
+			head.string_index_word = index
+			cop0.string_index_table = index
 			return nil
 		end
 	end

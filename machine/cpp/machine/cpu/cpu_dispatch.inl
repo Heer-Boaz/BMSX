@@ -172,7 +172,7 @@ DISPATCH_LABEL(SELF) {
 		DISPATCH_NEXT();
 	}
 	TableLookupResult result;
-	links += table.resolveMissingStringIndex(key, result);
+	links += table.resolveMissingStringIndex(key, m_cop0Words[COP0_TABLE_LOOKUP_KEY], result);
 	CYCLES_ADD(static_cast<int>(links));
 	if (result.status == TableLookupStatus::Resolved) {
 		CYCLES_ADD(static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES);
@@ -199,7 +199,7 @@ DISPATCH_LABEL(SETFIELD) {
 	if (isTable) {
 		TableRecord table(m_heap, valuePayload(base));
 		if constexpr (!Instrumented) {
-			const int slot = table.tryAssignCachedStringField(key, value, predicted);
+			const int slot = table.tryAssignCachedStringField(key, value, predicted, m_cop0Words[COP0_TABLE_ASSIGN_KEY]);
 			if (slot != TableRecord::HASH_STORE_DECLINED) {
 				predicted = slot;
 				DISPATCH_NEXT();

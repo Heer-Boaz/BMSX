@@ -17,7 +17,7 @@ import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET,
 	BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
@@ -35,6 +35,8 @@ const first = CPU_FIXED_STACK_BASE - 0x200, second = first + slotBytes, unreacha
 const context = first - 0x200, frames = context + 0x60, values = frames + 2 * FRAME_CONTROL_BYTES, valueCount = 32;
 const stringKey = second + 0x10;
 const array = unreachable + 0x30, hash = unreachable + 0x40;
+const meta = first + 0x10, metaHash = first + 0x30, lookupKey = first + 0x50;
+const inherited = second + 0x28, inheritedArray = second + 0x48;
 const receiverCell = unreachable + 0x50, keyCell = receiverCell + 8;
 const signature = 0x61b10f4d, sweeping = 0x5a51000d, settled = 0x5a510015, tableReady = 0x5a510020;
 const reset = `
@@ -74,15 +76,32 @@ local take<const> = function()
 	pool[1] = free[0]
 	return result
 end
+-- This firmware chooses its own key, with no stock String bank or roots.
+local lookup_key<const>: *u32 = ${lookupKey}
+lookup_key[0] = ${BLUA32_STRING_RECORD_KIND}
+lookup_key[${BLUA32_STRING_HASH_OFFSET / 4}] = ${hashText('read') | 0}
+lookup_key[${BLUA32_STRING_LENGTH_OFFSET / 4}] = 4
+lookup_key[${BLUA32_STRING_RECORD_HEADER_SIZE / 4}] = 0x64616572
+local other<const>: *u32 = ${inherited}
+other[0], other[${TableHeader.Array / 4}], other[${TableHeader.ArrayStorage / 4}] = ${ValueTag.Table}, 3, ${inheritedArray}
+local inherited_values<const>: *u32 = ${inheritedArray}
+inherited_values[2], inherited_values[3] = 113, ${ValueTag.Integer << 16}
+cop0.table_lookup_key = ${lookupKey}
+cop0.table_assign_key = ${lookupKey}
+cop0.string_index_table = ${inherited}
 initialize()
 collect(${first})
 local reused<const>, exhausted<const> = take(), take()
 local nodes<const>: *u32 = ${first}
 local reclaimed<const> = nodes[${2 * slotWords + 2}]
 
--- This ROM, not the stock firmware, produces the standard Table and String
--- records in its own reclaimed and retained cells. Only own-slot Table
--- operations are exercised; no metatable or default String receiver.
+-- The reclaimed cell holds the receiver, and retained cells supply its
+-- metatable and inherited Table.
+local meta<const>: *u32 = ${meta}
+meta[0], meta[${TableHeader.Hash / 4}], meta[${TableHeader.HashStorage / 4}] = ${ValueTag.Table}, 1, ${metaHash}
+local meta_fields<const>: *u32 = ${metaHash}
+meta_fields[0], meta_fields[1], meta_fields[2] = ${lookupKey}, ${inherited}, ${ValueTag.String | (ValueTag.Table << 8) | (0xff << 16)}
+
 local text<const>: *u32 = ${stringKey}
 text[0] = ${BLUA32_STRING_RECORD_KIND}
 text[${BLUA32_STRING_HASH_OFFSET / 4}] = ${hashText('k') | 0}
@@ -90,7 +109,7 @@ text[${BLUA32_STRING_LENGTH_OFFSET / 4}] = 1
 text[${BLUA32_STRING_RECORD_HEADER_SIZE / 4}] = 0x6b
 local header<const>: *u32 = reused
 header[0] = ${ValueTag.Table}
-header[${TableHeader.Metatable / 4}] = 0
+header[${TableHeader.Metatable / 4}] = ${meta}
 header[${TableHeader.Array / 4}], header[${TableHeader.ArrayStorage / 4}] = 2, reused + 0x30
 header[${TableHeader.Hash / 4}], header[${TableHeader.HashStorage / 4}] = 1, reused + 0x40
 header[${TableHeader.Length / 4}], header[${TableHeader.Free / 4}] = 2, 0
@@ -127,7 +146,15 @@ return function(reused, exhausted, reclaimed)
 	local old_array<const>, old_field<const> = target[2], target[key]
 	target[2] = 91
 	target[key] = 107
-	return reused, exhausted, nodes[2], nodes[${slotWords + 2}], reclaimed, old_array, old_field, target[2], target[key], #target, #key
+	local own_array<const>, own_field<const>, size<const>, key_size<const> = target[2], target[key], #target, #key
+	local string_field<const> = key[3]
+	local inherited<const> = target[3]
+	cop0.table_lookup_key = 0
+	local disabled<const> = target[3] or 0
+	cop0.table_lookup_key = ${lookupKey}
+	target[3] = 137
+	return reused, exhausted, nodes[2], nodes[${slotWords + 2}], reclaimed, old_array, old_field,
+		own_array, own_field, size, key_size, string_field, inherited, disabled, target[3]
 end`;
 const modules = [['main', 'module<entry>\nreturn 0'], ['reset', reset],
 	['table-exercise', tableExercise], ['irq', 'halt_until_irq'], ['exception', 'halt_until_irq']].map(([path, source]) =>
@@ -188,7 +215,13 @@ try {
 		const midpoint = captureRuntimeSaveState(runtime);
 		writeFileSync(tsState, encodeRuntimeSaveState(midpoint));
 		commands.push('S', `x ${nativeState}`);
-		const result = [unreachable, 0, 31, 59, 73, 59, 79, 91, 107, 2, 1];
+		const result = [unreachable, 0, 31, 59, 73, 59, 79, 91, 107, 2, 1, 113, 113, 0, 137];
+		const ownOps = [OpCode.GETI, OpCode.GETT, OpCode.SETI, OpCode.SETT, OpCode.GETI, OpCode.GETT, OpCode.LEN, OpCode.LEN, OpCode.GETI];
+		const expectedTableOps = [...ownOps.map(op => [op, BASE_CYCLES[op]]),
+			[OpCode.GETI, BASE_CYCLES[OpCode.GETI] + TABLE_INDEX_VISIT_CYCLES],
+			[OpCode.GETI, BASE_CYCLES[OpCode.GETI]],
+			[OpCode.SETI, BASE_CYCLES[OpCode.SETI] + TABLE_INDEX_VISIT_CYCLES],
+			[OpCode.GETI, BASE_CYCLES[OpCode.GETI] + TABLE_INDEX_VISIT_CYCLES]];
 		function finish() {
 			const start = observations.length;
 			for (let step = 0; step < 256 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++step) grant(1, RunResult.Yielded);
@@ -199,18 +232,17 @@ try {
 			assert.equal(memory.readRamRecordWord(array + 4), 59);
 			assert.equal(memory.readRamRecordWord(hash + 4), 79);
 			fingerprint();
-			const tableOps: OpCode[] = [];
+			const tableOps: [OpCode, number][] = [];
 			for (let step = 0; step < 64; ++step) {
 				const pc = cpu.readFramePc(0);
 				const { op } = decodeBlua32InstructionAtPc(romBytes, SYSTEM_ROM_BASE, pc);
 				const paid = grant(1, op === OpCode.RET ? RunResult.Halted : RunResult.Yielded);
 				if (op === OpCode.RET) break;
 				if (op === OpCode.GETI || op === OpCode.GETT || op === OpCode.SETI || op === OpCode.SETT || op === OpCode.LEN) {
-					tableOps.push(op);
-					assert.equal(paid, BASE_CYCLES[op], 'own Array/hash and length need no inherited visits or additional firmware');
+					tableOps.push([op, paid]);
 				}
 			}
-			assert.deepEqual(tableOps, [OpCode.GETI, OpCode.GETT, OpCode.SETI, OpCode.SETT, OpCode.GETI, OpCode.GETT, OpCode.LEN, OpCode.LEN]);
+			assert.deepEqual(tableOps, expectedTableOps, 'the custom key controls exactly one extra charged visit');
 			assert.deepEqual(runtime.readCompletionValues(), result.map(valueInteger));
 			assert.equal(cpu.captureRuntimeState().hardHalted, false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -221,6 +253,7 @@ try {
 			assert.deepEqual(raw.subarray(diagnostics, diagnostics + 36), new Uint8Array(36), 'stock diagnostic roots are never installed');
 			assert.equal(memory.readRamRecordWord(array + 4), 91, 'SETI updates the authored Array storage');
 			assert.equal(memory.readRamRecordWord(hash + 4), 107, 'SETT updates the authored own hash node');
+			assert.equal(memory.readRamRecordWord(inheritedArray + 8), 137, 'SETI follows the authored assignment key');
 			fingerprint();
 			commands.push('c');
 			observations.push([result.length, ...result.flatMap(word => [ValueTag.Integer, word])].join(' '));
@@ -239,7 +272,7 @@ try {
 		assert.deepEqual(out, observations);
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		assert.deepEqual(finish(), ending);
-		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (independent allocator and collector, own Table/String datapaths, same RAM and cycles after portable restore)`);
+		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (independent allocator, collector and metatable key, same RAM and cycles after portable restore)`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

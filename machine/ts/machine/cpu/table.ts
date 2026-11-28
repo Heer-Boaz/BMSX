@@ -1,7 +1,7 @@
 import { nextPowerOfTwo } from '../common/numeric';
-import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
+import { COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, COP0_TABLE_LOOKUP_KEY, LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
-import { GcDiagnosticField, type GcHeap } from './gc_heap';
+import type { Memory } from '../memory/memory';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
@@ -32,7 +32,7 @@ export const enum TableHeader {
 export class TableRecords {
 	static readonly HEADER_BYTES = 36;
 	static readonly HEADER_CHARGE = 32;
-	public constructor(protected readonly heap: GcHeap) {}
+	public constructor(private readonly memory: Memory, private readonly cop0: Uint32Array) {}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
 	// Two word lanes, two tag lanes and a signed chain cursor per node.
 	// A byte covers -1 and every index of a power-of-two table up to 128.
@@ -43,27 +43,27 @@ export class TableRecords {
 	protected adjustIntegerBand(words: number, hash: number, tag: ValueTag, word: number, delta: number): void {
 		if (hash < TableRecords.HASH_BAND_CAPACITY || tag !== ValueTag.Integer || (word | 0) <= 0) return;
 		const bin = 32 - Math.clz32(word - 1);
-		const address = words + TableRecords.hashNodeBytes(hash) + 4 * (1 + bin), memory = this.heap.memory;
+		const address = words + TableRecords.hashNodeBytes(hash) + 4 * (1 + bin), memory = this.memory;
 		memory.writeRamRecordWord(address, memory.readRamRecordWord(address) + delta);
 	}
 	protected adjustHashLive(words: number, hash: number, delta: number): void {
 		if (hash <= TableRecords.HASH_CENSUS_LIMIT) return;
-		const memory = this.heap.memory, address = words + TableRecords.hashNodeBytes(hash);
+		const memory = this.memory, address = words + TableRecords.hashNodeBytes(hash);
 		memory.writeRamRecordWord(address, memory.readRamRecordWord(address) + delta);
 	}
 	protected hashNext(links: number, count: number, node: number): number {
-		return count <= 128 ? (this.heap.memory.readRamRecordByte(links + node) << 24) >> 24
-			: this.heap.memory.readRamRecordWord(links + node * 4) | 0;
+		return count <= 128 ? (this.memory.readRamRecordByte(links + node) << 24) >> 24
+			: this.memory.readRamRecordWord(links + node * 4) | 0;
 	}
 	public static storageBytes(array: number, hash: number): number { return 5 * array + TableRecords.hashStorageBytes(hash); }
 	public static allocationCharge(array: number, hash: number): number { return 5 * array + TABLE_HASH_SLOT_BUDGET_BYTES * hash; }
-	protected readHeader(record: number, field: TableHeader): number { return this.heap.memory.readRamRecordWord(record + field); }
-	protected writeHeader(record: number, field: TableHeader, word: number): void { this.heap.memory.writeRamRecordWord(record + field, word); }
+	protected readHeader(record: number, field: TableHeader): number { return this.memory.readRamRecordWord(record + field); }
+	protected writeHeader(record: number, field: TableHeader, word: number): void { this.memory.writeRamRecordWord(record + field, word); }
 	public metatableAddress(record: number): number { return this.readHeader(record, TableHeader.Metatable); }
-	// Only the metatable's own mapping matters. Its mutation paths maintain the proof.
+	// The producer's absence proof describes the metatable's own mapping for the current assignment key.
 	private newIndexMetatable(record: number): number {
 		const meta = this.metatableAddress(record);
-		return meta !== 0 && this.heap.memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent) === 1 ? 0 : meta;
+		return meta !== 0 && this.memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent) === 1 ? 0 : meta;
 	}
 	public arrayCapacity(record: number): number { return this.readHeader(record, TableHeader.Array); }
 	public hashSize(record: number): number { return this.readHeader(record, TableHeader.Hash); }
@@ -71,15 +71,15 @@ export class TableRecords {
 	public arrayAddress(record: number): number { return this.readHeader(record, TableHeader.ArrayStorage); }
 	public hashAddress(record: number): number { return this.readHeader(record, TableHeader.HashStorage); }
 	private tags(record: number): number { return this.hashAddress(record) + 8 * this.hashSize(record); }
-	protected wordAt(record: number, slot: number): number { return this.heap.memory.readRamRecordWord(this.hashAddress(record) + slot * 4); }
-	protected tagAt(record: number, slot: number): ValueTag { return this.heap.memory.readRamRecordByte(this.tags(record) + slot); }
+	protected wordAt(record: number, slot: number): number { return this.memory.readRamRecordWord(this.hashAddress(record) + slot * 4); }
+	protected tagAt(record: number, slot: number): ValueTag { return this.memory.readRamRecordByte(this.tags(record) + slot); }
 	private setEncoded(record: number, slot: number, tag: ValueTag, word: number): void {
 		const words = this.hashAddress(record), tags = words + 8 * this.hashSize(record);
 		this.writeSlot(words, tags, slot, tag, word);
 	}
 	protected writeSlot(words: number, tags: number, slot: number, tag: ValueTag, word: number): void {
-		this.heap.memory.writeRamRecordWord(words + slot * 4, word);
-		this.heap.memory.writeRamRecordByte(tags + slot, tag);
+		this.memory.writeRamRecordWord(words + slot * 4, word);
+		this.memory.writeRamRecordByte(tags + slot, tag);
 	}
 	protected hashValueSlot(record: number, index: number): number { return this.hashSize(record) + index; }
 	// Callers normalize the key once before lookup/insertion. Integral Float
@@ -96,7 +96,7 @@ export class TableRecords {
 		return this.probeHash(key, home, hash, words, words + 8 * hash, matchDead);
 	}
 	protected probeHash(key: Value, home: number, hash: number, words: number, tags: number, matchDead: boolean): number {
-		const memory = this.heap.memory, links = tags + hash * 2;
+		const memory = this.memory, links = tags + hash * 2;
 		const tag = valueTag(key), payload = valuePayload(key);
 		const collectable = matchDead && (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
 		let index = home;
@@ -137,10 +137,10 @@ export class TableRecords {
 		const index = this.probeHash(key, hashCanonicalTableKey(key) & (hash - 1), hash, words, tags, false);
 		if (index < 0) return valueNil();
 		const slot = hash + index;
-		return valueFromTag(this.heap.memory.readRamRecordByte(tags + slot), this.heap.memory.readRamRecordWord(words + slot * 4));
+		return valueFromTag(this.memory.readRamRecordByte(tags + slot), this.memory.readRamRecordWord(words + slot * 4));
 	}
 	private arrayValue(record: number, slot: number): Value {
-		const words = this.arrayAddress(record), memory = this.heap.memory;
+		const words = this.arrayAddress(record), memory = this.memory;
 		return valueFromTag(memory.readRamRecordByte(words + this.arrayCapacity(record) * 4 + slot), memory.readRamRecordWord(words + slot * 4));
 	}
 	public load(record: number, keyTag: ValueTag, keyWord: number, target: ValueWriteTarget, destination: number): void {
@@ -161,7 +161,7 @@ export class TableRecords {
 	public loadIntegerArrayKey(record: number, index: number, target: ValueWriteTarget, destination: number): boolean {
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
-		const memory = this.heap.memory, words = this.arrayAddress(record);
+		const memory = this.memory, words = this.arrayAddress(record);
 		const tags = words + array * 4;
 		const tag = memory.readRamRecordByte(tags + slot);
 		if (tag === ValueTag.Nil && this.metatableAddress(record) !== 0) return false;
@@ -172,9 +172,9 @@ export class TableRecords {
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
 		const words = this.arrayAddress(record), tags = words + array * 4;
-		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
+		if (this.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
 			const meta = this.newIndexMetatable(record);
-			if (meta !== 0 && !isNil(this.getStringKey(meta, this.heap.diagnosticWord(GcDiagnosticField.NewIndex)))) return false;
+			if (meta !== 0 && !isNil(this.getStringKey(meta, this.cop0[COP0_TABLE_ASSIGN_KEY]))) return false;
 		}
 		this.writeSlot(words, tags, slot, tag, word);
 		this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
@@ -187,7 +187,7 @@ export class TableRecords {
 		const tags = words + 8 * hash;
 		const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, words, tags);
 		if (index < 0) return valueNil();
-		const memory = this.heap.memory, slot = hash + index;
+		const memory = this.memory, slot = hash + index;
 		return valueFromTag(memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
 	}
 	public loadStringKey(record: number, key: StringId, target: ValueWriteTarget, destination: number): void {
@@ -197,7 +197,7 @@ export class TableRecords {
 			const tags = words + 8 * hash;
 			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, words, tags);
 			if (index >= 0) {
-				const memory = this.heap.memory, slot = hash + index;
+				const memory = this.memory, slot = hash + index;
 				target.setEncoded(destination, memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
 				return;
 			}
@@ -216,7 +216,7 @@ export class TableRecords {
 	}
 	private scanStringNodes(key: StringId, node: number, hash: number, words: number, tags: number,
 		allowance: number, result: TableLookupSlot, cursor?: TableStringProbe): number {
-		const memory = this.heap.memory, links = tags + hash * 2;
+		const memory = this.memory, links = tags + hash * 2;
 		let inspected = 0;
 		while (node >= 0 && inspected < allowance) {
 			++inspected;
@@ -240,7 +240,7 @@ export class TableRecords {
 		return inspected;
 	}
 	private matchingStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
-		const memory = this.heap.memory;
+		const memory = this.memory;
 		return memory.readRamRecordByte(tags + keySlot) === ValueTag.String
 			&& memory.readRamRecordWord(words + keySlot * 4) === key ? keySlot + hash : -1;
 	}
@@ -253,7 +253,7 @@ export class TableRecords {
 		const keySlot = predicted;
 		const slot = this.matchingStringValueSlot(key, keySlot, hash, words, tags);
 		if (slot < 0) return false;
-		const memory = this.heap.memory, tag = memory.readRamRecordByte(tags + slot);
+		const memory = this.memory, tag = memory.readRamRecordByte(tags + slot);
 		if (tag === ValueTag.Nil) return false;
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4));
 		return true;
@@ -263,7 +263,7 @@ export class TableRecords {
 		const hash = this.hashSize(record);
 		if (hash !== 0) {
 			const words = this.hashAddress(record);
-			const tags = words + 8 * hash, memory = this.heap.memory;
+			const tags = words + 8 * hash, memory = this.memory;
 			if (hash <= TABLE_STRING_HIT_BASE_NODES && predicted >= 0 && predicted < hash) {
 				const slot = this.matchingStringValueSlot(key, predicted, hash, words, tags);
 				if (slot >= 0) {
@@ -302,15 +302,15 @@ export class TableRecords {
 	}
 	/** A table-valued __index can be inspected without executing a guest function. */
 	public indexParentTable(record: number): number {
-		const field = this.metafield(record, GcDiagnosticField.Index);
+		const field = this.metafield(record, COP0_TABLE_LOOKUP_KEY);
 		return valueTag(field) === ValueTag.Table ? valuePayload(field) : 0;
 	}
 	public lengthMetamethod(record: number): Value {
-		return this.metafield(record, GcDiagnosticField.Length);
+		return this.metafield(record, COP0_TABLE_LENGTH_KEY);
 	}
-	private metafield(record: number, field: GcDiagnosticField): Value {
+	private metafield(record: number, register: typeof COP0_TABLE_LOOKUP_KEY | typeof COP0_TABLE_LENGTH_KEY): Value {
 		const meta = this.metatableAddress(record);
-		return meta !== 0 ? this.getStringKey(meta, this.heap.diagnosticWord(field)) : valueNil();
+		return meta !== 0 ? this.getStringKey(meta, this.cop0[register]) : valueNil();
 	}
 	public resolveStringIndexCached(record: number, key: StringId, predicted: number, result: TableLookupResult, visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
 		const links = this.getStringKeyCached(record, key, predicted, result);
@@ -325,7 +325,7 @@ export class TableRecords {
 		if (meta === 0) {
 			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return links;
 		}
-		const indexKey = this.heap.diagnosticWord(GcDiagnosticField.Index);
+		const indexKey = this.cop0[COP0_TABLE_LOOKUP_KEY];
 		const stringKey = valueTag(key) === ValueTag.String;
 		let depth = 0, anchor = 0, anchorDepth = 0, anchorLinks = 0;
 		for (;;) {
@@ -375,8 +375,7 @@ export class TableRecords {
 		const validKey = fixedString || (!isNil(key) && !valueIsNaN(key));
 		const stringKey = fixedString || valueTag(key) === ValueTag.String;
 		const arrayIndex = fixedString ? -1 : this.getArrayIndex(key);
-		const memory = this.heap.memory;
-		let newIndexKey: StringId | undefined;
+		const memory = this.memory;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
 			const meta = this.newIndexMetatable(record);
 			let slot = meta === 0 ? TABLE_HASH_UNPROBED : -1;
@@ -402,7 +401,7 @@ export class TableRecords {
 						}
 					}
 				}
-				if (!own) next = this.getStringKey(meta, newIndexKey ??= this.heap.diagnosticWord(GcDiagnosticField.NewIndex));
+				if (!own) next = this.getStringKey(meta, this.cop0[COP0_TABLE_ASSIGN_KEY]);
 			}
 			const tag = valueTag(next);
 			if (tag === ValueTag.Table) {
@@ -441,7 +440,7 @@ export class TableRecords {
 		if (tag === ValueTag.Nil) return this.removeFromHash(record, key, resolved);
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
 		const hash = this.hashSize(record), words = this.hashAddress(record), tags = words + 8 * hash;
-		const memory = this.heap.memory;
+		const memory = this.memory;
 		let home = 0;
 		let index = resolved;
 		if (index === TABLE_HASH_UNPROBED) {
@@ -466,7 +465,7 @@ export class TableRecords {
 		if (tag === ValueTag.Nil || valueTagHasGcEdge(tag) || predicted < 0) return false;
 		const hash = this.hashSize(record);
 		if (predicted >= hash) return false;
-		const memory = this.heap.memory, words = this.hashAddress(record);
+		const memory = this.memory, words = this.hashAddress(record);
 		const tags = words + 8 * hash, keySlot = predicted, valueSlot = keySlot + hash;
 		if (memory.readRamRecordByte(tags + keySlot) !== ValueTag.String || memory.readRamRecordWord(words + keySlot * 4) !== key
 			|| memory.readRamRecordByte(tags + valueSlot) === ValueTag.Nil) return false;
@@ -477,7 +476,7 @@ export class TableRecords {
 		this.adjustHashLive(words, hash, -1);
 		const keySlot = index, valueSlot = hash + index, tag = this.tagAt(record, keySlot);
 		if (hash >= TableRecords.HASH_BAND_CAPACITY && tag === ValueTag.Integer)
-			this.adjustIntegerBand(words, hash, tag, this.heap.memory.readRamRecordWord(words + 4 * keySlot), -1);
+			this.adjustIntegerBand(words, hash, tag, this.memory.readRamRecordWord(words + 4 * keySlot), -1);
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
 			const hashId = this.wordAt(record, keySlot);
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
@@ -493,7 +492,7 @@ export class TableRecords {
 		if (tag === ValueTag.Nil || tag === ValueTag.DeadKey) return -1;
 		// Only firmware compares the method key when the owner has no absence proof.
 		if (valueTag(key) === ValueTag.String
-			&& this.heap.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent) !== 1) return TABLE_STORE_FIRMWARE - index;
+			&& this.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent) !== 1) return TABLE_STORE_FIRMWARE - index;
 		this.eraseHashNode(record, index);
 		return -1;
 	}
@@ -540,7 +539,7 @@ export class TableRecords {
 	}
 	public scanSlots(record: number): number { return this.arrayCapacity(record) + 2 * this.hashSize(record); }
 	public forEachStoredEntry(record: number, visitor: StoredEntryVisitor, first = 0, last = 0x7fffffff): void {
-		const memory = this.heap.memory;
+		const memory = this.memory;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record), words = this.hashAddress(record);
 		const tags = words + 8 * hash, end = Math.min(array + hash, last);
 		const base = this.arrayAddress(record), arrayTags = base + array * 4;

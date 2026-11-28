@@ -30,36 +30,34 @@ local protected_entries<const> = require('bmsx/startup')
 local pcall<const> = blua32.closure(protected_entries.protected_call)
 local xpcall<const> = blua32.closure(protected_entries.protected_xcall)
 
-sink = { old = 0, new = 0 }
-function old_index(receiver, key) return 111 end
-function new_index(receiver, key) return 711 end
-function old_newindex(receiver, key, value) sink.old = value end
-function new_newindex(receiver, key, value) sink.new = value end
-function old_len(receiver) return 13 end
-function new_len(receiver) return 73 end
+sink = { written = 0 }
+function index(receiver, key) return 111 end
+function newindex(receiver, key, value) sink.written = value end
+function length(receiver) return 13 end
 function broken(value) return value[1] end
 function broken_handler(message) return broken(62) end
 
-meta = { __index = old_index, __newindex = old_newindex, __len = old_len }
 receiver = {}
-set_metatable(receiver, meta)
+set_metatable(receiver, { __index = index, __newindex = newindex, __len = length })
 
 function probe(target, value)
-	sink.old = 0
-	sink.new = 0
+	sink.written = 0
 	local got = target.missing_field
 	target.missing_assignment = value
 	local size = #target
 	local ok, message = pcall(broken, 77)
 	local xok, xmessage = xpcall(broken, broken_handler, 88)
-	return got, sink.old, sink.new, size, ok, message, xok, xmessage
+	return got, sink.written, size, ok, message, xok, xmessage
 end
+
+-- Acquire the ordinary receiving windows before any external observation.
+probe(receiver, 41)
 `;
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 for (const optLevel of [0, 3] as const) {
-	test(`diagnostic String roots select metatable and firmware fault behavior after restore at O${optLevel}`, t => {
+	test(`firmware fault Strings replay without changing stock metatable selection at O${optLevel}`, t => {
 		const folder = mkdtempSync(join(tmpdir(), 'diagnostic-roots-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
 		const linked = linkManagedTestSystem(source, optLevel);
@@ -74,7 +72,7 @@ for (const optLevel of [0, 3] as const) {
 		runGuestToHalt(cpu, 1_000_000);
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
-		const receiver = global('receiver'), meta = valuePayload(global('meta'));
+		const receiver = global('receiver');
 		const probe = asClosure(global('probe'), cpu.gc);
 		const args = [receiver, valueInteger(41)];
 		const management = cpu.heapAllocator.managementOffset();
@@ -83,28 +81,18 @@ for (const optLevel of [0, 3] as const) {
 		const originalFault = memory.readRamRecordWord(faults + LUA_FAULT_REASON_INDEX_NON_TABLE * 4);
 		assert.equal(memory.readRamRecordWord(head + GcDiagnosticField.FaultIds), RAM_BASE + faults);
 
-		// Warm ordinary and protected receiving windows before the observed call.
+		// Check the loaded stock selectors with the original fault plane.
 		cpu.beginCompletionCall(probe, args);
 		assert.equal(runCpuWithinBudget(cpu, 65_536), RunResult.Halted);
-		const old = [valueInteger(111), valueInteger(41), valueInteger(0), valueInteger(13),
+		const methods = [valueInteger(111), valueInteger(41), valueInteger(13)];
+		const old = [...methods,
 			valueBool(false), valueString(originalFault), valueBool(false), valueString(originalError)];
-		assert.deepEqual(runtime.readCompletionValues(), old, 'the original metamethods remain installed alongside replacements');
-		const patches: Array<readonly [number, number]> = [];
+		assert.deepEqual(runtime.readCompletionValues(), old);
 		const intern = (text: string) => {
 			const id = nativeHeapReference(cpu).stringPool.intern(text);
 			assert.ok(isRamStringId(id), 'the replacement is a RAM String, not a ROM String identity');
 			return id;
 		};
-		for (const [offset, name] of [
-			[GcDiagnosticField.Index, 'new_index'],
-			[GcDiagnosticField.NewIndex, 'new_newindex'],
-			[GcDiagnosticField.Length, 'new_len'],
-		] as const) {
-			const id = intern(`replacement diagnostic ${name}`);
-			assert.notEqual(memory.readRamRecordWord(head + offset), id);
-			nativeHeapReference(cpu).gc.tables.setStringKey(meta, id, global(name));
-			patches.push([head + offset, id]);
-		}
 		const error = intern('replacement protected handler failure'), fault = intern('replacement protected fault');
 		const faultBytes = 4 * (LUA_FAULT_REASON_INDEX_NAN + 1);
 		const alternateFaults = nativeHeapReference(cpu).heapAllocator.allocate(faultBytes, false);
@@ -115,8 +103,8 @@ for (const optLevel of [0, 3] as const) {
 		// Keep the original plane and its original error intact: offset-only
 		// consumers (as well as constructor-cached Ids) must give the old answer.
 		memory.writeRamRecordWord(alternateFaults + LUA_FAULT_REASON_INDEX_NON_TABLE * 4, fault);
-		patches.push([head + GcDiagnosticField.FaultIds, alternateFaults],
-			[head + GcDiagnosticField.Error, error]);
+		const patches = [[head + GcDiagnosticField.FaultIds, alternateFaults],
+			[head + GcDiagnosticField.Error, error]];
 
 		const rom = join(folder, 'system.rom'), initialFile = join(folder, 'initial.state');
 		const tsMidFile = join(folder, 'ts-mid.state'), cppMidFile = join(folder, 'cpp-mid.state'), traceFile = join(folder, 'trace');
@@ -148,9 +136,9 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INDEX_NON_TABLE, 'the last caught Trap remains architecturally visible');
 			assert.equal(cpu.getFrameDepth(), 0);
 			const values = runtime.readCompletionValues();
-			assert.deepEqual(values, [valueInteger(711), valueInteger(0), valueInteger(41), valueInteger(73),
+			assert.deepEqual(values, [...methods,
 				valueBool(false), valueString(fault), valueBool(false), valueString(error)],
-				'live diagnostic String Ids select all three metamethods, the protected fault, and the failed handler');
+				'firmware fault and handler messages change without selecting a different metamethod');
 			assert.equal(cpu.gc.tables.getStringKey(valuePayload(receiver), cpu.stringPool.find('missing_assignment')!), valueNil(),
 				'the selected __newindex ran instead of publishing a raw field');
 			observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
@@ -189,6 +177,6 @@ for (const optLevel of [0, 3] as const) {
 
 		applyRuntimeSaveState(runtime, initial);
 		assert.equal(runCpuWithinBudget(cpu, 65_536), RunResult.Halted);
-		assert.deepEqual(runtime.readCompletionValues(), old, 'restoring the old words restores the original selector and fault Ids');
+		assert.deepEqual(runtime.readCompletionValues(), old, 'restoring the old words restores the original fault Ids');
 	});
 }

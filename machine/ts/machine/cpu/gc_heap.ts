@@ -3,7 +3,7 @@ import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
 import { GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_MASK } from './gc_object';
 import { isOpen, UPVALUE_RECORD_KIND } from './upvalue';
-import { TableRecords } from './table';
+import type { TableRecords } from './table';
 import { THREAD_RECORD_KIND, ThreadRecords } from './thread_record';
 import { ValueTag } from './value';
 
@@ -64,14 +64,12 @@ export class GcHeap {
 		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
-	public constructor(public readonly memory: Memory, public readonly arena: HeapAllocator) {
+	public constructor(public readonly memory: Memory, public readonly arena: HeapAllocator, public readonly tables: TableRecords) {
 		const management = arena.managementOffset();
 		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
 		this.diagnosticOffset = management + GC_DIAGNOSTIC_OFFSET;
 		this.threads = new ThreadRecords(memory);
-		this.tables = new TableRecords(this);
 	}
-	public readonly tables: TableRecords;
 	public readonly threads: ThreadRecords;
 	public visitObjectRecords<Context>(context: Context, visit: (context: Context, address: number) => void): void {
 		for (let address = this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_HEAD);

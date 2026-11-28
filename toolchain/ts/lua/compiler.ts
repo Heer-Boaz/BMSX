@@ -147,7 +147,11 @@ import {
 	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
-import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_CURRENT, COP0_EPC, COP0_EVENT_CYCLES, COP0_EXCEPTION_TARGET, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
+import {
+	COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_CURRENT, COP0_EPC, COP0_EVENT_CYCLES,
+	COP0_EXCEPTION_TARGET, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR,
+	COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, COP0_STRING_INDEX_TABLE,
+} from '../../../machine/ts/spec/blua32/cop0';
 import {
 	buildProgramDebugPoints,
 	buildProgramStatementPoints,
@@ -4062,7 +4066,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
-					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC && cop0Register !== COP0_CONTEXT && cop0Register !== COP0_RAM_END && cop0Register !== COP0_SYSTEM_VECTOR && cop0Register !== COP0_EXCEPTION_TARGET && cop0Register !== COP0_IRQ_VECTOR && cop0Register !== COP0_CURRENT) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC
+						&& cop0Register !== COP0_CONTEXT && cop0Register !== COP0_RAM_END && cop0Register !== COP0_SYSTEM_VECTOR
+						&& cop0Register !== COP0_EXCEPTION_TARGET && cop0Register !== COP0_IRQ_VECTOR && cop0Register !== COP0_CURRENT
+						&& (cop0Register < COP0_TABLE_LOOKUP_KEY || cop0Register > COP0_STRING_INDEX_TABLE)) {
 						throw new Error(`cop0.${(expr as LuaMemberExpression).member.name} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
@@ -4898,6 +4905,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case 'exception_target': return COP0_EXCEPTION_TARGET;
 			case 'irq_vector': return COP0_IRQ_VECTOR;
 			case 'previous_active': return COP0_PREVIOUS_ACTIVE;
+			case 'table_lookup_key': return COP0_TABLE_LOOKUP_KEY;
+			case 'table_assign_key': return COP0_TABLE_ASSIGN_KEY;
+			case 'table_length_key': return COP0_TABLE_LENGTH_KEY;
+			case 'string_index_table': return COP0_STRING_INDEX_TABLE;
 			default: throw new Error(`Unknown cop0 register '${expression.member.name}'.`);
 		}
 	}

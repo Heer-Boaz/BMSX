@@ -139,6 +139,10 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'cop0.system_vector', params: [], signature: 'cop0.system_vector', description: 'System exception Function address, writable only while executing immutable System ROM in supervisor mode.' },
 	{ name: 'cop0.exception_target', params: [], signature: 'cop0.exception_target', description: 'Replace the active exception vector by another Function without a second exception entry.' },
 	{ name: 'cop0.irq_vector', params: [], signature: 'cop0.irq_vector', description: 'Install a System maskable interrupt vector that enters the fixed register bank.' },
+	{ name: 'cop0.table_lookup_key', params: [], signature: 'cop0.table_lookup_key', description: 'Raw String identity used for a Table lookup after an own-entry miss.' },
+	{ name: 'cop0.table_assign_key', params: [], signature: 'cop0.table_assign_key', description: 'Raw String identity used for a Table assignment after an own-entry miss.' },
+	{ name: 'cop0.table_length_key', params: [], signature: 'cop0.table_length_key', description: 'Raw String identity used to select a Table length override.' },
+	{ name: 'cop0.string_index_table', params: [], signature: 'cop0.string_index_table', description: 'Raw Table address used when reading a String receiver.' },
 	{ name: 'cop0.epc', params: [], signature: 'cop0.epc', description: 'Raw CPU exception program counter. Supervisor code may read and write it.' },
 	{ name: 'cop0.bad_address', params: [], signature: 'cop0.bad_address', description: 'Raw read-only CPU bad-address latch.' },
 ];

@@ -11,7 +11,7 @@ import type { ExecutionAddressSpace } from '../../machine/ts/machine/execution_a
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
-import { LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_DIAGNOSTIC_FAULTS_OFFSET, storeImageStringBinding } from './firmware_heap_layout';
 import { registerReferenceGlobalName } from './global_bank_reference';
@@ -120,6 +120,9 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	// These are the native reference's original permanent roots, in allocation order.
 	const index = stringPool.intern('__index'), newIndex = stringPool.intern('__newindex');
 	const length = stringPool.intern('__len'), mode = stringPool.intern('__mode');
+	cpu['cop0Words'][COP0_TABLE_LOOKUP_KEY] = index;
+	cpu['cop0Words'][COP0_TABLE_ASSIGN_KEY] = newIndex;
+	cpu['cop0Words'][COP0_TABLE_LENGTH_KEY] = length;
 	const error = stringPool.intern('error in error handling');
 	const remark = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
 	memory.writeRamRecordWord(remark + GcDiagnosticField.Mode, mode);

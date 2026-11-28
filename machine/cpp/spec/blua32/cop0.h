@@ -18,6 +18,10 @@ constexpr uint8_t COP0_EXCEPTION_TARGET = 20u;
 constexpr uint8_t COP0_IRQ_VECTOR = 21u;
 constexpr uint8_t COP0_CURRENT = 22u;
 constexpr uint8_t COP0_EVENT_CYCLES = 23u;
+constexpr uint8_t COP0_TABLE_LOOKUP_KEY = 24u;
+constexpr uint8_t COP0_TABLE_ASSIGN_KEY = 25u;
+constexpr uint8_t COP0_TABLE_LENGTH_KEY = 26u;
+constexpr uint8_t COP0_STRING_INDEX_TABLE = 27u;
 // Only the target control word carries a physical socket; execution PCs stay mapped addresses.
 constexpr uint32_t CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31u;
 constexpr uint32_t CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffffu;
@@ -28,13 +32,14 @@ constexpr bool cop0ReadAsZero(int field) { return field == COP0_EXEC || field ==
 constexpr bool cop0WriteRetiresControl(int field) {
 	return field == COP0_STATUS || field == COP0_EXEC || field == COP0_CONTEXT
 		|| field == COP0_RAM_END || field == COP0_SYSTEM_VECTOR || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR
-		|| field == COP0_CURRENT;
+		|| field == COP0_CURRENT || (field >= COP0_TABLE_LOOKUP_KEY && field <= COP0_STRING_INDEX_TABLE);
 }
 
 constexpr bool cop0FieldImplemented(int field) {
 	constexpr uint32_t fields = (1u << COP0_BAD_ADDRESS) | (1u << COP0_LUA_FAULT_REASON)
-		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR) | (1u << COP0_CURRENT) | (1u << COP0_EVENT_CYCLES);
-	return static_cast<uint32_t>(field) <= COP0_EVENT_CYCLES && ((fields >> field) & 1u) != 0u;
+		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR) | (1u << COP0_CURRENT) | (1u << COP0_EVENT_CYCLES)
+		| (1u << COP0_TABLE_LOOKUP_KEY) | (1u << COP0_TABLE_ASSIGN_KEY) | (1u << COP0_TABLE_LENGTH_KEY) | (1u << COP0_STRING_INDEX_TABLE);
+	return static_cast<uint32_t>(field) <= COP0_STRING_INDEX_TABLE && ((fields >> field) & 1u) != 0u;
 }
 
 constexpr uint32_t CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;

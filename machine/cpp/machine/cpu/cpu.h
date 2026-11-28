@@ -143,6 +143,10 @@ struct CpuRuntimeState {
 	u32 epcWord = 0;
 	u32 badAddressWord = 0;
 	u32 luaFaultReasonWord = 0;
+	u32 tableLookupKeyWord = 0;
+	u32 tableAssignKeyWord = 0;
+	u32 tableLengthKeyWord = 0;
+	u32 stringIndexTableWord = 0;
 	u32 exceptionDomainWord = 0;
 	u32 nmiReturnCauseWord = 0;
 	u32 nmiReturnEpcWord = 0;
@@ -540,7 +544,7 @@ private:
 	const DeviceScheduler* m_deviceClock = nullptr;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
-	std::array<u32, COP0_PREVIOUS_ACTIVE + 1u> m_cop0Words{};
+	std::array<u32, COP0_STRING_INDEX_TABLE + 1u> m_cop0Words{};
 	u32 m_exceptionDomainWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
 	u32 m_nmiReturnEpcWord = 0;

@@ -1,4 +1,7 @@
-import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
+import {
+	COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR,
+	COP0_TABLE_LOOKUP_KEY, COP0_STRING_INDEX_TABLE, cop0FieldImplemented,
+} from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -164,7 +167,8 @@ export function deriveBlua32FixedStack(
 						if (index !== boundary?.reset) reject('context selection belongs to the reset root');
 						continue;
 					}
-					if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR && b !== COP0_RAM_END) {
+					if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR && b !== COP0_RAM_END
+						&& (b < COP0_TABLE_LOOKUP_KEY || b > COP0_STRING_INDEX_TABLE)) {
 						reject('not a bounded direct-vector control write');
 					}
 					break;

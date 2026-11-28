@@ -18,7 +18,11 @@ inline void CPU::executeControlWrite(CallFrame& frame, int source, int field) {
 		break;
 	}
 	case COP0_EPC:
-		m_cop0Words[COP0_EPC] = value;
+	case COP0_TABLE_LOOKUP_KEY:
+	case COP0_TABLE_ASSIGN_KEY:
+	case COP0_TABLE_LENGTH_KEY:
+	case COP0_STRING_INDEX_TABLE:
+		m_cop0Words[field] = value;
 		break;
 	case COP0_EXEC:
 		executeFunctionAddress(value);

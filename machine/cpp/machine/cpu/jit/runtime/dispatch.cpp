@@ -39,7 +39,7 @@ u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operan
 }
 
 i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Value* value) noexcept {
-	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value);
+	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value, cpu->m_cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
@@ -316,11 +316,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			TableLookupResult result;
 			if (stringKey) {
 				auto& slot = *exit->tableRead.decoded;
-				state.remainingCycles -= static_cast<int>(table.resolveStringIndexCached(asStringId(key), slot, result));
+				state.remainingCycles -= static_cast<int>(table.resolveStringIndexCached(asStringId(key), cpu.m_cop0Words[COP0_TABLE_LOOKUP_KEY], slot, result));
 				if (result.extraVisits == 0u && result.slot >= 0) slot = result.slot;
 			} else if (kind == NativeBlockExit::ReadInteger) {
-				state.remainingCycles -= static_cast<int>(table.resolveIntegerIndex(access.key, result));
-			} else state.remainingCycles -= static_cast<int>(table.resolveIndex(key, result));
+				state.remainingCycles -= static_cast<int>(table.resolveIntegerIndex(access.key, cpu.m_cop0Words[COP0_TABLE_LOOKUP_KEY], result));
+			} else state.remainingCycles -= static_cast<int>(table.resolveIndex(key, cpu.m_cop0Words[COP0_TABLE_LOOKUP_KEY], result));
 
 			// An inherited result (or a result from the String library) is
 			// not evidence about the receiver's own slot.

@@ -706,7 +706,8 @@ void testRuntimeSystemRebootBoundary() {
 	require(cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS
 		&& cpu.heapAllocator().occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
-	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd);
+	auto controlled = cpu.captureRuntimeState();
+	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd, controlled);
 	const bmsx::u32 warm = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	// Initial physical test data; neither context is selected by the host.
 	const bmsx::u32 pc = fixture.systemRom.textAddress;

@@ -11,7 +11,6 @@ NativeCpuRunState::NativeCpuRunState(CPU& owner, int depth)
 	state.globalValues = &owner.m_globalBank.values();
 	state.systemGlobalValues = &owner.m_systemGlobalBank.values();
 	state.cop0Words = owner.m_cop0Words.data();
-	state.tableIndexKeyWord = owner.m_memory.ramData() + owner.m_heap.diagnosticOffset(GcDiagnosticField::Index);
 	state.ram = owner.m_memory.ramData();
 }
 

@@ -34,8 +34,7 @@ export class TableRecords extends PhysicalTableRecords {
 	private readonly directDensity = new ArrayDensity();
 	private readonly resizePlan = { array: 0, hash: 0, keepHash: false };
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
-	public constructor(heap: GcHeap) { super(heap); }
-	declare protected readonly heap: GcHeap;
+	public constructor(protected readonly heap: GcHeap, cop0: Uint32Array) { super(heap.memory, cop0); }
 	public initialize(record: number, array: number, hash: number): void {
 		const memory = this.heap.memory;
 		const kind = ValueTag.Table | (this.heap.white() << 8) | (1 << (8 * TableHeader.NewIndexAbsent));

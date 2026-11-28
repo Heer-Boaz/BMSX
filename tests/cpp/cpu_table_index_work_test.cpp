@@ -350,7 +350,7 @@ void periodicIndexChainKeepsThePartialTail() {
 		for (u32 limit = 1; limit <= TABLE_INDEX_CHAIN_LIMIT; ++limit) {
 			links += 1 + position;
 			position = next[position];
-			require(roots[0].resolveIndex(key, result, limit) == links && result.extraVisits == limit - 1
+			require(roots[0].resolveIndex(key, asStringId(method), result, limit) == links && result.extraVisits == limit - 1
 				&& result.status == TableLookupStatus::ChainExhausted,
 				"a nonuniform period after an acyclic prefix charges exactly the admitted visits and fractional last period");
 		}
@@ -361,6 +361,47 @@ void periodicIndexChainKeepsThePartialTail() {
 	require(3 - generated.cpu.instructionBudgetRemaining == 2 + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + 123 + 31 * TABLE_INDEX_VISIT_CYCLES
 		&& generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP,
 		"the generated read publishes the same complete periodic fault as the scalar path");
+}
+
+void selectorWriteReachesTheNativeInheritedProbeInTheSameGrant() {
+	Program program(OpCode::GETFIELD, false);
+	const auto set = program.starts[0], read = program.starts[1], next = program.starts[2];
+	writeInstruction(program.image.text, set, static_cast<u8>(OpCode::MTC0), 1, COP0_TABLE_LOOKUP_KEY, 0);
+	writeInstruction(program.image.text, read, static_cast<u8>(OpCode::GETFIELD), 6, 0, 0);
+	Machine generated(program.image, false), scalar(program.image, true);
+	for (auto* m : {&generated, &scalar}) {
+		auto& cpu = m->cpu;
+		auto receiver = bmsx::test::allocateTableReference(cpu);
+		auto meta = bmsx::test::allocateTableReference(cpu, 0, 2);
+		auto original = bmsx::test::allocateTableReference(cpu, 0, 1);
+		auto replacement = bmsx::test::allocateTableReference(cpu, 0, 1);
+		const auto key = cpu.stringPool().intern("field");
+		const auto first = cpu.stringPool().intern("__index");
+		const auto other = cpu.stringPool().intern("authored lookup operand");
+		original.setStringKey(key, valueInteger(41));
+		replacement.setStringKey(key, valueInteger(73));
+		meta.setStringKey(first, valueTable(original.address()));
+		meta.setStringKey(other, valueTable(replacement.address()));
+		receiver.setMetatableAddress(meta.address());
+		auto registers = cpu.activeThread()->currentFrame->registers;
+		registers.set(0, valueTable(receiver.address()));
+		registers.set(1, valueInteger(other));
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto* page = generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(generated.rom.textAddress, 0);
+	const auto word = (generated.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page->nativeBlocks->entries[word + set] && page->nativeBlocks->entries[word + read],
+		"the selector write and its receiving read have real generated entries");
+#endif
+	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::MTC0)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + TABLE_INDEX_VISIT_CYCLES;
+	test::runCpuParity(generated.cpu, scalar.cpu, cycles);
+	require(generated.cpu.instructionBudgetRemaining == 0
+		&& generated.cpu.readFramePc(0) == generated.rom.textAddress + next * INSTRUCTION_BYTES
+		&& generated.cpu.readFrameRegister(0, 6) == valueInteger(73),
+		"the inherited probe consumes the new word at the next instruction and pays exactly one visit");
+	sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
+	require(test::sameLanguageRam(generated.cpu, scalar.cpu), "CP0 selectors do not change the stock RAM diagnostics");
 }
 
 void faultsOnce() {
@@ -631,12 +672,15 @@ void stringReceiver() {
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu; auto installed = bmsx::test::allocateTableReference(cpu, 0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
-			const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
-			m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexTag), static_cast<u32>(ValueTag::Table));
-			m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexWord), installed.address());
+			auto state = cpu.captureRuntimeState();
+			state.stringIndexTableWord = installed.address();
+			cpu.restoreRuntimeState(state);
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
 		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		generated.cpu.prepareSystemNativeCode();
+#endif
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 32
 			&& generated.cpu.readFrameRegister(0, 6) == valueInteger(73) && generated.cpu.readFrameRegister(0, 8) == valueInteger(57),
@@ -647,7 +691,7 @@ void stringReceiver() {
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
-			TableRecord installed(m->cpu.gcHeap(), m->cpu.gcHeap().diagnosticWord(GcDiagnosticField::StringIndexWord));
+			TableRecord installed(m->cpu.gcHeap(), m->cpu.captureRuntimeState().stringIndexTableWord);
 			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
@@ -670,6 +714,7 @@ void stringReceiver() {
 int main() {
 	try {
 		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		selectorWriteReachesTheNativeInheritedProbeInTheSameGrant();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		suspendedIndexRestoresItsPlacement(); stringReceiver();
 	}

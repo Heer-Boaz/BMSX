@@ -148,9 +148,10 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				registers.set(0, frame.registers.get(0));
 				registers.set(2, valueInteger(91));
 				registers.set(4, valueInteger(73));
+				auto controls = test::fixtureTableControls(cpu);
 				NativeBlockRunState grant{.constants = frame.executionImage->constPool, .frame = &frame, .heap = &cpu.gcHeap(),
 					.globalValues = {}, .systemGlobalValues = {},
-					.tableIndexKeyWord = cpu.memory().ramData() + cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index),
+					.cop0Words = controls.data(),
 					.remainingCycles = 0};
 				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::ScalarBoundary,
 					"a short grant does not attest to an unperformed own probe");
@@ -207,7 +208,7 @@ void stringReadChainBoundaries() {
 			}
 			TableLookupResult scratch{valueInteger(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-			root.resolveStringIndex(key, scratch);
+			root.resolveStringIndex(key, indexKey, scratch);
 			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
 				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the table resolver preserves nil/false and the exact 32-table chain bound");
@@ -2243,7 +2244,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 		&& cpu.luaHeap().usedBytes() == initialBytes,
 		"nil to a missing field returns as a no-op when the metatable has no __newindex");
 	TableLookupResult absent;
-	spare.resolveStringAssignment(field, absent);
+	spare.resolveStringAssignment(field, cpu.captureRuntimeState().tableAssignKeyWord, absent);
 	require(absent.status == TableLookupStatus::Store && absent.slot == TABLE_HASH_UNPROBED && isNil(spare.getStringKey(field)),
 		"the no-op does not create a new hash node or a tombstone");
 	requireParity(native, scalar);

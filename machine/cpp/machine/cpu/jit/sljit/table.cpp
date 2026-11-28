@@ -21,12 +21,12 @@ constexpr auto tagOffset = NativeTableScratch::tagOffset;
 constexpr auto hashOperand = (NativeBlockAbi::helperResultOffset + alignof(Value) - 1) & ~(alignof(Value) - 1);
 static_assert(hashOperand + sizeof(Value) <= NativeBlockAbi::stackBytes);
 
-u32 SLJIT_FUNC assignNativeTableIdentity(GcHeap* heap, u32 receiverAddress, u32 keyAddress, const Value* value) noexcept {
-	return TableRecord(*heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value);
+u32 SLJIT_FUNC assignNativeTableIdentity(const NativeBlockRunState* run, u32 receiverAddress, u32 keyAddress, const Value* value) noexcept {
+	return TableRecord(*run->heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
-u32 SLJIT_FUNC assignNativeTableInteger(GcHeap* heap, u32 receiverAddress, i32 key, const Value* value) noexcept {
-	return TableRecord(*heap, receiverAddress).tryAssignIntegerHash(key, *value);
+u32 SLJIT_FUNC assignNativeTableInteger(const NativeBlockRunState* run, u32 receiverAddress, i32 key, const Value* value) noexcept {
+	return TableRecord(*run->heap, receiverAddress).tryAssignIntegerHash(key, *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
 } // namespace
@@ -192,7 +192,7 @@ void NativeLowering::emitOwnIndexStore(int value, NativeBlockExitSite& exit, Nat
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), receiver);
 	emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R2);
 	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
-	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
 	const auto target = key == NativeHashStore::Integer

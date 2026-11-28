@@ -133,13 +133,16 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
 		cpu.setGlobalByKey(asStringId(forwarded), valueInteger(73));
 		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::GetGlobal)); methods.setMetatableAddress(methodsMeta.address());
-		const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
-		m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexTag), static_cast<u32>(ValueTag::Table));
-		m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexWord), methods.address());
+		auto state = cpu.captureRuntimeState();
+		state.stringIndexTableWord = methods.address();
+		cpu.restoreRuntimeState(state);
 		auto r = cpu.activeThread()->currentFrame->registers;
 		r.set(0, valueTable(root.address())); r.set(1, valueNil()); r.set(2, forwarded);
 		r.set(3, valueTable(methodsMeta.address())); r.set(4, valueTable(root.address()));
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	generated.cpu.prepareSystemNativeCode();
+#endif
 	parity(generated, scalar, 1);
 	const auto result = generated.cpu.readFrameRegister(0, 0);
 	require(result == valueInteger(73)
@@ -159,7 +162,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		"Table-to-String forwarding cannot reset the 32-visit chain bound");
 }
 
-void stringIndexUsesTheRestoredRamRoot() {
+void stringIndexUsesTheRestoredControlWord() {
 	Machine machine(Program(OpCode::GETT, false), true);
 	auto& cpu = machine.cpu;
 	auto& gc = cpu.gcHeap();
@@ -181,15 +184,21 @@ void stringIndexUsesTheRestoredRamRoot() {
 	require(gc.tableRecordAddress(methods.address()) == methods.address(),
 		"the live RAM index is the sole root of the method Table");
 	const auto ram = memory.captureSaveState();
-	const auto control = cpu.captureRuntimeState();
-	memory.writeRamRecordWord(tag, 0u);
-	memory.writeRamRecordWord(word, 0u);
+	auto control = cpu.captureRuntimeState();
+	control.stringIndexTableWord = methods.address();
+	cpu.restoreRuntimeState(control);
+	auto unwired = control;
+	unwired.stringIndexTableWord = 0u;
+	cpu.restoreRuntimeState(unwired);
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE,
+		"the unbound datapath does not use the collector's retained String root");
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(control);
 	cpu.runUntilDepth(0, 1);
 	require(cpu.readFrameRegister(0, 0) == valueInteger(73)
 		&& cpu.instructionBudgetRemaining == 1 - cycles(OpCode::GETT),
-		"restored RAM alone supplies the method lookup with the original charge");
+		"restored CPU state supplies the method lookup with the original charge");
 }
 
 void tableValuedNewIndexAndOwnOverwrite() {
@@ -445,7 +454,7 @@ int main() {
 	try {
 		rawKeysAndReadForwarding(); rawGetDistinguishesExplicitKeysFromMissingArguments();
 		stringForwardingUsesLiveStringReceiverAndVisitBound(); tableValuedNewIndexAndOwnOverwrite();
-		stringIndexUsesTheRestoredRamRoot();
+		stringIndexUsesTheRestoredControlWord();
 		fixedFieldAssignmentReusesTheTerminalProof();
 		coldFieldAssignmentPublishesItsFrontierOnce();
 		callableNewIndexDiscardsAllResults(); tableLengthAllowsOrdinaryMetamethodResult();

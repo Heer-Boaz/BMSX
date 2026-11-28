@@ -70,6 +70,10 @@ int main() {
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.rootThreadAddress = 0x083fa000u;
 	state.cpuState.activeThreadAddress = 0x083fa040u;
+	state.cpuState.tableLookupKeyWord = 0xf1424430u;
+	state.cpuState.tableAssignKeyWord = 0x80000000u;
+	state.cpuState.tableLengthKeyWord = 0x42u;
+	state.cpuState.stringIndexTableWord = 0xffffffffu;
 	state.cpuState.completionValues = {valueInteger(INT32_MIN), valueFloatBits(0xffc12345u), valueBuiltinFunction(BuiltinFunctionId::Next)};
 	const size_t beforeOwned = allocations;
 	const auto expected = encodeRuntimeSaveState(state);
@@ -86,6 +90,11 @@ int main() {
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
 	require(decoded.cpuState.stringComparison == state.cpuState.stringComparison, "String comparison restores both ROM socket identity and scan progress");
+	require(decoded.cpuState.tableLookupKeyWord == state.cpuState.tableLookupKeyWord
+		&& decoded.cpuState.tableAssignKeyWord == state.cpuState.tableAssignKeyWord
+		&& decoded.cpuState.tableLengthKeyWord == state.cpuState.tableLengthKeyWord
+		&& decoded.cpuState.stringIndexTableWord == state.cpuState.stringIndexTableWord,
+		"table operand control words round-trip all 32 bits");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");
 }

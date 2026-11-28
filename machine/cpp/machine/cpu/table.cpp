@@ -105,7 +105,7 @@ bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::assignHash(Value key, Value value, int nodeIndex) noexcept {
+int TableRecord::assignHash(Value key, Value value, const StringId& assignKey, int nodeIndex) noexcept {
 	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
 	if constexpr (Policy == HashStore::ReturningField) {
 		// Leave the own lookup to the ordinary assignment when a String
@@ -122,10 +122,10 @@ int TableRecord::assignHash(Value key, Value value, int nodeIndex) noexcept {
 			else nodeIndex = body.findString(asStringId(key), home);
 		}
 	}
-	return assignProbedHash(body, nodeIndex, value);
+	return assignProbedHash(body, nodeIndex, value, assignKey);
 }
 
-int TableRecord::assignProbedHash(const HashBody& body, int nodeIndex, Value value) noexcept {
+int TableRecord::assignProbedHash(const HashBody& body, int nodeIndex, Value value, const StringId& assignKey) noexcept {
 	const bool erase = valueTag(value) == ValueTag::Nil;
 	const u32 count = body.count;
 	if (nodeIndex >= 0) {
@@ -143,26 +143,26 @@ int TableRecord::assignProbedHash(const HashBody& body, int nodeIndex, Value val
 	// Only an absent own field can trigger __newindex.
 	if (!erase) return HASH_STORE_DECLINED;
 	const u32 meta = newIndexMetatable();
-	if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->diagnosticWord(GcDiagnosticField::NewIndex)))) return HASH_STORE_DECLINED;
+	if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(assignKey))) return HASH_STORE_DECLINED;
 	return -1;
 }
 
-bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
-	return assignHash<HashStore::ReturningIndex>(key, value) != HASH_STORE_DECLINED;
+bool TableRecord::tryAssignIdentityHash(Value key, Value value, const StringId& assignKey) noexcept {
+	return assignHash<HashStore::ReturningIndex>(key, value, assignKey) != HASH_STORE_DECLINED;
 }
 
-bool TableRecord::tryAssignIntegerHash(i32 key, Value value) noexcept {
-	if (assignHash<HashStore::ReturningIndex>(valueInteger(key), value) == HASH_STORE_DECLINED) return false;
+bool TableRecord::tryAssignIntegerHash(i32 key, Value value, const StringId& assignKey) noexcept {
+	if (assignHash<HashStore::ReturningIndex>(valueInteger(key), value, assignKey) == HASH_STORE_DECLINED) return false;
 	const u32 slot = arraySlot(key);
 	if (slot != NO_ARRAY_SLOT) updateLengthHint(slot, !isNil(value));
 	return true;
 }
 
-int TableRecord::tryAssignStringField(StringId key, Value value) noexcept {
-	return assignHash<HashStore::ReturningField>(valueString(key), value);
+int TableRecord::tryAssignStringField(StringId key, Value value, const StringId& assignKey) noexcept {
+	return assignHash<HashStore::ReturningField>(valueString(key), value, assignKey);
 }
 
-int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predicted) noexcept {
+int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predicted, const StringId& assignKey) noexcept {
 	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
 	if (isNil(value) && m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE) != 1u) return HASH_STORE_DECLINED;
 	const u32 count = hashSlots();
@@ -179,7 +179,7 @@ int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predi
 	const Value string = valueString(key);
 	const u32 home = hashCanonicalTableKey(string) & (count - 1u);
 	if (predicted == TABLE_HASH_UNPROBED) predicted = count ? body.findString(key, home) : -1;
-	return assignProbedHash(body, predicted, value);
+	return assignProbedHash(body, predicted, value, assignKey);
 }
 
 Value TableRecord::getInteger(int indexValue) const {
@@ -239,9 +239,9 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* lin
 	return valueNil();
 }
 
-Value TableRecord::metatableField(GcDiagnosticField field) const {
+Value TableRecord::metatableField(const StringId& key) const {
 	const u32 address = metatableAddress();
-	return address != 0u ? TableRecord(*m_heap, address).getStringKey(m_heap->diagnosticWord(field)) : valueNil();
+	return address != 0u ? TableRecord(*m_heap, address).getStringKey(key) : valueNil();
 }
 
 u32 TableRecord::newIndexMetatable() const {
@@ -250,10 +250,9 @@ u32 TableRecord::newIndexMetatable() const {
 }
 
 template <bool Assignment, bool OwnMiss, typename Lookup>
-void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
+void TableRecord::resolveIndexChain(int slot, const StringId& methodKey, TableLookupResult& result, Lookup&& lookup,
 	u32 visitLimit, u32* linkCycles) const {
 	TableRecord current = *this;
-	std::optional<StringId> method;
 	u32 anchor = 0, anchorDepth = 0, anchorLinks = 0;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -289,11 +288,10 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			}
 		}
 		current.m_address = metatable;
-		if (!method) method = m_heap->diagnosticWord(Assignment ? GcDiagnosticField::NewIndex : GcDiagnosticField::Index);
 		Value parent;
 		if constexpr (Assignment) {
-			parent = current.getStringKey(*method);
-		} else parent = current.getStringKey(*method, linkCycles);
+			parent = current.getStringKey(methodKey);
+		} else parent = current.getStringKey(methodKey, linkCycles);
 		if (!valueIsTable(parent)) {
 			const auto kind = valueTag(parent);
 			if (kind == ValueTag::Closure || kind == ValueTag::BuiltinFunction || kind == ValueTag::CodeFunction)
@@ -327,36 +325,36 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 	result = {valueNil(), -1, visitLimit - 1, TableLookupStatus::ChainExhausted};
 }
 
-u32 TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u32 visitLimit) const {
-	if (valueIsString(rawKey)) return resolveStringIndexCached(asStringId(rawKey), -1, result, visitLimit);
+u32 TableRecord::resolveIndex(const Value& rawKey, const StringId& lookupKey, TableLookupResult& result, u32 visitLimit) const {
+	if (valueIsString(rawKey)) return resolveStringIndexCached(asStringId(rawKey), lookupKey, -1, result, visitLimit);
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
 	u32 links = 0;
-	resolveIndexChain(-1, result, [key, miss](const TableRecord& table, int&) {
+	resolveIndexChain(-1, lookupKey, result, [key, miss](const TableRecord& table, int&) {
 		return miss ? valueNil() : table.getCanonical(key);
 	}, visitLimit, &links);
 	return links;
 }
 
-u32 TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
+u32 TableRecord::resolveIntegerIndex(int key, const StringId& lookupKey, TableLookupResult& result) const {
 	u32 links = 0;
-	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); }, TABLE_INDEX_CHAIN_LIMIT, &links);
+	resolveIndexChain(-1, lookupKey, result, [key](const TableRecord& table, int&) { return table.getInteger(key); }, TABLE_INDEX_CHAIN_LIMIT, &links);
 	return links;
 }
 
-void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) const {
-	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
+void TableRecord::resolveStringIndex(StringId key, const StringId& lookupKey, TableLookupResult& result) const {
+	resolveIndexChain(-1, lookupKey, result, [key](const TableRecord& table, int&) { return table.getStringKey(key); });
 }
 
-u32 TableRecord::resolveMissingStringIndex(StringId key, TableLookupResult& result) const {
+u32 TableRecord::resolveMissingStringIndex(StringId key, const StringId& lookupKey, TableLookupResult& result) const {
 	u32 links = 0;
-	resolveIndexChain<false, true>(-1, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, TABLE_INDEX_CHAIN_LIMIT, &links);
+	resolveIndexChain<false, true>(-1, lookupKey, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, TABLE_INDEX_CHAIN_LIMIT, &links);
 	return links;
 }
 
-u32 TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit) const {
+u32 TableRecord::resolveStringIndexCached(StringId key, const StringId& lookupKey, int predictedSlot, TableLookupResult& result, u32 visitLimit) const {
 	u32 links = 0;
-	resolveIndexChain(predictedSlot, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, visitLimit, &links);
+	resolveIndexChain(predictedSlot, lookupKey, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, visitLimit, &links);
 	return links;
 }
 
@@ -377,21 +375,21 @@ bool TableRecord::probeAssignment(const Value& key, int& position) const {
 	return tag != ValueTag::Nil && tag != ValueTag::DeadKey;
 }
 
-void TableRecord::resolveAssignment(Value rawKey, TableLookupResult& result) const {
+void TableRecord::resolveAssignment(Value rawKey, const StringId& assignKey, TableLookupResult& result) const {
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
-	resolveIndexChain<true>(-1, result, [key, miss](const TableRecord& table, int& slot) {
+	resolveIndexChain<true>(-1, assignKey, result, [key, miss](const TableRecord& table, int& slot) {
 		return !miss && table.probeAssignment(key, slot);
 	});
 }
 
-void TableRecord::resolveIntegerAssignment(int key, TableLookupResult& result) const {
-	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int& slot) {
+void TableRecord::resolveIntegerAssignment(int key, const StringId& assignKey, TableLookupResult& result) const {
+	resolveIndexChain<true>(-1, assignKey, result, [key](const TableRecord& table, int& slot) {
 		return table.probeAssignment(valueInteger(key), slot);
 	});
 }
 
-void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& result, int predicted) const {
+void TableRecord::resolveStringAssignment(StringId key, const StringId& assignKey, TableLookupResult& result, int predicted) const {
 	if (predicted >= 0) {
 		const u32 count = hashSlots();
 		if (static_cast<u32>(predicted) < count) {
@@ -402,7 +400,7 @@ void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& resul
 			}
 		}
 	}
-	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int& slot) {
+	resolveIndexChain<true>(-1, assignKey, result, [key](const TableRecord& table, int& slot) {
 		const u32 count = table.hashSlots();
 		if (count == 0u) return false;
 		const auto body = table.hashBody(count);

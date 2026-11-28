@@ -1,7 +1,6 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
-import { GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GlobalBank } from '../../machine/ts/machine/cpu/global_bank';
 import { THREAD_RECORD_KIND, ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -53,7 +52,7 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 	const completionValues: Value[] = [];
 	cpu.readCompletionValues(completionValues);
 	for (const value of completionValues) addValue(value);
-	addRecord(gc.diagnosticWord(GcDiagnosticField.StringIndexTag), gc.diagnosticWord(GcDiagnosticField.StringIndexWord));
+	addRecord(ValueTag.Table, cpu.stringIndexTableAddress);
 	objects.push(cpu.rootThread.address, cpu.activeThread.address);
 	if (cpu.completionThreadAddress !== 0) objects.push(cpu.completionThreadAddress);
 	if (cpu.haltedUntilIrqThreadAddress !== 0) objects.push(cpu.haltedUntilIrqThreadAddress);

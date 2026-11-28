@@ -1,6 +1,7 @@
 #include "machine/cpu/jit/sljit/table_access.h"
 
 #include "machine/cpu/table.h"
+#include "spec/blua32/cop0.h"
 #include "spec/blua32/opcode.h"
 
 namespace bmsx {
@@ -196,8 +197,9 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	auto* noMeta = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	emitTableHeaderAddress(c);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, tableIndexKeyWord));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), key, SLJIT_MEM1(SLJIT_R1), 0);
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, cop0Words));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), key,
+		SLJIT_MEM1(SLJIT_R1), COP0_TABLE_LOOKUP_KEY * sizeof(u32));
 	auto* hasIndex = emitReceiverSearch(c, true, &metaBudget);
 
 	// End of the live path: nil is a successful guest result.

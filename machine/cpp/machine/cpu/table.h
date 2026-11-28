@@ -70,11 +70,11 @@ public:
 	bool tryAssignOwn(Value key, Value value, int& position);
 	static constexpr i32 ARRAY_STORE_POSITION = -2;
 	// Returning probes also defer __newindex to the instruction owner.
-	bool tryAssignIdentityHash(Value key, Value value) noexcept;
-	bool tryAssignIntegerHash(i32 key, Value value) noexcept;
+	bool tryAssignIdentityHash(Value key, Value value, const StringId& assignKey) noexcept;
+	bool tryAssignIntegerHash(i32 key, Value value, const StringId& assignKey) noexcept;
 	static constexpr i32 HASH_STORE_DECLINED = -2;
-	int tryAssignStringField(StringId key, Value value) noexcept;
-	int tryAssignCachedStringField(StringId key, Value value, int predicted) noexcept;
+	int tryAssignStringField(StringId key, Value value, const StringId& assignKey) noexcept;
+	int tryAssignCachedStringField(StringId key, Value value, int predicted, const StringId& assignKey) noexcept;
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
@@ -114,15 +114,15 @@ public:
 	}
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
-	Value metatableField(GcDiagnosticField field) const;
-	u32 resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
-	u32 resolveIntegerIndex(int key, TableLookupResult& result) const;
-	void resolveStringIndex(StringId key, TableLookupResult& result) const;
-	u32 resolveMissingStringIndex(StringId key, TableLookupResult& result) const;
-	u32 resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
-	void resolveAssignment(Value key, TableLookupResult& result) const;
-	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
-	void resolveStringAssignment(StringId key, TableLookupResult& result, int predicted = -1) const;
+	Value metatableField(const StringId& key) const;
+	u32 resolveIndex(const Value& key, const StringId& lookupKey, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+	u32 resolveIntegerIndex(int key, const StringId& lookupKey, TableLookupResult& result) const;
+	void resolveStringIndex(StringId key, const StringId& lookupKey, TableLookupResult& result) const;
+	u32 resolveMissingStringIndex(StringId key, const StringId& lookupKey, TableLookupResult& result) const;
+	u32 resolveStringIndexCached(StringId key, const StringId& lookupKey, int predictedSlot, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+	void resolveAssignment(Value key, const StringId& assignKey, TableLookupResult& result) const;
+	void resolveIntegerAssignment(int key, const StringId& assignKey, TableLookupResult& result) const;
+	void resolveStringAssignment(StringId key, const StringId& assignKey, TableLookupResult& result, int predicted = -1) const;
 	// Find a boundary and remember it after a search.
 	static i32 length(TableRecord* table) noexcept;
 	void clear();
@@ -292,8 +292,8 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
-	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED) noexcept;
-	int assignProbedHash(const HashBody& body, int nodeIndex, Value value) noexcept;
+	int assignHash(Value key, Value value, const StringId& assignKey, int slot = TABLE_HASH_UNPROBED) noexcept;
+	int assignProbedHash(const HashBody& body, int nodeIndex, Value value, const StringId& assignKey) noexcept;
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;
 	void eraseHashNode(const HashBody& body, size_t index, Value key);
@@ -302,7 +302,7 @@ private:
 	Value getCanonical(const Value& key) const;
 	Value getHash(const Value& key) const;
 	template <bool Assignment = false, bool OwnMiss = false, typename Lookup>
-	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
+	void resolveIndexChain(int slot, const StringId& methodKey, TableLookupResult& result, Lookup&& lookup,
 		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT, u32* linkCycles = nullptr) const;
 
 	ValueSlots<false> values() const { u8* words = m_memory->ramData() + (arrayAddress() & RAM_RECORD_WORD_MASK);

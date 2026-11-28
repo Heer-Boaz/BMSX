@@ -19,7 +19,7 @@ inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End };
 
-// Firmware-owned words inspected by the opcode datapath and native diagnostic collector.
+// Firmware-owned words used by the native collector reference.
 inline constexpr u32 GC_DIAGNOSTIC_OFFSET = 0x680;
 inline constexpr u32 GC_DIAGNOSTIC_FAULTS_OFFSET = 0x6c8;
 enum class GcDiagnosticField : u32 {

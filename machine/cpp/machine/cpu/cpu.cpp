@@ -172,6 +172,10 @@ void CPU::reset() {
 	m_cop0Words[COP0_EPC] = 0u;
 	m_cop0Words[COP0_BAD_ADDRESS] = 0u;
 	m_cop0Words[COP0_LUA_FAULT_REASON] = 0u;
+	m_cop0Words[COP0_TABLE_LOOKUP_KEY] = 0u;
+	m_cop0Words[COP0_TABLE_ASSIGN_KEY] = 0u;
+	m_cop0Words[COP0_TABLE_LENGTH_KEY] = 0u;
+	m_cop0Words[COP0_STRING_INDEX_TABLE] = 0u;
 	m_exceptionDomainWord = 0u;
 	m_nmiReturnCauseWord = 0u;
 	m_nmiReturnEpcWord = 0u;
@@ -947,6 +951,10 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.epcWord = m_cop0Words[COP0_EPC];
 	state.badAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
 	state.luaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
+	state.tableLookupKeyWord = m_cop0Words[COP0_TABLE_LOOKUP_KEY];
+	state.tableAssignKeyWord = m_cop0Words[COP0_TABLE_ASSIGN_KEY];
+	state.tableLengthKeyWord = m_cop0Words[COP0_TABLE_LENGTH_KEY];
+	state.stringIndexTableWord = m_cop0Words[COP0_STRING_INDEX_TABLE];
 	state.exceptionDomainWord = m_exceptionDomainWord;
 	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
 	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
@@ -1018,6 +1026,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_cop0Words[COP0_EPC] = state.epcWord;
 	m_cop0Words[COP0_BAD_ADDRESS] = state.badAddressWord;
 	m_cop0Words[COP0_LUA_FAULT_REASON] = state.luaFaultReasonWord;
+	m_cop0Words[COP0_TABLE_LOOKUP_KEY] = state.tableLookupKeyWord;
+	m_cop0Words[COP0_TABLE_ASSIGN_KEY] = state.tableAssignKeyWord;
+	m_cop0Words[COP0_TABLE_LENGTH_KEY] = state.tableLengthKeyWord;
+	m_cop0Words[COP0_STRING_INDEX_TABLE] = state.stringIndexTableWord;
 	m_exceptionDomainWord = state.exceptionDomainWord;
 	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
 	m_nmiReturnEpcWord = state.nmiReturnEpcWord;

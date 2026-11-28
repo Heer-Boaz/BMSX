@@ -1149,6 +1149,10 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.epcWord);
 	writer.u32(state.badAddressWord);
 	writer.u32(state.luaFaultReasonWord);
+	writer.u32(state.tableLookupKeyWord);
+	writer.u32(state.tableAssignKeyWord);
+	writer.u32(state.tableLengthKeyWord);
+	writer.u32(state.stringIndexTableWord);
 	writer.u32(state.exceptionDomainWord);
 	writer.u32(state.nmiReturnCauseWord);
 	writer.u32(state.nmiReturnEpcWord);
@@ -1194,6 +1198,10 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		epcWord: reader.u32(),
 		badAddressWord: reader.u32(),
 		luaFaultReasonWord: reader.u32(),
+		tableLookupKeyWord: reader.u32(),
+		tableAssignKeyWord: reader.u32(),
+		tableLengthKeyWord: reader.u32(),
+		stringIndexTableWord: reader.u32(),
 		exceptionDomainWord: reader.u32(),
 		nmiReturnCauseWord: reader.u32(),
 		nmiReturnEpcWord: reader.u32(),

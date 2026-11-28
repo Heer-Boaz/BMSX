@@ -103,9 +103,9 @@ export class GcHeap extends PhysicalGcHeap {
 		}
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, memory: Memory, arena: HeapAllocator) {
-		super(memory, arena);
+		super(memory, arena, cpu.gc.tables);
 		this.threads = new ThreadRecords(memory, arena, budget);
-		this.tables = new TableRecords(this);
+		this.tables = new TableRecords(this, cpu['cop0Words']);
 	}
 	declare public readonly arena: HeapAllocator;
 	declare public readonly tables: TableRecords;
