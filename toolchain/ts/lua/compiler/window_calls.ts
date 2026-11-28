@@ -1,3 +1,4 @@
+import { COP0_EVENT_CYCLES } from '../../../../machine/ts/spec/blua32/cop0';
 import { MAX_EXT_REGISTER_A, RegisterJumpMode, ReturnSource, ValueMoveKind } from '../../../../machine/ts/spec/blua32/instruction_format';
 import {
 	OpCode, OPCODE_RK_OPERANDS, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
@@ -99,10 +100,15 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 			case OpCode.ARGC:
 				observesCount = true;
 				break;
+			case OpCode.MFC0:
+				// The clock horizon depends on executed cycles, not on the
+				// language activation that owns this register window.
+				if (instruction.b !== COP0_EVENT_CYCLES) return;
+				break;
 			// These operations observe or may suspend/resume a language activation.
 			case OpCode.SVC:
 			case OpCode.GETUP: case OpCode.SETUP: case OpCode.JAL: case OpCode.JREG:
-			case OpCode.HALT: case OpCode.RFE: case OpCode.MTC0: case OpCode.MFC0:
+			case OpCode.HALT: case OpCode.RFE: case OpCode.MTC0:
 			case OpCode.GETT: case OpCode.GETI: case OpCode.GETFIELD: case OpCode.SELF:
 			case OpCode.SETT: case OpCode.SETI: case OpCode.SETFIELD: case OpCode.ITERN:
 			case OpCode.LEN:

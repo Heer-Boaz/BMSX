@@ -10,7 +10,7 @@ import { valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../..
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EVENT_CYCLES, CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, RegisterJumpMode, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
@@ -103,6 +103,38 @@ test('the linked System passes fixed arguments and results through three physica
 		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
 		runGuestToHalt(cpu, 4_194_304);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), expected.map(valueInteger));
+	}
+});
+
+test('a software callee reads the device horizon in its borrowed register window', () => {
+	const path = 'window/deadline';
+	const source = `module<const>
+local remaining<const> = function(x)
+	local before<const> = cop0.event_cycles
+	${mixing}
+	local after<const> = cop0.event_cycles
+	return x, before > after
+end
+return { remaining = remaining }
+`;
+	const linked = linkManagedTestSystem(`local deadline<const> = require('${path}')
+return deadline.remaining(71)
+`, 3, [{ path, source }]);
+	const { layout, symbols } = linked;
+	const fn = layout.functions[symbols.metadata.functionIds.findIndex(id => id.endsWith('__remaining'))];
+	let reads = 0;
+	for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+		const instruction = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+		assert.notEqual(instruction.op, OpCode.RET);
+		if (instruction.op === OpCode.MFC0 && instruction.b === COP0_EVENT_CYCLES) ++reads;
+		pc = instruction.pc + INSTRUCTION_BYTES;
+	}
+	assert.equal(reads, 2);
+	const romBytes = writeTestBlua32Rom(linked);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu } = createTestSystemCpu({ romBytes }, backend);
+		runGuestToHalt(cpu, 4_194_304);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(mixInt(71)), valueBool(true)]);
 	}
 });
 
