@@ -1,18 +1,30 @@
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { FrameField, FRAME_WINDOW_MASK } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { valueBool, valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import {
+	applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin,
+} from '../../../machine/ts/machine/runtime/save_state';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../../machine/ts/spec/blua32/execution_domain';
+import {
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET,
+	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+} from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -69,7 +81,7 @@ return wide, root, make, actual()
 test('stock load lowers constructors and captured functions with TS/native parity', t => {
 	const output = mkdtempSync(join(tmpdir(), 'bmsx-load-constructor-'));
 	t.after(() => rmSync(output, { recursive: true, force: true }));
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { buildDirectory: join(output, 'native') });
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const { images } = compileCartlibProgram(source, { optLevel: 3 });
 	const system = join(output, 'system.rom'), cart = join(output, 'cart.rom'), trace = join(output, 'trace');
 	writeFileSync(system, images.systemRomBytes);
@@ -122,4 +134,123 @@ test('stock load lowers constructors and captured functions with TS/native parit
 	rows.push([values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	writeFileSync(trace, commands.join('\n'));
 	assert.deepEqual(execFileSync(native, [system, trace, '-', cart], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
+});
+
+test('a RAM-compiled child closure resumes from the sampled code word on both cores', t => {
+	const output = mkdtempSync(join(tmpdir(), 'bmsx-ram-binding-replay-'));
+	t.after(() => rmSync(output, { recursive: true, force: true }));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	const { images } = compileCartlibProgram(`
+local build<const> = assert(load('local saved = 31; return function(step) return saved + step end'))
+local add<const> = build()
+return add(5), add
+`, { optLevel: 3 });
+	const system = join(output, 'system.rom'), cart = join(output, 'cart.rom'), trace = join(output, 'trace');
+	const seed = join(output, 'seed.state'), tsState = join(output, 'ts-mid.state'), cppState = join(output, 'cpp-mid.state');
+	writeFileSync(system, images.systemRomBytes);
+	writeFileSync(cart, images.cartRomBytes);
+	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes,
+		cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine;
+	const binding = valueInteger(0x1000c); // Software token: kernel/heap_control_ids.bind_ram_function.
+	let owner = 0, depth = 0;
+	cpu.setExecutionHook(() => {
+		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL
+			|| cpu.readFrameRegister(cpu.getFrameDepth() - 1, 0) !== binding) return false;
+		const stopped = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+		const frames = cpu.readThreadFrameDepth(stopped);
+		// The loader itself is in System ROM. Target the subsequent SVC
+		// emitted in RAM by the running compiler for the child closure.
+		if (cpu.readThreadFrameWord(stopped, frames - 1, FrameField.Function) < DYNAMIC_RAM_BASE) return false;
+		owner = stopped;
+		depth = frames;
+		return true;
+	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	let result = RunResult.Yielded;
+	for (let grant = 0; grant < 1000 && result === RunResult.Yielded; ++grant)
+		result = scheduler.runCpuSlice(0, 20_000, undefined, CpuRunKind.Scheduled);
+	cpu.setExecutionHook(null, 0, 0);
+	assert.equal(result, RunResult.ExecutionStopped);
+
+	const vector = cpu.getFrameDepth() - 1, epc = cpu.readEpcWord();
+	const slot = valuePayload(cpu.readFrameRegister(vector, 1));
+	assert.equal(cpu.readFrameRegister(vector, 2), valueInteger(1));
+	const base = cpu.readThreadFrameWord(owner, depth - 1, FrameField.StackBase) & FRAME_WINDOW_MASK;
+	const prototype = valuePayload(cpu.bindThread(owner).stackRegisters.get(base + slot + 1));
+	assert.ok(prototype >= DYNAMIC_RAM_BASE);
+	const fields = [BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
+		BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET]
+		.map(offset => prototype + offset);
+	const code = memory.readRamRecordWord(fields[0]);
+	assert.ok(code >= DYNAMIC_RAM_BASE);
+	const reads: number[] = [];
+	const read = memory.readMappedBusU32LE.bind(memory);
+	t.mock.method(memory, 'readMappedBusU32LE', (...args: Parameters<typeof read>) => {
+		if (fields.includes(args[0])) reads.push(args[0]);
+		return read(...args);
+	});
+
+	const commands: string[] = [], rows: string[] = [];
+	function grant(cycles: number) {
+		const run = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+		commands.push(`E ${cycles}`);
+		rows.push(`${run} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		return run;
+	}
+	writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	for (let step = 0; step < 1024 && reads.length === 0; ++step)
+		assert.equal(grant(1), RunResult.Yielded);
+	assert.deepEqual(reads, fields.slice(0, 1));
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.readEpcWord(), epc, 'the stopped caller still owns the ordinary SVC successor');
+	assert.equal(cpu.bindThread(owner).stackRegisters.get(base + slot), binding, 'no closure is published after only the first read');
+	commands.push('P');
+	rows.push(`${cpu.getFrameDepth()} ${cpu.readFramePc(cpu.getFrameDepth() - 1)}`);
+	writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	const history = new RamHistory();
+	history.start(memory);
+	const pages = history.capture(memory, null), checkpoint = captureRuntimeCheckpointState(runtime);
+	const prefix = commands.splice(0), prefixRows = rows.splice(0);
+
+	function finish() {
+		assert.equal(memory.readRamRecordWord(fields[0]), code, 'the snapshot restored the unmodified prototype');
+		// If the BIOS rereads this field (even after restore), it will reject
+		// the code address. The sampled word belongs to live firmware state.
+		memory.writeMappedWord(fields[0], 0);
+		commands.push(`O ${fields[0]} 0`);
+		let run = RunResult.Yielded;
+		for (let step = 0; step < 32 && run === RunResult.Yielded; ++step) run = grant(4096);
+		assert.equal(run, RunResult.Halted);
+		assert.equal(cpu.captureRuntimeState().hardHalted, false);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		assert.deepEqual(reads, fields);
+		const values = runtime.readCompletionValues();
+		assert.equal(values.length, 2);
+		assert.equal(values[0], valueInteger(36));
+		assert.equal(valueTag(values[1]), ValueTag.Closure);
+		assert.equal(cpu.captureClosureBinding(valuePayload(values[1])).codeAddress, code);
+		commands.push('c');
+		rows.push([values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+	}
+	finish();
+	const tail = commands.splice(0), tailRows = rows.splice(0);
+	function replay(state: string, script: readonly string[]) {
+		writeFileSync(trace, script.join('\n'));
+		return execFileSync(native, [system, trace, state, cart], { encoding: 'utf8' }).trimEnd().split('\n');
+	}
+	assert.deepEqual(replay(seed, ['X', ...prefix, `x ${cppState}`, 'l', 's', ...tail, 'u', ...tail]),
+		[...prefixRows, ...tailRows, ...tailRows], 'the production C++ core reaches the same checkpoint and rewinds the same write');
+	assert.deepEqual(replay(tsState, ['X', ...tail]), tailRows, 'the TS checkpoint runs on the production C++ core');
+	history.restore(memory, history.capture(memory, pages), pages);
+	applyRuntimeCheckpointState(runtime, checkpoint, RuntimeRestoreOrigin.HistorySeek);
+	reads.length = 1;
+	finish();
+	assert.deepEqual(commands.splice(0), tail);
+	assert.deepEqual(rows.splice(0), tailRows, 'the TS machine rewinds both execution and the prototype write');
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(cppState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	reads.length = 1;
+	finish();
+	assert.deepEqual(commands, tail);
+	assert.deepEqual(rows, tailRows, 'the C++ checkpoint resumes identically on TS');
 });
