@@ -1317,7 +1317,9 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
 	if (width == 0)
 		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, successor, std::span{&token, 1u});
 	else {
-		const std::array arguments{token, valueInteger(source), valueInteger(width - 1)};
+		// Exception software addresses the stopped frame's backing, not its
+		// current register numbering.
+		const std::array arguments{token, valueInteger(frame.registerBase() + source), valueInteger(width - 1)};
 		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, successor, arguments);
 	}
 }

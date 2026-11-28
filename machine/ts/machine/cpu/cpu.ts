@@ -1885,7 +1885,8 @@ export class CPU implements MappedPageInvalidator {
 		if (window === 0) {
 			this.enterException(this.systemImage, vector, CPU_CAUSE_CODE_SYSCALL, frame.pc, token);
 		} else {
-			this.enterException(this.systemImage, vector, CPU_CAUSE_CODE_SYSCALL, frame.pc, token, valueInteger(source), valueInteger(window - 1));
+			this.enterException(this.systemImage, vector, CPU_CAUSE_CODE_SYSCALL, frame.pc, token,
+				valueInteger(frame.registerBase + source), valueInteger(window - 1));
 		}
 	}
 

@@ -111,8 +111,12 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 				// language activation that owns this register window.
 				if (instruction.b !== COP0_EVENT_CYCLES) return;
 				break;
-			// These operations observe or may suspend/resume a language activation.
 			case OpCode.SVC:
+				// Compiler-owned constructor and concatenation windows use only
+				// the explicit operand slots, even after backing moves for GC.
+				if (!instruction.inlineSupervisorWindow) return;
+				break;
+			// These operations observe or may suspend/resume a language activation.
 			case OpCode.GETUP: case OpCode.SETUP: case OpCode.JAL: case OpCode.JREG:
 			case OpCode.HALT: case OpCode.RFE: case OpCode.MTC0:
 			case OpCode.GETT: case OpCode.GETI: case OpCode.GETFIELD: case OpCode.SELF:
