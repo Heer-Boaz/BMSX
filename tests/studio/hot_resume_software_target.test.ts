@@ -105,3 +105,57 @@ return { condition = condition, left = left, right = right, argument = argument 
 		assert.deepEqual(values, [valueInteger(((7 + (44 * 45) / 2) & 255) * 5), valueInteger(oldTarget)]);
 	}
 });
+
+test('Hot Resume preserves a register-resident lexical environment in a software call', () => {
+	const mix = Array.from({ length: 40 }, (_, i) => `x = (x + ${i + 1}) & 255`).join('\n');
+	const source = (fresh: boolean) => `bss observed: word
+local anchor<const> = { score = 77 }
+local function earlier(x)
+	*observed = x
+	${fresh ? '*observed = x + 1' : ''}
+	return x
+end
+local function leaf(x)
+	${mix}
+	return x + ${fresh ? 9 : 7}, anchor
+end
+local x, object = leaf(earlier(6))
+return x, object.score
+`;
+	const old = linkManagedTestSystem(source(false), 3);
+	const next = linkManagedTestSystem(source(true), 3);
+	const previousImage = old.layout, nextImage = next.layout;
+	const entry = old.symbols.metadata.functionIds.indexOf('module:main/entry');
+	const leafId = 'module:main/entry/local:leaf';
+	const leaf = old.symbols.metadata.functionIds.indexOf(leafId);
+	const nextLeaf = next.symbols.metadata.functionIds.indexOf(leafId);
+	assert.equal(old.symbols.metadata.softwareFramesByFunction[leaf]?.entry, true);
+	assert.equal(next.symbols.metadata.softwareFramesByFunction[nextLeaf]?.entry, true);
+	const oldPc = previousImage.functions[leaf].codeAddress;
+	const newPc = nextImage.functions[nextLeaf].codeAddress;
+	assert.notEqual(oldPc, newPc);
+	const runtime = createTestRuntime(writeTestBlua32Rom(old));
+	runtime.boot();
+	const { cpu, memory, executionAddressSpace } = runtime.machine;
+	cpu.setExecutionHook((_domain, pc) => pc === oldPc, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_EXECUTION_DOMAIN_MASK);
+	assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.ExecutionStopped);
+	cpu.setExecutionHook(null, 0, 0);
+	const depth = cpu.getFrameDepth(), frame = cpu.activeThread.currentFrame!;
+	assert.equal(cpu.readFrameFunctionAddress(depth - 1), previousImage.functions[entry].address);
+	const capture = old.symbols.metadata.localSlotsByFunction[leaf].find(local => local.name === 'anchor')!;
+	const saved = frame.registers.get(capture.registerIndex);
+	const sources = (image: typeof old) => new Map(Array.from(image.diagnosticSources, ([path, item]) => [path, item.source]));
+	const revision = buildBlua32ExecutionRevision(previousImage, old.symbols, sources(old), next, sources(next));
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage, nextImage, revision }, null, null], depth);
+	memory.installSystemRom(writeTestBlua32Rom(next));
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.activeThread.currentFrame, frame);
+	assert.equal(frame.pc, newPc);
+	assert.equal(frame.registers.get(capture.registerIndex), saved);
+	runGuestToHalt(cpu, 1_000_000);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueInteger(((6 + (40 * 41) / 2) & 255) + 9), valueInteger(77)]);
+});

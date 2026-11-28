@@ -146,6 +146,63 @@ return result
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(63_995)]);
 });
 
+test('call-only lexical functions receive immutable outer Values in ordinary registers', () => {
+	const path = 'lexical/environment';
+	const mixing = Array.from({ length: 40 }, (_, i) => `x = ((x ~ ${i + 3}) * 7 + ${i}) & 0xffff`).join('\n');
+	const source = `
+local original<const> = { score = 27 }
+local function leaf(x)
+	${mixing}
+	return x, original
+end
+local function relay(seed)
+	local x, result = leaf(seed)
+	${mixing}
+	return x, result
+end
+original.score = 73
+local x, result = relay(91)
+return x, result == original, result.score
+`;
+	const original = linkManagedTestSystem(source, 0, [], [], path);
+	const optimized = linkManagedTestSystem(source, 3, [], [], path);
+	for (const name of ['leaf', 'relay']) {
+		const id = `module:${path}/entry/local:${name}`;
+		const index = optimized.symbols.metadata.functionIds.indexOf(id);
+		const fn = optimized.layout.functions[index];
+		assert.deepEqual(fn.upvalues, []);
+		assert.equal(fn.numParams, 2, 'one environment word precedes the authored argument');
+		assert.equal(optimized.symbols.metadata.softwareFramesByFunction[index]?.entry, true);
+		for (const pc of indexBlua32FunctionInstructions(optimized.layout, index)) {
+			const { op } = decodeBlua32InstructionAtPc(optimized.layout.textBytes, optimized.layout.header.textAddress, pc);
+			assert.ok(op !== OpCode.CALL && op !== OpCode.RET && op !== OpCode.SVC && op !== OpCode.GETUP);
+		}
+	}
+	for (const linked of [original, optimized]) {
+		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }, CpuExecutionBackend.Interpreter);
+		runGuestToHalt(cpu, 1_000_000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(63_995), valueBool(true), valueInteger(73)]);
+	}
+});
+
+test('a lexical function observing the authored argument count retains its cell environment', () => {
+	const path = 'lexical/observed-environment';
+	const linked = linkManagedTestSystem(`
+local anchor<const> = { score = 27 }
+local function observe(arg)
+	return blua32.argument_count(), anchor == arg
+end
+local count, matches = observe(anchor, 999)
+return count, matches
+`, 3, [], [], path);
+	const index = linked.symbols.metadata.functionIds.indexOf(`module:${path}/entry/local:observe`);
+	assert.equal(linked.layout.functions[index].upvalues.length, 1);
+	assert.equal(linked.layout.functions[index].numParams, 1);
+	const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) }, CpuExecutionBackend.Interpreter);
+	runGuestToHalt(cpu, 1_000_000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(2), valueBool(true)]);
+});
+
 test('escaped recursive closures keep fresh identity and share only their own activation Cell', () => {
 	const linked = linkManagedTestSystem(`
 local function create(seed)

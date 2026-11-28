@@ -1,5 +1,5 @@
 import { toLuaModulePath } from '../../module_path';
-import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
+import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../semantic/frontend';
 import type { Decl } from '../../semantic/model';
 import {
 	LuaAssignmentOperator,
@@ -15,11 +15,14 @@ import { getBoundDeclaration, getBoundIdentifierReference } from '../bound_refer
 export type LexicalFunction = {
 	readonly name: string;
 	readonly expression: LuaFunctionExpression;
+	readonly environment: readonly LuaBoundReference[];
 };
 
 type Definition = LexicalFunction & {
 	readonly declaration: Decl;
 	readonly write?: LuaIdentifierExpression;
+	readonly environment: LuaBoundReference[];
+	readonly calls: Set<string>;
 };
 
 function isLiteral(value: LuaExpression): boolean {
@@ -59,12 +62,18 @@ export function collectLexicalFunctions(
 	const forward = new Map<string, Decl>();
 	const constants = new Set<string>();
 	const imports = new Set<string>();
+	const runtimeConstants = new Set<string>();
+	const owners = new Map<LuaFunctionExpression, string>();
+	const define = (declaration: Decl, expression: LuaFunctionExpression, write?: LuaIdentifierExpression) => {
+		definitions.set(declaration.id, { declaration, name: declaration.name, expression, write, environment: [], calls: new Set() });
+		owners.set(expression, declaration.id);
+	};
 	let started = false;
 	for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 		const statement = cursor.statement;
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement && statement.attribute === null) {
 			const declaration = getBoundDeclaration(file, statement.name);
-			definitions.set(declaration.id, { declaration, name: declaration.name, expression: statement.functionExpression });
+			define(declaration, statement.functionExpression);
 			started = true;
 			continue;
 		}
@@ -73,7 +82,7 @@ export function collectLexicalFunctions(
 				const declaration = getBoundDeclaration(file, statement.names[0]);
 				const value = statement.values[0];
 				if (value?.kind === LuaSyntaxKind.FunctionExpression && statement.pointerTypeRefs[0] === null) {
-					definitions.set(declaration.id, { declaration, name: declaration.name, expression: value });
+					define(declaration, value);
 					started = true;
 					continue;
 				}
@@ -91,6 +100,13 @@ export function collectLexicalFunctions(
 						imports.add(declaration.id);
 						continue;
 					}
+					// Plain computed Values already exist before any of the
+					// known callees can run. Do not lift a typed address view,
+					// or a compile-time module alias that has no Value slot.
+					if (!started && statement.pointerTypeRefs[0] === null
+						&& (value.kind === LuaSyntaxKind.TableConstructorExpression
+							|| (value.kind === LuaSyntaxKind.CallExpression && (value.callee.kind !== LuaSyntaxKind.IdentifierExpression
+								|| value.callee.name !== 'require')))) runtimeConstants.add(declaration.id);
 				}
 			}
 		} else if (statement.kind === LuaSyntaxKind.AssignmentStatement && statement.operator === LuaAssignmentOperator.Assign
@@ -100,7 +116,7 @@ export function collectLexicalFunctions(
 				const reference = getBoundIdentifierReference(file, write);
 				const declaration = reference.kind === 'lexical' ? forward.get(reference.decl.id) : undefined;
 				if (declaration !== undefined) {
-					definitions.set(declaration.id, { declaration, name: declaration.name, expression: value, write });
+					define(declaration, value, write);
 					forward.delete(declaration.id);
 					continue;
 				}
@@ -115,13 +131,21 @@ export function collectLexicalFunctions(
 	const callees = new Set<LuaIdentifierExpression>();
 	const namespaceBases = new Set<LuaIdentifierExpression>();
 	const rejected = new Set<string>();
+	const calledFromClosure = new Set<string>();
 	if (retainsClosure !== undefined) {
 		for (const [id, definition] of definitions) if (retainsClosure(definition)) rejected.add(id);
 	}
-	walkLuaAst(chunk, node => {
+	const scan = (body: LuaChunk | LuaFunctionExpression['body'], owner: string | null | undefined) => walkLuaAst(body, node => {
+		if (node.kind === LuaSyntaxKind.FunctionExpression) {
+			scan(node.body, owners.get(node));
+			return false;
+		}
 		if (node.kind === LuaSyntaxKind.CallExpression && node.method === null
 			&& node.callee.kind === LuaSyntaxKind.IdentifierExpression) {
 			callees.add(node.callee);
+			const reference = file.getReference(node.callee);
+			if (owner === undefined && reference?.kind === 'lexical' && definitions.has(reference.decl.id))
+				calledFromClosure.add(reference.decl.id);
 		} else if ((node.kind === LuaSyntaxKind.MemberExpression
 			|| (node.kind === LuaSyntaxKind.IndexExpression && node.index.kind === LuaSyntaxKind.StringLiteralExpression))
 			&& node.base.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -134,34 +158,61 @@ export function collectLexicalFunctions(
 				rejected.add(reference.decl.id);
 		}
 	});
+	scan(chunk, null);
 
-	// Collect the reverse edges of the candidate graph. A dependency on
-	// a runtime value disqualifies its users, including recursive groups.
+	// A statically called function can receive immutable free Values in
+	// registers instead of allocating a Closure. Propagate that environment
+	// along known calls so the code never reads it from a physical frame.
 	const callers = new Map<string, Set<string>>();
+	const observesActivation = new Set<string>();
+	const environments: { owner: string; binding: LuaBoundReference }[] = [];
 	for (const [id, definition] of definitions) {
-		if (rejected.has(id)) continue;
 		const chunkScope = definition.declaration.scope;
+		if (definition.expression.hasVararg) observesActivation.add(id);
 		walkLuaAst(definition.expression.body, node => {
+			if (node.kind === LuaSyntaxKind.FunctionExpression || (node.kind === LuaSyntaxKind.MemberExpression
+				&& node.member.name === 'argument_count' && node.base.kind === LuaSyntaxKind.IdentifierExpression
+				&& node.base.name === 'blua32' && file.getReference(node.base)?.kind === 'reserved_intrinsic')) observesActivation.add(id);
 			if (node.kind !== LuaSyntaxKind.IdentifierExpression) return;
 			const reference = file.getReference(node);
 			if (reference?.kind !== 'lexical' || reference.decl.scope !== chunkScope) return;
 			const dependency = reference.decl.id;
 			if (constants.has(dependency)
 				|| (imports.has(dependency) && (namespaceBases.has(node) || callees.has(node)))) return;
-			if (!definitions.has(dependency)) {
+			if (runtimeConstants.has(dependency)) {
+				if (definition.environment.some(capture => capture.decl.id === dependency)) return;
+				definition.environment.push(reference);
+				environments.push({ owner: id, binding: reference });
+			} else if (!definitions.has(dependency)) {
 				rejected.add(id);
 			} else if (dependency !== id) {
+				definition.calls.add(dependency);
 				let incoming = callers.get(dependency);
 				if (incoming === undefined) callers.set(dependency, incoming = new Set());
 				incoming.add(id);
 			}
 		});
 	}
+	for (const { owner, binding } of environments) {
+		for (const caller of callers.get(owner) ?? []) {
+			const environment = definitions.get(caller)!.environment;
+			if (!environment.some(capture => capture.decl.id === binding.decl.id)) {
+				environment.push(binding);
+				environments.push({ owner: caller, binding });
+			}
+		}
+	}
+	for (const [id, definition] of definitions) {
+		if (definition.environment.length !== 0 && (observesActivation.has(id) || calledFromClosure.has(id))) rejected.add(id);
+	}
 	for (const id of rejected) {
-		definitions.delete(id);
+		for (const callee of definitions.get(id)!.calls) {
+			if (definitions.get(callee)!.environment.length !== 0) rejected.add(callee);
+		}
 		const incoming = callers.get(id);
 		if (incoming === undefined) continue;
 		for (const caller of incoming) rejected.add(caller);
 	}
+	for (const id of rejected) definitions.delete(id);
 	return definitions;
 }

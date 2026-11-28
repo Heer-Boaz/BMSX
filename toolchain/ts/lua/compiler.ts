@@ -1637,14 +1637,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
+	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean, environment: readonly LuaBoundReference[]): void {
 		// A function's lexical environment is fixed at its definition, not by
 		// which names happened to require GETUP/SETUP during code generation.
 		const range = this.semantics.locations.range(expression.span), start = range.start;
 		for (const declaration of this.semantics.getVisibleDeclarationsAt(start.line, start.column)) {
 			if (declaration.isGlobal || declaration.kind === 'type' || declaration.kind === 'bss'
 				|| declaration.kind === 'data' || declaration.kind === 'rodata'
-				|| this.lexicalFunctions?.has(declaration.id)) continue;
+				|| this.lexicalFunctions?.has(declaration.id) || environment.some(capture => capture.decl.id === declaration.id)) continue;
 			let owner = this.parent!;
 			let binding = owner.localBindings.get(declaration.id);
 			while (binding === undefined) {
@@ -1664,7 +1664,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.outerDeclarations.set(IMPLICIT_SELF_SYMBOL_HANDLE, owner.debugDeclarationIndex(binding));
 		}
 		this.bindFunctionBody(expression.body.body, expression);
-		this.pushScope(this.semantics.locations.range(expression.body.span));
+		const body = this.semantics.locations.range(expression.body.span);
+		this.pushScope(body);
+		for (const { decl } of environment) {
+			// The compiler owns these incoming Value slots. They are lexical
+			// locals for debug/Hot Resume, not authored positional arguments.
+			this.declareLocal(decl.id, decl.name, this.semantics.locations.range(decl.span), body.start, body, 'const');
+		}
 		if (implicitSelf) {
 			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', range, range.start, range, 'receiver');
 		}
@@ -4942,7 +4948,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileLexicalFunction(lexical: LexicalFunction & { readonly protoIndex: number }, hint: string): void {
 		const id = buildProtoId(this.protoId, hint);
 		compileFunctionExpression(this.program, lexical.expression, this, false, id, lexical.name, this.moduleId,
-			this.semantics, this.frontend, lexical.protoIndex);
+			this.semantics, this.frontend, lexical.protoIndex, lexical.environment);
 	}
 
 	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
@@ -6139,12 +6145,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const argBase = callBase + (methodName ? 2 : 1);
 		this.tempTop = argBase;
+		if (lexicalFunction !== undefined) {
+			for (const capture of lexicalFunction.environment) this.emitReferenceLoad(capture, this.allocTemp());
+		}
 		for (let i = 0; i < fixedArgCount; i += 1) {
 			const argReg = this.allocTemp();
 			this.compileExpressionInto(expression.arguments[i], argReg, 1);
 			this.tempTop = argReg + 1;
 		}
-		let callArgs = fixedArgCount + (methodName ? 1 : 0);
+		let callArgs = fixedArgCount + (methodName ? 1 : 0) + (lexicalFunction?.environment.length ?? 0);
 		if (hasVarArg) {
 			const argReg = this.allocTemp();
 			this.compileExpressionInto(expression.arguments[argCount - 1], argReg, 0);
@@ -6527,6 +6536,7 @@ function compileFunctionExpression(
 	semantics: LuaSemanticFrontendFile,
 	frontend: LuaSemanticFrontend,
 	reservedIndex?: number,
+	environment: readonly LuaBoundReference[] = [],
 ): number {
 	const builder = new FunctionBuilder(program, parent, {
 		moduleId,
@@ -6535,7 +6545,7 @@ function compileFunctionExpression(
 		semantics,
 		frontend,
 	});
-	builder.compileFunctionExpression(expression, implicitSelf);
+	builder.compileFunctionExpression(expression, implicitSelf, environment);
 	const code = builder.getCode();
 	const upvalueDescs = builder.getUpvalueDescs();
 	if (reservedIndex !== undefined && upvalueDescs.length !== 0) {
@@ -6548,7 +6558,7 @@ function compileFunctionExpression(
 	const protoIndex = program.addProto({
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
-		numParams: expression.parameters.length + (implicitSelf ? 1 : 0),
+		numParams: environment.length + expression.parameters.length + (implicitSelf ? 1 : 0),
 			isVararg: expression.hasVararg,
 			maxStack: builder.getMaxStack(),
 			upvalueDescs,
