@@ -179,7 +179,7 @@ struct Blua32ExecutionImage {
 	ValueStorage decodedConstants;
 	std::vector<u32> constantStringSlots;
 	ConstValueSpan constPool;
-	// Borrow the RAM prefix of the String binding backing.
+	// The ROM counts bound ordinary and System namespace operand ordinals.
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};
 	std::array<RomCallBinding, RomCallBinding::slotCount> romCallBindings{};

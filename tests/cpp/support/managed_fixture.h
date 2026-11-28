@@ -134,9 +134,14 @@ inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addres
 		++slot;
 		if (isRamStringId(id)) ramEnd = slot;
 	}
-	const u32 binding = executionImageBindingOffset(management, domain);
-	memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringBase, ramEnd);
-	memory.writeRamRecordPair(binding, base, bytes);
+	const u32 binding = executionImageBindingOffset(domain);
+	memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET,
+		names != 0u ? base : 0u, systemNames != 0u ? base + 4u * names : 0u);
+	memory.writeRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringCount != 0u ? stringBase : 0u);
+	const u32 storage = firmwareImageStorageOffset(management, domain);
+	memory.writeRamRecordWord(storage + FIRMWARE_IMAGE_STORAGE_BASE_OFFSET, base);
+	memory.writeRamRecordWord(storage + FIRMWARE_IMAGE_STORAGE_BYTES_OFFSET, bytes);
+	memory.writeRamRecordWord(storage + FIRMWARE_IMAGE_STORAGE_RAM_STRING_END_OFFSET, ramEnd);
 }
 
 inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,

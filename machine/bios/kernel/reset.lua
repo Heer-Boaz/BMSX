@@ -17,7 +17,8 @@ local bridge<const> = require('kernel/exception_bridge')
 local ram_base<const> = 0x08000000
 local static_base<const> = 0x08040000
 local management<const> = layout.management_offset
-local installed<const> = ram_base + management + layout.installed_image_bindings_offset
+local operand_maps<const> = ram_base + management + layout.image_operand_maps_offset
+local operand_backings<const> = ram_base + management + layout.image_operand_backings_offset
 local system_bank<const> = ram_base + management + layout.system_global_bank_offset
 local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
 local arena<const> = management + 0x400
@@ -63,8 +64,10 @@ local floor<const> = ((static_end - ram_base + 4095) & ~4095)
 local address = cop0.context
 if address == 0 then
 	heap.initialize_heap(management, floor)
-	local records<const>: *u32 = installed
-	for word = 0, ((ordinary_bank + sizeof(namespace_bank) - installed) >> 2) - 1 do records[word] = 0 end
+	local records<const>: *u32 = operand_maps
+	for word = 0, ((ordinary_bank + sizeof(namespace_bank) - operand_maps) >> 2) - 1 do records[word] = 0 end
+	local backings<const>: *u32 = operand_backings
+	for word = 0, ((3 * sizeof(image_operand_backing)) >> 2) - 1 do backings[word] = 0 end
 	if diagnostics.initialize_diagnostics(management, image.constants) ~= 0 then stop_reset() end
 	local thread_offset<const> = thread.create_thread(management, 0)
 	if thread_offset == 0 then stop_reset() end
@@ -85,14 +88,14 @@ else
 			stop_reset()
 		end
 	end
-	bindings.retire_images(management, installed)
+	bindings.retire_images(management)
 end
 cop0.table_lookup_key = head.index
 cop0.table_assign_key = head.new_index
 cop0.table_length_key = head.length
 cop0.ram_end = ram_base + floor
 heap.publish_system_directory(management, image.buckets, image.bucket_count)
-if image_bind.bind_initial_image(management, header, ordinary_bank, system_bank, installed, *system_fit, *cart0_fit, address) ~= 0 then stop_reset() end
+if image_bind.bind_initial_image(management, header, ordinary_bank, system_bank, *system_fit, *cart0_fit, address) ~= 0 then stop_reset() end
 root.publish_system_root(address, start.prepared_entry)
 local roots<const>: *root_descriptors = ram_base + management + layout.root_banks_offset
 roots.root = address

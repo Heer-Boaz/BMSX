@@ -10,9 +10,10 @@ return {
 	interrupted_context_address = 0x083fd8d0,
 	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
 	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request
-	installed_image_bindings_offset = 0x200,
+	image_operand_maps_offset = 0x200,
 	system_global_bank_offset = 0x230,
 	ordinary_global_bank_offset = 0x23c,
+	image_operand_backings_offset = 0x250,
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,

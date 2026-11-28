@@ -18,6 +18,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 test('shrinking public RAM retires code watches without disarming history', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(4), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
@@ -106,14 +107,14 @@ test('ordinary writes cannot mutate private image maps or embedded constants', (
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }],
 		constants: [integerConstant(7)], globalNames: ['first', 'second'] });
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
 	setReferenceGlobal(cpu, cpu.stringPool.find('first')!, valueInteger(10));
 	setReferenceGlobal(cpu, cpu.stringPool.find('second')!, valueInteger(20));
 	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
 	assert.equal(frame.registers.getInteger(2), 17);
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(image.image.functions[0].codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2], 'the fixture exercises a real compiled region');
-	const descriptor = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const descriptor = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 	const address = memory.readRamRecordWord(descriptor), before = memory.readRamRecordWord(address);
 	assert.ok(address >= memory.ramBusEnd());
 	memory.clearBusFault();

@@ -1,6 +1,16 @@
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+
 // Locations in the linked BIOS's RAM, inspected by the differential fixtures.
 // They are firmware data, not CPU-visible ports or a console ABI.
-export const IMAGE_RAM_STRING_END_OFFSET = 12;
+export const FIRMWARE_IMAGE_BACKINGS_OFFSET = 0x250;
+export const FIRMWARE_IMAGE_BACKING_SIZE = 12;
+export const FIRMWARE_IMAGE_BACKING_BYTES_OFFSET = 4;
+export const FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET = 8;
+
+export function firmwareImageBackingOffset(management: number, domain: ExecutionDomainId): number {
+	return management + FIRMWARE_IMAGE_BACKINGS_OFFSET + FIRMWARE_IMAGE_BACKING_SIZE * (domain + 1);
+}
+
 export const GC_ROOT_BANKS_OFFSET = 0x600;
 export const GC_ROOT_BANKS_HEADER_SIZE = 16;
 export const GC_ROOT_BANK_SIZE = 16;

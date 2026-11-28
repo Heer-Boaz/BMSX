@@ -1,6 +1,6 @@
 import { type CPU, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
 import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
-import { IMAGE_RAM_STRING_END_OFFSET } from '../firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, firmwareImageBackingOffset } from '../firmware_heap_layout';
 import { valueFromTag, type Value } from '../../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_EXPLICIT_ERROR, LUA_FAULT_REASON_INDEX_NAN } from '../../../machine/ts/spec/blua32/cop0';
 import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, type ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
@@ -41,8 +41,8 @@ export function rootBankSlots(cpu: CPU, bank: GcRootBank): number {
 	if (bank === GcRootBank.SystemGlobals) return cpu['systemGlobalBank'].count;
 	if (bank === GcRootBank.Globals) return cpu['globalBank'].count;
 	if (bank === GcRootBank.Completion) return cpu['completionValueCount'];
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
-	return cpu.memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
+	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
+	return cpu.memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 }
 
 export function markRootBank(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
@@ -58,7 +58,7 @@ export function markRootBank(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: nu
 }
 
 export function markLiteralRootBatch(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: number, end: number, amount: number) {
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
+	const binding = executionImageBindingOffset((bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
 	const literals = cpu.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	let next = first, marked = 0;
 	while (next < end && marked < amount) {

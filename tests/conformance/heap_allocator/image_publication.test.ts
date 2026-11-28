@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
@@ -13,7 +14,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
+	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
 } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_MAGIC, BLUA32_IMAGE_MAGIC_OFFSET,
@@ -23,6 +24,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { stageBlua32Executables } from '../../../toolchain/ts/rompack/blua32_media';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -64,11 +66,13 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const { cpu, memory, executionAddressSpace, scheduler } = runtime.machine;
 	runGuestToHalt(cpu, 1_000_000);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
-	const size = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), base = memory.readRamRecordWord(binding) - RAM_BASE;
+	const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const size = memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), base = memory.readRamRecordWord(backing) - RAM_BASE;
 	assert.equal(size, span(initial));
 	assert.ok(base > 0 && size > 0, 'only the running BIOS supplied this descriptor and backing');
-	const ram = memory.ramData(), record = ram.slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), operands = ram.slice(base, base + size);
+	const ram = memory.ramData(), record = ram.slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
+	const owned = ram.slice(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), operands = ram.slice(base, base + size);
 	const stringId = cpu.stringPool.find(label)!;
 	assert.equal(cpu.stringPool.toString(stringId), label);
 	const probeClosure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('publication_probe')!), cpu.gc);
@@ -110,6 +114,7 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), used);
 		assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), record);
+		assert.deepEqual(ram.subarray(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), owned);
 		assert.deepEqual(ram.subarray(base, base + size), operands);
 		observe(`+ ${path}`, `${+admitted} ${+!admitted} 0 ${occupied} ${used}`);
 		observe(`H 0 ${ram.length}`, before);
@@ -140,6 +145,12 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	commands.push('U');
 	applyRuntimeSaveState(runtime, published);
 	runProbe(19);
+	// A missing physical String plane is a machine-level refusal. The
+	// allocation size and the other two plane bases do not substitute it.
+	const missing = binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET;
+	memory.writeRamRecordWord(missing, 0);
+	writeLE32(record, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0);
+	commands.push(`W ${missing} 0`);
 	publish(mismatch, differentRom, false);
 	writeFileSync(trace, commands.join('\n'));
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');

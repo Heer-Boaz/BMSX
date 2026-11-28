@@ -7,6 +7,7 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
+import { CPU_FIXED_STACK_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 /** Inspect executable references on a stopped machine without deciding object liveness. */
 export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: number) => void,
@@ -43,9 +44,8 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 		for (let index = 0; index < count; ++index) addRecord(slots.getTag(index), slots.getPayload(index));
 	};
 
-	const management = cpu.heapAllocator.managementOffset();
 	for (const offset of [SYSTEM_GLOBAL_BANK_OFFSET, GLOBAL_BANK_OFFSET]) {
-		const globals = new GlobalBank(memory, management + offset);
+		const globals = new GlobalBank(memory, CPU_FIXED_STACK_BASE + offset);
 		globals.bind();
 		addSlots(globals.slots, globals.count);
 	}

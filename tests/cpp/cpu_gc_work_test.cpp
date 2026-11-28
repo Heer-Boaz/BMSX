@@ -493,10 +493,11 @@ void romLiteralsDoNotUseGuestRam() {
 		Machine machine(source, scalar), empty(bare, scalar);
 		auto& cpu = machine.cpu;
 		const auto occupied = empty.cpu.heapAllocator().occupiedBytes();
-		const u32 installed = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const u32 installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		require(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID)
-			&& machine.memory.readRamRecordWord(installed) == 0u
-			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 0u
+			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET) == 0u
+			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET) == 0u
+			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET) == 0u
 			&& cpu.luaHeap().usedBytes() == empty.cpu.luaHeap().usedBytes()
 			&& cpu.heapAllocator().occupiedBytes() == occupied, "numeric ROM literals have no guest binding allocation");
 		const auto ram = machine.memory.captureSaveState();
@@ -547,7 +548,7 @@ void directStringOperandsFollowTheRestoredBank() {
 		auto& cpu = machine.cpu;
 		auto& memory = machine.memory;
 		auto& strings = cpu.stringPool();
-		const auto descriptor = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const auto descriptor = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		const u32 words = memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 		const std::array literalIds{*strings.find("literal before RAM"), *strings.find("__index"),
 			*strings.find("literal between RAM roots"), *strings.find("__newindex"), *strings.find("literal after RAM")};
@@ -555,7 +556,8 @@ void directStringOperandsFollowTheRestoredBank() {
 			&& isRamStringId(literalIds[3]) && !isRamStringId(literalIds[4]), "the bank interleaves real ROM and RAM String ids");
 		for (u32 i = 0; i < literalIds.size(); ++i)
 			require(memory.readRamRecordWord(words + 4u * i) == literalIds[i], "every physical word is the literal's exact String id");
-		require(memory.readRamRecordWord(descriptor + test::FIRMWARE_IMAGE_BINDING_RAM_STRING_END_OFFSET) == 4u,
+		const u32 storage = test::firmwareImageStorageOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		require(memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_RAM_STRING_END_OFFSET) == 4u,
 			"the stock root frontier ends at the last RAM ordinal, not the RAM root count");
 		const auto state = cpu.captureRuntimeState();
 		const auto ramA = memory.captureSaveState();
@@ -583,13 +585,19 @@ void directStringOperandsFollowTheRestoredBank() {
 	}
 }
 
-void replacementRetiresInstalledBindingSpan() {
+void replacementUsesIndependentOperandPlanes() {
 	auto source = image();
-	writeInstruction(source.text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
-	writeInstruction(source.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-	source.functions[0].wordCount = 2;
-	source.globalNames = {"__index"};
-	source.systemGlobalNames.clear();
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::KSMI), 0, 1, 9);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::KSMI), 1, 1, 15);
+	writeInstruction(source.text, 3, static_cast<u8>(OpCode::SETSYS), 1, 0, 0);
+	writeInstruction(source.text, 4, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
+	writeInstruction(source.text, 5, static_cast<u8>(OpCode::GETSYS), 1, 0, 0);
+	writeInstruction(source.text, 6, static_cast<u8>(OpCode::LOADK), 2, 0, 2);
+	writeInstruction(source.text, 7, static_cast<u8>(OpCode::RET), 0, 4, 0);
+	source.functions[0].wordCount = 8;
+	source.globalNames = {"__index", "__mode"};
+	source.systemGlobalNames = {"__newindex", "__len"};
 	source.constants = {std::string("replacement A"), std::string("replacement B"), std::string("replacement C")};
 	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, source);
 	auto previousMedia = replacement.bytes;
@@ -597,25 +605,58 @@ void replacementRetiresInstalledBindingSpan() {
 	Memory memory(MemoryInit{previousMedia, {}}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
-	const u32 descriptor = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
-	const u32 before = memory.readRamRecordWord(descriptor);
-	require(before != 0u && memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 8u,
-		"installed namespace and String literal have a charged two-word binding");
-	cpu.setGlobalByKey(cpu.stringPool().intern("__index"), valueInteger(73));
-	const auto used = cpu.luaHeap().usedBytes();
+	const u32 binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	constexpr std::array offsets{EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET,
+		EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET};
+	std::array<u32, offsets.size()> installed{};
+	for (size_t lane = 0; lane < offsets.size(); ++lane) installed[lane] = memory.readRamRecordWord(binding + offsets[lane]);
+	const u32 storage = test::firmwareImageStorageOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	require(memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_BASE_OFFSET) == installed[0]
+		&& memory.readRamRecordWord(storage + test::FIRMWARE_IMAGE_STORAGE_BYTES_OFFSET) == 20u,
+		"the test fixture begins with a single old firmware allocation");
 
 	memory.installSystemRom(replacement.bytes);
-	require(memory.readRamRecordWord(descriptor) == before && memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 8u,
-		"mounting media does not rebind the old record");
-	cpu.replaceExecutionImage(addresses.resolveSystemDomain());
-	require(memory.readRamRecordWord(descriptor) != before
-		&& memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 16u
-		&& cpu.luaHeap().usedBytes() == used + 16 - 8, "new binding is allocated before draining the old exact span");
+	for (size_t lane = 0; lane < offsets.size(); ++lane)
+		require(memory.readRamRecordWord(binding + offsets[lane]) == installed[lane], "mounting media does not rebind the operands");
+	cpu.setGlobalByKey(*cpu.stringPool().find("__index"), valueInteger(3));
+	cpu.setSystemGlobalByKey(*cpu.stringPool().find("__newindex"), valueInteger(5));
+	const std::array planes{cpu.luaHeap().allocateRecord(8u, false, 0u, 0u),
+		cpu.luaHeap().allocateRecord(8u, false, 0u, 0u), cpu.luaHeap().allocateRecord(12u, false, 0u, 0u)};
+	require(planes[0] + 8u != planes[1] && planes[1] + 8u != planes[2],
+		"the operand tables have independent storage");
+	for (size_t lane = 0; lane < 2; ++lane)
+		memory.writeRamRecordPair(planes[lane], memory.readRamRecordWord(installed[lane] + 4u), memory.readRamRecordWord(installed[lane]));
+	const StringId id = cpu.stringPool().intern("separately published literal");
+	for (u32 ordinal = 0; ordinal < 3u; ++ordinal) memory.writeRamRecordWord(planes[2] + ordinal * 4u, id);
+	for (size_t lane = 0; lane < offsets.size(); ++lane) memory.writeRamRecordWord(binding + offsets[lane], planes[lane]);
+
+	const auto boot = addresses.resolveSystemDomain();
+	const auto* oldImage = cpu.activeThread()->currentFrame->executionImage;
+	for (size_t lane = 0; lane < offsets.size(); ++lane) {
+		memory.writeRamRecordWord(binding + offsets[lane], 0u);
+		bool rejected = false;
+		try { cpu.replaceExecutionImage(boot); }
+		catch (const std::runtime_error& error) {
+			rejected = std::string_view(error.what()) == "Replacement image requires an installed operand binding.";
+		}
+		require(rejected && cpu.activeThread()->currentFrame->executionImage == oldImage,
+			"each required plane must be published before an image can attach");
+		memory.writeRamRecordWord(binding + offsets[lane], planes[lane]);
+	}
 	const auto ram = memory.captureSaveState();
+	cpu.replaceExecutionImage(boot);
+	require(memory.captureSaveState().ram == ram.ram, "the CPU attaches independent operands without consulting or rewriting backing");
 	const auto state = cpu.captureRuntimeState();
 	for (int replay = 0; replay < 2; ++replay) {
-		cpu.runUntilDepth(0, 4096);
-		require(cpu.readFrameRegister(0, 0) == valueInteger(73), "decoded global reads through the replacement binding");
+		require(cpu.runUntilDepth(0, 4096) == RunResult::Halted, "replacement executed its bound operands");
+		const auto result = cpu.readCompletionValues();
+		require(result.size() == 3u && result.get(0) == valueInteger(73) && result.get(1) == valueInteger(79) && result.get(2) == valueString(id),
+			"each opcode consumes the selected map");
+		require(cpu.getGlobalByKey(*cpu.stringPool().find("__index")) == valueInteger(3)
+			&& cpu.getGlobalByKey(*cpu.stringPool().find("__mode")) == valueInteger(73)
+			&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("__newindex")) == valueInteger(5)
+			&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("__len")) == valueInteger(79),
+			"stores changed only the two explicitly mapped namespace slots");
 		memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(state);
 		require(memory.captureSaveState().ram == ram.ram, "rebinding to restored operands does not rewrite guest RAM");
@@ -634,6 +675,11 @@ void allActivatedImagesAndUniqueGlobals() {
 	Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(card0.bytes, card1.bytes)}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
+	for (ExecutionDomainId domain : {0, 1}) {
+		const auto boot = *addresses.resolveDomain(domain);
+		test::installFixtureOperands(cpu, addresses, boot);
+		cpu.replaceExecutionImage(boot);
+	}
 	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
@@ -1882,6 +1928,13 @@ int main(int argc, char** argv) {
 			std::cout << "raw Thread GC work test passed\n";
 			return 0;
 		}
+		if (argc > 1 && std::string_view(argv[1]) == "--operand-map-only") {
+			romLiteralsDoNotUseGuestRam();
+			directStringOperandsFollowTheRestoredBank();
+			replacementUsesIndependentOperandPlanes();
+			std::cout << "raw operand map tests passed\n";
+			return 0;
+		}
 		directStringOperandsFollowTheRestoredBank();
 		canonicalPoolAndRootRanges();
 		stringMarkWorkSurvivesCheckpoint();
@@ -1895,7 +1948,7 @@ int main(int argc, char** argv) {
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes();
 		logicalAdmissionFailure();
-		romLiteralsDoNotUseGuestRam(); replacementRetiresInstalledBindingSpan(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		romLiteralsDoNotUseGuestRam(); replacementUsesIndependentOperandPlanes(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();

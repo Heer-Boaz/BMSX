@@ -24,7 +24,7 @@ const sources = {
 	M: ['machine/ts/spec/bmsx/memory_map.ts', '00dbd23e01f06a9aaf126c55fa7ba6c3306b5ac86caa3adfa695b6b9360fe1f0'],
 } as const;
 
-test('warm retirement pins both native boundaries and maps every guest backing release and descriptor effect', () => {
+test('warm retirement maps each backing release and separates machine operand bases from firmware ownership', () => {
 	verifyPinnedBluaSource(port, basis, sources, [
 		['T', 949, 950], ['C', 627, 628], ['G', 50, 53], ['H', 32, 34],
 		['L', 288, 291], ['N', 291, 294], ['T', 931, 931], ['C', 223, 224],
@@ -33,10 +33,15 @@ test('warm retirement pins both native boundaries and maps every guest backing r
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([port, bindings]));
 	const { chunk } = workspace.updateFile(bindings, readFileSync(bindings, 'utf8'));
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
-	const pair = types.resolve(bindings, { name: 'installed_image_binding', arrayLengths: [], span: chunk.body.get(0).span }).struct!;
-	assert.equal(pair.size, 16);
-	assert.equal(pair.fields.get('base')?.offset, 0);
-	assert.equal(pair.fields.get('bytes')?.offset, 4);
-	assert.equal(pair.fields.get('strings')?.offset, 8);
-	assert.equal(pair.fields.get('ram_string_end')?.offset, 12);
+	const map = types.resolve(bindings, { name: 'image_operand_map', arrayLengths: [], span: chunk.body.get(0).span }).struct!;
+	assert.equal(map.size, 16);
+	assert.equal(map.fields.get('ordinary')?.offset, 0);
+	assert.equal(map.fields.get('system')?.offset, 4);
+	assert.equal(map.fields.get('strings')?.offset, 8);
+	assert.equal(map.fields.get('reserved')?.offset, 12);
+	const backing = types.resolve(bindings, { name: 'image_operand_backing', arrayLengths: [], span: chunk.body.get(0).span }).struct!;
+	assert.equal(backing.size, 12);
+	assert.equal(backing.fields.get('base')?.offset, 0);
+	assert.equal(backing.fields.get('bytes')?.offset, 4);
+	assert.equal(backing.fields.get('ram_string_end')?.offset, 8);
 });

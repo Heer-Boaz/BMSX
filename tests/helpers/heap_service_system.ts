@@ -8,15 +8,15 @@ import { createTestSystemCpu, linkTestSystemBlua32, type TestBlua32Image } from 
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { readLE32 } from '../../machine/ts/common/endian';
-import type { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import type { Blua32ExecutionBoot, ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_DIAGNOSTIC_FAULTS_OFFSET } from './firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_DIAGNOSTIC_FAULTS_OFFSET, firmwareImageBackingOffset } from './firmware_heap_layout';
 import { registerReferenceGlobalName } from './global_bank_reference';
-import { EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset } from '../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE,
@@ -111,7 +111,7 @@ const fixtureFaultTexts = [
 
 /** Admit the native reference's initial heap on a fresh test CPU after raw reset. */
 export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: ExecutionAddressSpace): void {
-	const { memory } = cpu, { heapAllocator: arena, gc, luaHeap, stringPool } = nativeHeapReference(cpu);
+	const { memory } = cpu, { heapAllocator: arena, luaHeap, stringPool } = nativeHeapReference(cpu);
 	const boot = executionAddressSpace.resolveSystemDomain();
 	const management = arena.managementOffset(), floor = arena.floorOffset(boot.staticEnd);
 	bindReferenceDlmalloc(memory, arena.allocatorStateOffset()).reset(floor, management);
@@ -149,9 +149,19 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	adopted.stackTop = end;
 	memory.writeRamRecordWord(root + ThreadField.FrameDepth, 1);
 
-	// Raw instruction fixtures do not run BIOS binding code. Publish their
-	// actual operand backing here using the independent native reference.
-	const domain = SYSTEM_EXECUTION_DOMAIN_ID;
+	bindReferenceImageOperands(cpu, executionAddressSpace, boot);
+	cpu.replaceExecutionImages([boot]);
+	const state = cpu.captureRuntimeState();
+	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
+	memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + ThreadField.FrameDepth, 0);
+	cpu.restoreRuntimeState(state);
+}
+
+/** Publish a raw fixture's operand backing with the independent native reference. */
+export function bindReferenceImageOperands(cpu: CPU, executionAddressSpace: ExecutionAddressSpace, boot: Blua32ExecutionBoot): void {
+
+	const { memory } = cpu, { heapAllocator, gc, luaHeap, stringPool } = nativeHeapReference(cpu);
+	const domain = boot.executionDomainId, management = heapAllocator.managementOffset();
 	const view = { bytes: new Uint8Array(0), byteOffset: 0 };
 	executionAddressSpace.bindReadOnlyView(domain, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, view);
 	const header = view.bytes, h = view.byteOffset;
@@ -178,7 +188,7 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 			executionAddressSpace.bindReadOnlyView(domain, readLE32(header, h + tableOffset), count * BLUA32_GLOBAL_NAME_RECORD_SIZE, view);
 			for (let slot = 0; slot < count; ++slot) {
 				const name = stringPool.resolveImageRecord(domain, readLE32(view.bytes, view.byteOffset + slot * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
-				memory.writeRamRecordWord(output, registerReferenceGlobalName(nativeHeapReference(cpu).gc, bank, name));
+				memory.writeRamRecordWord(output, registerReferenceGlobalName(gc, bank, name));
 				output += 4;
 			}
 		}
@@ -190,15 +200,13 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 			memory.writeRamRecordWord(output + 4 * ordinal++, id);
 			if (isRamStringId(id)) ramEnd = ordinal;
 		}
-		const binding = executionImageBindingOffset(management, domain);
-		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, output, ramEnd);
-		memory.writeRamRecordPair(binding, base, bytes);
+		const binding = executionImageBindingOffset(domain), backing = firmwareImageBackingOffset(management, domain);
+		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET,
+			globalCount === 0 ? 0 : base, systemCount === 0 ? 0 : base + 4 * globalCount);
+		memory.writeRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringCount === 0 ? 0 : output);
+		memory.writeRamRecordPair(backing, base, bytes);
+		memory.writeRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, ramEnd);
 	}
-	cpu.replaceExecutionImages([boot]);
-	const state = cpu.captureRuntimeState();
-	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
-	memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + ThreadField.FrameDepth, 0);
-	cpu.restoreRuntimeState(state);
 }
 
 /** Create linked algorithm fixtures with independent native heap backing. */

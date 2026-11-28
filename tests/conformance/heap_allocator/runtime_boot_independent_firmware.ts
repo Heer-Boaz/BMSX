@@ -14,7 +14,8 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField,
+		EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET,
+	GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET,
 	SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
 } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
@@ -28,7 +29,6 @@ import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_bui
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { IMAGE_RAM_STRING_END_OFFSET } from '../../helpers/firmware_heap_layout';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 // These addresses deliberately overlap the stock BIOS's software state, not
@@ -44,12 +44,17 @@ const meta = first + 0x10, metaHash = first + 0x30, lookupKey = first + 0x50;
 const inherited = second + 0x28, inheritedArray = second + 0x48;
 const receiverCell = unreachable + 0x50, keyCell = receiverCell + 8;
 const globalDescriptor = CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET;
-const systemBinding = executionImageBindingOffset(CPU_FIXED_STACK_BASE, SYSTEM_EXECUTION_DOMAIN_ID);
+const systemDescriptor = CPU_FIXED_STACK_BASE + SYSTEM_GLOBAL_BANK_OFFSET;
+const systemBinding = RAM_BASE + executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 const globalValues = CPU_FIXED_STACK_BASE - 0x60, globalCapacity = 4, globalOrdinal = 2;
 const globalNeighborTags = ValueTag.Integer | (ValueTag.Integer << 8);
 const initialGlobalTags = globalNeighborTags | (ValueTag.False << 16);
 const updatedGlobalTags = globalNeighborTags | (ValueTag.Integer << 16);
-const ordinalMap = first - 0x10, literalIds = ordinalMap + 4;
+const ordinalMap = CPU_FIXED_STACK_BASE + 0x600, systemOrdinalMap = CPU_FIXED_STACK_BASE + 0x630;
+const literalIds = CPU_FIXED_STACK_BASE + 0x650, systemValues = CPU_FIXED_STACK_BASE + 0x6c0, systemOrdinal = 3;
+const systemNeighborTags = ValueTag.Integer | (ValueTag.Integer << 8) | (ValueTag.Integer << 16);
+const initialSystemTags = systemNeighborTags | (ValueTag.True << 24);
+const updatedSystemTags = systemNeighborTags | (ValueTag.Integer << 24);
 const signature = 0x61b10f4d, sweeping = 0x5a51000d, settled = 0x5a510015, tableReady = 0x5a510020;
 const reset = `
 local startup<const> = require('bmsx/startup')
@@ -102,18 +107,25 @@ cop0.table_lookup_key = ${lookupKey}
 cop0.table_assign_key = ${lookupKey}
 cop0.string_index_table = ${inherited}
 
--- The linked image has one ordinary operand, mapped to a different storage
--- ordinal. This firmware publishes only its own split Value planes.
+-- Each linked ordinal maps to its own register window. The three
+-- resolved operand tables need not share an allocation.
 local globals<const>: *u32 = ${globalDescriptor}
 globals[${GlobalBankField.Values / 4}], globals[${GlobalBankField.Capacity / 4}], globals[${GlobalBankField.Count / 4}] = ${globalValues}, ${globalCapacity}, 3
 local global_values<const>: *u32 = ${globalValues}
 global_values[0], global_values[1], global_values[${globalOrdinal}], global_values[${globalCapacity}] = 23, 47, 0, ${initialGlobalTags}
+local system<const>: *u32 = ${systemDescriptor}
+system[${GlobalBankField.Values / 4}], system[${GlobalBankField.Capacity / 4}], system[${GlobalBankField.Count / 4}] = ${systemValues}, ${globalCapacity}, 4
+local system_values<const>: *u32 = ${systemValues}
+system_values[0], system_values[1], system_values[2], system_values[${systemOrdinal}], system_values[${globalCapacity}] =
+	17, 29, 43, 0, ${initialSystemTags}
 local ordinal<const>: *u32 = ${ordinalMap}
-*ordinal = ${globalOrdinal}
+ordinal[0], ordinal[1] = ${globalOrdinal}, 1
+local system_ordinal<const>: *u32 = ${systemOrdinalMap}
+system_ordinal[0], system_ordinal[1], system_ordinal[2] = 1, ${systemOrdinal}, 2
 local literal_ids<const>: *u32 = ${literalIds}
 literal_ids[0], literal_ids[1] = ${lookupKey}, ${stringKey}
 local installed<const>: *u32 = ${systemBinding}
-installed[0], installed[${EXECUTION_IMAGE_BINDING_SPAN_OFFSET / 4}] = ${ordinalMap}, 12
+installed[${EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET / 4}], installed[${EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET / 4}] = ${ordinalMap}, ${systemOrdinalMap}
 installed[${EXECUTION_IMAGE_BINDING_STRINGS_OFFSET / 4}] = ${literalIds}
 initialize()
 collect(${first})
@@ -181,9 +193,11 @@ return function(reused, exhausted, reclaimed)
 	target[3] = 137
 	local initial_global<const> = independent_counter
 	independent_counter = 158
+	local initial_system<const> = irq
+	irq = 211
 	return reused, exhausted, nodes[2], nodes[${slotWords + 2}], reclaimed, old_array, old_field,
 		own_array, own_field, size, key_size, string_field, inherited, disabled, target[3],
-		initial_global, independent_counter, 'read', 'k'
+		initial_global, independent_counter, initial_system, irq, 'read', 'k'
 end`;
 const modules = [['main', 'module<entry>\nreturn 0'], ['reset', reset],
 	['table-exercise', tableExercise], ['irq', 'halt_until_irq'], ['exception', 'halt_until_irq']].map(([path, source]) =>
@@ -200,6 +214,7 @@ try {
 			managedEntries: [{ path: 'table-exercise', symbol: 'table_exercise' }],
 		});
 		assert.equal(linked.layout.header.globalNameCount, 1, 'the independent firmware supplies exactly one linked ordinary ordinal');
+		assert.deepEqual(linked.layout.systemGlobalNames, ['table_exercise', 'irq', 'exception']);
 		const stringSlots = linked.layout.constants.flatMap((value, slot) => typeof value === 'string' ? [slot] : []);
 		assert.deepEqual(stringSlots.map(slot => linked.layout.constants[slot]), ['read', 'k']);
 		const romBytes = writeTestBlua32Rom(linked);
@@ -207,7 +222,7 @@ try {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 		});
 		runtime.boot();
-		const { cpu, scheduler, memory } = runtime.machine;
+		const { cpu, scheduler, memory, executionAddressSpace } = runtime.machine;
 		const raw = memory.ramData();
 		const allocatorOffset = allocator - RAM_BASE, collectorOffset = collector - RAM_BASE;
 		const globalOffset = globalValues - RAM_BASE, globalBytes = 5 * globalCapacity;
@@ -228,7 +243,9 @@ try {
 		}
 		function fingerprint() {
 			for (const [offset, count] of [[allocatorOffset, 32], [collectorOffset, 4], [first - RAM_BASE, 3 * slotBytes], [diagnostics, 36],
-				[globalOffset - 48, globalBytes + 96], [globalDescriptor - RAM_BASE, 12], [systemBinding - RAM_BASE, 16], [ordinalMap - RAM_BASE, 12]]) {
+				[globalOffset - 48, globalBytes + 96], [globalDescriptor - RAM_BASE, 12], [systemDescriptor - RAM_BASE, 12],
+				[systemBinding - RAM_BASE, 16], [CPU_FIXED_STACK_BASE - RAM_BASE + 0x250, 36],
+				[ordinalMap - RAM_BASE, 8], [systemOrdinalMap - RAM_BASE, 12], [literalIds - RAM_BASE, 8], [systemValues - RAM_BASE, globalBytes]]) {
 				commands.push(`H ${offset} ${offset + count}`);
 				observations.push(String(hashBytes(raw, offset, count)));
 			}
@@ -250,7 +267,7 @@ try {
 		writeFileSync(tsState, encodeRuntimeSaveState(midpoint));
 		commands.push('S', `x ${nativeState}`);
 		const result = [unreachable, 0, 31, 59, 73, 59, 79, 91, 107, 2, 1, 113, 113, 0, 137].map(valueInteger);
-		result.push(valueBool(false), valueInteger(158), valueString(lookupKey), valueString(stringKey));
+		result.push(valueBool(false), valueInteger(158), valueBool(true), valueInteger(211), valueString(lookupKey), valueString(stringKey));
 		const ownOps = [OpCode.GETI, OpCode.GETT, OpCode.SETI, OpCode.SETT, OpCode.GETI, OpCode.GETT, OpCode.LEN, OpCode.LEN, OpCode.GETI];
 		const expectedTableOps = [...ownOps.map(op => [op, BASE_CYCLES[op]]),
 			[OpCode.GETI, BASE_CYCLES[OpCode.GETI] + TABLE_INDEX_VISIT_CYCLES],
@@ -268,6 +285,7 @@ try {
 			assert.equal(memory.readRamRecordWord(hash + 4), 79);
 			assert.equal(memory.readRamRecordWord(globalValues + 4 * globalOrdinal), 0, 'the saved Value is live before SETGL');
 			assert.equal(memory.readRamRecordWord(globalValues + 4 * globalCapacity), initialGlobalTags);
+			assert.equal(memory.readRamRecordWord(systemValues + 4 * globalCapacity), initialSystemTags);
 			fingerprint();
 			const tableOps: [OpCode, number][] = [];
 			const globalOps: [OpCode, number][] = [];
@@ -279,14 +297,15 @@ try {
 				if (op === OpCode.RET) break;
 				if (op === OpCode.GETI || op === OpCode.GETT || op === OpCode.SETI || op === OpCode.SETT || op === OpCode.LEN) {
 					tableOps.push([op, paid]);
-				} else if (op === OpCode.GETGL || op === OpCode.SETGL) {
+				} else if (op === OpCode.GETGL || op === OpCode.SETGL || op === OpCode.GETSYS || op === OpCode.SETSYS) {
 					globalOps.push([op, paid]);
 				} else if (op === OpCode.LOADK && stringSlots.includes(bx)) {
 					literalLoads.push([bx, paid]);
 				}
 			}
 			assert.deepEqual(tableOps, expectedTableOps, 'the custom key controls exactly one extra charged visit');
-			assert.deepEqual(globalOps, [OpCode.GETGL, OpCode.SETGL, OpCode.GETGL].map(op => [op, BASE_CYCLES[op]]));
+			assert.deepEqual(globalOps, [OpCode.GETGL, OpCode.SETGL, OpCode.GETSYS, OpCode.SETSYS, OpCode.GETGL, OpCode.GETSYS]
+				.map(op => [op, BASE_CYCLES[op]]));
 			assert.deepEqual(literalLoads, stringSlots.map(slot => [slot, BASE_CYCLES[OpCode.LOADK]]));
 			assert.deepEqual(runtime.readCompletionValues(), result);
 			assert.equal(cpu.captureRuntimeState().hardHalted, false);
@@ -305,14 +324,25 @@ try {
 			assert.deepEqual(raw.subarray(globalOffset + globalBytes, globalOffset + globalBytes + 48), new Uint8Array(48),
 				'neither former compound-storage lane is needed by the CPU');
 			assert.deepEqual([0, 4].map(offset => memory.readRamRecordWord(literalIds + offset)), [lookupKey, stringKey]);
-			assert.equal(memory.readRamRecordWord(systemBinding + IMAGE_RAM_STRING_END_OFFSET), 0,
-				'the alternative firmware does not publish a stock collector range');
+			assert.deepEqual([0, 1, 2, 3, globalCapacity].map(slot => memory.readRamRecordWord(systemValues + 4 * slot)),
+				[17, 29, 43, 211, updatedSystemTags], 'the system operand did not use the word after the ordinary table');
+			const stockBacking = CPU_FIXED_STACK_BASE - RAM_BASE + 0x250;
+			assert.deepEqual(raw.subarray(stockBacking, stockBacking + 36), new Uint8Array(36),
+				'the alternative firmware publishes no stock reservation or collector extent');
 			fingerprint();
 			commands.push('c');
 			observations.push([result.length, ...result.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 			return observations.slice(start);
 		}
 		const ending = finish();
+		// After execution has retired, attach the same executable using
+		// only the operand planes, with no allocation record to consult.
+		const beforePublication = hashBytes(raw, 0, raw.length);
+		memory.installSystemRom(romBytes);
+		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+		assert.equal(hashBytes(raw, 0, raw.length), beforePublication);
+		commands.push(`+ ${rom}`);
+		observations.push('1 0 0 0 0');
 		applyRuntimeSaveState(runtime, midpoint);
 		commands.push('U');
 		assert.deepEqual(finish(), ending);
@@ -325,7 +355,7 @@ try {
 		assert.deepEqual(out, observations);
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		assert.deepEqual(finish(), ending);
-		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (private allocator and collector, local table keys, direct globals and String literals; portable RAM and cycle parity)`);
+		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (private allocator and collector, local table keys, independent operand planes; portable RAM and cycle parity)`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

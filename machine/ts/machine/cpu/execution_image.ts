@@ -1,7 +1,10 @@
 import type { FunctionEntry, FunctionPrototype } from './closure';
 import { readLE32 } from '../../common/endian';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import {
+	EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET,
+	SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset, type ExecutionDomainId,
+} from '../../spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
@@ -19,6 +22,17 @@ import type { Memory, MemoryByteView } from '../memory/memory';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
+
+// A nonempty ROM operand plane has to be published before an image can attach.
+export function readInstalledImageStrings(memory: Memory, domain: ExecutionDomainId,
+	ordinaryCount: number, systemCount: number, stringCount: number): number | null {
+	const binding = executionImageBindingOffset(domain);
+	if ((ordinaryCount !== 0 && memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET) === 0)
+		|| (systemCount !== 0 && memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET) === 0)) return null;
+	if (stringCount === 0) return 0;
+	const strings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	return strings === 0 ? null : strings;
+}
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;

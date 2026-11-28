@@ -80,9 +80,10 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			payloads = ram_base + (values & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
 			tags = ram_base + ((values + 4 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
 		elseif literal_bank then -- U:5078-5079,5103-5104 P:3148-3149,3173-3174
-			local installed<const>: *installed_image_binding = ram_base + control - layout.control_offset + layout.installed_image_bindings_offset -- T:593 C:625 U:5078-5079 P:3148-3149
-			local image<const>: *installed_image_binding = &installed[kind - system_constants] -- U:5078-5079,5103 P:3148-3149,3173
-			bank_end, payloads = image.ram_string_end, image.strings -- U:5078-5079,5104 P:3148-3149,3174
+			local state<const>, lane<const> = ram_base + control - layout.control_offset, kind - system_constants -- T:593 C:625 U:5078-5079 P:3148-3149
+			local maps<const>: *image_operand_map = state + layout.image_operand_maps_offset -- U:5078-5079,5103 P:3148-3149,3173
+			local backings<const>: *image_operand_backing = state + layout.image_operand_backings_offset -- U:5078-5079,5103 P:3148-3149,3173
+			bank_end, payloads = backings[lane].ram_string_end, maps[lane].strings -- U:5078-5079,5104 P:3148-3149,3174
 		else -- U:5076-5077 P:3146-3147
 			local bank<const>: *root_bank = &roots.banks[kind - completion] -- T:593 C:624-625
 			bank_end, payloads, tags = bank.count, bank.payloads, bank.tags -- T:593 C:625 U:5076-5077,5091-5092,5095-5099 P:3146-3147,3162-3163,3166-3169

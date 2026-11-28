@@ -18,11 +18,11 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_STORAGE_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
-import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_DOMAIN_COUNT, EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_ROOT_BANKS_OFFSET, IMAGE_RAM_STRING_END_OFFSET } from '../../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, FIRMWARE_IMAGE_BACKINGS_OFFSET, GC_ROOT_BANKS_OFFSET, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -43,7 +43,9 @@ const input = {
 	applyInputControllerVibrationEffect() {},
 };
 const runner = 'bmsx_heap_service_conformance_runner';
-const bindingBytes = GLOBAL_BANK_OFFSET + GlobalBankField.Count + 4 - EXECUTION_IMAGE_BINDINGS_OFFSET;
+const bindingBytes = EXECUTION_DOMAIN_COUNT * EXECUTION_IMAGE_BINDING_SIZE;
+const backingBytes = EXECUTION_DOMAIN_COUNT * FIRMWARE_IMAGE_BACKING_SIZE;
+const namespaceBytes = GLOBAL_BANK_OFFSET + GlobalBankField.Count + 4 - SYSTEM_GLOBAL_BANK_OFFSET;
 
 function compileCartridge(system: Uint8Array, source: string, path: string, optLevel: OptimizationLevel) {
 	const program = compileLuaChunkToProgram(parseLuaChunk(source, path), [], { entrySource: source, optLevel });
@@ -563,8 +565,12 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	trace.observe('P', `1 ${cpu.readFramePc(0)}`);
 	fingerprint(management + HEAP_LOGICAL_OCCUPIED_OFFSET, 4);
 	fingerprint(arena.allocatorStateOffset(), 24);
-	const bindings = management + EXECUTION_IMAGE_BINDINGS_OFFSET;
-	fingerprint(bindings, bindingBytes);
+	const imageRanges = [
+		[EXECUTION_IMAGE_BINDINGS_OFFSET, bindingBytes],
+		[management + SYSTEM_GLOBAL_BANK_OFFSET, namespaceBytes],
+		[management + FIRMWARE_IMAGE_BACKINGS_OFFSET, backingBytes],
+	] as const;
+	for (const [base, bytes] of imageRanges) fingerprint(base, bytes);
 	runUntilCartHalt();
 	const root = cpu.rootThread.address, active = cpu.activeThread.address;
 	assert.notEqual(root, active, 'hardware is running a real separate coroutine');
@@ -586,7 +592,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	trace.observe(`O ${canaryAddress} ${canary}`);
 	const preserved = [
 		[root - RAM_BASE, THREAD_HEAP_BYTES], [active - RAM_BASE, THREAD_HEAP_BYTES],
-		[cell - RAM_BASE, UPVALUE_HEAP_BYTES], [bindings, bindingBytes],
+		[cell - RAM_BASE, UPVALUE_HEAP_BYTES], ...imageRanges,
 	] as const;
 	const beforeReset = preserved.map(([base, len]) => fingerprint(base, len));
 	assert.equal(scheduler.acceptedCpuCycles, 0);
@@ -632,7 +638,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 		trace.observe(`M ${report}`, `${expectedReport} 0`);
 		fingerprint(diagnostics, 4);
 		fingerprint(indexTag, 8);
-		fingerprint(bindings, bindingBytes);
+		for (const [base, bytes] of imageRanges) fingerprint(base, bytes);
 		fingerprint(root - RAM_BASE, THREAD_HEAP_BYTES);
 		fingerprint(management + HEAP_GC_CONTROL_OFFSET, 80);
 	}
@@ -836,7 +842,8 @@ halt_until_irq`;
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
-	const management = arena.managementOffset(), cartBinding = executionImageBindingOffset(management, 0);
+	const management = arena.managementOffset(), cartBinding = executionImageBindingOffset(0);
+	const cartBacking = firmwareImageBackingOffset(management, 0);
 	const trace = new Trace(native, join(dir, label + '.trace'), cartPath);
 	const { commands, expected } = trace;
 	const seedPath = join(dir, label + '-cart.state');
@@ -881,15 +888,15 @@ halt_until_irq`;
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(memory.readMappedWord(linked.layout.header.bssAddress), literal.length);
-	const oldImageRecord = memory.readRamRecordWord(cartBinding);
+	const oldImageRecord = memory.readRamRecordWord(cartBacking);
 	const outgoingStrings = memory.readRamRecordWord(cartBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	assert.equal(outgoingStrings, oldImageRecord + 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount));
-	assert.equal(memory.readRamRecordWord(cartBinding + IMAGE_RAM_STRING_END_OFFSET), 2, 'stop immediately after the last RAM literal, not at the end of the pool');
+	assert.equal(memory.readRamRecordWord(cartBacking + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET), 2, 'stop immediately after the last RAM literal, not at the end of the pool');
 	const beforeAlias = memory.readRamRecordWord(outgoingStrings), afterAlias = memory.readRamRecordWord(outgoingStrings + 8);
 	assert.ok(beforeAlias >= CART_ROM_BASE && afterAlias >= CART_ROM_BASE);
 	assert.deepEqual([beforeAlias, afterAlias].map(id => cpu.stringPool.toString(id)), [leadingRom, trailingRom]);
 	assert.equal(memory.readRamRecordWord(outgoingStrings + 4), alias, 'the outgoing binding directly names its canonical RAM literal');
-	assert.equal(memory.readRamRecordWord(cartBinding + 4), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 3));
+	assert.equal(memory.readRamRecordWord(cartBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 3));
 	if (!retainsBlocker) {
 		nativeHeapReference(cpu).gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(cpu.gc.phase(), GcPhase.Mark);
@@ -900,7 +907,7 @@ halt_until_irq`;
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(cpu.captureRuntimeState().previousRootContextWord, root);
 	assert.equal(memory.ramBusEnd(), initialFloor);
-	assert.equal(memory.readRamRecordWord(cartBinding), oldImageRecord);
+	assert.equal(memory.readRamRecordWord(cartBacking), oldImageRecord);
 	commands.push('X', `^ ${replacementPath}`);
 	// The privilege handoff can consume one arbitrary cycle at a time. Cut a
 	// genuine stopped collector phase, rather than its entry/return boundary.
@@ -923,12 +930,13 @@ halt_until_irq`;
 		assert.equal(cpu.stringPool.find(literal), alias, 'outgoing image-only canonical root survives the stopped pass');
 		if (!retainsBlocker) assert.equal(cpu.stringPool.find(blockerText), undefined);
 		if (retainsBlocker) {
-			assert.equal(memory.readRamRecordWord(cartBinding), oldImageRecord);
+			assert.equal(memory.readRamRecordWord(cartBacking), oldImageRecord);
 			assert.equal(memory.readIoU32(IO_SYS_STATUS) & (SYS_STATUS_SUPERVISOR_ACTIVE | SYS_STATUS_SUPERVISOR_RESUMABLE),
 				SYS_STATUS_SUPERVISOR_ACTIVE, 'terminal refusal parked in a non-resumable hardware supervisor fault');
 			trace.observe(`M ${IO_SYS_STATUS}`, `${memory.readIoU32(IO_SYS_STATUS)} 0`);
 		}
 		fingerprint(cartBinding, EXECUTION_IMAGE_BINDING_SIZE);
+		fingerprint(cartBacking, FIRMWARE_IMAGE_BACKING_SIZE);
 		fingerprint(alias - RAM_BASE, 16);
 		fingerprint(management + HEAP_STRING_METADATA_OFFSET, HEAP_GC_CONTROL_OFFSET - HEAP_STRING_METADATA_OFFSET);
 		fingerprint(management + HEAP_LOGICAL_OCCUPIED_OFFSET, GC_ROOT_BANKS_OFFSET - HEAP_LOGICAL_OCCUPIED_OFFSET);
@@ -955,11 +963,12 @@ halt_until_irq`;
 		trace.observe(`^ ${rom}`);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(cpu.captureRuntimeState().previousRootContextWord, root);
-		assert.equal(memory.readRamRecordWord(cartBinding), oldImageRecord);
+		assert.equal(memory.readRamRecordWord(cartBacking), oldImageRecord);
 		for (let i = 0; i < 4096 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i) grant(1024);
 		assert.equal(cpu.rootThread.address, root);
 		assert.equal(memory.ramBusEnd(), initialFloor);
 		fingerprint(cartBinding, EXECUTION_IMAGE_BINDING_SIZE);
+		fingerprint(cartBacking, FIRMWARE_IMAGE_BACKING_SIZE);
 		trace.replay('terminal refusal leaves the previous image intact for a new system reset', replacementPath, tsPartial);
 	}
 }
@@ -988,7 +997,8 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
-	const management = arena.managementOffset(), installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
+	const management = arena.managementOffset(), installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 	const seedPath = join(dir, label + '.seed'), tsPartial = join(dir, label + '.ts'), nativePartial = join(dir, label + '.cpp');
 	const trace = new Trace(native, join(dir, label + '.trace'), cartPath);
 	const { commands, expected } = trace;
@@ -1018,12 +1028,15 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	assert.equal(cpu.gc.phase(), GcPhase.Pause);
 	assert.equal(nativeHeapReference(cpu).luaHeap.allocationDebt(4 * ordinals), 0, 'the fixture isolates physical refusal from logical admission');
 	const fullEpochs = cpu.gc.fullEpochs(), oldBinding = memory.readRamRecordWord(installed);
+	const oldBacking = memory.readRamRecordWord(backing);
 	assert.notEqual(oldBinding, 0);
+	assert.equal(oldBacking, oldBinding);
 	writeFileSync(seedPath, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));
 	memory.installSystemRom(replacement);
 	rt.rebootSystem();
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(memory.readRamRecordWord(installed), oldBinding);
+	assert.equal(memory.readRamRecordWord(backing), oldBacking);
 	trace.observe('X');
 	trace.observe('^ ' + replacementPath);
 	for (let i = 0; i < 8192 && cpu.gc.phase() === GcPhase.Pause && !cpu.isHaltedUntilIrq(); ++i) grant(16);
@@ -1031,6 +1044,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(memory.ramBusEnd(), floor, 'the requested floor did not need a recovery epoch');
 	assert.equal(memory.readRamRecordWord(installed), 0, 'after retiring the old binding, before publishing the incoming binding');
+	assert.deepEqual(memory.ramData().subarray(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), new Uint8Array(FIRMWARE_IMAGE_BACKING_SIZE));
 	assert.equal(memory.readRamRecordWord(management + GLOBAL_BANK_OFFSET), 0, 'recovery precedes registering the incoming names');
 	assert.equal(memory.readRamRecordWord(management + SYSTEM_GLOBAL_BANK_OFFSET), 0);
 	trace.observe('l');
@@ -1063,6 +1077,8 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 			assert.equal(memory.readRamRecordWord(management + GLOBAL_BANK_OFFSET), 0);
 		}
 		fingerprint(installed, bindingBytes);
+		fingerprint(management + FIRMWARE_IMAGE_BACKINGS_OFFSET, backingBytes);
+		fingerprint(management + SYSTEM_GLOBAL_BANK_OFFSET, namespaceBytes);
 		fingerprint(management + HEAP_STRING_METADATA_OFFSET, HEAP_GC_CONTROL_OFFSET - HEAP_STRING_METADATA_OFFSET);
 		fingerprint(management + HEAP_GC_CONTROL_OFFSET, GC_ROOT_BANKS_OFFSET - HEAP_GC_CONTROL_OFFSET);
 	}
@@ -1121,7 +1137,7 @@ halt_until_irq
 	runtime.boot();
 	const { cpu, memory, scheduler, gxGpu } = runtime.machine;
 	const frames = runtime.frameScheduler;
-	const installed = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 1);
+	const installed = executionImageBindingOffset(1);
 	let preExec: Uint8Array | undefined;
 	cpu.setExecutionHook((_domain, pc) => {
 		const word = readLE32(system, pc);
@@ -1130,7 +1146,7 @@ halt_until_irq
 			assert.equal(cpu.captureRuntimeState().executionResidencyMask & executionDomainBit(1), 0,
 				'the slot has no host execution image before the transfer');
 			assert.ok(memory.readRamRecordWord(installed) > RAM_BASE);
-			assert.ok(memory.readRamRecordWord(installed + 4) > 0);
+			assert.ok(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET) > RAM_BASE);
 			preExec = memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE);
 		}
 		return false;

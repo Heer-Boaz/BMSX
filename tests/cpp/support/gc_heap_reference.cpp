@@ -1033,9 +1033,9 @@ size_t GcHeap::rootBankEnd(GcRootBank bank) const {
 	if (bank == GcRootBank::SystemGlobals) return m_cpu.m_systemGlobalBank.count();
 	if (bank == GcRootBank::Globals) return m_cpu.m_globalBank.count();
 	if (bank == GcRootBank::Completion) return m_cpu.m_completionValueCount;
-	const u32 binding = executionImageBindingOffset(arena.managementOffset(),
+	const u32 storage = firmwareImageStorageOffset(arena.managementOffset(),
 		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
-	return memory.readRamRecordWord(binding + FIRMWARE_IMAGE_BINDING_RAM_STRING_END_OFFSET);
+	return memory.readRamRecordWord(storage + FIRMWARE_IMAGE_STORAGE_RAM_STRING_END_OFFSET);
 }
 
 size_t GcHeap::markRootBank(GcRootBank bank, size_t& next, size_t end, size_t allowance) {
@@ -1054,8 +1054,7 @@ size_t GcHeap::markRootBank(GcRootBank bank, size_t& next, size_t end, size_t al
 		for (; next < stop; ++next) markValue(m_cpu.m_completionValues.get(next));
 		return slotsVisited;
 	}
-	const u32 binding = executionImageBindingOffset(arena.managementOffset(),
-		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
+	const u32 binding = executionImageBindingOffset(static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
 	const u32 roots = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	size_t marked = 0;
 	// A literal bank resumes at a physical ordinal. As in the original

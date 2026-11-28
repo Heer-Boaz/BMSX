@@ -14,7 +14,7 @@ local retire_namespace<const> = function(management, address) -- G:50 H:32
 	local bank<const>: *namespace_bank = address -- G:9,50 H:32
 	local values<const> = bank.values -- G:51 H:33
 	if values ~= 0 then -- G:51 H:33
-		local base<const> = values - names.internal.name_index_slot_bytes * bank.capacity
+		local base<const> = values - names.internal.name_index_slot_bytes * bank.capacity -- G:51 H:33; recover the allocation start from the Value plane
 		records.bmsx_dlmalloc_release_record(management + layout.arena_offset, base - layout.ram_base, names.name_charge * bank.count, management + layout.occupied_offset) -- G:10,51 H:9,33 L:289-291 N:292-294
 	end
 	bank.values = 0 -- G:52 H:34
@@ -27,20 +27,26 @@ local retire_namespaces<const> = function(management, system_bank, ordinary_bank
 	retire_namespace(management, ordinary_bank) -- T:950 C:628
 end
 
-local retire_images<const> = function(management, installed) -- T:930-935 C:219,223-230
-	local bindings<const>: *installed_image_binding = installed -- T:931 C:223 I:348-349 J:192
+local retire_images<const> = function(management) -- T:930-935 C:219,223-230
+	local state<const> = layout.ram_base + management -- T:931 C:223 I:348-349 J:192
+	local maps<const>: *image_operand_map = state + layout.image_operand_maps_offset -- T:931 C:223 I:348-349 J:192
+	local backings<const>: *image_operand_backing = state + layout.image_operand_backings_offset -- T:931 C:223 I:348-349 J:192
 	local arena<const> = management + layout.arena_offset -- L:289 N:292 M:6
 	local occupied<const> = management + layout.occupied_offset -- L:290-291 N:293-294
 	for lane = 0, 2 do -- T:931 C:223-224 E:1-3; System, socket 0, socket 1
-		local base<const> = bindings[lane].base -- T:1016 C:303
+		local backing<const>: *image_operand_backing = &backings[lane] -- T:1016 C:303
+		local base<const> = backing.base -- T:1016 C:303
 		if base ~= 0 then -- T:1016 C:303
 			-- C++ exchanges the host base before free; TS detaches it after.
 			-- Choose the existing C++ order for this now-pausable RAM record.
-			local bytes<const> = bindings[lane].bytes -- 4b2ca9763 CPU C++:231-236; retain charge for release
-			bindings[lane].base = 0 -- T:1018 C:303; no backing in an empty lane
-			bindings[lane].bytes = 0 -- 4b2ca9763 CPU C++:233; a retired lane has no installed extent
-			bindings[lane].strings = 0 -- T:1018 C:303; detach the literal plane with its backing
-			bindings[lane].ram_string_end = 0 -- T:1018 C:303
+			local bytes<const> = backing.bytes -- C:303-304; charged span from 4b2ca9763 CPU C++:231-236
+			local operands<const>: *image_operand_map = &maps[lane] -- T:1018 C:303
+			backing.base = 0 -- T:1018 C:303; no backing in an empty lane
+			backing.bytes = 0 -- C:303; a retired lane has no installed extent
+			operands.ordinary = 0 -- T:1018 C:303
+			operands.system = 0 -- T:1018 C:303
+			operands.strings = 0 -- T:1018 C:303; detach the literal plane with its backing
+			backing.ram_string_end = 0 -- T:1018 C:303
 			records.bmsx_dlmalloc_release_record(arena, base - layout.ram_base, bytes, occupied) -- T:1017 C:304 L:289-291 N:292-294
 		end
 	end

@@ -16,7 +16,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_SERVICE_ROOT_PORT_BASE } from '../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, IMAGE_RAM_STRING_END_OFFSET } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, firmwareImageBackingOffset } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -24,7 +24,7 @@ import { linkTestBlua32Pair, linkTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { admitTestHeapServiceCpu, compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, bindReferenceImageOperands, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const ROOTS = 'kernel/gc_root_banks', PORT = 'test/gc_root_port', entrySource = 'halt_until_irq';
@@ -75,7 +75,9 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		// Intern the retained Strings before admitting either mounted image: its
 		// constant binding reuses the existing RAM identity, not the ROM literal.
 		for (const literal of RETAINED_CART_STRINGS) nativeHeapReference(cpu).stringPool.intern(literal);
-		cpu.replaceExecutionImages([addressSpace.resolveDomain(0)!, addressSpace.resolveDomain(1)!]);
+		const cartridges = [addressSpace.resolveDomain(0)!, addressSpace.resolveDomain(1)!];
+		for (const boot of cartridges) bindReferenceImageOperands(cpu, addressSpace, boot);
+		cpu.replaceExecutionImages(cartridges);
 		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}
@@ -103,9 +105,10 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	for (const slot of [0, 1] as const)
 		assert.deepEqual(equal(target => {
 			assert.ok(target['executionImageForDomain'](slot));
-			const binding = executionImageBindingOffset(target.heapAllocator.managementOffset(), slot);
+			const binding = executionImageBindingOffset(slot);
 			const base = target.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-			const count = target.memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
+			const backing = firmwareImageBackingOffset(target.heapAllocator.managementOffset(), slot);
+			const count = target.memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 			return Array.from({ length: count }, (_, i) =>
 				target.memory.readRamRecordWord(base + 4 * i));
 		}), slot === 0 ? constants.slice(0, 2) : constants.slice(2));

@@ -8,7 +8,7 @@ import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger,
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
-import { EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDING_SIZE, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { visitRuntimeExecutionRecords } from '../../ide/runtime/execution_records';
@@ -23,7 +23,7 @@ import { createTestSystemCpu, linkRawTestSystemBlua32, writeTestBlua32Rom } from
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
@@ -33,11 +33,10 @@ test('Hot Resume admits numeric edits but rejects equal-sized retargeting of ins
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const system = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }],
 		constants: [integerConstant(3), 'left', 'right'], globalNames: ['first', 'second'] });
-	const { cpu, memory } = createTestSystemCpu(system);
+	const { cpu, memory } = createTestHeapServiceCpu(system);
 	const image = system.image, { address, header } = image;
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
-	const span = 4 * (header.globalNameCount + header.systemGlobalNameCount + 2);
-	memory.writeRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET, span);
+	const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	const installed = memory.ramData().slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
 	const before = cpu.captureRuntimeState();
 	const verify = (bytes: Uint8Array) => verifyHotResumeBinding(cpu, SYSTEM_EXECUTION_DOMAIN_ID, image, decodeBlua32Image(bytes, address));
 	const immediate = header.constantTableAddress - address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
@@ -53,7 +52,7 @@ test('Hot Resume admits numeric edits but rejects equal-sized retargeting of ins
 	const changedName = image.bytes.slice();
 	writeLE32(changedName, name, readLE32(changedName, name + 4));
 	assert.throws(() => verify(changedName), /installed global-name slots/);
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), span);
+	assert.deepEqual(memory.ramData().subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), installed);
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 });
 

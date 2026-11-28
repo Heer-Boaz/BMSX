@@ -66,8 +66,8 @@ local prepare_plan<const> = function(index, staged, mounted)
 		bss_start, bss_end = prior.bss_target + prior.bss_size, prior.bss_target + replacement.bss_size
 		if bss_start > cop0.ram_end then return false end
 	end
-	local installed<const>: *installed_image_binding = state + layout.installed_image_bindings_offset
-		+ index * sizeof(installed_image_binding)
+	local backings<const>: *image_operand_backing = state + layout.image_operand_backings_offset
+	local prior_extent<const> = backings[index].bytes
 	local delta<const> = staged - mounted
 	local count<const> = replacement.constants_count
 	local constants<const>: *constant_record = replacement.constants + delta
@@ -75,11 +75,11 @@ local prepare_plan<const> = function(index, staged, mounted)
 	for ordinal = 0, count - 1 do
 		if constants[ordinal].tag == string_constant then string_count = string_count + 1 end
 	end
-	local string_prior<const> = installed.bytes // 4 - prior.global_count - prior.system_count
+	local string_prior<const> = prior_extent // 4 - prior.global_count - prior.system_count
 	if string_count < string_prior then return false end
 	plan.delta = delta
 	local extent<const> = 4 * (replacement.global_count + replacement.system_count + string_count)
-	if extent ~= installed.bytes then plan.extent = extent end
+	if extent ~= prior_extent then plan.extent = extent end
 	plan.constant_count, plan.string_prior = count, string_prior
 	plan.global_count, plan.global_prior = replacement.global_count, prior.global_count
 	plan.system_count, plan.system_prior = replacement.system_count, prior.system_count
@@ -140,15 +140,14 @@ end
 local stage_names<const> = function(index, plan_address, system_names, pending, mask, materialize, system, cart0, cart1)
 	local plan<const>: *image_operand_plan = plan_address
 	local image<const>: *immutable_image_operands = plan.staged
-	local installed<const>: *installed_image_binding = state + layout.installed_image_bindings_offset
-		+ index * sizeof(installed_image_binding)
 	local bank<const> = system_names and system_bank or ordinary_bank
 	local retained<const> = system_names and plan.system_prior or plan.global_prior
 	local count<const> = system_names and plan.system_count or plan.global_count
 	local inputs<const>: *u32 = (system_names and image.system_names or image.global_names) + plan.delta
 	local output<const>: *u32 = layout.ram_base + plan.offset + (system_names and 4 * plan.global_count or 0)
 	if materialize then
-		local previous<const>: *u32 = installed.base + (system_names and 4 * plan.global_prior or 0)
+		local operands<const>: *image_operand_map = state + layout.image_operand_maps_offset + index * sizeof(image_operand_map)
+		local previous<const>: *u32 = system_names and operands.system or operands.ordinary
 		for slot = 0, retained - 1 do output[slot] = previous[slot] end
 	end
 	local keys<const>: *u32 = pending
@@ -178,10 +177,9 @@ end
 local stage_strings<const> = function(index, plan_address, system, cart0, cart1)
 	local plan<const>: *image_operand_plan = plan_address
 	local image<const>: *immutable_image_operands = plan.staged
-	local installed<const>: *installed_image_binding = state + layout.installed_image_bindings_offset
-		+ index * sizeof(installed_image_binding)
+	local maps<const>: *image_operand_map = state + layout.image_operand_maps_offset
 	local constants<const>: *constant_record = image.constants + plan.delta
-	local prior<const>: *u32 = installed.strings
+	local prior<const>: *u32 = maps[index].strings
 	local pool<const>: *u32 = layout.ram_base + plan.offset + 4 * (plan.global_count + plan.system_count)
 	local string_prior<const> = plan.string_prior
 	local ram_string_end, ordinal = 0, 0
@@ -234,11 +232,14 @@ end
 
 local publish_operand_bank<const> = function(index, plan_address)
 	local plan<const>: *image_operand_plan = plan_address
-	local installed<const>: *installed_image_binding = state + layout.installed_image_bindings_offset
-		+ index * sizeof(installed_image_binding)
-	local previous<const>, previous_bytes<const> = installed.base, installed.bytes
-	local base<const> = plan.offset == 0 and 0 or layout.ram_base + plan.offset
-	local pool_address<const> = base + 4 * (plan.global_count + plan.system_count)
+	local operands<const>: *image_operand_map = state + layout.image_operand_maps_offset + index * sizeof(image_operand_map)
+	local backing<const>: *image_operand_backing = state + layout.image_operand_backings_offset + index * sizeof(image_operand_backing)
+	local previous<const>, previous_bytes<const> = backing.base, backing.bytes
+	local base<const> = layout.ram_base + plan.offset
+	local globals<const>, system<const>, extent<const> = plan.global_count, plan.system_count, plan.extent
+	local system_address<const> = base + 4 * globals
+	local names_bytes<const> = 4 * (globals + system)
+	local pool_address<const> = base + names_bytes
 	local pool<const>: *u32 = pool_address
 	local ram_string_end<const> = plan.ram_string_end
 	local work = 0
@@ -249,8 +250,11 @@ local publish_operand_bank<const> = function(index, plan_address)
 		local latch<const>: *u32 = state + layout.string_mark_work_offset
 		*latch = *latch + work
 	end
-	installed.strings, installed.ram_string_end = pool_address, ram_string_end
-	installed.base, installed.bytes = base, plan.extent
+	operands.strings = names_bytes < extent and pool_address or 0
+	operands.ordinary = globals ~= 0 and base or 0
+	operands.system = system ~= 0 and system_address or 0
+	backing.ram_string_end = ram_string_end
+	backing.base, backing.bytes = base, extent
 	if previous ~= 0 then
 		records.bmsx_dlmalloc_release_record(allocator, previous - layout.ram_base, previous_bytes, occupied)
 	end

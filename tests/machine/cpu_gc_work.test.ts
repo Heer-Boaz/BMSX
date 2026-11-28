@@ -1,4 +1,4 @@
-import { IMAGE_RAM_STRING_END_OFFSET } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -25,7 +25,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
@@ -38,7 +38,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CART_ROM_BASE, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, bindReferenceImageOperands, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -452,7 +452,7 @@ test('absolute ROM String references resolve even when backing and directory own
 	assert.throws(() => strings.find('slot-one!'), { message: 'BLua32 ROM String is truncated.' });
 });
 
-test('image replacement rejects unrepresentable table and binding extents before changing runtime records', () => {
+test('image replacement rejects an unrepresentable individual plane before changing runtime records', () => {
 	const image = linkRawTestSystemBlua32(source());
 	for (const constants of [false, true]) {
 		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image);
@@ -461,9 +461,8 @@ test('image replacement rejects unrepresentable table and binding extents before
 		if (constants) {
 			writeLE32(rom, header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, ((CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE) | 0) + 1);
 		} else {
-			// Each namespace fits the map on its own; their combined extent does not.
-			writeLE32(rom, header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / 4);
-			writeLE32(rom, header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, 1);
+			// Only the extent of the individual operand plane is a machine bound.
+			writeLE32(rom, header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / 4 + 1);
 		}
 		memory.installSystemRom(rom);
 		const boot = executionAddressSpace.resolveSystemDomain();
@@ -489,10 +488,11 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 		const occupied = empty.heapAllocator.occupiedBytes();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), empty.luaHeap.usedBytes());
-		const installed = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		assert.ok(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID));
-		assert.equal(memory.readRamRecordWord(installed), 0);
-		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 0);
+		assert.deepEqual(memory.ramData().subarray(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE));
+		const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		assert.deepEqual(memory.ramData().subarray(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), new Uint8Array(FIRMWARE_IMAGE_BACKING_SIZE));
 		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 		for (let replay = 0; replay < 2; ++replay) {
 			cpu.runUntilDepth(0, 4000);
@@ -522,14 +522,18 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		cpu.reset();
 		admitTestHeapServiceCpu(cpu, addresses);
 		const beforeCartridge = captureCpuCheckpoint(cpu);
-		const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
+		const binding = executionImageBindingOffset(0);
+		const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), 0);
 		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-		const count = () => memory.readRamRecordWord(binding + IMAGE_RAM_STRING_END_OFFSET);
+		const count = () => memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 		const activate = () => {
 			// There are no cartridge names or other references to this RAM
 			// String. The ROM literal is its only root after activation.
 			const id = nativeHeapReference(cpu).stringPool.intern(literal);
 			assert.ok(id >= RAM_BASE);
+			const boot = addresses.resolveDomain(0)!;
+			bindReferenceImageOperands(cpu, addresses, boot);
+			cpu.replaceExecutionImages([boot]);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
 			assert.equal(count(), 1);
 			assert.equal(memory.readRamRecordWord(strings()), id);
@@ -579,6 +583,9 @@ test('remount invalidates a literal table in another image even when the backing
 		const cpu = new CPU(memory, new IrqController(memory), addresses);
 		cpu.reset();
 		admitTestHeapServiceCpu(cpu, addresses);
+		const cartridge = addresses.resolveDomain(0)!;
+		bindReferenceImageOperands(cpu, addresses, cartridge);
+		cpu.replaceExecutionImages([cartridge]);
 		cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
 		return cpu;
 	};
@@ -595,7 +602,7 @@ test('remount invalidates a literal table in another image even when the backing
 	assert.deepEqual(results, [valueInteger(73)]);
 });
 
-test('replacing fitted ROM releases its old RAM binding span and binds decoded global operands to the new one', () => {
+test('replacement consumes newly published global planes without changing firmware backing ownership', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.GETGL, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -604,21 +611,27 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	const previousMedia = next.romBytes.slice();
 	writeLE32(previousMedia, next.image.address + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1);
 	const { cpu, memory, executionAddressSpace } = createTestHeapServiceCpu({ romBytes: previousMedia });
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const before = memory.readRamRecordWord(binding);
 	assert.notEqual(before, 0);
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
+	assert.equal(memory.readRamRecordWord(backing), before);
+	assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 8);
 	const key = nativeHeapReference(cpu).stringPool.intern('__index');
 	setReferenceGlobal(cpu, key, valueInteger(73));
 	const used = cpu.luaHeap.usedBytes();
 
 	memory.installSystemRom(next.romBytes);
 	assert.equal(memory.readRamRecordWord(binding), before, 'mounting new bytes alone does not change installed operand ownership');
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
-	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
-	assert.notEqual(memory.readRamRecordWord(binding), before, 'new storage was allocated before freeing the old block');
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 16);
-	assert.equal(cpu.luaHeap.usedBytes(), used + 16 - 8);
+	assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 8);
+	const boot = executionAddressSpace.resolveSystemDomain();
+	bindReferenceImageOperands(cpu, executionAddressSpace, boot);
+	assert.notEqual(memory.readRamRecordWord(binding), before, 'the producer has already published new storage');
+	assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 16);
+	const published = memory.ramData().slice();
+	cpu.replaceExecutionImages([boot]);
+	assert.equal(cpu.luaHeap.usedBytes(), used + 16, 'CPU publication does not release either allocation');
+	assert.deepEqual(memory.ramData(), published);
 	const replacement = captureCpuCheckpoint(cpu);
 	for (let repeat = 0; repeat < 2; ++repeat) {
 		assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);

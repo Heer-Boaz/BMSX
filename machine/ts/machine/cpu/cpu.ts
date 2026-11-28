@@ -3,7 +3,7 @@ import { GcHeap } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_STACK_BASE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -101,7 +101,7 @@ import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
 	type ExecutionDomainMask,
-	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
+	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET,
 	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
@@ -151,6 +151,7 @@ import {
 	RomFunctionLane,
 	SCALAR_LOCAL_PC,
 	readRomFunctionDirectory,
+	readInstalledImageStrings,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
@@ -373,9 +374,8 @@ export class CPU implements MappedPageInvalidator {
 		this.stringPool = new StringPool(this.memory, this.heapAllocator);
 		this.tables = new TableRecords(memory, this.cop0Words);
 		this.gc = new GcHeap(memory, this.heapAllocator, this.tables);
-		const management = this.heapAllocator.managementOffset();
-		this.systemGlobalBank = new GlobalBank(memory, management + SYSTEM_GLOBAL_BANK_OFFSET);
-		this.globalBank = new GlobalBank(memory, management + GLOBAL_BANK_OFFSET);
+		this.systemGlobalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + SYSTEM_GLOBAL_BANK_OFFSET);
+		this.globalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET);
 		this.rootThread = new Thread(memory);
 		this.threadBanks = [this.rootThread, new Thread(memory), new Thread(memory)];
 		this.irqThread = new Thread(memory);
@@ -756,11 +756,11 @@ export class CPU implements MappedPageInvalidator {
 				stringCount += +(tag === Blua32ConstantTag.String);
 			}
 		}
-		const imageBindingBytes = 4 * (globalNameCount + systemGlobalNameCount + stringCount);
-		if (imageBindingBytes > MAIN_RAM_SIZE) throw new Error('BLua32 image bank extents exceed main RAM.');
+		if (Math.max(globalNameCount, systemGlobalNameCount, stringCount) > MAIN_RAM_SIZE / 4)
+			throw new Error('BLua32 image bank extents exceed main RAM.');
 		const romFunctions = readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView);
 		return {
-			constantBytes, constantOffset, constantCount, stringCount, imageBindingBytes, reused,
+			constantBytes, constantOffset, constantCount, stringCount, reused,
 			globalNameCount, systemGlobalNameCount, romFunctions,
 		};
 	}
@@ -818,9 +818,10 @@ export class CPU implements MappedPageInvalidator {
 			return null;
 		}
 		const header = this.readExecutionImageHeader(executionBoot);
-		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
-		if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes) return null;
-		const image = this.materializeExecutionImage(executionBoot, header, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET));
+		const strings = readInstalledImageStrings(this.memory, executionDomainId,
+			header.globalNameCount, header.systemGlobalNameCount, header.stringCount);
+		if (strings === null) return null;
+		const image = this.materializeExecutionImage(executionBoot, header, strings);
 		this.executionImagesByDomain[imageIndex] = image;
 		return image;
 	}
@@ -868,10 +869,10 @@ export class CPU implements MappedPageInvalidator {
 		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		const images = executionBoots.map(boot => {
 			const header = this.readExecutionImageHeader(boot);
-			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), boot.executionDomainId);
-			if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes)
-				throw new Error('Replacement image requires an installed operand binding.');
-			return this.materializeExecutionImage(boot, header, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET));
+			const strings = readInstalledImageStrings(this.memory, boot.executionDomainId,
+				header.globalNameCount, header.systemGlobalNameCount, header.stringCount);
+			if (strings === null) throw new Error('Replacement image requires an installed operand binding.');
+			return this.materializeExecutionImage(boot, header, strings);
 		});
 		// The new images are only host views. The existing operands and the
 		// firmware's binding descriptor do not change when code is republished.
@@ -1188,8 +1189,9 @@ export class CPU implements MappedPageInvalidator {
 			if (this.resetBankSelected() || index >= (system ? image.systemNameCount : image.globalNameCount)) {
 				page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
 			} else {
-				const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), image.executionDomainId);
-				const base = this.memory.readRamRecordWord(binding) + (system ? 4 * image.globalNameCount : 0);
+				const binding = executionImageBindingOffset(image.executionDomainId);
+				const base = this.memory.readRamRecordWord(binding
+					+ (system ? EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET : EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET));
 				page.bx[pageOffset] = this.memory.readRamRecordWord(base + 4 * index);
 			}
 		}
@@ -1485,7 +1487,7 @@ export class CPU implements MappedPageInvalidator {
 		this.globalBank.bind();
 		this.systemGlobalBank.bind();
 		const image = this.systemImage;
-		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		const binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 		const strings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), slots = image.constantStringSlots;
 		for (let index = 0; index < slots.length; ++index) {
 			const id = memory.readRamRecordWord(strings + 4 * index), slot = slots[index];
@@ -3986,7 +3988,7 @@ export class CPU implements MappedPageInvalidator {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
 				const header = this.readExecutionImageHeader(boot, this.executionImagesByDomain[index]);
-				const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), boot.executionDomainId);
+				const binding = executionImageBindingOffset(boot.executionDomainId);
 				const strings = boardBank ? 0 : this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, header, strings);
 			} else this.executionImagesByDomain[index] = null;

@@ -1,10 +1,7 @@
 import { readLE32 } from '../../machine/ts/common/endian';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import {
-	EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
-	executionImageBindingOffset,
-	type ExecutionDomainId,
-} from '../../machine/ts/spec/blua32/execution_domain';
+import { readInstalledImageStrings } from '../../machine/ts/machine/cpu/execution_image';
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import {
 	Blua32ConstantTag,
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
@@ -87,9 +84,7 @@ export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, prev
 	if (installed.size !== 0)
 		throw new Error('Hot Resume changes immutable ROM String records. Rebuild and boot the ROM.');
 
-	const bound = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), domain);
-	if (cpu.memory.readRamRecordWord(bound + EXECUTION_IMAGE_BINDING_SPAN_OFFSET)
-		!== 4 * (old.globalNameCount + old.systemGlobalNameCount + stringCount))
+	if (readInstalledImageStrings(cpu.memory, domain, old.globalNameCount, old.systemGlobalNameCount, stringCount) === null)
 		throw new Error('Hot Resume requires the firmware-installed operand binding.');
 	return old.globalNameCount !== revised.globalNameCount || old.systemGlobalNameCount !== revised.systemGlobalNameCount
 		|| after !== revised.constantCount || bssAppend;

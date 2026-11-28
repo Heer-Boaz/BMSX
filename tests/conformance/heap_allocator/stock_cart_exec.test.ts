@@ -12,7 +12,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
-import { EXECUTION_IMAGE_BINDING_SIZE, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
@@ -27,6 +27,7 @@ import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/r
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 test('stock firmware binds the selected socket before EXEC; RESET discards an unentered image', async t => {
@@ -143,14 +144,17 @@ halt_until_irq
 				assert.equal(mismatch, -1, `at ${mismatch}: native=${actual[mismatch]}, TypeScript=${expected[mismatch]}`);
 				assert.equal(actual.length, expected.length);
 			};
-			let installed = 0, beforeExec: Uint8Array | undefined;
+			const installed = executionImageBindingOffset(1);
+			let owned = 0, beforeExec: Uint8Array | undefined, beforeBacking: Uint8Array | undefined;
 			const observeBinding = ({ machine: { cpu, memory } }: Runtime) => {
-				installed = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 1);
+				owned = firmwareImageBackingOffset(cpu.heapAllocator.managementOffset(), 1);
 				assert.equal(cpu.captureRuntimeState().executionResidencyMask & executionDomainBit(1), 0,
 					'the slot has no host execution image before the transfer');
 				assert.ok(memory.readRamRecordWord(installed) > RAM_BASE);
-				assert.ok(memory.readRamRecordWord(installed + 4) > 0);
+				assert.ok(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET) > RAM_BASE);
+				assert.ok(memory.readRamRecordWord(owned + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET) > 0);
 				beforeExec = memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE);
+				beforeBacking = memory.ramData().slice(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE);
 			};
 			const { runtime, commands, expected } = boot(cartridgeSlots(other, selected), cpu =>
 				cpu.activeCartridgeSlot() === 1 && cpu.isHaltedUntilIrq(), live => { observeBinding(live); return false; });
@@ -167,6 +171,7 @@ halt_until_irq
 			assert.ok(beforeExec !== undefined);
 			assert.deepEqual(memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), beforeExec,
 				'EXEC consumes the installed binding without replacing it');
+			assert.deepEqual(memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), beforeBacking);
 			const constant = cpu.getGlobalByKey(cpu.stringPool.find('selected_payload')!);
 			assert.equal(valueTag(constant), ValueTag.String);
 			assert.equal(valuePayload(constant) >>> 31, 1, 'the executed literal belongs to socket 1');
@@ -194,7 +199,7 @@ halt_until_irq
 			assert.equal(unentered.cpu.systemResetInhibited(), false);
 			assert.equal(unentered.cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
 			const preparedCharge = unentered.cpu.luaHeap.usedBytes();
-			const operandBytes = unentered.memory.readRamRecordWord(installed + 4);
+			const operandBytes = unentered.memory.readRamRecordWord(owned + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 			const seed = join(output, 'pre-exec.state');
 			const prepared = captureRuntimeSaveState(preTransfer.runtime);
 			writeFileSync(seed, encodeRuntimeSaveState(prepared));
@@ -216,7 +221,7 @@ halt_until_irq
 			applyRuntimeSaveState(probe, prepared);
 			const attempted = probe.machine;
 			attempted.memory.writeMappedWord(IO_CART_SELECT, 0);
-			const absent = executionImageBindingOffset(attempted.cpu.heapAllocator.managementOffset(), 0);
+			const absent = executionImageBindingOffset(0);
 			const empty = new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE);
 			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
 			const physicalBytes = attempted.cpu.heapAllocator.occupiedBytes();
@@ -247,8 +252,10 @@ halt_until_irq
 			finishReset(preTransfer);
 			assert.deepEqual(unentered.memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE),
 				empty, 'firmware retires RAM backing without a host cartridge view');
-			preTransfer.commands.push(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
-			preTransfer.expected.push(String(hashBytes(empty, 0, empty.length)));
+			const emptyBacking = new Uint8Array(FIRMWARE_IMAGE_BACKING_SIZE);
+			assert.deepEqual(unentered.memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), emptyBacking);
+			preTransfer.commands.push(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`, `H ${owned} ${owned + FIRMWARE_IMAGE_BACKING_SIZE}`);
+			preTransfer.expected.push(String(hashBytes(empty, 0, empty.length)), String(hashBytes(emptyBacking, 0, emptyBacking.length)));
 			compare('reset-before-exec.trace', preTransfer.commands, preTransfer.expected, seed, otherPath, selectedPath);
 
 			// Keep the table sizes, symbol names and String directory intact.
@@ -273,6 +280,7 @@ halt_until_irq
 				'failure releases the unpublished block and its charge, without undoing namespace effects');
 			assert.deepEqual(malformedMachine.memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE),
 				new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE));
+			assert.deepEqual(malformedMachine.memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), emptyBacking);
 			const charged = malformedMachine.cpu.luaHeap.occupiedOffset;
 			malformed.commands.push(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`, `H ${charged} ${charged + 4}`);
 			malformed.expected.push(String(hashBytes(malformedMachine.memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE)),

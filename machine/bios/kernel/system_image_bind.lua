@@ -129,7 +129,7 @@ end
 
 -- The newly allocated block stays allocator-owned until the complete
 -- name/literal binding has succeeded, just as in native image activation.
-local bind_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, root, slot, source_cycles)
+local bind_image<const> = function(management, header, ordinary_bank, system_bank, system_bytes, cart0_bytes, cart1_bytes, root, slot, source_cycles)
 	local image<const>: *immutable_image_operands = string_record.rom_read_address(header) -- T:1054-1061 C:330-355 F:10-15
 	if image.magic ~= image_magic then return invalid_header end -- T:1047 C:335
 	local socket<const> = slot < 0 and 0 or slot
@@ -163,8 +163,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 		metadata.rom_tables[2 * directory + 1] = bucket_count
 		if metadata.first_cart == 0 then metadata.first_cart = directory end
 	end
-	local base, strings_base, ram_string_end = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
-	local view<const>: *installed_image_binding = installed -- T:1139-1144 C:420-426
+	local base, system_base, strings_base, ram_string_end = 0, 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
 	if extent ~= 0 then -- T:1139 C:420
 		local accepted, offset
 		accepted, offset, source_cycles = admission.reserve(management, root,
@@ -174,7 +173,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 
 		local fault
 		fault, source_cycles = bind_name_table(management, root, ordinary_names, global_count, ordinary_bank, base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1142 C:424
-		local system_base<const> = base + 4 * global_count -- T:1143-1144 C:425-426
+		system_base = base + 4 * global_count -- T:1143-1144 C:425-426
 		if fault == 0 then
 			fault, source_cycles = bind_name_table(management, root, system_names, system_count, system_bank, system_base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1143 C:425
 		end
@@ -200,15 +199,20 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 			return fault
 		end
 	end
-	view.strings = strings_base -- T:1147 C:440; literal plane belongs to this installed binding
-	view.ram_string_end = ram_string_end -- T:1005-1006 C:282,291
-	view.base = base -- T:1178 C:421; the actual installed operand block
-	view.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
+	local state<const>, lane<const> = layout.ram_base + management, slot + 1 -- T:1139-1144 C:420-426
+	local operands<const>: *image_operand_map = state + layout.image_operand_maps_offset + lane * sizeof(image_operand_map) -- T:1139-1144 C:420-426
+	local backing<const>: *image_operand_backing = state + layout.image_operand_backings_offset + lane * sizeof(image_operand_backing) -- T:1139-1144 C:420-426
+	operands.strings = strings_count ~= 0 and strings_base or 0 -- T:1147 C:440
+	operands.ordinary = global_count ~= 0 and base or 0 -- T:1142 C:424
+	operands.system = system_count ~= 0 and system_base or 0 -- T:1143-1144 C:425-426
+	backing.ram_string_end = ram_string_end -- T:1005-1006 C:282,291
+	backing.base = base -- T:1178 C:421; the actual installed operand block
+	backing.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
 	return 0, source_cycles -- T:1167-1181 C:441
 end
 
-local bind_initial_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, root)
-	return (bind_image(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, 0, root, -1, 0))
+local bind_initial_image<const> = function(management, header, ordinary_bank, system_bank, system_bytes, cart0_bytes, root)
+	return (bind_image(management, header, ordinary_bank, system_bank, system_bytes, cart0_bytes, 0, root, -1, 0))
 end
 
 local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes, startup, owner)
@@ -216,8 +220,7 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	local state<const> = layout.ram_base + management
 	local system_bank<const> = state + layout.system_global_bank_offset
 	local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
-	local installed<const> = state + layout.installed_image_bindings_offset + (slot + 1) * sizeof(installed_image_binding)
-	local status<const>, remaining<const> = bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed,
+	local status<const>, remaining<const> = bind_image(management, header | (slot << 31), ordinary_bank, system_bank,
 		system_bytes, cart0_bytes, cart1_bytes, 0, slot, cop0.event_cycles)
 	if status ~= 0 then return status end
 	-- EXEC still owns Function fetch and execution admission. Only a

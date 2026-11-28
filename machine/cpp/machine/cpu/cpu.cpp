@@ -71,8 +71,8 @@ CPU::CPU(
 	, m_rootView(memory)
 	, m_irqView(memory)
 	, m_transferViews{Thread{memory}, Thread{memory}}
-	, m_systemGlobalBank(memory, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
-	, m_globalBank(memory, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
+	, m_systemGlobalBank(memory, CPU_FIXED_STACK_BASE + SYSTEM_GLOBAL_BANK_OFFSET)
+	, m_globalBank(memory, CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET) {
 	m_memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_builtinResultScratch.reserve(1);
@@ -307,13 +307,20 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 			stringCount += readLE32(records.data() + i * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET)
 				== static_cast<u32>(Blua32ConstantTag::String);
 	}
-	const u64 nameCount = static_cast<u64>(globalNameCount) + systemGlobalNameCount;
-	if (nameCount + stringCount > MAIN_RAM_SIZE / sizeof(u32))
+	if (std::max({globalNameCount, systemGlobalNameCount, stringCount}) > MAIN_RAM_SIZE / sizeof(u32))
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
-	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionDomainId);
-	const u32 bytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
-	if (update == ExecutionImageUpdate::UseInstalled &&
-		m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) != bytes) return nullptr;
+	const u32 binding = executionImageBindingOffset(executionDomainId);
+	u32 strings = 0u;
+	if (update == ExecutionImageUpdate::UseInstalled) {
+		if ((globalNameCount != 0u && m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET) == 0u)
+			|| (systemGlobalNameCount != 0u && m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET) == 0u)) return nullptr;
+		if (stringCount != 0u) {
+			strings = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+			if (strings == 0u) return nullptr;
+		}
+	} else if (update == ExecutionImageUpdate::Restore) {
+		strings = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	}
 	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
@@ -326,8 +333,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		image->constantStringSlots.reserve(stringCount);
 		decodeConstantPool(*image, records);
 	}
-	const u32 strings = update == ExecutionImageUpdate::Select ? 0u
-		: m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	bindConstantStrings(*image, strings);
 	return image;
 }
@@ -734,7 +739,7 @@ void CPU::activateRootContext(u32 address) {
 	m_globalBank.bind();
 	m_systemGlobalBank.bind();
 	auto& image = *m_systemImage;
-	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const u32 binding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 	const u32 strings = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	bindConstantStrings(image, strings);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)

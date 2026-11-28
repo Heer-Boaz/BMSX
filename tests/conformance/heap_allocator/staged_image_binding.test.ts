@@ -13,7 +13,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { parseSystemRomImage } from '../../../machine/ts/rompack/image';
 import {
-	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID,
+	EXECUTION_IMAGE_BINDING_SIZE, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID,
 	GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET, GlobalBankField, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET,
 } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
@@ -32,6 +32,7 @@ import { alignBlua32ImageOffset, decodeBlua32Image, type Blua32ImageLayout } fro
 import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { loadBlua32ToolingImage, stageBlua32Executables } from '../../../toolchain/ts/rompack/blua32_media';
 import { Blua32RomStringLayout } from '../../../toolchain/ts/rompack/blua32_rom_strings';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -190,11 +191,14 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const management = cpu.heapAllocator.managementOffset();
-	const ram = memory.ramData(), binding = executionImageBindingOffset(management, 0);
-	const systemBinding = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
-	const oldSpan = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-	const oldSystemSpan = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+	const ram = memory.ramData(), binding = executionImageBindingOffset(0);
+	const systemBinding = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
+	const backing = firmwareImageBackingOffset(management, 0);
+	const systemBacking = firmwareImageBackingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
+	const oldSpan = memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
+	const oldSystemSpan = memory.readRamRecordWord(systemBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 	const oldBindings = ram.slice(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE);
+	const oldBackings = ram.slice(systemBacking, backing + FIRMWARE_IMAGE_BACKING_SIZE);
 	const readGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 	const alias = valuePayload(readGlobal('retained_alias'));
 	const oldString = valuePayload(readGlobal('saved_literal'));
@@ -262,6 +266,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.equal(memory.readMappedU32LE(priorEnd), 0x12345678);
 	observe(`H ${suffix} ${suffix + 4}`, hashBytes(ram, suffix, 4));
 	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
+	assert.deepEqual(ram.subarray(systemBacking, backing + FIRMWARE_IMAGE_BACKING_SIZE), oldBackings);
 	assert.deepEqual(ram.subarray(names, namesEnd), namespace);
 	observe(`H ${names} ${namesEnd}`, hashBytes(ram, names, namesEnd - names));
 	publishSystem(systemPath, system);
@@ -275,12 +280,13 @@ test('stock firmware binds staged System and cartridge operands together without
 
 	publishSystem(stagePath, staged.bytes);
 	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
+	assert.deepEqual(ram.subarray(systemBacking, backing + FIRMWARE_IMAGE_BACKING_SIZE), oldBackings);
 	assert.deepEqual(bind(staged.imageAddresses), [valueInteger(0)]);
 	assert.equal(memory.ramBusEnd(), originalRamEnd);
 	assert.equal(memory.readMappedU32LE(priorEnd), 0);
 	observe(`H ${suffix} ${suffix + 4}`, hashBytes(ram, suffix, 4));
-	assert.ok(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) > oldSpan);
-	assert.equal(memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), oldSystemSpan + 8);
+	assert.ok(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET) > oldSpan);
+	assert.equal(memory.readRamRecordWord(systemBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), oldSystemSpan + 8);
 	assert.equal(memory.readRamRecordWord(ordinaryCount), beforeNameCount + 1, 'the shared new global owns one namespace slot');
 	const systemStrings = memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 	const freshOrdinal = currentSystem.layout.constants.filter(value => typeof value === 'string').length;
@@ -291,6 +297,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.equal(memory.readRamRecordWord(cartStrings + 4 * aliasOrdinal), alias,
 		'the installed literal directly names its preexisting RAM alias');
 	observe(`H ${systemBinding} ${binding + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(ram, systemBinding, 2 * EXECUTION_IMAGE_BINDING_SIZE));
+	observe(`H ${systemBacking} ${backing + FIRMWARE_IMAGE_BACKING_SIZE}`, hashBytes(ram, systemBacking, 2 * FIRMWARE_IMAGE_BACKING_SIZE));
 	publishSystem(newSystemPath, replacementSystemRom);
 	cartridgeController.installRom(0, newCart);
 	cpu.replaceExecutionImages([executionAddressSpace.resolveDomain(0)!]);
