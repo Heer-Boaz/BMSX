@@ -3,15 +3,25 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashBytes } from '../../../machine/ts/common/hash';
+import { hashBytes, hashText } from '../../../machine/ts/common/hash';
+import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { GC_DIAGNOSTIC_OFFSET } from '../../../machine/ts/machine/cpu/gc_heap';
+import { TableHeader } from '../../../machine/ts/machine/cpu/table';
+import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import {
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET,
+	BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND,
+} from '../../../machine/ts/spec/blua32/image_format';
+import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -20,16 +30,22 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 // the fixed CPU bank. This ROM uses its own format and never links stock code.
 const collector = CPU_FIXED_STACK_BASE + 0x344;
 const allocator = CPU_FIXED_STACK_BASE + 0x400;
-const first = CPU_FIXED_STACK_BASE - 0x200, second = first + 16, unreachable = second + 16;
-const signature = 0x61b10f4d, sweeping = 0x5a51000d, settled = 0x5a510015;
+const slotBytes = 0x80, slotWords = slotBytes / 4;
+const first = CPU_FIXED_STACK_BASE - 0x200, second = first + slotBytes, unreachable = second + slotBytes;
+const context = first - 0x200, frames = context + 0x60, values = frames + 2 * FRAME_CONTROL_BYTES, valueCount = 32;
+const stringKey = second + 0x10;
+const array = unreachable + 0x30, hash = unreachable + 0x40;
+const receiverCell = unreachable + 0x50, keyCell = receiverCell + 8;
+const signature = 0x61b10f4d, sweeping = 0x5a51000d, settled = 0x5a510015, tableReady = 0x5a510020;
 const reset = `
+local startup<const> = require('bmsx/startup')
 local initialize<const> = function()
 	local pool<const>: *u32 = ${allocator}
 	pool[0], pool[1] = ${signature}, 0
 	local nodes<const>: *u32 = ${first}
-	nodes[0], nodes[4], nodes[8] = ${second}, 0, ${first}
-	nodes[1], nodes[5], nodes[9] = 0, 0, 0
-	nodes[2], nodes[6], nodes[10] = 31, 59, 73
+	nodes[0], nodes[${slotWords}], nodes[${2 * slotWords}] = ${second}, 0, ${first}
+	nodes[1], nodes[${slotWords + 1}], nodes[${2 * slotWords + 1}] = 0, 0, 0
+	nodes[2], nodes[${slotWords + 2}], nodes[${2 * slotWords + 2}] = 31, 59, 73
 end
 local collect<const> = function(root)
 	local state<const>: *u32 = ${collector}
@@ -41,7 +57,7 @@ local collect<const> = function(root)
 		cursor = object[0]
 	end
 	state[0] = ${sweeping}
-	for address = ${first}, ${unreachable}, 16 do
+	for address = ${first}, ${unreachable}, ${slotBytes} do
 		local object<const>: *u32 = address
 		if object[1] == 0 then
 			object[0] = pool[1]
@@ -62,9 +78,59 @@ initialize()
 collect(${first})
 local reused<const>, exhausted<const> = take(), take()
 local nodes<const>: *u32 = ${first}
-return reused, exhausted, nodes[2], nodes[6], nodes[10]`;
+local reclaimed<const> = nodes[${2 * slotWords + 2}]
+
+-- This ROM, not the stock firmware, produces the standard Table and String
+-- records in its own reclaimed and retained cells. Only own-slot Table
+-- operations are exercised; no metatable or default String receiver.
+local text<const>: *u32 = ${stringKey}
+text[0] = ${BLUA32_STRING_RECORD_KIND}
+text[${BLUA32_STRING_HASH_OFFSET / 4}] = ${hashText('k') | 0}
+text[${BLUA32_STRING_LENGTH_OFFSET / 4}] = 1
+text[${BLUA32_STRING_RECORD_HEADER_SIZE / 4}] = 0x6b
+local header<const>: *u32 = reused
+header[0] = ${ValueTag.Table}
+header[${TableHeader.Metatable / 4}] = 0
+header[${TableHeader.Array / 4}], header[${TableHeader.ArrayStorage / 4}] = 2, reused + 0x30
+header[${TableHeader.Hash / 4}], header[${TableHeader.HashStorage / 4}] = 1, reused + 0x40
+header[${TableHeader.Length / 4}], header[${TableHeader.Free / 4}] = 2, 0
+local body<const>: *u32 = reused + 0x30
+body[0], body[1], body[2] = 37, 59, ${ValueTag.Integer | (ValueTag.Integer << 8)}
+local fields<const>: *u32 = reused + 0x40
+fields[0], fields[1], fields[2] = ${stringKey}, 79, ${ValueTag.String | (ValueTag.Integer << 8) | (0xff << 16)}
+local cells<const>: *u32 = reused + 0x50
+cells[0], cells[1], cells[2], cells[3] = reused, ${ValueTag.Table}, ${stringKey}, ${ValueTag.String}
+
+-- The direct reset code is scalar. Publish ordinary physical frame/value
+-- records for the table instructions; this ROM's allocator is not involved.
+local fn<const>: *u32 = startup.table_exercise
+local pc<const>, window<const> = fn[${BLUA32_FUNCTION_CODE_ADDRESS_OFFSET / 4}], fn[${BLUA32_FUNCTION_MAX_STACK_OFFSET / 4}]
+local thread<const>: *u32 = ${context}
+thread[0], thread[${ThreadField.Status / 4}] = ${THREAD_RECORD_KIND}, ${ThreadStatus.Running}
+thread[${ThreadField.StackTop / 4}], thread[${ThreadField.StackBlock / 4}], thread[${ThreadField.StackCapacity / 4}] = window, ${values}, ${valueCount}
+thread[${ThreadField.FrameCapacity / 4}], thread[${ThreadField.FrameDepth / 4}], thread[${ThreadField.FrameBlock / 4}] = 2, 1, ${frames}
+local frame<const>: *u32 = ${frames}
+frame[${FrameField.Function / 4}], frame[${FrameField.CallSite / 4}], frame[${FrameField.Pc / 4}] = startup.table_exercise, pc, pc
+frame[${FrameField.VarargBase / 4}], frame[${FrameField.ArgumentCount / 4}], frame[${FrameField.Top / 4}], frame[${FrameField.StackCapacity / 4}] = 3, 3, 3, window
+local arguments<const>: *u32 = ${values}
+arguments[0], arguments[1], arguments[2] = reused, exhausted, reclaimed
+arguments[${valueCount}] = ${ValueTag.Integer | (ValueTag.Integer << 8) | (ValueTag.Integer << 16)}
+local state<const>: *u32 = ${collector}
+state[0] = ${tableReady}
+cop0.context = ${context}`;
+const tableExercise = `
+return function(reused, exhausted, reclaimed)
+	local nodes<const>: *u32 = ${first}
+	local table_ref<const>: *value = reused + 0x50
+	local key_ref<const>: *value = reused + 0x58
+	local target<const>, key<const> = *table_ref, *key_ref
+	local old_array<const>, old_field<const> = target[2], target[key]
+	target[2] = 91
+	target[key] = 107
+	return reused, exhausted, nodes[2], nodes[${slotWords + 2}], reclaimed, old_array, old_field, target[2], target[key], #target, #key
+end`;
 const modules = [['main', 'module<entry>\nreturn 0'], ['reset', reset],
-	['irq', 'halt_until_irq'], ['exception', 'halt_until_irq']].map(([path, source]) =>
+	['table-exercise', tableExercise], ['irq', 'halt_until_irq'], ['exception', 'halt_until_irq']].map(([path, source]) =>
 	({ path, displayPath: path + '.lua', source, chunk: parseLuaChunk(source, path) }));
 
 const dir = mkdtempSync(join(tmpdir(), 'bmsx-independent-firmware-'));
@@ -75,6 +141,7 @@ try {
 			domain: 'system', luaModules: modules, generatedLuaModules: [], loadAddress: 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
 			resetModule: 'reset', irqModule: 'irq', exceptionModule: 'exception', biosExports: [],
+			managedEntries: [{ path: 'table-exercise', symbol: 'table_exercise' }],
 		});
 		const romBytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
@@ -84,6 +151,7 @@ try {
 		const { cpu, scheduler, memory } = runtime.machine;
 		const raw = memory.ramData();
 		const allocatorOffset = allocator - RAM_BASE, collectorOffset = collector - RAM_BASE;
+		const diagnostics = CPU_FIXED_STACK_BASE - RAM_BASE + GC_DIAGNOSTIC_OFFSET;
 		assert.deepEqual(raw.subarray(allocatorOffset, allocatorOffset + 32), new Uint8Array(32));
 		assert.equal(memory.readRamRecordWord(collector), 0);
 		const rom = join(dir, `system-O${optLevel}.rom`), trace = join(dir, `trace-O${optLevel}.txt`);
@@ -91,14 +159,15 @@ try {
 		const commands: string[] = [], observations: string[] = [];
 		function grant(budget: number, expected: RunResult) {
 			assert.equal(scheduler.runCpuSlice(0, budget, 0, CpuRunKind.Scheduled), expected);
-			assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 			// Sample only machine state; the stock allocation diagnostics may
 			// not interpret this ROM's different software representation.
 			commands.push(`E ${budget}`);
-			observations.push(`${expected} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+			const paid = budget - cpu.instructionBudgetRemaining;
+			observations.push(`${expected} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+			return paid;
 		}
 		function fingerprint() {
-			for (const [offset, count] of [[allocatorOffset, 32], [collectorOffset, 4], [first - RAM_BASE, 48]]) {
+			for (const [offset, count] of [[allocatorOffset, 32], [collectorOffset, 4], [first - RAM_BASE, 3 * slotBytes], [diagnostics, 36]]) {
 				commands.push(`H ${offset} ${offset + count}`);
 				observations.push(String(hashBytes(raw, offset, count)));
 			}
@@ -109,6 +178,7 @@ try {
 			if (memory.readRamRecordWord(collector) === sweeping && memory.readRamRecordWord(unreachable) === 0) break;
 		}
 		assert.equal(memory.readRamRecordWord(collector), sweeping);
+		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(memory.readRamRecordWord(first), second);
 		assert.deepEqual([first, second, unreachable].map(address => memory.readRamRecordWord(address + 4)), [1, 1, 0]);
 		assert.equal(memory.readRamRecordWord(unreachable), 0, 'the free block link has been stored');
@@ -118,17 +188,39 @@ try {
 		const midpoint = captureRuntimeSaveState(runtime);
 		writeFileSync(tsState, encodeRuntimeSaveState(midpoint));
 		commands.push('S', `x ${nativeState}`);
-		const result = [unreachable, 0, 31, 59, 73];
+		const result = [unreachable, 0, 31, 59, 73, 59, 79, 91, 107, 2, 1];
 		function finish() {
 			const start = observations.length;
-			grant(4096, RunResult.Halted);
+			for (let step = 0; step < 256 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++step) grant(1, RunResult.Yielded);
+			assert.equal(cpu.rootThread.address, context);
+			assert.equal(memory.readRamRecordWord(collector), tableReady);
+			assert.equal(memory.readRamRecordWord(receiverCell), unreachable, 'the raw sweep returned the Table storage to the independent ROM');
+			assert.equal(memory.readRamRecordWord(keyCell), stringKey);
+			assert.equal(memory.readRamRecordWord(array + 4), 59);
+			assert.equal(memory.readRamRecordWord(hash + 4), 79);
+			fingerprint();
+			const tableOps: OpCode[] = [];
+			for (let step = 0; step < 64; ++step) {
+				const pc = cpu.readFramePc(0);
+				const { op } = decodeBlua32InstructionAtPc(romBytes, SYSTEM_ROM_BASE, pc);
+				const paid = grant(1, op === OpCode.RET ? RunResult.Halted : RunResult.Yielded);
+				if (op === OpCode.RET) break;
+				if (op === OpCode.GETI || op === OpCode.GETT || op === OpCode.SETI || op === OpCode.SETT || op === OpCode.LEN) {
+					tableOps.push(op);
+					assert.equal(paid, BASE_CYCLES[op], 'own Array/hash and length need no inherited visits or additional firmware');
+				}
+			}
+			assert.deepEqual(tableOps, [OpCode.GETI, OpCode.GETT, OpCode.SETI, OpCode.SETT, OpCode.GETI, OpCode.GETT, OpCode.LEN, OpCode.LEN]);
 			assert.deepEqual(runtime.readCompletionValues(), result.map(valueInteger));
 			assert.equal(cpu.captureRuntimeState().hardHalted, false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
-			assert.equal(memory.readRamRecordWord(collector), settled);
+			assert.equal(memory.readRamRecordWord(collector), tableReady);
 			assert.equal(memory.readRamRecordWord(allocator), signature);
 			assert.equal(memory.readRamRecordWord(allocator + 4), 0);
 			assert.deepEqual(raw.subarray(allocatorOffset + 8, allocatorOffset + 32), new Uint8Array(24));
+			assert.deepEqual(raw.subarray(diagnostics, diagnostics + 36), new Uint8Array(36), 'stock diagnostic roots are never installed');
+			assert.equal(memory.readRamRecordWord(array + 4), 91, 'SETI updates the authored Array storage');
+			assert.equal(memory.readRamRecordWord(hash + 4), 107, 'SETT updates the authored own hash node');
 			fingerprint();
 			commands.push('c');
 			observations.push([result.length, ...result.flatMap(word => [ValueTag.Integer, word])].join(' '));
@@ -147,7 +239,7 @@ try {
 		assert.deepEqual(out, observations);
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		assert.deepEqual(finish(), ending);
-		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (different private allocator and collector, same RAM and cycles mid-sweep and after portable restore)`);
+		console.log(`INDEPENDENT-SYSTEM-ROM:PASS O${optLevel} (independent allocator and collector, own Table/String datapaths, same RAM and cycles after portable restore)`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {
