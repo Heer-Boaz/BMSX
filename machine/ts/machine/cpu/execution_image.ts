@@ -42,15 +42,27 @@ export const DECODED_REFRESH_FUSION = 2;
 export const DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3;
 export const COMPILED_VERSION_MAX_PAGES = 4;
 
-// Straight-line scalar operations can keep the next PC local. Fixed field
-// reads defer a non-resolved result to the loop to publish before handling it.
-export const SCALAR_LOCAL_PC = new Uint8Array(OPCODE_COUNT);
+export const enum DecodedDispatchOp {
+	FusedShlBxor = OPCODE_COUNT,
+	FusedAddShl = OPCODE_COUNT + 1,
+	FusedShrBxor = OPCODE_COUNT + 2,
+	Observe = OPCODE_COUNT + 3,
+	ReservedMemory = OPCODE_COUNT + 4,
+	CompiledWarm = OPCODE_COUNT + 5,
+	Compiled = OPCODE_COUNT + 6,
+	InvalidImageOperand = OPCODE_COUNT + 7,
+	StaticCodeFunction = OPCODE_COUNT + 8,
+}
+
+// Index by the decoded dispatch byte, including the host-only dispatch
+// operations. A field miss publishes the frontier before it takes effect.
+export const SCALAR_LOCAL_PC = new Uint8Array(1 << 8);
 for (const opcode of [
 	OpCode.LOADK, OpCode.LOADKR, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
 	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.ARGC, OpCode.NOT,
 	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
-	OpCode.GETFIELD, OpCode.SELF,
+	OpCode.GETFIELD, OpCode.SELF, DecodedDispatchOp.StaticCodeFunction,
 ]) SCALAR_LOCAL_PC[opcode] = 1;
 
 export const enum RomFunctionLane {
@@ -251,17 +263,6 @@ export class RomCallBindings {
 		else readPublishedEntry(directory.versions, romFunctionVersionLane(directory, address), entry);
 		return entry;
 	}
-}
-
-export const enum DecodedDispatchOp {
-	FusedShlBxor = OPCODE_COUNT,
-	FusedAddShl = OPCODE_COUNT + 1,
-	FusedShrBxor = OPCODE_COUNT + 2,
-	Observe = OPCODE_COUNT + 3,
-	ReservedMemory = OPCODE_COUNT + 4,
-	CompiledWarm = OPCODE_COUNT + 5,
-	Compiled = OPCODE_COUNT + 6,
-	InvalidImageOperand = OPCODE_COUNT + 7,
 }
 
 export function decodedInstructionBaseCycles(page: DecodedInstructionPage, word: number): number {

@@ -1208,6 +1208,20 @@ export class CPU implements MappedPageInvalidator {
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
 			return true;
 		}
+		// The binding's source and target share the same published ROM lifetime.
+		// Keep the raw opcode for instrumented execution and dynamic binding.
+		if (op === OpCode.CLOSURE && image.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+			&& pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE && !image.romFunctions.mappedCode
+			&& (page.c[pageOffset] & CLOSURE_ADDRESS_REGISTER_FLAG) === 0) {
+			const directory = image.romFunctions;
+			const lane = romFunctionVersionLane(directory, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
+			const required = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
+			if (lane >= 0 && directory.versions[lane + RomFunctionLane.UpvalueCount] === 0
+				&& (directory.versions[lane + RomFunctionLane.Flags] & required) === required) {
+				page.dispatchOps[pageOffset] = DecodedDispatchOp.StaticCodeFunction;
+			}
+			return true;
+		}
 		const fusionCandidate = decodedDispatchCanFuse(page.ops[pageOffset]);
 		if (!allowFusion) {
 			if (fusionCandidate && instructionCacheable) {
@@ -3501,6 +3515,11 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.CLOSURE:
 					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]);
+					return;
+				case DecodedDispatchOp.StaticCodeFunction:
+					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					registers.setEncoded(a, ValueTag.CodeFunction, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
+					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.GETUP: {
 					const index = page.b[pageOffset];
