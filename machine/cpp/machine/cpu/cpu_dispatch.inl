@@ -128,7 +128,7 @@ DISPATCH_LABEL(GETI) {
 	const int c = decoded->c;
 	const Value tableValue = REG(b);
 	if (valueIsTable(tableValue)) {
-		const TableRecord table(m_heap, valuePayload(tableValue));
+		const TableRecord table(m_memory, valuePayload(tableValue));
 		Value value;
 		if (table.getIntegerArrayKey(c, value)) {
 			SET_REGISTER_FAST(a, value);
@@ -148,7 +148,7 @@ DISPATCH_LABEL(SETI) {
 	const Value tableValue = REG(a);
 	const Value& value = readRK(IMAGE, FRAME.registers, rkC);
 	if (valueIsTable(tableValue)
-		&& TableRecord(m_heap, valuePayload(tableValue)).tryAssignIntegerArrayKey(b, value)) {
+		&& TableRecord(m_memory, valuePayload(tableValue)).tryAssignIntegerArrayKey(b, value)) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();
@@ -163,7 +163,7 @@ DISPATCH_LABEL(SELF) {
 	const Value base = REG(decoded->b);
 	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(decoded->c)));
 	if (decoded->op == static_cast<u8>(OpCode::SELF)) SET_REGISTER_FAST(a + 1, base);
-	const TableRecord table(m_heap, tableIndexAddress(base));
+	const TableRecord table(m_memory, tableIndexAddress(base));
 	int& predicted = TABLE_CACHE_SLOT();
 	u32 links = 0;
 	if (const auto own = table.readOwnStringField(key, predicted, &links)) {
@@ -197,7 +197,7 @@ DISPATCH_LABEL(SETFIELD) {
 	const bool isTable = valueIsTable(base);
 	const u8 extraHashSlots = instructionFieldExtraHashSlots(decodedPage->sourceWords[pageOffset], decoded->width);
 	if (isTable) {
-		TableRecord table(m_heap, valuePayload(base));
+		TableRecord table(m_memory, valuePayload(base));
 		if constexpr (!Instrumented) {
 			const int slot = table.tryAssignCachedStringField(key, value, predicted, m_cop0Words[COP0_TABLE_ASSIGN_KEY]);
 			if (slot != TableRecord::HASH_STORE_DECLINED) {
@@ -227,7 +227,7 @@ DISPATCH_LABEL(GETT) {
 	const Value tableValue = REG(b);
 	const Value& key = readRK(IMAGE, FRAME.registers, rkC);
 	if (valueIsTable(tableValue) && valueIsInteger(key)) {
-		const TableRecord table(m_heap, valuePayload(tableValue));
+		const TableRecord table(m_memory, valuePayload(tableValue));
 		Value value;
 		if (table.getIntegerArrayKey(asInteger(key), value)) {
 			SET_REGISTER_FAST(a, value);
@@ -249,7 +249,7 @@ DISPATCH_LABEL(SETT) {
 	const Value& value = readRK(IMAGE, FRAME.registers, rkC);
 	if (valueIsTable(tableValue)
 		&& valueIsInteger(key)
-		&& TableRecord(m_heap, valuePayload(tableValue)).tryAssignIntegerArrayKey(asInteger(key), value)) {
+		&& TableRecord(m_memory, valuePayload(tableValue)).tryAssignIntegerArrayKey(asInteger(key), value)) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();

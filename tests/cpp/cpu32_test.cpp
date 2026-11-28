@@ -714,8 +714,8 @@ void constantsGlobalsAndRestore() {
 		"compact global restore preserves raw Float word");
 	require(m.cpu.getSystemGlobalByKey(*m.cpu.stringPool().find("system")) == valueInteger(INT32_MIN),
 		"system globals retain signed Integer identity");
-	auto restored = asTable(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph")), m.cpu.gcHeap());
-	auto restoredChild = asTable(restored.getStringKey(childKey), m.cpu.gcHeap());
+	auto restored = TableRecord(m.cpu.memory(), valuePayload(m.cpu.getGlobalByKey(*m.cpu.stringPool().find("graph"))));
+	auto restoredChild = TableRecord(m.cpu.memory(), valuePayload(restored.getStringKey(childKey)));
 	require(restored.address() == graphHash && restoredChild.address() == childHash,
 		"heap restore preserves hash identities independently of payload ids");
 	require(valuePayload(restored.getStringKey(self)) == restored.address() && restoredChild.metatableAddress() == restored.address(),

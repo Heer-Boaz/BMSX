@@ -30,16 +30,16 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 
-u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operand) noexcept {
-	if (valueIsTable(*operand) && TableRecord(*heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;
-	const auto length = measureValueLength(*operand, *strings, heap);
+u32 CPU::readNativeLength(Memory* memory, const StringPool* strings, Value* operand) noexcept {
+	if (valueIsTable(*operand) && TableRecord(*memory, valuePayload(*operand)).metatableAddress() != 0u) return 0;
+	const auto length = measureValueLength(*operand, *strings, memory);
 	if (!length) return 0;
 	*operand = valueInteger(*length);
 	return 1;
 }
 
 i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Value* value) noexcept {
-	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value, cpu->m_cop0Words[COP0_TABLE_ASSIGN_KEY]);
+	return TableRecord(cpu->m_memory, receiver).tryAssignStringField(key, *value, cpu->m_cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
@@ -312,7 +312,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				: kind == NativeBlockExit::ReadField ? frame->executionImage->constPool.get(access.key)
 				: readRK(*frame->executionImage, frame->registers, access.key);
 			const bool stringKey = kind == NativeBlockExit::ReadField || valueIsString(key);
-			const TableRecord table(cpu.m_heap, cpu.tableIndexAddress(base));
+			const TableRecord table(cpu.m_memory, cpu.tableIndexAddress(base));
 			TableLookupResult result;
 			if (stringKey) {
 				auto& slot = *exit->tableRead.decoded;

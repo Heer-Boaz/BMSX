@@ -900,7 +900,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		OpCode::STORE_MEM, OpCode::K1, OpCode::ADD, OpCode::MOV, OpCode::MOV, OpCode::GETFIELD, OpCode::MOV, OpCode::JMP})
 		loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	require(block && block->sourceWords == 13, "cached values occupy one native block");
-	const auto* outcome = block->run(frame.registers, nativeRunState = {.constants = frame.executionImage->constPool, .frame = &frame, .heap = &native.cpu.gcHeap(), .remainingCycles = loopCycles});
+	const auto* outcome = block->run(frame.registers, nativeRunState = {.constants = frame.executionImage->constPool, .frame = &frame, .memory = &native.cpu.memory(), .remainingCycles = loopCycles});
 	require(outcome->nextPc == native.rom.textAddress,
 		"cached table references, numbers and memory writes all reach the final native exit");
 	scalar.cpu.runUntilDepth(0, loopCycles);

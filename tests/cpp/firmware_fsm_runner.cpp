@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
 						<< ",\"compiled\":" << (compiled ? "true" : "false") << ",\"regionBytes\":" << regionBytes << '}';
 				}
 				if (phase >= 4) {
-					const auto& bindings = asTable(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings")), cpu.gcHeap());
+					const auto& bindings = TableRecord(cpu.memory(), valuePayload(cpu.getGlobalByKey(*cpu.stringPool().find("fsm_bindings"))));
 					for (int index = 1; index <= 3; ++index)
 						require(cpu.readClosureBinding(asClosure(bindings.getInteger(index), cpu.gcHeap())).functionAddress == primaryFunction,
 							"binding did not retain its ROM evaluator");

@@ -27,7 +27,7 @@ struct Fixture {
 	ExecutionAddressSpace addresses{memory};
 	CPU cpu{memory, irq, addresses};
 	std::array<StringId, KeyCount> keys{}, missing{};
-	std::vector<TableRecord> tables;
+	std::vector<bmsx::test::NativeTableReference> tables;
 	std::array<int, KeyCount> slots{};
 	std::optional<TableRecord> inherited;
 	StringId indexKey;

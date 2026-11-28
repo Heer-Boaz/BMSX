@@ -158,7 +158,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
 		auto r = cpu.activeThread()->currentFrame->registers;
-		asTable(r.get(3), cpu.gcHeap()).setStringKey(cpu.stringPool().intern("__index"), r.get(2));
+		bmsx::test::asReferenceTable(r.get(3), cpu.gcHeap()).setStringKey(cpu.stringPool().intern("__index"), r.get(2));
 		r.set(0, r.get(4));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
@@ -224,12 +224,12 @@ void tableValuedNewIndexAndOwnOverwrite() {
 		}
 		parity(generated, scalar, 1);
 		const auto read = [&](int slot) {
-			return asTable(generated.cpu.readFrameRegister(0, slot), generated.cpu.gcHeap()).get(generated.cpu.readFrameRegister(0, 1));
+			return TableRecord(generated.cpu.memory(), valuePayload(generated.cpu.readFrameRegister(0, slot))).get(generated.cpu.readFrameRegister(0, 1));
 		};
 		require(read(0) == valueInteger(37) && isNil(read(3)) && generated.cpu.instructionBudgetRemaining == 1 - cycles(op),
 			"existing false is present: ordinary overwrite stays on its own Table");
 		for (auto* m : {&generated, &scalar}) {
-			auto own = asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto own = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
 			own.set(m->cpu.readFrameRegister(0, 1), valueNil());
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		}
@@ -287,8 +287,8 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 	};
 	auto& cpu = generated.cpu;
 	const auto field = *cpu.stringPool().find("field");
-	auto own = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
-	auto holder = asTable(cpu.readFrameRegister(0, 3), cpu.gcHeap());
+	auto own = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
+	auto holder = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 3)));
 	const Value negativeZero = valueFloatBits(0x80000000u), rawNaN = valueFloatBits(0xffc01234u);
 	assign(negativeZero, 0);
 	const int ownHint = hint(scalar);
@@ -299,7 +299,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 		"the warmed own slot accepts the next exact tagged value");
 
 	for (auto* m : {&generated, &scalar})
-		asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap()).setStringKey(field, valueNil());
+		bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap()).setStringKey(field, valueNil());
 	assign(negativeZero, 1);
 	int holderSlot = -1;
 	require(isNil(own.getStringKey(field)) && holder.getStringKeyCached(field, holderSlot) == negativeZero
@@ -314,7 +314,7 @@ void fixedFieldAssignmentReusesTheTerminalProof() {
 
 	for (auto* m : {&generated, &scalar}) {
 		auto& lane = m->cpu;
-		asTable(lane.readFrameRegister(0, 4), lane.gcHeap())
+		bmsx::test::asReferenceTable(lane.readFrameRegister(0, 4), lane.gcHeap())
 			.setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, 0));
 	}
 	assign(rawNaN, 1);
@@ -363,7 +363,7 @@ void coldFieldAssignmentPublishesItsFrontierOnce() {
 		&& cpu.readFramePc(0) == successor && cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 11
 		&& cpu.readFrameRegister(0, 8) == valueInteger(57) && cpu.readFrameRegister(0, 10) == valueInteger(1),
 		"cold hinted insertion retires WIDE and publishes the preceding live top, not the unexecuted suffix");
-	require(root.hashSlots() == TableRecord::hashCapacity(1 + extraHashSlots)
+	require(root.hashSlots() == bmsx::test::NativeTableReference::hashCapacity(1 + extraHashSlots)
 		&& root.getStringKey(field) == valueBool(false) && root.getInteger(1) == valueInteger(17),
 		"the first own insertion reserves its requested hash storage without touching the array");
 	const u32 storage = root.hashAddress();
@@ -420,7 +420,7 @@ void callableNewIndexDiscardsAllResults() {
 			"the callback sees the original nil or raw NaN and starts a real three-argument activation");
 		parity(generated, scalar, cycles(OpCode::SETFIELD) + cycles(OpCode::RET));
 		const auto* caller = generated.cpu.activeThread()->currentFrame;
-		const auto table = asTable(caller->registers.get(0), generated.cpu.gcHeap());
+		const auto table = TableRecord(generated.cpu.memory(), valuePayload(caller->registers.get(0)));
 		require(generated.cpu.getFrameDepth() == 1 && generated.cpu.instructionBudgetRemaining == 0
 			&& caller->readControl(FrameField::Top) == 0x4900000bu && caller->registers.get(1) == key
 			&& caller->registers.get(8) == valueInteger(57) && table.getStringKey(generated.cpu.stringPool().intern("field")) == valueInteger(73),

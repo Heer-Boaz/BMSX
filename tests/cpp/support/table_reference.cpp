@@ -1,4 +1,4 @@
-#include "machine/cpu/table.h"
+#include "table_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -10,7 +10,7 @@
 #include "machine/cpu/errors.h"
 #include "machine/cpu/table_hash_lookup.inl"
 
-namespace bmsx {
+namespace bmsx::test {
 
 namespace {
 constexpr int32_t kTableHashNextEnd = -1;
@@ -18,12 +18,12 @@ constexpr int32_t kTableHashNextEnd = -1;
 constexpr u32 kHashSlotBudgetBytes = 10u;
 } // namespace
 
-void TableRecord::setMetatableAddress(u32 address) {
+void NativeTableReference::setMetatableAddress(u32 address) {
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);
 }
 
-void TableRecord::removeFromHash(const Value& key, int slot) {
+void NativeTableReference::removeFromHash(const Value& key, int slot) {
 	const int existingIndex = slot == TABLE_HASH_UNPROBED ? findNodeIndex(key) : slot;
 	if (existingIndex < 0) return;
 	const u32 count = hashSlots();
@@ -32,7 +32,7 @@ void TableRecord::removeFromHash(const Value& key, int slot) {
 	markHashNodeDead(static_cast<size_t>(existingIndex));
 }
 
-void TableRecord::markHashNodeDead(size_t index) {
+void NativeTableReference::markHashNodeDead(size_t index) {
 	const auto body = hashBody(hashSlots());
 	const Value key = body.slots.get(index);
 	eraseHashNode(body, index, key);
@@ -40,22 +40,24 @@ void TableRecord::markHashNodeDead(size_t index) {
 		m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 }
 
-u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
+u32 NativeTableReference::storageBytes(size_t arraySize, size_t hashSize) {
 	return static_cast<u32>(5u * arraySize + hashStorageBytes(hashSize));
 }
 
-u32 TableRecord::allocationCharge(size_t arraySize, size_t hashSize) {
+u32 NativeTableReference::allocationCharge(size_t arraySize, size_t hashSize) {
 	return static_cast<u32>(5u * arraySize + kHashSlotBudgetBytes * hashSize);
 }
 
-size_t TableRecord::hashCapacity(int hashSize) {
+size_t NativeTableReference::hashCapacity(int hashSize) {
 	return hashSize > 0
 		? nextPowerOfTwo(static_cast<size_t>(hashSize))
 		: 0;
 }
 
 template<bool BulkWrite>
-int TableRecord::HashStorage<BulkWrite>::findFreeIndex(int first) const {
+int NativeTableReference::findFreeIndex(const HashStorage<BulkWrite>& body, int first) {
+	const auto& slots = body.slots;
+	const u32 count = body.count;
 	for (int i = first; i >= 0; --i) {
 		const u32 keySlot = static_cast<u32>(i);
 		if (slots.tag(keySlot) == ValueTag::Nil && slots.tag(keySlot + count) == ValueTag::Nil) {
@@ -65,7 +67,7 @@ int TableRecord::HashStorage<BulkWrite>::findFreeIndex(int first) const {
 	return -1;
 }
 
-TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) const {
+NativeTableReference::ResizePlan NativeTableReference::planRehash(Value key, u8 extraHashSlots) const {
 	const auto body = hashBody(hashSlots());
 	const auto& slots = body.slots;
 	const u32 added = valueIsInteger(key) ? arraySlot(asInteger(key)) : NO_ARRAY_SLOT;
@@ -149,7 +151,7 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 		&& hashSize == body.count && firstHashArraySlot >= arraySize};
 }
 
-int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested) {
+int NativeTableReference::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested) {
 	const u32 oldArray = arrayCapacity(), oldBase = arrayAddress();
 	if (GcHeap::pacedPhase(m_heap->phase()))
 		m_heap->assistBeforeReservation(storageBytes(plan.array > oldArray ? plan.array : 0u, plan.keepHash ? 0u : plan.hash),
@@ -168,7 +170,7 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	return resize(plan, base, storage, key, value, previous, requested);
 }
 
-int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots) {
+int NativeTableReference::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots) {
 	auto& budget = m_heap->budget;
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 previous = allocationCharge(array, hash);
@@ -198,7 +200,7 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	}
 }
 
-int TableRecord::resize(const ResizePlan& plan, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested) {
+int NativeTableReference::resize(const ResizePlan& plan, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested) {
 	const auto [newArraySize, newHashSize, keepHash] = plan;
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
 	m_heap->tableEntriesMoved(m_address);
@@ -247,7 +249,7 @@ int TableRecord::resize(const ResizePlan& plan, u32 base, u32 storage, Value key
 
 // Reserve all chain heads before placing collisions. No displaced entry
 // needs a predecessor search, and each free candidate is visited at most once.
-int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& body, Value key, Value value) {
+int NativeTableReference::rebuildHashOnly(const RebuildBody& source, const RebuildBody& body, Value key, Value value) {
 	const int firstFree = static_cast<int>(body.count) - 1;
 	int nextFree = firstFree;
 	const u32 mask = body.count - 1u;
@@ -295,13 +297,13 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 	return static_cast<int>(trigger);
 }
 
-void TableRecord::bindHash(size_t hashSize, u32 address) {
+void NativeTableReference::bindHash(size_t hashSize, u32 address) {
 	writeHeader(TableHeader::HashStorage, address);
 	writeHeader(TableHeader::Hash, static_cast<u32>(hashSize));
 	writeHeader(TableHeader::Free, static_cast<u32>(hashSize) - 1u);
 }
 
-void TableRecord::initializeArray(u32 address, u32 capacity, u32 retained) {
+void NativeTableReference::initializeArray(u32 address, u32 capacity, u32 retained) {
 	if (!capacity) return;
 	const u32 base = address & RAM_RECORD_WORD_MASK, first = base + retained * 4u;
 	u8* ram = m_memory->ramData();
@@ -311,7 +313,7 @@ void TableRecord::initializeArray(u32 address, u32 capacity, u32 retained) {
 	m_memory->invalidateRamWrite(first, capacity * 5u - retained * 4u);
 }
 
-void TableRecord::initializeHash(u32 address, u32 count) {
+void NativeTableReference::initializeHash(u32 address, u32 count) {
 	if (!count) return;
 	const u32 base = address & RAM_RECORD_WORD_MASK;
 	u8* words = m_memory->ramData() + base;
@@ -326,13 +328,13 @@ void TableRecord::initializeHash(u32 address, u32 count) {
 	m_memory->invalidateRamWrite(base, total);
 }
 
-void TableRecord::freeStorage() {
+void NativeTableReference::freeStorage() {
 	const u32 storage = hashAddress();
 	if (storage) m_heap->budget.releaseRecord(storage, allocationCharge(0, hashSlots()));
 	if (const u32 base = arrayAddress()) m_heap->budget.releaseRecord(base, 5u * arrayCapacity());
 }
 
-void TableRecord::freeRecord() {
+void NativeTableReference::freeRecord() {
 	freeStorage();
 	m_heap->budget.releaseObject(m_address, HEADER_CHARGE);
 }
@@ -402,7 +404,7 @@ struct ConstructorScratch {
 
 // The resize owns the destination layout and has already invalidated the
 // collector's scan cursor. Only the triggering assignment installs new edges.
-int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept {
+int NativeTableReference::reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept {
 	if (valueIsInteger(key)) {
 		const u32 index = arraySlot(asInteger(key));
 		if (index < arrayCapacity()) {
@@ -413,16 +415,16 @@ int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value k
 	}
 	const u32 home = hashCanonicalTableKey(key) & (body.count - 1u);
 	return insertAbsentHashKey(body, home, key, value, [&] {
-		const int free = body.findFreeIndex(nextFree);
+		const int free = findFreeIndex(body, nextFree);
 		nextFree = free - (free >= 0);
 		return free;
 	}, [] {});
 }
 
-int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
+int NativeTableReference::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
 	const int slot = insertAbsentHashKey(body, home, key, value, [&] {
 		if (body.count > HASH_CENSUS_LIMIT && body.live() == body.count) return -1;
-		const int available = body.findFreeIndex(hashFree());
+		const int available = findFreeIndex(body, hashFree());
 		if (available >= 0) writeHeader(TableHeader::Free, static_cast<u32>(available - 1));
 		return available;
 	},
@@ -431,7 +433,7 @@ int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const V
 	return slot;
 }
 
-TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
+TableConstructorLayout NativeTableReference::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
 	const u32 count = static_cast<u32>(hashCapacity(static_cast<int>(keys.size())));
 	TableConstructorLayout layout;
 	layout.free = static_cast<i8>(count - 1u);
@@ -456,7 +458,7 @@ TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> k
 	return layout;
 }
 
-void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
+void NativeTableReference::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
 	std::span<const Value> values) noexcept {
 	const auto body = hashBody(hashSlots());
 	const StringId newIndexKey = m_heap->diagnosticWord(GcDiagnosticField::NewIndex);
@@ -474,7 +476,7 @@ void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::sp
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 }
 
-int TableRecord::set(const Value& rawKey, const Value& value) {
+int NativeTableReference::set(const Value& rawKey, const Value& value) {
 	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
@@ -490,7 +492,7 @@ int TableRecord::set(const Value& rawKey, const Value& value) {
 	return slot;
 }
 
-int TableRecord::setHash(Value key, Value value, int nodeIndex, u8 extraHashSlots) {
+int NativeTableReference::setHash(Value key, Value value, int nodeIndex, u8 extraHashSlots) {
 	if (isNil(value)) {
 		removeFromHash(key, nodeIndex);
 		return -1;
@@ -529,7 +531,7 @@ int TableRecord::setHash(Value key, Value value, int nodeIndex, u8 extraHashSlot
 	return nodeIndex;
 }
 
-bool TableRecord::setIntegerArrayKey(int key, const Value& value) {
+bool NativeTableReference::setIntegerArrayKey(int key, const Value& value) {
 	const u32 slot = arraySlot(key);
 	if (slot >= arrayCapacity()) {
 		return false;
@@ -539,12 +541,12 @@ bool TableRecord::setIntegerArrayKey(int key, const Value& value) {
 	return true;
 }
 
-void TableRecord::publishHashInsertion(Value key, Value value) {
+void NativeTableReference::publishHashInsertion(Value key, Value value) {
 	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
 	m_heap->writeTableEntry(m_address, key, value);
 }
 
-void TableRecord::setInteger(int indexValue, const Value& value) {
+void NativeTableReference::setInteger(int indexValue, const Value& value) {
 	const u32 index = arraySlot(indexValue), array = arrayCapacity();
 	if (index < array) {
 		m_heap->writeTableValue(m_address, value);
@@ -556,11 +558,11 @@ void TableRecord::setInteger(int indexValue, const Value& value) {
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
-int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots) {
+int NativeTableReference::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots) {
 	return setHash(valueString(key), value, slot, extraHashSlots);
 }
 
-void TableRecord::clear() {
+void NativeTableReference::clear() {
 	m_heap->tableEntriesMoved(m_address);
 	writeHeader(TableHeader::Length, 0);
 	freeStorage();
@@ -570,11 +572,11 @@ void TableRecord::clear() {
 	m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 }
 
-size_t TableRecord::trackedHeapBytes() const {
+size_t NativeTableReference::trackedHeapBytes() const {
 	const u32 storage = hashAddress();
 	return m_heap->arena.allocationBytes(m_address - GC_OBJECT_PREFIX)
 		+ (arrayAddress() ? m_heap->arena.allocationBytes(arrayAddress()) : 0u)
 		+ (storage != 0u ? m_heap->arena.allocationBytes(storage) : 0u);
 }
 
-} // namespace bmsx
+} // namespace bmsx::test

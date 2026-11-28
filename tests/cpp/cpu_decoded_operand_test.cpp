@@ -143,7 +143,7 @@ void rawFieldsAndInlineCaches() {
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
 		// Keep growth work separate from the operand and inline-cache base charges.
-		TableRecord table = bmsx::test::allocateTableReference(cpu, 0, 2);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(1, valueTable(table.address()));
 		registers.set(32767, valueFloat(91.5));

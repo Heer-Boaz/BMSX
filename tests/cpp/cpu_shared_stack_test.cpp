@@ -149,11 +149,11 @@ void formalReservationRoots(bool interpreted) {
 	require(memory.readRamRecordWord(child->thread->address + static_cast<u32>(ThreadField::StackTop)) == 12, "the thread header includes the complete formal reservation");
 	cpu.restoreRuntimeState(snapshot);
 	child = cpu.activeThread()->currentFrame;
-	require(asTable(child->registers.get(6), cpu.gcHeap()).getInteger(1) == valueInteger(73),
+	require(TableRecord(cpu.memory(), valuePayload(child->registers.get(6))).getInteger(1) == valueInteger(73),
 		"the last formal remains rooted through forced collection and restore");
 	cpu.runUntilDepth(0, 100);
 	const auto values = cpu.readCompletionValues();
-	require(values.size() == 7 && asTable(values.get(6), cpu.gcHeap()).getInteger(1) == valueInteger(73),
+	require(values.size() == 7 && TableRecord(cpu.memory(), valuePayload(values.get(6))).getInteger(1) == valueInteger(73),
 		"all formal results survive overlapping return transfer");
 }
 

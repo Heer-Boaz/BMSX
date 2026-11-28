@@ -518,7 +518,7 @@ void hotGlobalWritesDeferTheirReferences() {
 		frame.registers.set(0, cartSource);
 		frame.registers.set(1, systemSource);
 		frame.registers.set(2, valueInteger(23));
-		NativeBlockRunState state{.frame = &frame, .heap = &heap,
+		NativeBlockRunState state{.frame = &frame, .memory = &machine.memory,
 			.globalValues = &globals, .systemGlobalValues = &systemGlobals,
 			.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};
 		const auto& exit = *block->run(frame.registers, state);
@@ -625,7 +625,7 @@ void rawContextValues(CpuMachine& machine) {
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, ContextBlock::Payload::sbx(9)},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
-	NativeBlockRunState alias{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+	NativeBlockRunState alias{.frame = &frame, .memory = &machine.memory, .remainingCycles = 100, .ram = machine.memory.ramData()};
 	const auto& aliasExit = *captures.blocks.front()->run(captureRegisters, alias);
 	require(aliasExit.exit == NativeBlockExit::WriteUpvalue && aliasExit.currentPc == captures.source[3].pc
 		&& aliasExit.nextPc == captures.source[4].pc && alias.registerTop == 3
@@ -636,7 +636,7 @@ void rawContextValues(CpuMachine& machine) {
 		{OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	for (const auto value : values) {
 		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
-		NativeBlockRunState state{.frame = &frame, .heap = &heap, .remainingCycles = 100, .ram = machine.memory.ramData()};
+		NativeBlockRunState state{.frame = &frame, .memory = &machine.memory, .remainingCycles = 100, .ram = machine.memory.ramData()};
 		const auto& exit = *outerRead.blocks.front()->run(captureRegisters, state);
 		if (valueTagHasGcEdge(valueTag(value))) {
 			require(exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == outerRead.source[3].pc
@@ -653,7 +653,7 @@ void rawContextValues(CpuMachine& machine) {
 	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, heap.white());
 	const Value scalar = valueFloatBits(0xffa54321u);
 	captureRegisters.set(12, scalar);
-	NativeBlockRunState closedStore{.frame = &frame, .heap = &heap,
+	NativeBlockRunState closedStore{.frame = &frame, .memory = &machine.memory,
 		.remainingCycles = 100, .ram = machine.memory.ramData()};
 	const auto& scalarExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
 	require(scalarExit.exit == NativeBlockExit::Continue && scalarExit.currentPc == outerRead.source.back().pc && scalarExit.nextPc == 0
@@ -755,7 +755,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	ValueSlots registers(2);
 	registers.set(0, child);
 	NativeBlockRunState state{};
-	state.frame = &frame; state.heap = &heap;
+	state.frame = &frame; state.memory = &memory;
 	for (const auto& row : generated.decoded) state.remainingCycles += row.baseCycles;
 	const auto& exit = *generated.blocks.front()->run(registers.view(), state);
 	require(exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == generated.source[0].pc

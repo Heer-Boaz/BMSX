@@ -159,7 +159,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		const auto values = cpu.readCompletionValues();
 		require(values.size() == 1u, "explicit RET returns its reserved register");
 		if (!table) require(values.get(0) == bmsx::valueInteger(1), "numeric register survives restore");
-		else require(values.get(0) == bmsx::asTable(cpu.getGlobalByKey(cpu.stringPool().intern("weak")), cpu.gcHeap()).getInteger(1), "reference identity survives restore");
+		else require(values.get(0) == bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(cpu.stringPool().intern("weak")))).getInteger(1), "reference identity survives restore");
 	}
 }
 
@@ -255,7 +255,7 @@ void replayWeakCollectionSchedule() {
 	const auto anchorBytes = cpu.luaHeap().usedBytes();
 
 	const auto allocateUntilCollected = [&]() {
-		auto current = bmsx::asTable(cpu.getGlobalByKey(weakKey), cpu.gcHeap());
+		auto current = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(weakKey)));
 		require(bmsx::valueIsTable(current.getInteger(1)), "restore must not collect a weak referent");
 		for (int count = 1; count < 4096; ++count) {
 			bmsx::test::allocateTableReference(cpu, 256, 0);
@@ -417,10 +417,10 @@ void saveLayoutDoesNotScaleWithHeapObjects() {
 	SnapshotMachine other(allocationImage());
 	bmsx::applyRuntimeSaveState(other.runtime, bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes));
 	auto& restoredCpu = other.runtime.machine.cpu;
-	auto restored = bmsx::asTable(restoredCpu.getGlobalByKey(key), restoredCpu.gcHeap());
+	auto restored = bmsx::TableRecord(restoredCpu.memory(), bmsx::valuePayload(restoredCpu.getGlobalByKey(key)));
 	require(restored.address() == root.address() && restored.getInteger(1) != restored.getInteger(2),
 		"different physical blocks keep separate identities in a fresh runtime");
-	require(bmsx::asTable(restored.getInteger(1024), restoredCpu.gcHeap()).getInteger(1) == rootValue,
+	require(bmsx::TableRecord(restoredCpu.memory(), bmsx::valuePayload(restored.getInteger(1024))).getInteger(1) == rootValue,
 		"cycle survives via the restored guest bytes alone");
 	require(restoredCpu.captureRuntimeState() == saved.cpuState
 		&& restoredCpu.memory().captureSaveState().ram == saved.ram,
@@ -446,7 +446,7 @@ void preserveSnapshotValueBits() {
 	for (size_t index = 0; index < values.size(); ++index) table.setInteger(index + 1, values[index]);
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const auto restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
+	const auto restored = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(key)));
 	for (size_t index = 0; index < values.size(); ++index) require(restored.getInteger(index + 1) == values[index], "raw native value bits survive restore");
 	const auto after = cpu.captureRuntimeState();
 	require(after == state, "all primitive tags and payload words survive restore");
@@ -467,9 +467,9 @@ void preserveDeepGraph() {
 	tail.setInteger(1, bmsx::valueTable(root.address()));
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	auto restored = bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap());
+	auto restored = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(key)));
 	auto current = restored;
-	for (int index = 0; index < 4096; ++index) current = bmsx::asTable(current.getInteger(1), cpu.gcHeap());
+	for (int index = 0; index < 4096; ++index) current = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(current.getInteger(1)));
 	require(current.address() == restored.address(), "deep cyclic graph restores every edge");
 	const auto after = cpu.captureRuntimeState();
 	require(after == state, "deep graph preserves every word");
@@ -517,7 +517,7 @@ void preserveDynamicGlobalRegisters() {
 		require(cpu.getGlobalByKey(cpu.stringPool().intern("dynamic" + std::to_string(index))) == bmsx::valueInteger(index),
 			"growth and restore preserve every global register");
 	}
-	require(bmsx::asTable(cpu.getGlobalByKey(key), cpu.gcHeap()).getInteger(1) == bmsx::valueInteger(42), "dynamic global is a heap root");
+	require(bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(key))).getInteger(1) == bmsx::valueInteger(42), "dynamic global is a heap root");
 	require(cpu.stringPool().toString(nilKey) == "nil-name", "nil-valued registers retain their names");
 	const auto after = cpu.captureRuntimeState();
 	require(after == state, "dynamic roots retain exact snapshot words");

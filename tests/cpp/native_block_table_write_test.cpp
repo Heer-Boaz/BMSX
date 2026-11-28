@@ -65,7 +65,7 @@ void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
 		"the two overlapping and one subsequent address lifetimes share a complete generated segment");
 	ValueSlots registers(decoded.size());
 	registers.set(0, valueTable(table.address()));
-	NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(),
+	NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(),
 		.globalValues = {}, .systemGlobalValues = {}};
 	const auto check = [&] {
 		state.remainingCycles = instructionCharge(decoded);
@@ -106,7 +106,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	registers.set(6, valueTable(particle.address()));
 	registers.set(1, valueInteger(1));
 	particle.setStringKey(x, valueInteger(std::numeric_limits<i32>::min()));
-	NativeBlockRunState run{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+	NativeBlockRunState run{.constants = constants.view(), .memory = &cpu.memory(), .remainingCycles = 100};
 	const auto* wrapped = block->run(registers.view(), run);
 	require(wrapped->exit == NativeBlockExit::Continue && wrapped->nextPc == ops[4].bx()
 		&& particle.getStringKey(x) == valueInteger(std::numeric_limits<i32>::max()),
@@ -167,7 +167,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	registers.set(1, receiver);
 	auto block = test::compileNative(instructions, memory, cpu.stringPool());
 	auto& hint = block->sideExits[0].tableRead;
-	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap(), .cop0Words = controls.data()};
+	NativeBlockRunState grant{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data()};
 	const auto read = [&](Value want, int hops, TableLookupStatus status = TableLookupStatus::Resolved) {
 		grant.remainingCycles = 100;
 		registers.set(0, valueInteger(73));
@@ -301,7 +301,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			registers.set(0, valueTable(table.address())); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
 			const auto heap = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == NativeBlockExit::Continue && registers.get(destination) == value
 				&& registers.get(9) == values[3] && registers.get(10) == values[0],
@@ -322,7 +322,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			if (mutation == 3) { meta.setStringKey(indexKey, valueBool(false)); }
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address())); registers.set(5, valueString(key));
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			const bool hit = exit->exit == NativeBlockExit::Continue;
 			require(hit == (mutation != 3), "only the non-table __index requires a semantic exit");
@@ -343,7 +343,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			ValueSlots stringRegisters(11);
 			stringRegisters.set(0, valueTable(table.address()));
 			stringRegisters.set(5, valueString(key));
-			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+			NativeBlockRunState stringState{.memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			const auto* stringExit = block->run(stringRegisters.view(), stringState);
 			require(stringExit->exit == NativeBlockExit::Continue && stringRegisters.get(destination) == valueInteger(91),
 				"the mixed site resolves its inherited string key");
@@ -353,7 +353,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 				ValueSlots registers(11);
 				registers.set(0, valueTable(table.address()));
 				registers.set(5, key);
-				NativeBlockRunState state{.heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+				NativeBlockRunState state{.memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 				const auto* exit = block->run(registers.view(), state);
 				require(exit->exit == NativeBlockExit::ReadIndex && exit->nextPc == source[4].pc
 					&& state.remainingCycles == 100 - instructionCharge(std::span(decoded).first<4>()),
@@ -363,7 +363,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address()));
 			registers.set(3, valueInteger(73));
-			NativeBlockRunState state{.heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+			NativeBlockRunState state{.memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			require(block->run(registers.view(), state)->exit == NativeBlockExit::ReadIndex && registers.get(9) == valueNil(),
 				"a nil key still takes the precise side exit without executing the suffix");
 		}
@@ -371,7 +371,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueTable(table.address()));
 		ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 		registers.set(0, valueTable(table.address())); registers.set(5, valueString(key));
-		NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+		NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == (op == OpCode::GETT ? NativeBlockExit::ReadIndex : NativeBlockExit::ReadField)
 			&& exit->currentPc == 0x100cu && registers.get(destination) == (destination == 0 ? valueTable(table.address()) : destination == 1 ? valueString(key) : valueInteger(73)),
@@ -401,7 +401,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			decoded[3].setBx(0x2000);
 			auto block = test::compileNative(source, memory, cpu.stringPool());
 			ValueSlots registers(3);
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .cop0Words = controls.data(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			const bool tableReceiver = valueIsTable(receiver);
 			require((tableReceiver ? exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[3].bx()
@@ -565,7 +565,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 				ValueSlots registers(10); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 				registers.set(0, valueTable(table.address())); registers.set(3, values[n]); registers.set(4, value);
 				const auto before = table.trackedHeapBytes();
-				NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+				NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .remainingCycles = 100};
 				const auto* exit = block->run(registers.view(), state);
 				const Value expected = constant ? constants.get(1) : value;
 				const bool hit = own && !isNil(expected) && !valueIsTable(expected) && !valueIsString(expected);
@@ -587,7 +587,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		auto empty = bmsx::test::allocateTableReference(cpu);
 		ValueSlots registers(10);
 		registers.set(0, valueTable(empty.address())); registers.set(3, values[3]); registers.set(4, values[3]);
-		NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
+		NativeBlockRunState state{.constants = constants.view(), .memory = &cpu.memory(), .remainingCycles = 100};
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == (generic ? NativeBlockExit::WriteIndex : NativeBlockExit::WriteField),
 			"missing capacity retains the allocating semantic exit");
@@ -650,7 +650,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		auto block = test::compileNative(source, memory, cpu.stringPool());
 		ValueSlots registers(3);
 		registers.set(0, ref);
-		NativeBlockRunState state{.heap = &cpu.gcHeap()};
+		NativeBlockRunState state{.memory = &cpu.memory()};
 		for (int index : {1, 2, 4, 3, 4, 2, 1}) {
 			const int slot = generic ? index : 1;
 			for (Value v : {valueFloatBits(0xffa12345), valueNil()}) {
@@ -749,7 +749,7 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 		registers.set(0, valueTable(owner.address()));
 		registers.set(1, field ? valueInteger(-19) : child);
 		NativeBlockRunState state{};
-		state.constants = constants.view(); state.heap = &heap;
+		state.constants = constants.view(); state.memory = &memory;
 		state.remainingCycles = instructionCharge(decoded);
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == (field ? NativeBlockExit::WriteField : NativeBlockExit::WriteInteger)
@@ -784,7 +784,7 @@ void firstPrivateArrayWriteMarksAllHistoryPages(CPU& cpu, Memory& memory) {
 	ValueSlots registers(3);
 	registers.set(0, valueTable(table.address()));
 	registers.set(2, valueInteger(101));
-	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+	NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 	auto& watches = memory.ramWriteWatches();
 	watches.armHistoryWrites();
 	require(block->run(registers.view(), state)->exit == NativeBlockExit::WriteInteger
@@ -826,7 +826,7 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 		ValueSlots registers(7);
 		registers.set(0, valueTable(table.address())); registers.set(1, root);
 		const int grant = cycles + 1;
-		NativeBlockRunState state{.constants = {}, .heap = &cpu.gcHeap(), .remainingCycles = grant};
+		NativeBlockRunState state{.constants = {}, .memory = &cpu.memory(), .remainingCycles = grant};
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[3].pc && exit->nextPc == decoded[3].bx(),
 			"table LEN and its suffix stay in one native invocation");
@@ -873,7 +873,7 @@ void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
 		for (const Value first : {valueTable(table.address()), valueNil()}) for (const Value next : {valueTable(table.address()), valueNil()}) {
 			ValueSlots registers(6);
 			registers.set(1, first); registers.set(4, next);
-			NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+			NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			if (isNil(first)) {
 				require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3004u,
@@ -930,7 +930,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	for (const auto* entry : entries) for (const bool valid : {false, true}) {
 		ValueSlots registers(7);
 		for (int guest : {0, 1, 4, 6}) registers.set(guest, valid ? valueTable(table.address()) : valueNil());
-		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+		NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 		const auto* exit = entry->run(registers.view(), state);
 		if (valid) {
 			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[4].bx()
@@ -952,7 +952,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 	}
 	ValueSlots registers(7);
 	registers.set(6, valueTable(table.address()));
-	NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+	NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 	require(entries[2]->run(registers.view(), state)->exit == NativeBlockExit::ScalarBoundary && registers.get(0) == valueNil(),
 		"the first internal predecessor cannot reuse the second predecessor's table fact");
 	state.remainingCycles = 100;
@@ -984,7 +984,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		const std::array unusedSources{NativeBlockSource{std::span(unusedInstructions).first<5>()}};
 		auto blocks = NativeCompiler{}.compile(unusedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(6);
-		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+		NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
 		require(exit->exit == NativeBlockExit::Continue && exit->nextPc == unusedDecoded[4].bx() && registers.get(5) == valueInteger(1),
 			"an inherited but unused table fact does not reject an independent entry");
@@ -995,7 +995,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
 		auto blocks = NativeCompiler{}.compile(usedSources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(6);
-		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+		NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
 		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x5008u
 			&& !exit->operands.replay.hasCompletedInstruction && registers.get(5) == valueNil(),
@@ -1031,7 +1031,7 @@ void logicalFactsDoNotDependOnPhysicalEviction(CPU& cpu, Memory& memory) {
 		auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 		ValueSlots registers(11);
 		for (int operand : {4, 5, 6, 7}) registers.set(operand, valueInteger(0));
-		NativeBlockRunState state{.heap = &cpu.gcHeap(), .remainingCycles = 100};
+		NativeBlockRunState state{.memory = &cpu.memory(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(registers.view(), state);
 		if (evict)
 			require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x7008u

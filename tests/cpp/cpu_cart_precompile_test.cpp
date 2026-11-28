@@ -298,7 +298,7 @@ void preparedCodeUsesItsImageConstants() {
 		test::runCpuParity(prepared.cpu(), scalar.cpu(), grant);
 		for (auto* machine : {&prepared, &scalar}) {
 			const auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
-			const auto table = asTable(frame.registers.get(3), machine->cpu().gcHeap());
+			const auto table = TableRecord(machine->cpu().memory(), valuePayload(frame.registers.get(3)));
 			require(frame.registers.get(0) == value && frame.registers.get(1) == value && table.getInteger(1) == value
 					&& machine->cpu().readFramePc(0) == body && machine->cpu().instructionBudgetRemaining == 0,
 				"LOADK, LOADKR and an RK store preserve the same image value and exact frontier");
@@ -380,7 +380,7 @@ void coldExecRecordsNumericFieldFeedback() {
 		require(entry->hasFusedJump && entry->terminal.currentPc == pc + 3 * INSTRUCTION_BYTES,
 			"readmission can use existing feedback to specialize the own read and its consumers");
 		const auto prefixCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
-		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .heap = &cpu.gcHeap(),
+		NativeBlockRunState grant{.constants = frame.executionImage->constPool, .memory = &cpu.memory(),
 			.globalValues = {}, .systemGlobalValues = {}, .remainingCycles = prefixCycles + loopCycles};
 		const auto* exit = entry->run(frame.registers, grant);
 		require(exit->nextPc == root && grant.remainingCycles == 0 && frame.registers.get(3) == valueFloat(3.5f),

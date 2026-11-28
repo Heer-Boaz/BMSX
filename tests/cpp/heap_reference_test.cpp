@@ -131,7 +131,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 		cpu.restoreRuntimeState(saved);
 		const Value restoredRoots = cpu.rootThread()->currentFrame->registers.get(0);
 		require(valuePayload(restoredRoots) == rootsRef &&
-			asTable(restoredRoots, cpu.gcHeap()).getInteger(4) == fourth,
+			TableRecord(cpu.memory(), valuePayload(restoredRoots)).getInteger(4) == fourth,
 			"raw reference words still bind the restored table and its entries");
 		for (const u32 address : future) require(cpu.gcHeap().tableRecordAddress(address) == 0u, "discarded addresses have no issued Table header");
 		checkReferences(cpu);
@@ -178,7 +178,7 @@ void builtinIdentitiesStayOutsideTheGcHeap() {
 	const auto after = test::allocatedObjectRecords(cpu);
 	require(before == after, "builtin functions have CPU-owned ids, not GC registrations");
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
-	functions = asTable(cpu.rootThread()->currentFrame->registers.get(0),cpu.gcHeap());
+	functions = bmsx::test::asReferenceTable(cpu.rootThread()->currentFrame->registers.get(0),cpu.gcHeap());
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
 		require(asBuiltinFunctionId(functions.getInteger(static_cast<int>(i + 1))) == static_cast<BuiltinFunctionId>(i),
 			"builtin ids survive restore including zero");

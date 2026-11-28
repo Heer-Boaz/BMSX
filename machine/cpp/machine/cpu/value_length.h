@@ -9,12 +9,12 @@
 namespace bmsx {
 
 // Dispatch owns metamethods and the fault for a non-String/non-Table.
-inline std::optional<i32> measureValueLength(Value operand, const StringPool& strings, GcHeap* heap) noexcept {
+inline std::optional<i32> measureValueLength(Value operand, const StringPool& strings, Memory* memory) noexcept {
 	switch (valueTag(operand)) {
 	case ValueTag::String:
 		return strings.byteLength(asStringId(operand));
 	case ValueTag::Table: {
-		TableRecord table(*heap, valuePayload(operand));
+		TableRecord table(*memory, valuePayload(operand));
 		return TableRecord::length(&table);
 	}
 	default:

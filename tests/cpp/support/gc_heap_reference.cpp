@@ -1,5 +1,5 @@
 #include "machine/cpu/gc_heap.h"
-#include "machine/cpu/table.h"
+#include "table_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/upvalue.h"
@@ -76,7 +76,7 @@ void GcHeap::markGlobalWrite(Value reference) {
 }
 
 void GcHeap::writeBlackTableValue(u32 table, Value value) {
-	if (phase() == GcPhase::MarkAgain && TableRecord(*this, table).metatableAddress() == 0u) {
+	if (phase() == GcPhase::MarkAgain && TableRecord(memory, table).metatableAddress() == 0u) {
 		markValue(value);
 		creditBarrierMarks();
 	} else {
@@ -87,7 +87,7 @@ void GcHeap::writeBlackTableValue(u32 table, Value value) {
 void GcHeap::writeTableEntry(u32 table, Value key, Value value) {
 	if ((!valueTagHasGcEdge(valueTag(key)) && !valueTagHasGcEdge(valueTag(value))) || markColor(table) != 3u)
 		return;
-	if (phase() == GcPhase::MarkAgain && TableRecord(*this, table).metatableAddress() == 0u) {
+	if (phase() == GcPhase::MarkAgain && TableRecord(memory, table).metatableAddress() == 0u) {
 		markValue(key);
 		markValue(value);
 		creditBarrierMarks();
@@ -245,7 +245,7 @@ std::pair<int, size_t> GcHeap::probeTableMode(const TableRecord& table, size_t l
 	const u32 address = tableRecordAddress(table.metatableAddress());
 	const u32 current = memory.readRamRecordWord(m_controlOffset + GC_MODE_META);
 	if (address != 0u) {
-		const TableRecord meta(*this, address);
+		const TableRecord meta(memory, address);
 		const StringId modeKey = diagnosticWord(GcDiagnosticField::Mode);
 		auto probe = address == current
 			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
@@ -429,7 +429,7 @@ size_t GcHeap::resumeTrace(u32 record, bool atomic, size_t limit) {
 	switch (memory.readRamRecordByte(record)) {
 	case tableRecordKind: {
 		if (cursor == TABLE_MODE_PENDING) return traceTable(record, limit, true);
-		const TableRecord table(*this, record);
+		const TableRecord table(memory, record);
 		return traceTableEntries(table, static_cast<u8>(cursor >> TRACE_CURSOR_BITS),
 			cursor & TRACE_CURSOR_MASK, 0u, limit);
 	}
@@ -455,7 +455,7 @@ size_t GcHeap::traceQuantum(bool atomic, size_t limit, size_t work) {
 }
 
 size_t GcHeap::traceTable(u32 address, size_t limit, bool resumingMode) {
-	const TableRecord table(*this, address);
+	const TableRecord table(memory, address);
 	const u32 meta = table.metatableAddress();
 	if (meta != 0u && !resumingMode) markTable(meta);
 	size_t work = resumingMode ? 0u : TableRecord::HEADER_BYTES / sizeof(u32);
@@ -656,7 +656,7 @@ size_t GcHeap::clearWeakQuantum(size_t limit) {
 			}, 1u);
 			if (record == 0u || work == limit) break;
 		}
-		TableRecord table(*this, record);
+		test::NativeTableReference table(*this, record);
 		u32 cursor = memory.readRamRecordWord(m_controlOffset + GC_TRACE_CURSOR);
 		if (cursor == TABLE_MODE_PENDING) {
 			const auto [mode, inspected] = probeTableMode(table, limit - work);
@@ -727,7 +727,7 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 		return 1u + compactThreadStack(address);
 	}
 	if (kind == tableRecordKind) {
-		TableRecord(*this, address).freeRecord();
+		test::NativeTableReference(*this, address).freeRecord();
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND) {

@@ -652,7 +652,7 @@ void allActivatedImagesAndUniqueGlobals() {
 
 void temporaryRootsAndUnreachablePool() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	TableRecord table = bmsx::test::allocateTableReference(cpu); //32; retained only by the reserve temporary root.
+	auto table = bmsx::test::allocateTableReference(cpu); //32; retained only by the reserve temporary root.
 	const auto id = cpu.stringPool().intern("é😀"); //6; another temporary root.
 	const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 	require(before.first == bootBytes + 32 + 22, "precollection includes currently unreachable allocations");
@@ -681,7 +681,7 @@ void incrementalStateAndBarriers() {
 		dead.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	}
 	for (int i = 0; i < 4200; ++i) cpu.stringPool().intern("dead-" + std::to_string(i) + std::string(16, 'x'));
-	auto target = asTable(roots.getInteger(1000), cpu.gcHeap());
+	auto target = bmsx::test::asReferenceTable(roots.getInteger(1000), cpu.gcHeap());
 	require(cpu.stepHeap(valueNil(), valueNil(), valueNil()) >= GC_STEP_WORDS
 		&& cpu.gcHeap().phase() == GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3,
 		"mutations target a black allocation while marking is incomplete");
@@ -714,12 +714,12 @@ void incrementalStateAndBarriers() {
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	}
 	require(phases == 59, "snapshot/restore exercised Mark, Atomic, Sweep, Strings and Pause");
-	roots = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
-	target = asTable(roots.getInteger(1000), cpu.gcHeap());
-	require(asTable(target.getInteger(1), cpu.gcHeap()).address() == childId
-		&& asTable(target.getStringKey(field), cpu.gcHeap()).address() == childId && target.metatableAddress() != 0u,
+	roots = bmsx::test::asReferenceTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+	target = bmsx::test::asReferenceTable(roots.getInteger(1000), cpu.gcHeap());
+	require(TableRecord(cpu.memory(), valuePayload(target.getInteger(1))).address() == childId
+		&& TableRecord(cpu.memory(), valuePayload(target.getStringKey(field))).address() == childId && target.metatableAddress() != 0u,
 		"barriers preserve changed array, hash and metatable edges");
-	require(asTable(cpu.rootThread()->currentFrame->registers.get(1), cpu.gcHeap()).address() == bornId,
+	require(TableRecord(cpu.memory(), valuePayload(cpu.rootThread()->currentFrame->registers.get(1))).address() == bornId,
 		"an allocation born during sweep is retained");
 	require(!cpu.stringPool().find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
 	cpu.collectHeap();
@@ -1137,8 +1137,8 @@ void incrementalSharedWeakMode() {
 	const auto modeKey = cpu.stringPool().intern("__mode");
 	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
 	metatable.setStringKey(modeKey, valueString(cpu.stringPool().intern("v")));
-	auto weak = asTable(roots.getInteger(1000), cpu.gcHeap());
-	auto following = asTable(roots.getInteger(999), cpu.gcHeap());
+	auto weak = bmsx::test::asReferenceTable(roots.getInteger(1000), cpu.gcHeap());
+	auto following = bmsx::test::asReferenceTable(roots.getInteger(999), cpu.gcHeap());
 	weak.setMetatableAddress(metatable.address());
 	following.setMetatableAddress(metatable.address());
 	auto child = bmsx::test::allocateTableReference(cpu);
@@ -1376,7 +1376,7 @@ void secondMarkPassAndCredit() {
 		"a large admission spends at most one quantum and carries its unpaid debt");
 	u32 phases = 0;
 	for (int i = 0; i < 12; ++i) {
-		auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+		auto target = bmsx::test::asReferenceTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
 		target.setInteger(1, cpu.rootThread()->currentFrame->registers.get(1 + (i & 1)));
 		cpu.stepHeap(valueNil(), valueNil(), valueNil());
 		const auto state = cpu.captureRuntimeState(); phases |= 1u << static_cast<u32>(cpu.gcHeap().phase());
@@ -1387,7 +1387,7 @@ void secondMarkPassAndCredit() {
 		if (cpu.gcHeap().phase() == GcPhase::Atomic) break;
 	}
 	require((phases & 12u) == 12u, "continuous stores do not restart either incremental mark pass indefinitely");
-	auto target = asTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
+	auto target = bmsx::test::asReferenceTable(cpu.rootThread()->currentFrame->registers.get(0), cpu.gcHeap());
 	auto late = bmsx::test::allocateTableReference(cpu); target.setInteger(2, valueTable(late.address()));
 	while (cpu.collecting()) cpu.stepHeap(valueNil(), valueNil(), valueNil());
 	require(target.getInteger(2) == valueTable(late.address()), "final remark retains writes after the second pass");
@@ -1747,7 +1747,7 @@ void weakTableAdmissionReplansAfterCollection() {
 			"retry reuses the incoming home or rebuilds after replanning the surviving entries");
 		require(cpu.gcHeap().tableRecordAddress(occupant) == 0u && isNil(weak.getInteger(weakKey))
 			&& weak.getInteger(strongKey) == valueInteger(strongKey) && weak.getInteger(incoming) == valueInteger(incoming)
-			&& heap.usedBytes() == heap.capacity() - TableRecord::HEADER_CHARGE,
+			&& heap.usedBytes() == heap.capacity() - bmsx::test::NativeTableReference::HEADER_CHARGE,
 			"retry charges no stale capacity and releases only the collected referent");
 	}
 }

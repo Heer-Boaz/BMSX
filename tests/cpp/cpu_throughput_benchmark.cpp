@@ -296,7 +296,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		cpu.activeThread()->currentFrame->setTop(8);
 	}
 	if (workload == Workload::Tables) {
-		TableRecord table = bmsx::test::allocateTableReference(cpu, 8, 1);
+		auto table = bmsx::test::allocateTableReference(cpu, 8, 1);
 		registers.set(0, valueTable(table.address()));
 		for (int index = 1; index <= 8; ++index) table.setInteger(index, valueInteger(index));
 		table.setStringKey(cpu.stringPool().intern("field"), valueInteger(1));

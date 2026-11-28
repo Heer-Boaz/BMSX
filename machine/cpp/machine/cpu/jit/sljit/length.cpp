@@ -25,7 +25,7 @@ void NativeLowering::lowerOperation(const NativeLength& length, const NativeInst
 	const auto state = m_cache.state();
 	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, heap));
+		offsetof(NativeBlockRunState, memory));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
 	sljit_get_local_base(m_compiler, SLJIT_R2, 0, value);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::readNativeLength));

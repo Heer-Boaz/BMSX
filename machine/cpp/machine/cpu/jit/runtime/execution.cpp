@@ -7,7 +7,7 @@ namespace bmsx {
 
 NativeCpuRunState::NativeCpuRunState(CPU& owner, int depth)
 	: cpu(&owner), targetDepth(depth) {
-	state.heap = &owner.m_heap;
+	state.memory = &owner.m_memory;
 	state.globalValues = &owner.m_globalBank.values();
 	state.systemGlobalValues = &owner.m_systemGlobalBank.values();
 	state.cop0Words = owner.m_cop0Words.data();

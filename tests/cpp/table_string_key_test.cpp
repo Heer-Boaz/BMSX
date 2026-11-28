@@ -216,10 +216,10 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 			values[i] = (mask & (1u << i)) != 0u ? valueInteger(i) : valueNil();
 			scalar.setStringKey(keys[i], values[i]);
 		}
-		const auto layout = TableRecord::planStringRecord(keys, mask);
+		const auto layout = bmsx::test::NativeTableReference::planStringRecord(keys, mask);
 		if (mask) prepared.fillStringRecord(layout, keys, values);
 		require(scalar.hashFree() == prepared.hashFree(), "the prepared placement preserves the free cursor");
-		for (u32 at = 0; at < TableRecord::storageBytes(0, 8); ++at)
+		for (u32 at = 0; at < bmsx::test::NativeTableReference::storageBytes(0, 8); ++at)
 			require(memory.readRamRecordByte(scalar.hashAddress() + at)
 				== memory.readRamRecordByte(prepared.hashAddress() + at),
 				"prepared and scalar constructor layouts agree under collisions and absent values");
@@ -238,7 +238,7 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 		"an empty metatable leaves the write on the receiver");
 	const std::array keys{newIndex};
 	const std::array values{valueBool(false)};
-	meta.fillStringRecord(TableRecord::planStringRecord(keys, 1), keys, values);
+	meta.fillStringRecord(bmsx::test::NativeTableReference::planStringRecord(keys, 1), keys, values);
 	target.resolveStringAssignment(field, newIndex, assignment);
 	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
 		"bulk construction must not hide a non-nil false method");

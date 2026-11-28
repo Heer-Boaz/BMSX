@@ -810,7 +810,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(111), "slot 0 startup executes its published closure");
 	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
 	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
-	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
+	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(slot0ClosureValue, bmsx::valueInteger(77));
 	cpu.setGlobalByKey(savedClosureName, slot0ClosureValue);
 	cpu.setGlobalByKey(closureTableName, bmsx::valueTable(closureTable.address()));
@@ -857,7 +857,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 			runtime.machine.memory.ramByteCount(),
 			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	const bmsx::Value restoredClosureValue = cpu.getGlobalByKey(savedClosureName);
-	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(closureTableName), cpu.gcHeap());
+	bmsx::TableRecord restoredTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(closureTableName)));
 	require(bmsx::asClosure(restoredClosureValue, cpu.gcHeap()) == slot0Closure, "wire restore preserves canonical static closure identity");
 	require(restoredTable.get(restoredClosureValue) == bmsx::valueInteger(77), "wire restore preserves closure-keyed table entries");
 	bmsx::u32 restoredPublished = bmsx::asClosure(cpu.getGlobalByKey(publishedClosureName), cpu.gcHeap());
@@ -916,7 +916,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
 	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
 	const bmsx::StringId tableName = cpu.stringPool().intern("closure_table");
-	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
+	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(firstClosureValue, bmsx::valueInteger(11));
 	closureTable.set(secondClosureValue, bmsx::valueInteger(22));
 	cpu.setGlobalByKey(firstName, firstClosureValue);
@@ -936,7 +936,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	const bmsx::Value restoredSecondValue = cpu.getGlobalByKey(secondName);
 	bmsx::u32 restoredFirst = bmsx::asClosure(restoredFirstValue, cpu.gcHeap());
 	bmsx::u32 restoredSecond = bmsx::asClosure(restoredSecondValue, cpu.gcHeap());
-	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName), cpu.gcHeap());
+	bmsx::TableRecord restoredTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(tableName)));
 	require(restoredFirst != restoredSecond, "wire restore retains distinct non-static closure identities");
 	require(cpu.readClosureBinding(restoredFirst) == cpu.readClosureBinding(restoredSecond), "wire restore preserves the common published function binding");
 	require(restoredTable.get(restoredFirstValue) == bmsx::valueInteger(11), "wire restore retains the first closure table key");
@@ -974,7 +974,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
 	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");
 	const bmsx::StringId tableName = cpu.stringPool().intern("mixed_closure_table");
-	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
+	auto closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(dynamicClosureValue, bmsx::valueInteger(11));
 	closureTable.set(canonicalClosureValue, bmsx::valueInteger(22));
 	cpu.setGlobalByKey(dynamicName, dynamicClosureValue);
@@ -989,7 +989,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	bmsx::Value restoredDynamicValue = cpu.getGlobalByKey(dynamicName);
 	bmsx::Value restoredCanonicalValue = cpu.getGlobalByKey(canonicalName);
-	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName), cpu.gcHeap());
+	bmsx::TableRecord restoredTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(tableName)));
 	require(bmsx::asClosure(restoredDynamicValue, cpu.gcHeap()) != bmsx::asClosure(restoredCanonicalValue, cpu.gcHeap()), "slot 1 wire restore retains mixed closure identities");
 	require(restoredTable.get(restoredDynamicValue) == bmsx::valueInteger(11), "slot 1 wire restore retains the dynamic closure key");
 	require(restoredTable.get(restoredCanonicalValue) == bmsx::valueInteger(22), "slot 1 wire restore retains the canonical closure key");
@@ -1007,7 +1007,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 			runtime.machine.gxGpu.readVramSnapshotBytes().size()));
 	restoredDynamicValue = cpu.getGlobalByKey(dynamicName);
 	restoredCanonicalValue = cpu.getGlobalByKey(canonicalName);
-	restoredTable = bmsx::asTable(cpu.getGlobalByKey(tableName), cpu.gcHeap());
+	restoredTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.getGlobalByKey(tableName)));
 	require(bmsx::asClosure(restoredDynamicValue, cpu.gcHeap()) != bmsx::asClosure(restoredCanonicalValue, cpu.gcHeap()), "slot 0 wire restore retains mixed closure identities");
 	require(restoredTable.get(restoredDynamicValue) == bmsx::valueInteger(11), "slot 0 wire restore retains the dynamic closure key");
 	require(restoredTable.get(restoredCanonicalValue) == bmsx::valueInteger(22), "slot 0 wire restore retains the canonical closure key");
@@ -1045,7 +1045,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 
 	cpu.restoreRuntimeState(state);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored completion call returns through its retained route");
-	bmsx::TableRecord restoredTable = bmsx::asTable(cpu.readCompletionValues().get(0), cpu.gcHeap());
+	bmsx::TableRecord restoredTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(cpu.readCompletionValues().get(0)));
 	cpu.collectHeap();
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == restoredTable.address(), "completion latch roots its restored heap result");
 
@@ -1054,7 +1054,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(restoredClosure, bmsx::BuiltinArgsView(&nextArgument, 1));
 	const auto latch = cpu.readCompletionValues();
 	require(results.words() == latch.words() && results.tags() == latch.tags(), "Runtime borrows the CPU completion latch without copying");
-	bmsx::TableRecord borrowedTable = bmsx::asTable(results.get(0), cpu.gcHeap());
+	bmsx::TableRecord borrowedTable = bmsx::TableRecord(cpu.memory(), bmsx::valuePayload(results.get(0)));
 	cpu.collectHeap();
 	require(bmsx::valuePayload(results.get(0)) == borrowedTable.address(), "borrowed completion results remain rooted by the CPU latch");
 }

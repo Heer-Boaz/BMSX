@@ -61,7 +61,7 @@ void hostGrantScratch(bool scalar) {
  if (cpu.instructionBudgetRemaining != -99 || scheduler.currentNowCycles() != 73)
   throw std::runtime_error("restore does not price reconstructed storage");
  if (cpu.runUntilDepth(0, 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - BASE_CYCLES[static_cast<u8>(OpCode::SETT)]
-  || asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap()).get(key) != valueInteger(91))
+  || TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0))).get(key) != valueInteger(91))
   throw std::runtime_error("the next execution owns a fresh grant");
 }
 } // namespace

@@ -304,7 +304,7 @@ void nativeClosedBarrierOracleAfterHeapGrowth() {
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 2,
 		"closed writes queue the scanned cell again");
 	m.cpu.collectHeap();
-	const auto retained = asTable(Upvalue::load(m.cpu.memory(), cell), m.cpu.gcHeap());
+	const auto retained = TableRecord(m.cpu.memory(), valuePayload(Upvalue::load(m.cpu.memory(), cell)));
 	require(retained.address() == child.address() && retained.getInteger(1) == valueInteger(123),
 		"a child introduced by a closed-cell write survives the incremental collector");
 }

@@ -130,7 +130,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 	auto controls = test::fixtureTableControls(machine.cpu);
 	const StringId key = machine.cpu.stringPool().intern("native-field");
 	const StringId other = machine.cpu.stringPool().intern("other-field");
-	TableRecord table = bmsx::test::allocateTableReference(machine.cpu, 0, 2);
+	auto table = bmsx::test::allocateTableReference(machine.cpu, 0, 2);
 	int slot = table.setStringKey(key, valueInteger(1));
 	const int otherSlot = table.setStringKey(other, valueInteger(2));
 	table.getStringKeyCached(key, slot);
@@ -146,13 +146,13 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		if (store) {
 			require(block->sideExits[0].operands.table.value == -1, "native field exits keep signed RK selectors");
-			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& table.getStringKey(key) == constants.get(0), "a native field store updates the real hash slot without a helper");
 		} else {
 			for (Value value : {valueFloatBits(0x80000000u), valueFloatBits(0x7fc00000u), valueFloatBits(0xffa12345u),
 				valueBool(false), valueBool(true), valueString(other), valueTable(table.address())}) {
 				table.setStringKey(key, value);
-				require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+				require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
 					&& registers.get(0) == value, "native cached field loads preserve every raw value and reference bit");
 			}
 			DecodedInstruction alias = field;
@@ -160,7 +160,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
 			auto aliasBlock = test::compileNative(aliasSource, machine.memory, machine.cpu.stringPool());
 			table.setStringKey(key, valueFloatBits(0x80000000u));
-			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
+			require(aliasBlock->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = aliasBlock->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(1) == valueFloatBits(0x80000000u), "a cached field result can replace its own table receiver");
 			registers.set(1, valueTable(table.address()));
 		}
@@ -170,7 +170,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		for (int prediction : {-1, otherSlot, 100000}) {
 			hint = prediction;
 			const auto destination = registers.get(0);
-			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles});
+			const auto* exit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles});
 			if (!store) {
 				require(exit->exit == NativeBlockExit::Continue && registers.get(0) == valueInteger(31)
 					&& nativeRunState.remainingCycles == 0 && hint == slot, "a stale read slot repairs itself on the live receiver");
@@ -184,7 +184,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		registers.set(store ? 0 : 1, valueBool(false));
 		const Value destination = registers.get(0), previous = table.getStringKey(key);
 		const auto* badReceiver = block->run(registers.view(), nativeRunState = {.constants = constants.view(),
-			.heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = field.baseCycles});
+			.memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = field.baseCycles});
 		require(badReceiver->exit == (store ? NativeBlockExit::WriteField : NativeBlockExit::ReadField)
 			&& badReceiver->currentPc == source[0].pc && badReceiver->lastPc == source[0].pc + INSTRUCTION_BYTES
 			&& badReceiver->nextPc == source[0].pc + 2u * INSTRUCTION_BYTES && nativeRunState.remainingCycles == 0
@@ -192,7 +192,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			"a non-table field receiver leaves the precisely charged WIDE operation for CPU semantics before any mutation");
 		registers.set(0, valueTable(table.address())); registers.set(1, valueTable(table.address()));
 		table.setStringKey(key, valueNil());
-		const auto* deletedExit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles});
+		const auto* deletedExit = block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles});
 		require(deletedExit->exit == (store ? semanticExit : NativeBlockExit::Continue) && isNil(table.getStringKey(key))
 			&& registers.get(0) == (store ? valueTable(table.address()) : valueNil()),
 			"an absent read yields nil; insertion into a deleted slot is a separate store operation");
@@ -200,10 +200,10 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		hint = slot;
 		if (!store) {
 			table.setMetatableAddress(bmsx::test::allocateTableReference(machine.cpu, 0, 0).address());
-			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
+			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table.setStringKey(key, valueNil());
-			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
+			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .memory = &machine.cpu.memory(), .cop0Words = controls.data(), .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue
 				&& registers.get(0) == valueNil(), "an empty metatable terminates a missing field read with nil");
 			table.setMetatableAddress(0u);
 			slot = table.setStringKey(key, valueInteger(1));
@@ -228,7 +228,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		TableRecord table = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
+		auto table = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 		frame.registers.set(0, valueTable(table.address())); frame.registers.set(1, valueInteger(1));
 		table.setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
@@ -253,11 +253,11 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		"the warmed read and arithmetic have no internal transfer before the field write");
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		asTable(frame.registers.get(0), machine->cpu.gcHeap()).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
+		bmsx::test::asReferenceTable(frame.registers.get(0), machine->cpu.gcHeap()).setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		frame.registers.set(4, valueInteger(0));
 	}
 	auto controls = test::fixtureTableControls(native.cpu);
-	require(loop->run(nativeFrame.registers, nativeRunState = {.constants = nativeFrame.executionImage->constPool, .heap = &native.cpu.gcHeap(),
+	require(loop->run(nativeFrame.registers, nativeRunState = {.constants = nativeFrame.executionImage->constPool, .memory = &native.cpu.memory(),
 			.cop0Words = controls.data(),
 			.remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
@@ -283,7 +283,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	for (const bool inherited : {false, true}) {
 		for (auto* machine : {&native, &scalar}) {
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-			auto table = asTable(frame.registers.get(0), machine->cpu.gcHeap());
+			auto table = bmsx::test::asReferenceTable(frame.registers.get(0), machine->cpu.gcHeap());
 			if (inherited) {
 				auto parent = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 				parent.setStringKey(key, valueInteger(40));
@@ -324,7 +324,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1}};
 	image.constants = {std::string("field"), 7};
 	CpuMachine machine(image);
-	TableRecord table = bmsx::test::allocateTableReference(machine.cpu, 0, 1);
+	auto table = bmsx::test::allocateTableReference(machine.cpu, 0, 1);
 	machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueTable(table.address()));
 	const StringId key = machine.cpu.stringPool().intern("field");
 	table.setStringKey(key, valueInteger(1));
@@ -1179,7 +1179,7 @@ void returnRangesSurviveCallerStackGrowth() {
 			test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-			TableRecord table = bmsx::test::allocateTableReference(cpu, 0, 0);
+			auto table = bmsx::test::allocateTableReference(cpu, 0, 0);
 			cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(91));
 			cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(table.address()));
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
@@ -1210,7 +1210,7 @@ void builtinReturnRangesSurviveDestinationGrowth() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		TableRecord table = bmsx::test::allocateTableReference(cpu, 1, 0);
+		auto table = bmsx::test::allocateTableReference(cpu, 1, 0);
 		const Value text = valueString(cpu.stringPool().intern("result"));
 		if (kind == 2) table.setInteger(1, text);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;

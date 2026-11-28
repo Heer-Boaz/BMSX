@@ -5,7 +5,6 @@
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
-#include "machine/cpu/gc_heap.h"
 
 #include "machine/cpu/table_hash_lookup.inl"
 
@@ -143,7 +142,7 @@ int TableRecord::assignProbedHash(const HashBody& body, int nodeIndex, Value val
 	// Only an absent own field can trigger __newindex.
 	if (!erase) return HASH_STORE_DECLINED;
 	const u32 meta = newIndexMetatable();
-	if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(assignKey))) return HASH_STORE_DECLINED;
+	if (meta != 0u && !isNil(TableRecord(*m_memory, meta).getStringKey(assignKey))) return HASH_STORE_DECLINED;
 	return -1;
 }
 
@@ -241,7 +240,7 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* lin
 
 Value TableRecord::metatableField(const StringId& key) const {
 	const u32 address = metatableAddress();
-	return address != 0u ? TableRecord(*m_heap, address).getStringKey(key) : valueNil();
+	return address != 0u ? TableRecord(*m_memory, address).getStringKey(key) : valueNil();
 }
 
 u32 TableRecord::newIndexMetatable() const {

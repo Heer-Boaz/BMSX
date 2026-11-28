@@ -185,7 +185,7 @@ std::vector<u8> mixedGrants() {
 		std::cout<<"mixed grant="<<grant<<" consumed="<<measured.consumed
 			<<" result="<<static_cast<int>(measured.result)<<'\n';
 	}
-	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
+	require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
 	require(isNil(generated.frame().registers.get(8)),"an untaken CALL never changes its destination");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -252,7 +252,7 @@ void tableWrites() {
 #endif
 #endif
 		if(route==2) require(generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"invalid table target actually enters the language-fault boundary");
-		else require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
+		else require(TableRecord(generated.runtime.machine.cpu.memory(), valuePayload(generated.frame().registers.get(0))).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(73),
 			"both field fast and growth paths perform the actual write");
 	}
 }

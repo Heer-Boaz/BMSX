@@ -48,7 +48,7 @@ struct Machine {
 #endif
 	}
 };
-TableRecord makeTable(CPU& cpu,Kind kind) {
+bmsx::test::NativeTableReference makeTable(CPU& cpu,Kind kind) {
 	if (kind == Kind::ArrayEnd || kind == Kind::HashTail) {
 		auto table = bmsx::test::allocateTableReference(cpu, 2, kind == Kind::HashTail ? 4 : 0);
 		if (kind == Kind::HashTail) table.setInteger(3, valueBool(false));
@@ -108,14 +108,14 @@ void everyGrant() {
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
 				m->cpu.writeFrameExecution(0,SYSTEM_EXECUTION_DOMAIN_ID,m->rom.functionAddresses[0],m->rom.textAddress);
-				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());asTable(r.get(10), m->cpu.gcHeap()).setInteger(1,valueInteger(-1));
+				auto r=m->cpu.activeThread()->currentFrame->registers;r.set(6, valueInteger(91));r.set(8, valueNil());r.set(9, valueNil());bmsx::test::asReferenceTable(r.get(10), m->cpu.gcHeap()).setInteger(1,valueInteger(-1));
 			}
 			require(test::runCpuParity(generated.cpu,scalar.cpu,grant)==RunResult::Yielded,"LEN loop remains runnable");
 			int remaining=grant,completed=0;while (remaining>0)remaining-=charges[completed++];
 			auto* frame=generated.cpu.activeThread()->currentFrame;auto r=frame->registers;
 			require(generated.cpu.instructionBudgetRemaining==remaining&&frame->readControl(bmsx::FrameField::Pc)==generated.rom.textAddress+program.starts[completed==6?0:completed]*INSTRUCTION_BYTES,"fixed length charge and instruction frontier");
 			require(r.get(6)==(completed>=3?valueInteger(test.boundary):completed>=2?r.get(0):valueInteger(91))
-				&&asTable(r.get(10), generated.cpu.gcHeap()).getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
+				&&TableRecord(generated.cpu.memory(), valuePayload(r.get(10))).getInteger(1)==(completed>=4?valueInteger(test.boundary):valueInteger(-1))&&r.get(8)==(completed>=5?valueInteger(37):valueNil()),
 				"aliased Integer result and side-effecting suffix commit only at admitted instruction frontiers");
 			sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 			require(test::sameLanguageRam(generated.cpu, scalar.cpu), "guest heap and stack bytes match");
@@ -164,16 +164,16 @@ void skippedLength() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void oneGateFrontier() {
 	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto r=frame->registers;
-	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m.cpu, 1).address()));asTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
+	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m.cpu, 1).address()));bmsx::test::asReferenceTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
 	const auto* page=frame->executionImage->nativeCodeLookup->find(m.rom.textAddress,0);
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
 	state.constants = frame->executionImage->constPool;
-	state.frame = frame; state.heap = &m.cpu.gcHeap(); state.remainingCycles = 5; state.registerTop = static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top));
+	state.frame = frame; state.memory = &m.cpu.memory(); state.remainingCycles = 5; state.registerTop = static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top));
 	const auto* exit=block->run(r, state);
 	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-2,
 		"one actual gate invocation returns the completed fixed-cost LEN before any outer CPU loop can intervene");
-	require(r.get(6)==valueInteger(4096)&&r.get(9)==valueInteger(37)&&asTable(r.get(10), m.cpu.gcHeap()).getInteger(1)==valueInteger(-1)&&isNil(r.get(8)),
+	require(r.get(6)==valueInteger(4096)&&r.get(9)==valueInteger(37)&&TableRecord(m.cpu.memory(), valuePayload(r.get(10))).getInteger(1)==valueInteger(-1)&&isNil(r.get(8)),
 		"Integer stays intact across scalar-work read and cached result is published before the unexecuted side effect");
 }
 #endif

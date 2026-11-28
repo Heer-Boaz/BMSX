@@ -131,7 +131,7 @@ void rebuildingHashMarksAllDestinationPages(bmsx::CPU& cpu) {
 	require(table.arrayAddress() == array && !watches.historyPageDirty(middlePage, middlePage + 1),
 		"rehashing does not write the retained array payload");
 	const u32 begin = table.hashAddress() & RAM_RECORD_WORD_MASK;
-	const u32 end = begin + TableRecord::storageBytes(0, table.hashSlots());
+	const u32 end = begin + bmsx::test::NativeTableReference::storageBytes(0, table.hashSlots());
 	for (u32 page = begin >> MAPPED_PAGE_BYTE_SHIFT; page <= (end - 1u) >> MAPPED_PAGE_BYTE_SHIFT; ++page)
 		require(watches.historyPageDirty(page, page + 1), "rebuilding marks the full destination for rewind");
 	watches.disarmHistoryWrites();

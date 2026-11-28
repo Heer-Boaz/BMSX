@@ -36,7 +36,7 @@ void restoreSuspended(Runtime& runtime, bool inspectFrame) {
 	if (!inspectFrame) {
 		const auto table = cpu.getGlobalByKey(*cpu.stringPool().find("checkpoint_table"));
 		const auto key = cpu.getGlobalByKey(*cpu.stringPool().find("checkpoint_key"));
-		require(asTable(table, cpu.gcHeap()).get(key) == valueNil(), "restore must not revive a deleted mapping");
+		require(TableRecord(cpu.memory(), valuePayload(table)).get(key) == valueNil(), "restore must not revive a deleted mapping");
 		return;
 	}
 	if (cpu.getGlobalByKey(*cpu.stringPool().find("fixture_inject_completion")) != valueBool(true)) return;

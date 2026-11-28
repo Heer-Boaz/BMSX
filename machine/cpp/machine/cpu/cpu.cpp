@@ -1103,7 +1103,7 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	}
 	Value nextKey;
 	Value nextValue;
-	TableRecord(m_heap, valuePayload(target)).nextEntry(key, nextKey, nextValue);
+	TableRecord(m_memory, valuePayload(target)).nextEntry(key, nextKey, nextValue);
 	out.push_back(nextKey);
 	if (!isNil(nextKey)) out.push_back(nextValue);
 }
@@ -1113,7 +1113,7 @@ bool CPU::stepTableIterator(ValueSpan& registers, int base, int destination, int
 	const Value table = registers.get(base + 1), control = registers.get(base + 2);
 	if (!valueIsTable(table) || !isNil(control)) return false;
 	Value key, value;
-	const u32 cursor = TableRecord(m_heap, valuePayload(table)).nextStoredEntry(valuePayload(control), key, value);
+	const u32 cursor = TableRecord(m_memory, valuePayload(table)).nextStoredEntry(valuePayload(control), key, value);
 	registers.set(destination, key);
 	const int placed = count > 1 && cursor != 0 ? 2 : 1;
 	if (placed == 2) registers.set(destination + 1, value);

@@ -81,7 +81,7 @@ Value keyFor(CPU& cpu, KeyKind kind) {
 	return kind == KeyKind::String ? valueString(cpu.stringPool().intern("field"))
 		: kind == KeyKind::Integer ? valueInteger(1) : valueBool(false);
 }
-TableRecord makeChain(CPU& cpu, TableRecord root, int depth, Value key, Value value) {
+bmsx::test::NativeTableReference makeChain(CPU& cpu, bmsx::test::NativeTableReference root, int depth, Value key, Value value) {
 	auto current = root;
 	for (int i = 1; i < depth; ++i) {
 		auto next = bmsx::test::allocateTableReference(cpu, 2, 2); auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
@@ -90,7 +90,7 @@ TableRecord makeChain(CPU& cpu, TableRecord root, int depth, Value key, Value va
 	current.set(key, value);
 	return current;
 }
-void cycle(CPU& cpu, TableRecord root) {
+void cycle(CPU& cpu, bmsx::test::NativeTableReference root) {
 	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(root.address())); root.setMetatableAddress(meta.address());
 }
@@ -192,7 +192,7 @@ void exhaustedStringChainCharges() {
 		}
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 			cycle(cpu, root);
 			// Close the actual tail link onto home. Only the visit bound,
 			// not a negative link, can terminate this raw RAM chain.
@@ -223,7 +223,7 @@ void growingStringHitCharges() {
 				auto& cpu = m->cpu;
 				const auto key = keyFor(cpu, KeyKind::String);
 				auto r = cpu.activeThread()->currentFrame->registers;
-				auto table = depth == 64 ? bmsx::test::allocateTableReference(cpu, 0, 128) : asTable(r.get(0), cpu.gcHeap());
+				auto table = depth == 64 ? bmsx::test::allocateTableReference(cpu, 0, 128) : bmsx::test::asReferenceTable(r.get(0), cpu.gcHeap());
 				r.set(0, valueTable(table.address())); r.set(1, key);
 				const auto home = hashCanonicalTableKey(key) & 127u;
 				next = n;
@@ -256,7 +256,7 @@ void growingStringHitCharges() {
 		}
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
 			const auto key = keyFor(cpu, KeyKind::String);
 			root.set(key, valueNil());
 			makeChain(cpu, root, 2, key, valueBool(false));
@@ -310,8 +310,8 @@ void directIndexMemberWork() {
 			for (auto* m : {&generated, &scalar}) {
 				auto& cpu = m->cpu;
 				const auto receiver = cpu.readFrameRegister(0, 0);
-				auto root = asTable(receiver, cpu.gcHeap());
-				TableRecord(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
+				auto root = TableRecord(cpu.memory(), valuePayload(receiver));
+				bmsx::test::NativeTableReference(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			}
 			test::runCpuParity(generated.cpu, scalar.cpu, 3);
@@ -476,28 +476,28 @@ void warmedOneHopUsesLiveMappings() {
 		check(valueInteger(73), 8);
 		check(valueInteger(73), 8);
 		for (auto* m : machines) {
-			auto root = asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
 			root.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
 		}
 		check(valueBool(false), 0);
 		for (auto* m : machines) {
-			auto root = asTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
+			auto root = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 0), m->cpu.gcHeap());
 			root.set(m->cpu.readFrameRegister(0, 1), valueNil());
 		}
 		check(valueInteger(73), 8);
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
-			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
-			TableRecord(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
+			auto root = TableRecord(cpu.memory(), valuePayload(cpu.readFrameRegister(0, 0)));
+			bmsx::test::NativeTableReference(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), cpu.readFrameRegister(0, 2));
 		}
 		check(valueInteger(107), 8);
 		for (auto* m : machines) {
-			auto holder = asTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
 			holder.set(m->cpu.readFrameRegister(0, 1), valueBool(false));
 		}
 		check(valueBool(false), 8);
 		for (auto* m : machines) {
-			auto holder = asTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
+			auto holder = bmsx::test::asReferenceTable(m->cpu.readFrameRegister(0, 2), m->cpu.gcHeap());
 			holder.set(m->cpu.readFrameRegister(0, 1), valueNil());
 		}
 		check(valueNil(), 8);
@@ -600,7 +600,7 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 				"faulting builtin indexer blames the original narrow/WIDE SELF and leaves its result untouched");
 		} else {
 			const Value result = frame->registers.get(6);
-			require(result == valueTable(asTable(frame->registers.get(0), generated.cpu.gcHeap()).metatableAddress())
+			require(result == valueTable(TableRecord(generated.cpu.memory(), valuePayload(frame->registers.get(0))).metatableAddress())
 				&& generated.cpu.instructionBudgetRemaining == 3 - 2 - 17 - 2 - 1,
 				"the builtin sees the receiver Table and returns one result at its ordinary primitive price");
 		}
@@ -691,8 +691,8 @@ void stringReceiver() {
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
-			TableRecord installed(m->cpu.gcHeap(), m->cpu.captureRuntimeState().stringIndexTableWord);
-			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
+			TableRecord installed(m->cpu.memory(), m->cpu.captureRuntimeState().stringIndexTableWord);
+			bmsx::test::NativeTableReference(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
 		}

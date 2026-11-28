@@ -25,7 +25,7 @@ namespace bmsx {
 struct CallFrame;
 struct Thread;
 class CPU;
-class GcHeap;
+class Memory;
 class NativeBlock;
 class NativeBlockGate;
 enum class NativeRetirement : u8;
@@ -50,7 +50,7 @@ struct NativeBlockLink {
 struct NativeBlockRunState {
 	ConstValueSpan constants;
 	CallFrame* frame = nullptr;
-	GcHeap* heap = nullptr;
+	Memory* memory = nullptr;
 	const ValueSpan* globalValues = nullptr;
 	const ValueSpan* systemGlobalValues = nullptr;
 	u32* cop0Words = nullptr;

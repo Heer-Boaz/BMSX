@@ -52,8 +52,8 @@ struct Machine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	std::optional<TableRecord> target;
-	std::optional<TableRecord> meta;
+	std::optional<bmsx::test::NativeTableReference> target;
+	std::optional<bmsx::test::NativeTableReference> meta;
 	Value expected = valueNil();
 	int observedSuccessors = 0;
 	Machine(const test::Blua32TestRom& r, bool scalar, bool observeSuccessor = false) : rom(r), memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),

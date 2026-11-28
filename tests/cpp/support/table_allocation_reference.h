@@ -3,20 +3,21 @@
 #include <algorithm>
 
 #include "machine/cpu/cpu.h"
+#include "table_reference.h"
 
 namespace bmsx::test {
 
 // The former native constructor, retained as a RAM/allocation oracle.
 // Scoped consumers pass their roots explicitly to the collection under test.
-inline TableRecord allocateTableReference(CPU& cpu, int arraySize = 0, int hashSize = 0) {
-	const size_t hash = TableRecord::hashCapacity(hashSize);
+inline NativeTableReference allocateTableReference(CPU& cpu, int arraySize = 0, int hashSize = 0) {
+	const size_t hash = NativeTableReference::hashCapacity(hashSize);
 	const u32 address = cpu.luaHeap().allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
 		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(),
-		TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hash),
+		NativeTableReference::HEADER_CHARGE + NativeTableReference::allocationCharge(arraySize, hash),
 		LuaAllocationMode::Direct, TableRecord::hashStorageBytes(hash), static_cast<u32>(TableHeader::HashStorage));
 	auto& heap = cpu.gcHeap();
 	auto& memory = heap.memory;
-	TableRecord table(heap, address);
+	NativeTableReference table(heap, address);
 	const u32 kind = static_cast<u32>(ValueTag::Table) | (static_cast<u32>(heap.white()) << 8u)
 		| (1u << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
 	memory.writeRamRecordPair(address + static_cast<u32>(TableHeader::Kind), kind, 0u);

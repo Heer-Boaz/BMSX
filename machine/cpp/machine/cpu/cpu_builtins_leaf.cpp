@@ -11,7 +11,7 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 	case BuiltinFunctionId::RawGet: {
 		const Value target = args[0];
 		if (!valueIsTable(target) || args.size() < 2) return false;
-		result = TableRecord(m_heap, valuePayload(target)).get(args[1]);
+		result = TableRecord(m_memory, valuePayload(target)).get(args[1]);
 		return true;
 	}
 	case BuiltinFunctionId::ToInteger: {
@@ -22,7 +22,7 @@ bool CPU::executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& 
 	case BuiltinFunctionId::GetMetatable: {
 		const Value target = args[0];
 		if (!valueIsTable(target)) return false;
-		const u32 metatable = TableRecord(m_heap, valuePayload(target)).metatableAddress();
+		const u32 metatable = TableRecord(m_memory, valuePayload(target)).metatableAddress();
 		result = metatable ? valueTable(metatable) : valueNil();
 		return true;
 	}

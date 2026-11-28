@@ -22,11 +22,11 @@ constexpr auto hashOperand = (NativeBlockAbi::helperResultOffset + alignof(Value
 static_assert(hashOperand + sizeof(Value) <= NativeBlockAbi::stackBytes);
 
 u32 SLJIT_FUNC assignNativeTableIdentity(const NativeBlockRunState* run, u32 receiverAddress, u32 keyAddress, const Value* value) noexcept {
-	return TableRecord(*run->heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
+	return TableRecord(*run->memory, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
 u32 SLJIT_FUNC assignNativeTableInteger(const NativeBlockRunState* run, u32 receiverAddress, i32 key, const Value* value) noexcept {
-	return TableRecord(*run->heap, receiverAddress).tryAssignIntegerHash(key, *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
+	return TableRecord(*run->memory, receiverAddress).tryAssignIntegerHash(key, *value, run->cop0Words[COP0_TABLE_ASSIGN_KEY]);
 }
 
 } // namespace

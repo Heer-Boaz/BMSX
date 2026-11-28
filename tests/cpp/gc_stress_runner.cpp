@@ -74,9 +74,9 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	cpu.clearHaltUntilIrq(); runPressureStage(cpu);
 	const auto childKey = *cpu.stringPool().find("child"), textKey = *cpu.stringPool().find("text");
 	const u32 owner = valuePayload(global("owner")), arrayOwner = valuePayload(global("array_owner"));
-	const Value child = TableRecord(cpu.gcHeap(), owner).getStringKey(childKey);
-	const Value text = TableRecord(cpu.gcHeap(), owner).getStringKey(textKey);
-	const Value arrayChild = TableRecord(cpu.gcHeap(), arrayOwner).getInteger(1), cellChild = Upvalue::load(memory, cell);
+	const Value child = TableRecord(cpu.memory(), owner).getStringKey(childKey);
+	const Value text = TableRecord(cpu.memory(), owner).getStringKey(textKey);
+	const Value arrayChild = TableRecord(cpu.memory(), arrayOwner).getInteger(1), cellChild = Upvalue::load(memory, cell);
 	const u32 textId = valuePayload(text);
 	const auto observe = [&] {
 		const int depth = cpu.getFrameDepth();
@@ -91,9 +91,9 @@ void exercisePressure(bmsx::CPU& cpu, bool compiled) {
 	history.capture(memory, nullptr, midPages);
 	const auto verify = [&] {
 		for (size_t i = 0; i < names.size(); ++i) require(global(names[i]) == oldValues[i], "retained identities remain at their original addresses");
-		require(TableRecord(cpu.gcHeap(), owner).getStringKey(childKey) == child
-			&& TableRecord(cpu.gcHeap(), owner).getStringKey(textKey) == text, "field edges retain the exact addresses");
-		require(TableRecord(cpu.gcHeap(), arrayOwner).getInteger(1) == arrayChild && Upvalue::load(memory, cell) == cellChild,
+		require(TableRecord(cpu.memory(), owner).getStringKey(childKey) == child
+			&& TableRecord(cpu.memory(), owner).getStringKey(textKey) == text, "field edges retain the exact addresses");
+		require(TableRecord(cpu.memory(), arrayOwner).getInteger(1) == arrayChild && Upvalue::load(memory, cell) == cellChild,
 			"independent array and closed-cell edges retain their exact children");
 		require(cpu.stringPool().find("pressure-live:é😀:37") == textId, "the canonical String survives in place");
 		require(!cpu.stringPool().find("pressure-retired:é😀:37"), "the unreachable String is unlinked and retired");
