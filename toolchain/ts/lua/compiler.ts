@@ -99,7 +99,7 @@ import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } f
 import { toLuaModulePath } from './module_path';
 import {
 	encodeProgramObjectSections,
-	type ProgramCodeFunctionSymbol,
+	type ProgramBiosFunctionConstReloc,
 	type ProgramConstValueReloc,
 	type ProgramRodataConstReloc,
 	type ProgramObjectDataSection,
@@ -114,6 +114,8 @@ import {
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
 import {
+	CLOSURE_DESTINATION_EXT_BITS,
+	CLOSURE_DESTINATION_EXT_SHIFT,
 	MAX_LOW_OPERAND, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
@@ -164,7 +166,12 @@ import {
 
 type ProgramCompilerConstReloc =
 	| ProgramImageConstReloc
-	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number };
+	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number }
+	| {
+		wordIndex: number;
+		kind: 'bios_function';
+		importIndex: number;
+	};
 
 type InitParticipantBinding = ProgramInitParticipant & {
 	objectSlot: number;
@@ -200,6 +207,7 @@ export type CompiledSystemProgram = CompiledProgramBase & {
 export type CompiledCartProgram = CompiledProgramBase & {
 	domain: 'cart';
 	constRelocs: ProgramImageConstReloc[];
+	biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
 };
 
 export type CompiledProgram =
@@ -249,6 +257,7 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 		sections,
 		link: {
 			constRelocs: compiled.constRelocs,
+			biosFunctionConstRelocs: compiled.biosFunctionConstRelocs,
 			constValueRelocs: compiled.constValueRelocs,
 			rodataConstRelocs: compiled.rodataConstRelocs,
 			symbols: {
@@ -517,7 +526,6 @@ class ProgramBuilder {
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private readonly functionAddrRelocByProto = new Map<number, number>();
-	private readonly codeFunctionRelocSlots = new Map<number | string, number>();
 	private readonly linkValueRelocSlotByKey = new Map<string, number>();
 	private bssByteCount: number;
 	private dataByteCount = 0;
@@ -616,7 +624,7 @@ class ProgramBuilder {
 	}
 
 	public constValueRelocIndex(
-		kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr',
+		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr' | 'text_addr'>,
 		symbolIndex: number,
 		addend: number,
 	): number {
@@ -659,18 +667,6 @@ class ProgramBuilder {
 		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({ kind: 'function_addr', constIndex: index, protoIndex });
 		this.functionAddrRelocByProto.set(protoIndex, index);
-		return index;
-	}
-
-	public codeFunctionRelocIndex(target: { kind: 'proto'; protoIndex: number } | ProgramCodeFunctionSymbol): number {
-		const key = target.kind === 'proto' ? target.protoIndex
-			: target.kind === 'export_proto' ? 'export:' + programModuleExportKey(target.path, target.exportPathKey)
-				: target.kind === 'module_init' ? 'init:' + target.symbol : 'bios:' + target.importIndex;
-		const existing = this.codeFunctionRelocSlots.get(key);
-		if (existing !== undefined) return existing;
-		const index = this.reserveAddressConstant();
-		this.codeFunctionRelocSlots.set(key, index);
-		this.constValueRelocs.push({ constIndex: index, kind: 'code_function', target });
 		return index;
 	}
 
