@@ -14,7 +14,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
@@ -49,6 +49,13 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const imageAddress = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 			const imageBytes = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET);
 			const image = decodeBlua32Image(system.subarray(imageAddress, imageAddress + imageBytes), imageAddress);
+			const textAddress = image.header.textAddress;
+			for (let pc = textAddress; pc < textAddress + image.textBytes.length;) {
+				const instruction = decodeBlua32InstructionAtPc(image.textBytes, textAddress, pc);
+				assert.ok(instruction.op !== OpCode.CLOSURE || (instruction.c & CLOSURE_ADDRESS_REGISTER_FLAG) === 0,
+					'stock System firmware does not issue the register-address CLOSURE');
+				pc = instruction.pc + INSTRUCTION_BYTES;
+			}
 			const { dataAddress, dataByteCount, bssAddress: systemBssAddress, bssByteCount: systemBssByteCount } = image.header;
 			const systemStaticEnd = Math.max(dataAddress + dataByteCount, systemBssAddress + systemBssByteCount);
 			const payload = 'socket one cartridge literal';

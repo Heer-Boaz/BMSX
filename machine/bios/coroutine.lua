@@ -5,6 +5,7 @@ local running<const> = __bmsx_coroutine_running
 local raise<const> = __bmsx_error
 local frame_scopes<const> = require('debug/frame_scopes')
 local entries<const> = require('bmsx/startup')
+local bind_function<const> = require('kernel/heap_control_ids').bind_function
 
 -- The status primitive preserves the CPU ThreadStatus ordinal, including Failed.
 local status_names<const> = { [0] = 'suspended', 'running', 'normal', 'suspended', 'dead', 'dead' }
@@ -13,8 +14,8 @@ local main_thread<const> = running()
 
 local coroutine<const> = {}
 coroutine.create = create
-coroutine.resume = blua32.closure(entries.coroutine_resume)
-coroutine.yield = blua32.closure(entries.coroutine_yield)
+coroutine.resume = blua32.svc_value(bind_function, entries.coroutine_resume)
+coroutine.yield = blua32.svc_value(bind_function, entries.coroutine_yield)
 local resume<const> = coroutine.resume
 function coroutine.status(thread) return status_names[status(thread)] end
 function coroutine.running() return running() end
