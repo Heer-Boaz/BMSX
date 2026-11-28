@@ -1,7 +1,7 @@
 local types<const> = require('kernel/value_type')
 local system_calls<const> = require('kernel/heap_control_ids')
 local create_table<const> = system_calls.create_table
-local bind_ram_function<const> = system_calls.bind_ram_function
+local bind_function<const> = system_calls.bind_function
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -966,7 +966,7 @@ emit_value = function(
 			result = reserve_register(state)
 		end
 		local operand<const> = reserve_register(state)
-		bytecode.emit_integer(instruction_words, result, bind_ram_function)
+		bytecode.emit_integer(instruction_words, result, bind_function)
 		bytecode.emit_abc(instruction_words, isa.op_mov, operand,
 			constant_register(state, expression.function_address_constant_index), 0)
 		bytecode.emit_abc(instruction_words, isa.op_svc, result, 2, 0)

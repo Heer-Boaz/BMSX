@@ -31,14 +31,13 @@ export function visitInstructionOpenUpvalueRegisters<T>(
 	state: T,
 	visitor: RegisterVisitor<T>,
 ): void {
-	if (instruction.op !== OpCode.CLOSURE) {
-		return;
-	}
+	const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+	if (proto === undefined) return;
 	if (instruction.closureAddressRegister) {
 		visitRegisterRange(state, visitor, 0, maxRegister + 1);
 		return;
 	}
-	const upvalues = resolveClosureUpvalues(instruction.b);
+	const upvalues = resolveClosureUpvalues(proto);
 	for (let index = 0; index < upvalues.length; index += 1) {
 		const upvalue = upvalues[index];
 		if (upvalue.inStack) {
@@ -72,6 +71,7 @@ export function visitInstructionUses<T>(
 			break;
 		case OpCode.SVC:
 			visitRegisterRange(state, visitor, instruction.a, Math.max(1, instruction.b));
+			visitInstructionOpenUpvalueRegisters(instruction, maxRegister, resolveClosureUpvalues, state, visitor);
 			break;
 		case OpCode.LOADKR:
 		case OpCode.LOAD_MEM_D:

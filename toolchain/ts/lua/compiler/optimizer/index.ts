@@ -58,6 +58,8 @@ export type Instruction = {
 	/** Only the explicit window is observed; the issuer frame identity is immaterial. */
 	inlineSupervisorWindow?: true;
 	closureAddressRegister?: boolean;
+	/** Static capture descriptors read by a firmware binding on this frame. */
+	boundFunctionProto?: number;
 	symbolicReloc?:
 		| { kind: 'module_init'; symbol: string }
 		| ({ kind: 'export_proto' } & ProgramFunctionSymbol)
@@ -1380,6 +1382,11 @@ const applyClosureTransferForInlining = (
 			} else {
 				closures.set(instruction.a, instruction.b);
 			}
+			return;
+		case OpCode.SVC:
+			clearRegisterRange(closures, instruction.a, instruction.b);
+			if (instruction.boundFunctionProto !== undefined && !closureWrittenRegisters.has(instruction.a))
+				closures.set(instruction.a, instruction.boundFunctionProto);
 			return;
 		case OpCode.LOADNIL:
 			clearRegisterRange(closures, instruction.a, instruction.b);

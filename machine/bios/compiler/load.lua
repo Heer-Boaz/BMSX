@@ -1,7 +1,7 @@
 local compiler<const> = require('compiler/compiler')
 local linker<const> = require('compiler/linker')
 local parser<const> = require('compiler/parser')
-local bind_ram_function<const> = require('kernel/heap_control_ids').bind_ram_function
+local bind_function<const> = require('kernel/heap_control_ids').bind_function
 
 local load_compiler<const> = {}
 local byte<const> = __bmsx_string_byte
@@ -21,7 +21,7 @@ end
 
 local create_root_closure<const> = function(function_address, const_pool)
 	-- The generated root captures this call frame's r1 constant-pool parameter.
-	return blua32.svc_value(bind_ram_function, function_address)
+	return blua32.svc_value(bind_function, function_address)
 end
 
 function load_compiler.compile_chunk(chunk, chunk_name, environment, external_scope)

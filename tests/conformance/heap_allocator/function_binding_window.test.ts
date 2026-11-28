@@ -20,7 +20,7 @@ import {
 	BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, MAX_LOW_OPERAND, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_RETAINED_WORD_BASE } from '../../../machine/ts/spec/bmsx/io';
@@ -29,7 +29,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
-import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { linkRawTestSystemBlua32, writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
@@ -42,43 +42,52 @@ import { nativeHeapReference } from '../../helpers/native_heap/reference';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 
-for (const [opt, mmio] of [[0, false], [3, true]] as const) test(`captured CLOSURE samples a mutable prototype and each ${mmio ? 'cartridge MMIO' : 'System RAM'} descriptor once at O${opt}`, t => {
+for (const [opt, mmio] of [[0, false], [3, true]] as const) test(`raw CLOSURE.R samples a mutable prototype and each ${mmio ? 'cartridge MMIO' : 'System RAM'} descriptor once at O${opt}`, t => {
+	const alignment = BLUA32_FUNCTION_ALIGNMENT - 1;
+	const marker = 'wire-level CLOSURE issue';
 	const source = `
 bss raw_record: word[64]
-local function make(a, b)
+local function make(a, b, address, specimen)
+	if specimen then return function() return a * 100 + b end end
 	halt_until_irq
-	return function() return a * 100 + b end
+	return '${marker}'
 end
-return make(7, 8)()
+return make(7, 8, (&raw_record[0] + ${alignment}) & ~${alignment}, false)()
 `;
 	const system = linkManagedTestSystem(mmio ? MANAGED_CART_LAUNCH : source, opt);
 	const rom = writeTestBlua32Rom(system);
 	const cart = mmio ? (() => {
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'closure-binding-cart.lua'), [], { entrySource: source, optLevel: opt });
-		return linkCartBlua32Image(system.biosImports, encodeCompiledProgramObject(compiled), compiled.metadata,
-			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+		const object = encodeCompiledProgramObject(compiled);
+		const linked = linkCartBlua32Image(system.biosImports, object, compiled.metadata, CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+		return Object.assign(linked, { object });
 	})() : null;
 	const media = cart === null ? rom : writeTestBlua32Rom(cart);
-	const layout = (cart ?? system).layout, base = cart === null ? SYSTEM_ROM_BASE : CART_ROM_BASE;
+	const { layout, object } = cart ?? system, base = cart === null ? SYSTEM_ROM_BASE : CART_ROM_BASE;
 	const domain = cart === null ? -1 : 0;
 	const target = layout.functions.find(fn => fn.upvalues.length === 2)!;
 	assert.ok(target);
-	const alignment = BLUA32_FUNCTION_ALIGNMENT - 1;
-	const prototype = (layout.header.bssAddress + alignment) & ~alignment;
+	const storage = object.sections.bss.symbols.find(symbol => symbol.name.endsWith('/bss:raw_record'))!;
+	const storageAddress = layout.header.bssAddress + storage.offset;
+	const prototype = (storageAddress + alignment) & ~alignment;
 	const code = prototype + 128, descriptor = mmio ? IO_RETAINED_WORD_BASE : prototype + 64;
+	// Compile the target body and descriptors but never execute their source
+	// constructor. The two-word return literal reserves an explicit wire site.
 	let instruction = 0;
 	for (let pc = layout.header.textAddress; pc < layout.header.textAddress + layout.textBytes.length;) {
 		const op = decodeBlua32InstructionAtPc(media, base, pc);
-		if (op.op === OpCode.CLOSURE && op.bx * BLUA32_FUNCTION_ALIGNMENT === target.address) {
+		if (op.op === OpCode.LOADK && layout.constants[op.bx] === marker) {
 			instruction = op.pc;
 			assert.equal(instruction, pc + INSTRUCTION_BYTES);
+			assert.ok(op.a <= MAX_LOW_OPERAND);
+			const word = (pc - base) / INSTRUCTION_BYTES;
+			writeInstruction(media, word, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
+			writeInstruction(media, word + 1, OpCode.CLOSURE, op.a, 0, 2); // address parameter r2
 			break;
 		}
 		pc = op.pc + INSTRUCTION_BYTES;
 	}
 	assert.notEqual(instruction, 0);
-	rewriteResolvedABx(media, (instruction - base) / INSTRUCTION_BYTES,
-		OpCode.CLOSURE, prototype / BLUA32_FUNCTION_ALIGNMENT);
 	const words = [code, target.numParams, target.maxStack, target.flags, descriptor, target.upvalues.length];
 	const fields = [BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 		BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET];
@@ -97,11 +106,13 @@ return make(7, 8)()
 	const issue = frame.pc, op = decode(), successor = instruction + INSTRUCTION_BYTES;
 	assert.equal(op.op, OpCode.CLOSURE);
 	assert.equal(op.pc, instruction);
+	assert.equal(op.c & CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_FLAG);
+	assert.equal(frame.registers.get(op.bx), valueInteger(prototype));
 	const original = frame.registers.get(op.a), top = frame.top, open = frame.openUpvalueHead;
 	for (let offset = 0; offset < BLUA32_FUNCTION_RECORD_SIZE; offset += 4)
 		memory.writeMappedWord(prototype + offset, readLE32(media, target.address - base + offset));
 	for (const [index, offset] of fields.entries()) memory.writeMappedWord(prototype + offset, words[index]);
-	assert.ok(code + target.codeByteCount <= layout.header.bssAddress + layout.header.bssByteCount);
+	assert.ok(code + target.codeByteCount <= storageAddress + storage.byteCount);
 	for (let offset = 0; offset < target.codeByteCount; offset += 4)
 		memory.writeMappedWord(code + offset, readLE32(media, target.codeAddress - base + offset));
 	for (const [index, value] of descriptors.entries()) memory.writeMappedWord(descriptor + 4 * index, value);

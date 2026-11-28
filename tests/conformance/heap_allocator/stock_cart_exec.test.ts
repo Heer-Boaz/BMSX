@@ -23,6 +23,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32Image } from '../../../toolchain/ts/rompack/blua32_image';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
 import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -87,6 +88,16 @@ local invalid<const>, invalid_message<const> = pcall(reader, 17)
 local missing<const>, missing_message<const> = pcall(reader)
 report[13] = not invalid and not missing and invalid_message == 'Invalid argument.'
 	and missing_message == invalid_message and 1 or 0
+
+local make<const> = function(seed)
+	local n = seed
+	local bind<const> = function()
+		return function(delta) n = n + delta; return n end
+	end
+	return bind()
+end
+local add<const> = make(17)
+report[14] = add(3) * 100 + add(7)
 mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
@@ -98,6 +109,19 @@ halt_until_irq
 			const slot0 = cart(source.replace('0x2000', '0x4000').replace(payload, 'unselected cartridge'), 'nonbootable-slot0.lua');
 			const slot1 = cart(source, 'selected-slot1.lua');
 			const other = writeTestBlua32Rom(slot0), selected = writeTestBlua32Rom(slot1);
+			const captured = new Set(slot1.layout.functions.filter(fn => fn.upvalues.length !== 0).map(fn => fn.address));
+			assert.equal(captured.size, 2);
+			const firstPc = slot1.layout.header.textAddress;
+			const lastPc = firstPc + slot1.layout.textBytes.length;
+			let bindings = 0;
+			for (let pc = firstPc; pc < lastPc;) {
+				const instruction = decodeBlua32InstructionAtPc(selected, CART_ROM_BASE, pc);
+				if (instruction.op === OpCode.CLOSURE)
+					assert.equal(captured.has(instruction.bx * BLUA32_FUNCTION_ALIGNMENT), false);
+				if (instruction.op === OpCode.SVC && instruction.b === 2) bindings += 1;
+				pc = instruction.pc + INSTRUCTION_BYTES;
+			}
+			assert.equal(bindings, captured.size);
 			// Socket 0 has a distinct operand record but no startup vector.
 			writeLE32(other, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, 0);
 			const otherPath = join(output, 'slot0.rom'), selectedPath = join(output, 'slot1.rom');
@@ -166,7 +190,7 @@ halt_until_irq
 			const { bssAddress, bssByteCount } = slot1.layout.header;
 			assert.equal(memory.readMappedU32LE(bssAddress), 37);
 			assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
-			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1];
+			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1, 2027];
 			for (let slot = 0; slot < expectedReport.length; ++slot)
 				assert.equal(memory.readMappedU32LE(bssAddress + 4 * (slot + 2)), expectedReport[slot], `report word ${slot + 2}`);
 			const bank = nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;

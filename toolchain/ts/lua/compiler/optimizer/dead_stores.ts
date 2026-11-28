@@ -54,7 +54,7 @@ export const eliminateDeadStores = (
 		maxRegister,
 		resolveClosureUpvalues,
 	);
-	// A CLOSURE makes every in-stack capture live at this instruction and leaves
+	// A binding makes every in-stack capture live at this instruction and leaves
 	// later writes externally observable until a closing jump or frame return.
 	const pinned = new Uint8Array(count);
 	for (let index = 0; index + 1 < count; index += 1) {

@@ -524,6 +524,7 @@ class ProgramBuilder {
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
+	private readonly functionAddrRelocByProto = new Map<number, number>();
 	private readonly linkValueRelocSlotByKey = new Map<string, number>();
 	private bssByteCount: number;
 	private dataByteCount = 0;
@@ -622,7 +623,7 @@ class ProgramBuilder {
 	}
 
 	public constValueRelocIndex(
-		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value'>,
+		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr'>,
 		symbolIndex: number,
 		addend: number,
 	): number {
@@ -655,6 +656,16 @@ class ProgramBuilder {
 			modulePath,
 			expression,
 		});
+		return index;
+	}
+
+	public functionAddrRelocIndex(protoIndex: number): number {
+		const existing = this.functionAddrRelocByProto.get(protoIndex);
+		if (existing !== undefined) return existing;
+		const index = this.allocateConstantSlot(integerConstant(0));
+		this.relocatedConstIndices.add(index);
+		this.constValueRelocs.push({ kind: 'function_addr', constIndex: index, protoIndex });
+		this.functionAddrRelocByProto.set(protoIndex, index);
 		return index;
 	}
 
@@ -1881,13 +1892,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			);
 			let reservation = Math.max(this.nextArgumentIndex, computeMaxRegister(this.code) + 1);
 			for (const instruction of this.code) {
-				if (instruction.op !== OpCode.CLOSURE) continue;
-				if (instruction.closureAddressRegister) {
+				if (instruction.op === OpCode.CLOSURE && instruction.closureAddressRegister) {
 					// An indirect descriptor may name any register in the window.
 					reservation = Math.max(reservation, this.maxStack);
 					continue;
 				}
-				for (const capture of this.program.protos[instruction.b].upvalueDescs) {
+				const proto = instruction.boundFunctionProto ?? (instruction.op === OpCode.CLOSURE ? instruction.b : undefined);
+				if (proto === undefined) continue;
+				for (const capture of this.program.protos[proto].upvalueDescs) {
 					if (capture.inStack) reservation = Math.max(reservation, capture.index + 1);
 				}
 			}
@@ -3185,6 +3197,30 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.ranges.push(this.currentRange);
 	}
 
+	private emitLocalFunctionValue(target: number, proto: number): void {
+		if (this.program.protos[proto].upvalueDescs.length === 0) {
+			this.emitABx(OpCode.CLOSURE, target, proto);
+			return;
+		}
+		// A live lexical target can itself be captured. Keep it unchanged
+		// until firmware has opened the selected cells on the issuer.
+		const tempBase = this.tempTop;
+		const base = target >= this.localCount && target === tempBase - 1 ? target : this.allocTemp();
+		const argument = this.allocTemp();
+		const constant = this.program.functionAddrRelocIndex(proto);
+		if (argument <= MAX_ABX_REGISTER_A) {
+			this.emitABx(OpCode.LOADK, argument, constant);
+		} else {
+			this.emitLoadConst(argument, integerConstant(constant));
+			this.emitABC(OpCode.LOADKR, argument, argument, 0);
+		}
+		this.emitLoadConst(base, integerConstant(StockFirmwareOperand.BindFunction));
+		this.emitABC(OpCode.SVC, base, 2, 0);
+		this.code[this.code.length - 1].boundFunctionProto = proto;
+		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
+		this.tempTop = tempBase;
+	}
+
 	private emitAsBx(op: OpCode, a: number, sbx: number): void {
 		this.assertStaticCallTargetCanEmit(op);
 		const target = this.code.length + 1 + sbx;
@@ -3356,7 +3392,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					: buildProtoId(this.protoId, protoIdHint);
 				const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
-				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
+				this.emitLocalFunctionValue(target, closureProtoIndex);
 				return;
 			}
 			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -4732,7 +4768,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = buildProtoId(this.protoId, hint);
 		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, name, this.moduleId, this.semantics, this.frontend);
-		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
+		this.emitLocalFunctionValue(reg, protoIndex);
 		if (statement.attribute === 'init') {
 			const participant = this.program.recordInitParticipant(this.moduleId, protoId);
 			this.emitABx(participant.system ? OpCode.SETSYS : OpCode.SETGL, reg, participant.objectSlot);
@@ -4755,7 +4791,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			: `${buildNamePath(identifiers)}.${method.name}`;
 		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, method !== null, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 		const closureReg = this.allocTemp();
-		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
+		this.emitLocalFunctionValue(closureReg, protoIndex);
 		if (target.kind === 'simple') {
 			this.emitReferenceStore(target.finalReference, closureReg);
 			return;
@@ -4854,7 +4890,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 						: buildProtoId(this.protoId, protoIdHint);
 					const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
-					this.emitABx(OpCode.CLOSURE, target, protoIndex);
+					this.emitLocalFunctionValue(target, protoIndex);
 					return;
 				}
 				default: {

@@ -24,6 +24,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	callProtoIndex: instruction.callProtoIndex,
 	tableConstructor: instruction.tableConstructor,
 	inlineSupervisorWindow: instruction.inlineSupervisorWindow,
+	boundFunctionProto: instruction.boundFunctionProto,
 	closureAddressRegister: instruction.closureAddressRegister,
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
@@ -228,8 +229,8 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.VARARG:
 			return true;
 		case OpCode.SVC:
-			// Preserve elimination of an unobserved fresh table, not other traps.
-			return createsTable(instruction);
+			// These two compiler-produced operations construct an unshared object.
+			return createsTable(instruction) || instruction.boundFunctionProto !== undefined;
 		default:
 			return false;
 	}

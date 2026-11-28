@@ -5,6 +5,7 @@ local records<const> = require('kernel/allocate_record')
 local captured<const> = require('kernel/allocate_captured_closure')
 local closure_index<const> = require('kernel/canonical_closure_index')
 local _capture_layout<const> = require('kernel/closure_capture_create')
+local _image_layout<const> = require('kernel/system_image_bind')
 local frames<const> = require('kernel/thread_frame_storage').internal
 local tags<const> = require('kernel/value_type')
 local management<const> = layout.management_offset
@@ -20,6 +21,14 @@ local invalid_argument<const> = 10
 local cartridge_bank<const> = 1 << 3
 local second_socket_shift<const> = 4
 local ordinary_ram_start<const> = 0x08040000
+local system_rom_end<const> = 0x01000000
+local cart_rom_start<const> = 0x10000000
+local cart_rom_end<const> = 0x30000000
+local boot_header_bytes<const> = 60
+local boot_image_offset<const> = 32
+local boot_image_byte_count<const> = 36
+local image_magic<const> = 0x32334c42
+local function_alignment_mask<const> = 15
 
 -- The Function record was already sampled on the issuing bus. Prepare the
 -- closure from those words, not from a second read of the mutable record.
@@ -54,9 +63,9 @@ local bind<const> = function(owner, frame_address, destination, prototype, domai
 	return nil
 end
 
--- Sample a runtime-linked Function on the issuer's bus before reserving
--- any storage. The allocator keeps this sample across GC.
-local receive_ram<const> = function(owner, destination, count, deadline)
+-- Sample the Function once before reserving storage. RAM builds retain the
+-- sampled entry; an admitted ROM prototype keeps its ordinary image binding.
+local receive<const> = function(owner, destination, count, deadline)
 	if count ~= 1 then return invalid_argument end
 	local thread<const>: *stopped_thread = owner
 	local depth<const> = thread.frame_depth & control_count_mask
@@ -64,25 +73,63 @@ local receive_ram<const> = function(owner, destination, count, deadline)
 	local words<const>, kinds<const> = frames.value_planes(owner, (frame.stack_base & window_mask) + destination + 1)
 	local address<const>: *u32 = words
 	local kind<const>: *u8 = kinds
-	local prototype<const>, ram_end<const> = *address, cop0.ram_end
-	-- The vector must not turn a RAM binding into a ROM entry or MMIO read.
-	if *kind ~= tags.integer_tag or prototype < ordinary_ram_start
-		or prototype > ram_end - sizeof(launch_function_record) or (prototype & 15) ~= 0 then
+	local prototype<const> = *address
+	if *kind ~= tags.integer_tag or (prototype & function_alignment_mask) ~= 0 then
 		return invalid_argument
 	end
+	local record_bytes<const> = sizeof(launch_function_record)
+	local domain = (frame.flags & cartridge_bank) == 0 and -1 or ((frame.flags >> second_socket_shift) & 1)
+	local rom, rom_base, ram_end = 0, 0, 0
+	if prototype >= 0 and prototype < system_rom_end then
+		domain, rom = -1, 1
+	elseif prototype >= cart_rom_start and prototype < cart_rom_end then
+		if domain < 0 then
+			local select<const>: *word = 0x08010420
+			domain = *select & 1
+		end
+		rom, rom_base = 1, cart_rom_start
+	else
+		ram_end = cop0.ram_end
+		if prototype < ordinary_ram_start or prototype > ram_end - record_bytes then
+			return invalid_argument
+		end
+	end
+	if rom ~= 0 then
+		-- A raw syscall can name ROM data as well as Functions. Require an
+		-- entire directory entry from the image on the issuing bus.
+		local rom_bytes<const>: *word = 0x080101f4 + 4 * (domain + 1)
+		local extent<const> = *rom_bytes
+		if extent < boot_header_bytes or prototype - rom_base > extent - record_bytes then return invalid_argument end
+		local offset<const> = blua32.context_word(rom_base + boot_image_offset)
+		local bytes<const> = blua32.context_word(rom_base + boot_image_byte_count)
+		local header_bytes<const> = sizeof(immutable_image_operands)
+		if offset < boot_header_bytes or (offset & 3) ~= 0
+			or bytes < header_bytes or offset > extent - bytes then
+			return invalid_argument
+		end
+		local image<const> = rom_base + offset
+		if blua32.context_word(image + offsetof(immutable_image_operands.magic)) ~= image_magic then return invalid_argument end
+		local functions<const> = blua32.context_word(image + offsetof(immutable_image_operands.functions))
+		local count<const> = blua32.context_word(image + offsetof(immutable_image_operands.function_count))
+		local relative<const>, entry<const> = functions - image, prototype - functions
+		if (functions & function_alignment_mask) ~= 0 or relative < header_bytes
+			or count <= 0 or count > (bytes - relative) // record_bytes
+			or entry < 0 or (entry & (record_bytes - 1)) ~= 0 or entry >= count * record_bytes then
+			return invalid_argument
+		end
+	end
 	local code<const> = blua32.context_word(prototype + offsetof(launch_function_record.code))
-	if code < ordinary_ram_start or code >= ram_end then return invalid_argument end
+	if rom == 0 and (code < ordinary_ram_start or code >= ram_end) then return invalid_argument end
 	local formals<const> = blua32.context_word(prototype + offsetof(launch_function_record.formals))
 	local stack<const> = blua32.context_word(prototype + offsetof(launch_function_record.maximum))
 	local flags<const> = blua32.context_word(prototype + offsetof(launch_function_record.flags))
 	local descriptors<const> = blua32.context_word(prototype + offsetof(launch_function_record.captures))
 	local captures<const> = blua32.context_word(prototype + offsetof(launch_function_record.capture_count))
-	local domain<const> = (frame.flags & cartridge_bank) == 0 and -1 or ((frame.flags >> second_socket_shift) & 1)
-	local fault<const> = bind(owner, frame, destination, prototype, domain, code, formals, stack, flags, descriptors, captures, 0, deadline)
+	local fault<const> = bind(owner, frame, destination, prototype, domain, code, formals, stack, flags, descriptors, captures, rom, deadline)
 	if fault == nil then
 		frame.top = (frame.top & ~window_mask) | (destination + 1)
 	end
 	return fault
 end
 
-return { bind = bind, receive_ram = receive_ram }
+return { bind = bind, receive = receive }

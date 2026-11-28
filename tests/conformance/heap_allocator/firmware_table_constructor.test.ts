@@ -153,7 +153,7 @@ return add(5), add
 		cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine;
-	const binding = valueInteger(0x1000c); // Software token: kernel/heap_control_ids.bind_ram_function.
+	const binding = valueInteger(0x1000c); // Software token: kernel/heap_control_ids.bind_function.
 	let owner = 0, depth = 0;
 	cpu.setExecutionHook(() => {
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL

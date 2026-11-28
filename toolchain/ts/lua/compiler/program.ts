@@ -16,6 +16,7 @@ export type LinkedProgramConstant = ProgramConstant | { readonly kind: 'code_fun
 export const enum StockFirmwareOperand {
 	CreateTable = 0,
 	Concat = 1,
+	BindFunction = 0x1000c,
 }
 
 export type ProgramInitParticipant = {

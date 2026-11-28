@@ -67,6 +67,7 @@ export function allocateFrameSlots(
 			case OpCode.SVC:
 				// The saved context exposes the contiguous operand window.
 				if (b > 1) fixed.fill(1, a, a + b);
+				visitInstructionOpenUpvalueRegisters(instruction, maxStack - 1, resolveClosure, pinned, pinSlot);
 				break;
 			case OpCode.VARARG:
 				bands[a] = 1;

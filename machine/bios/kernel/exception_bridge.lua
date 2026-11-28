@@ -183,10 +183,10 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			elseif values >= thread_ids.create and values <= thread_ids.set_frame_upvalue then
 				handled = true
 				fault = thread_calls.receive(*interrupted, values, depth, instruction)
-			elseif values == firmware_ids.bind_ram_function then
+			elseif values == firmware_ids.bind_function then
 				handled = true
 				r10 = cop0.event_cycles
-				fault = binding.receive_ram(*interrupted, depth, instruction, r10)
+				fault = binding.receive(*interrupted, depth, instruction, r10)
 			end
 		end
 		if handled then
@@ -244,7 +244,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			payload, tag = fault_ids[reason], string_tag
 		end
 		local deadline<const> = denied_window and source_cycles or (denied_storage and r4
-			or ((cause == function_binding or (cause == syscall and values == firmware_ids.bind_ram_function)) and r10 or 0))
+			or ((cause == function_binding or (cause == syscall and values == firmware_ids.bind_function)) and r10 or 0))
 		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
 		if caught then
 			if resume_context then *interrupted = resume_context end
