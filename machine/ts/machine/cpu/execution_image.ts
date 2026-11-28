@@ -146,8 +146,15 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 				if (op === OpCode.JAL) {
 					if (!isRomInstructionHead(directory, target))
 						throw new Error('BLua32 JAL target is not an instruction in its image.');
-				} else if (target < first || target >= end || !isRomInstructionHead(directory, target)) {
-					throw new Error('BLua32 branch target is not an instruction in its function.');
+				} else {
+					let admitted = target >= first && target < end;
+					if (!admitted && op === OpCode.JMP
+						&& (((body | (wide ? head : 0)) >>> (2 * MAX_OPERAND_BITS)) & MAX_LOW_OPERAND) === 0) {
+						const peer = findRomFunctionExtentAtPc(directory, target);
+						admitted = peer !== -1 && target === versions[peer + RomFunctionLane.FirstPc];
+					}
+					if (!admitted || !isRomInstructionHead(directory, target))
+						throw new Error('BLua32 branch target is not an instruction in its function.');
 				}
 			}
 			if (op === OpCode.JREG) {

@@ -20,6 +20,7 @@ import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, RAM_RECORD_WORD_MASK } from 
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import type { Blua32SymbolsImage } from '../../../toolchain/ts/rompack/blua32_symbols';
 import { createTestSystemCpu, linkTestCartBlua32, writeTestBlua32Rom } from '../../helpers/blua32';
@@ -608,6 +609,102 @@ return left.value, right.value, absent, *visits, walk(0, 7, 8, 9)
 	assert.deepEqual(replay(), observations);
 	writeFileSync(trace, ['X', ...commands.slice(continuation)].join('\n'));
 	assert.deepEqual(replay(), observations.slice(continuation));
+});
+
+test('mutual tail transfers share a physical window, link and result convention', t => {
+	const source = `
+bss mutual_steps: word
+local right
+local function left(n, x)
+	if n == 0 then return x end
+	*mutual_steps = *mutual_steps + 1
+	return right(n - 1, x + 1)
+end
+right = function(n, x, extra)
+	if n == 0 then return x, 88, extra end
+	*mutual_steps = *mutual_steps + 1
+	return left(n - 1, x + 1)
+end
+local a, b = left(600, 11)
+local c, d, e = left(601, 22)
+return a, b, c, d, e, *mutual_steps
+`;
+	const linked = linkManagedTestSystem(source, 3, [], [], 'main', { irqSource: clearSuffixOnVBlank });
+	const { layout, symbols } = linked;
+	const { functionIds, softwareFramesByFunction } = symbols.metadata;
+	const caller = functionIds.indexOf('module:main/entry');
+	const peers = ['module:main/entry/local:left', 'module:main/entry/assign:right'].map(id => functionIds.indexOf(id));
+	assert.ok(peers.every(peer => peer >= 0));
+	assert.equal(layout.functions[peers[0]].maxStack, layout.functions[peers[1]].maxStack);
+	assert.equal(deriveBlua32FixedStack(layout, [caller]).frames, 1);
+	const transferPcs = peers.map((peer, side) => {
+		const fn = layout.functions[peer];
+		const other = peers[1 - side];
+		const frame = softwareFramesByFunction[peer]!;
+		assert.equal(frame.entry, true);
+		assert.deepEqual(frame.calls, []);
+		assert.equal(frame.tailJumps.length, 1);
+		assert.equal(frame.tailJumps[0].targetFunction, other);
+		const transfer = fn.codeAddress + frame.tailJumps[0].wordOffset * INSTRUCTION_BYTES;
+		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+			assert.ok(row.op !== OpCode.CALL && row.op !== OpCode.RET && row.op !== OpCode.JAL && row.op !== OpCode.SVC);
+			if (pc === transfer) {
+				assert.equal(row.op, OpCode.JMP);
+				assert.equal(row.pc + (1 + row.sbx) * INSTRUCTION_BYTES, layout.functions[other].codeAddress);
+			}
+			pc = row.pc + INSTRUCTION_BYTES;
+		}
+		return transfer;
+	});
+	for (const call of softwareFramesByFunction[caller]!.calls) assert.deepEqual(call.targetFunctions, [peers[0]]);
+	const romBytes = writeTestBlua32Rom(linked);
+	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+		cpuExecutionBackend: CpuExecutionBackend.Interpreter },
+	{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
+	runtime.boot();
+	const { cpu, scheduler, memory, irqController } = runtime.machine;
+	const folder = mkdtempSync(join(tmpdir(), 'bmsx-mutual-tail-jumps-'));
+	t.after(() => rmSync(folder, { recursive: true, force: true }));
+	const rom = join(folder, 'system.rom'), trace = join(folder, 'trace'), state = join(folder, 'state');
+	writeFileSync(rom, romBytes);
+	const commands: string[] = [], observations: string[] = [];
+	const right = layout.functions[peers[1]];
+	let checkpoint = -1, grantSize = 31;
+	for (let grant = 0; grant < 8192; ++grant) {
+		const cycles = grantSize;
+		const outcome = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+		commands.push(`E ${cycles}`);
+		observations.push(`${outcome} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		if (outcome === RunResult.Halted) break;
+		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		if (checkpoint !== -1 || pc < right.codeAddress || pc >= right.codeAddress + right.codeByteCount) continue;
+		grantSize = 1;
+		if (pc !== transferPcs[1]) continue;
+		assert.equal(cpu.readFrameFunctionAddress(depth - 1), layout.functions[caller].address);
+		assert.equal(cpu.activeThread.currentFrame!.top, 3, 'the link and the next peer’s two formals are the live prefix');
+		checkpoint = commands.length;
+		writeFileSync(state, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+		memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+		irqController.raise(IRQ_VBLANK);
+		assert.equal(cpu.enterPendingInterrupt(), true);
+		commands.push(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`, `i ${IRQ_VBLANK}`, 'I');
+		observations.push('1');
+		grantSize = 127;
+	}
+	assert.notEqual(checkpoint, -1);
+	const cleared = symbols.metadata.staticScopes.declarations.find(item => item.name === 'cleared_suffix')!.address!;
+	assert.equal(memory.readMappedU32LE(cleared), 1);
+	const output = [valueInteger(611), valueNil(), valueInteger(623), valueInteger(88), valueNil(), valueInteger(1201)];
+	assert.deepEqual(runtime.readCompletionValues(), output);
+	commands.push('c');
+	observations.push([output.length, ...output.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	const replay = () => execFileSync(native, [rom, trace, state], { encoding: 'utf8' }).trim().split('\n');
+	writeFileSync(trace, commands.join('\n'));
+	assert.deepEqual(replay(), observations);
+	writeFileSync(trace, ['X', ...commands.slice(checkpoint)].join('\n'));
+	assert.deepEqual(replay(), observations.slice(checkpoint));
 });
 
 test('a wide software callee uses backing admitted at entry without growing it on the call', () => {

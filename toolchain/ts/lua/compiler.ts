@@ -2125,6 +2125,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const finalRanges: Array<SourceRange | null> = new Array(endIndex);
 		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(endIndex);
 		const constRelocs: ProgramImageConstReloc[] = [];
+		const tailJumps: ProgramSoftwareFrameDebug['tailJumps'][number][] = [];
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
@@ -2229,8 +2230,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 			writeInstruction(code, cursor, instr.op,
 				aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
-			if (instr.jumpProtoIndex !== undefined)
-				constRelocs.push({ wordIndex: cursor, kind: 'jal', protoIndex: instr.jumpProtoIndex });
+			if (instr.jumpProtoIndex !== undefined) {
+				constRelocs.push({ wordIndex: cursor, kind: 'jump', protoIndex: instr.jumpProtoIndex });
+				if (instr.op === OpCode.JMP) tailJumps.push({ wordOffset: instrStartIndex[index], targetProto: instr.jumpProtoIndex });
+			}
 			finalRanges[cursor] = range;
 			cursor += 1;
 		}
@@ -2288,6 +2291,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}),
 			linkSlots: lowered.linkSlots.filter(({ instruction }) => instruction < instructions.length)
 				.map(({ instruction, slot }) => ({ wordOffset: instrStartIndex[instruction], slot })),
+			tailJumps,
 		};
 	}
 

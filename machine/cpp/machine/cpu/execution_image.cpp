@@ -120,7 +120,7 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 			}
 		}
 	}
-	// JAL may target another published extent, including a later record.
+	// An ordinary jump may transfer to another published entry without closing registers.
 	for (const u32 index : order) {
 		const auto& version = versions[index];
 		for (u32 pc = version.entry.codeAddress; pc < version.endPc;) {
@@ -135,8 +135,15 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 				if (op == OpCode::JAL) {
 					if (!result.instructionHead(target))
 						throw BMSX_RUNTIME_ERROR("BLua32 JAL target is not an instruction in its image.");
-				} else if (!version.contains(target) || !result.instructionHead(target)) {
-					throw BMSX_RUNTIME_ERROR("BLua32 branch target is not an instruction in its function.");
+				} else {
+					bool admitted = version.contains(target);
+					if (!admitted && op == OpCode::JMP
+						&& (((body | (wide ? source : 0u)) >> (2u * MAX_OPERAND_BITS)) & MAX_LOW_OPERAND) == 0u) {
+						const auto* peer = result.atPc(target);
+						admitted = peer && target == peer->entry.codeAddress;
+					}
+					if (!admitted || !result.instructionHead(target))
+						throw BMSX_RUNTIME_ERROR("BLua32 branch target is not an instruction in its function.");
 				}
 			}
 			if (op == OpCode::JREG) {

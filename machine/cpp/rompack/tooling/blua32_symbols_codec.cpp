@@ -243,6 +243,7 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 			words.push_back(tables.wordRanges(call.targetLiveWordRanges));
 		});
 		record.vector(frame->linkSlots, [&](const auto& link) { words.insert(words.end(), {link.wordOffset, link.slot}); });
+		record.vector(frame->tailJumps, [&](const auto& jump) { words.insert(words.end(), {jump.wordOffset, jump.targetFunction}); });
 	}
 	BinObject payload;
 	payload["strings"] = BinValue(std::move(tables.strings));
@@ -392,6 +393,7 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 				record.word(), record.word(), record.word(), record.word(), record.word(), record.numbers(), record.numbers(),
 				intervals[record.word()]}; }),
 			record.vector([&] { return Blua32SoftwareLinkSlotDebug{record.word(), record.word()}; }),
+			record.vector([&] { return Blua32SoftwareTailJumpDebug{record.word(), record.word()}; }),
 		};
 	}
 	return symbols;

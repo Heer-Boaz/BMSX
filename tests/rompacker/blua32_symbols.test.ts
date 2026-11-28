@@ -163,6 +163,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 						targetFunctions: [0], liveAfter: [], targetLiveWordRanges: [] },
 				],
 				linkSlots: [{ wordOffset: 0, slot: 0 }, { wordOffset: 7, slot: 11 }],
+				tailJumps: [{ wordOffset: 16, targetFunction: 0 }],
 			}],
 		},
 	};

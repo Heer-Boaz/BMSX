@@ -15,6 +15,7 @@ import {
 	MAX_OPERAND_BITS,
 	MAX_SIGNED_BX,
 	MIN_SIGNED_BX,
+	instructionOpcode,
 	readInstructionWord,
 	writeInstruction,
 } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -516,12 +517,13 @@ function rewriteImageRelocations(
 	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	for (const reloc of relocs) {
-		if (reloc.kind === 'jal') {
+		if (reloc.kind === 'jump') {
 			const target = protos[reloc.protoIndex].entryPC / INSTRUCTION_BYTES;
 			const displacement = target - (reloc.wordIndex + 1);
 			if (displacement < MIN_SIGNED_BX || displacement > MAX_SIGNED_BX)
-				throw new Error(`Relocated BLua32 JAL displacement exceeds the instruction word: ${displacement}.`);
-			rewriteResolvedABx(code, reloc.wordIndex, OpCode.JAL, displacement & MAX_EXT_BX);
+				throw new Error(`Relocated BLua32 jump displacement exceeds the instruction word: ${displacement}.`);
+			const op = instructionOpcode(readInstructionWord(code, reloc.wordIndex));
+			rewriteResolvedABx(code, reloc.wordIndex, op, displacement & MAX_EXT_BX);
 			continue;
 		}
 		if (reloc.kind !== 'gl' && reloc.kind !== 'sys') continue;
@@ -905,6 +907,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 				...call, targetFunctions: targetProtos.map(target => functionSlotByProtoIndex[target]),
 			})),
 			linkSlots: softwareFrame.linkSlots,
+			tailJumps: softwareFrame.tailJumps.map(({ wordOffset, targetProto }) => ({
+				wordOffset, targetFunction: functionSlotByProtoIndex[targetProto],
+			})),
 		};
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];

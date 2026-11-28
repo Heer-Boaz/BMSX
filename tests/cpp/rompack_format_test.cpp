@@ -113,7 +113,7 @@ int main() {
 		true, {
 			{2, 7, 9, 11, 4, {0u}, {1u, 4u, 8u}, std::make_shared<const std::vector<bmsx::ProgramWordRange>>(*ranges2468)},
 			{12, 13, 14, 15, 4, {0u}, {}, noWordRanges},
-		}, {{0, 0}, {7, 11}},
+		}, {{0, 0}, {7, 11}}, {{16, 0}},
 	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.lexicalDeclarations = {

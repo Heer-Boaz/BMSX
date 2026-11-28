@@ -18,6 +18,23 @@ function linkSlotAtWord(frame: Blua32SoftwareFrameDebug, word: number): number {
 	return slot;
 }
 
+/** Does this actual call target admit the active body under the same link? */
+function reachesTailBody(frames: readonly (Blua32SoftwareFrameDebug | undefined)[], start: number, active: number): boolean {
+	if (start === active) return true;
+	const outgoing = frames[start]?.tailJumps;
+	if (outgoing === undefined || outgoing.length === 0) return false;
+	const pending = outgoing.map(jump => jump.targetFunction);
+	const visited = new Set([start]);
+	while (pending.length !== 0) {
+		const peer = pending.pop()!;
+		if (peer === active) return true;
+		if (visited.has(peer)) continue;
+		visited.add(peer);
+		for (const jump of frames[peer]!.tailJumps) pending.push(jump.targetFunction);
+	}
+	return false;
+}
+
 /**
  * Plan only the integer words the compiler proves to be live code addresses.
  * A logical activation borrows physical slots; it has no Frame record.
@@ -94,16 +111,25 @@ export function planSoftwareCodeWords(cpu: CPU, target: HotResumeRevision, threa
 		const owner = blua32FunctionIndexAtPc(previous, continuation);
 		if (owner < 0) return false;
 		const word = (continuation - previous.functions[owner].codeAddress) / INSTRUCTION_BYTES;
-		const call = oldFrames[owner]?.calls.find(call => call.continuationWordOffset === word
-			&& call.targetFunctions.includes(oldFunction));
+		const call = oldFrames[owner]?.calls.find(call => call.continuationWordOffset === word);
 		if (call === undefined) return false;
 		const nextContinuation = relocatedContinuationPc(target.revision, previous, continuation);
 		const nextOwner = blua32FunctionIndexAtPc(next, nextContinuation);
 		if (nextOwner < 0) return false;
 		const nextWord = (nextContinuation - next.functions[nextOwner].codeAddress) / INSTRUCTION_BYTES;
-		const nextCall = newFrames[nextOwner]?.calls.find(call => call.continuationWordOffset === nextWord
-			&& call.targetFunctions.includes(newFunction));
+		const nextCall = newFrames[nextOwner]?.calls.find(call => call.continuationWordOffset === nextWord);
 		if (nextCall === undefined || nextCall.baseDelta !== call.baseDelta) return false;
+		// A sibling transfer did not record which original target was selected.
+		// Every actual target that could have reached this body must still be
+		// admitted by the corresponding real call in the new image.
+		let reachedByCall = false;
+		for (const targetIndex of call.targetFunctions) {
+			if (!reachesTailBody(oldFrames, targetIndex, oldFunction)) continue;
+			reachedByCall = true;
+			const replacement = blua32FunctionIndexAtAddress(next, target.revision.functionAddresses[targetIndex]);
+			if (!nextCall.targetFunctions.includes(replacement) || !reachesTailBody(newFrames, replacement, newFunction)) return false;
+		}
+		if (!reachedByCall) return false;
 		if (nextContinuation !== continuation) words.set(address, nextContinuation);
 		base -= call.baseDelta;
 		needsRetainedWindow = true;

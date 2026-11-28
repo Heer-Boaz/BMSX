@@ -61,7 +61,7 @@ export type ProgramGlobalSlotRelocKind = 'gl' | 'sys';
 export type ProgramImageConstReloc =
 	| { wordIndex: number; kind: ProgramConstantIndexRelocKind; constIndex: number }
 	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number }
-	| { wordIndex: number; kind: 'jal'; protoIndex: number };
+	| { wordIndex: number; kind: 'jump'; protoIndex: number };
 
 export type ProgramCodeFunctionTarget =
 	| ({ kind: 'export_proto' } & ProgramFunctionSymbol)

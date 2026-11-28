@@ -107,7 +107,9 @@ export function deriveBlua32FixedStack(
 		const values = new Uint32Array(frameWidth);
 		const views = new Map([[0, values]]);
 		let tracksRawWords = false;
-		const instructions = instructionsFor(index);
+		const entryInstructions = instructionsFor(index);
+		let instructions = entryInstructions;
+		const tailPeers: number[] = [];
 		for (const instruction of instructions.values()) {
 			tracksRawWords ||= instruction.op === OpCode.JREG || instruction.op === OpCode.JAL
 				|| instruction.op === OpCode.MOV
@@ -368,11 +370,27 @@ export function deriveBlua32FixedStack(
 					if (a >= width) reject('link exceeds the function record');
 					applyLinkedTargets([next + sbx * INSTRUCTION_BYTES], a);
 					continue;
-				case OpCode.JMP:
+				case OpCode.JMP: {
+					const target = next + sbx * INSTRUCTION_BYTES;
+					if (!instructions.has(target) && !ordinary && a === 0 && basis === 0) {
+						const index = functionByEntry.get(target) ?? reject('no finite local target or linked entry');
+						const peer = image.functions[index];
+						if (!peer.staticClosure || peer.upvalues.length !== 0 || Math.max(peer.numParams, peer.maxStack) > frameWidth)
+							reject('tail entry exceeds the admitted frame');
+						if (ancestors.has(index)) reject('tail entry re-enters a caller frame');
+						// Analyse the peer with actual incoming registers and the
+						// original abstract link, not a new invocation or backing.
+						if (instructions === entryInstructions) instructions = new Map(instructions);
+						for (const [pc, word] of instructionsFor(index)) instructions.set(pc, word);
+						ancestors.add(index);
+						tailPeers.push(index);
+					}
+					merge(target, basis);
+					continue;
+				}
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT:
 					merge(next + sbx * INSTRUCTION_BYTES, basis);
-					if (op === OpCode.JMP) continue;
 					break;
 				case OpCode.EQ:
 				case OpCode.LT:
@@ -428,6 +446,7 @@ export function deriveBlua32FixedStack(
 			frames = Math.max(frames, 1 + below.frames);
 		}
 		ancestors.delete(index);
+		for (const peer of tailPeers) ancestors.delete(peer);
 		const result = { valueSlots, frames, firstClobbered };
 		visited.set(key, result);
 		return result;

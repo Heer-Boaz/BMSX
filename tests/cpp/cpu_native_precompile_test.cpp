@@ -260,12 +260,17 @@ void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
 		}
 		throw std::runtime_error("mount admitted invalid function control flow");
 	};
-	for (const u8 displacement : {1u, 3u}) {
-		auto invalid = image;
-		writeInstruction(invalid.text, word, static_cast<u8>(OpCode::JMP), 0, 0, displacement);
-		rejects(std::move(invalid), "BLua32 branch target is not an instruction in its function.");
-	}
 	auto invalid = image;
+	writeInstruction(invalid.text, word, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+	rejects(std::move(invalid), "BLua32 branch target is not an instruction in its function.");
+	invalid = image;
+	writeInstruction(invalid.text, word, static_cast<u8>(OpCode::JMP), 1, 0, 3);
+	rejects(std::move(invalid), "BLua32 branch target is not an instruction in its function.");
+	invalid = image;
+	writeInstruction(invalid.text, word, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+	writeInstruction(invalid.text, word + 1u, static_cast<u8>(OpCode::JMP), 0, 0, 2);
+	rejects(std::move(invalid), "BLua32 branch target is not an instruction in its function.");
+	invalid = image;
 	writeInstruction(invalid.text, word + 2u, static_cast<u8>(OpCode::EQ), 0, 0, 0);
 	rejects(std::move(invalid), "BLua32 comparison skips past the end of its function.");
 	invalid = image;

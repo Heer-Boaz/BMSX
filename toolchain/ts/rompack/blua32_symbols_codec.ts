@@ -248,6 +248,7 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 			words.push(tables.wordRanges(call.targetLiveWordRanges));
 		});
 		record.vector(frame.linkSlots, link => words.push(link.wordOffset, link.slot));
+		record.vector(frame.tailJumps, jump => words.push(jump.wordOffset, jump.targetFunction));
 	}
 	return encodeBinary(tables.payload(record));
 }
@@ -366,6 +367,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 				targetLiveWordRanges: intervals[record.word()],
 			})),
 			linkSlots: record.vector(() => ({ wordOffset: record.word(), slot: record.word() })),
+			tailJumps: record.vector(() => ({ wordOffset: record.word(), targetFunction: record.word() })),
 		};
 	}
 	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants, systemRecipe,

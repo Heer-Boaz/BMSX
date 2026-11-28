@@ -92,6 +92,7 @@ export type Blua32SoftwareFrameDebug = {
 	readonly entry: boolean;
 	readonly calls: readonly Blua32SoftwareCallDebug[];
 	readonly linkSlots: readonly { readonly wordOffset: number; readonly slot: number }[];
+	readonly tailJumps: readonly { readonly wordOffset: number; readonly targetFunction: number }[];
 };
 
 export type Blua32StatementPoint = {

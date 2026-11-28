@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { type Value, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { type Value, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { verifyHotResumeBinding } from '../../ide/runtime/hot_resume_binding';
-import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
+import { buildBlua32ExecutionRevision, relocatedContinuationPc } from '../../toolchain/ts/rompack/blua32_revision';
 import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
@@ -158,4 +158,63 @@ return x, object.score
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	assert.deepEqual(values, [valueInteger(((6 + (40 * 41) / 2) & 255) + 9), valueInteger(77)]);
+});
+
+test('Hot Resume follows the actual return link after a cross-body tail transfer', () => {
+	const source = (fresh: boolean) => `bss marker: word
+local right
+local function left(n, x)
+	if n == 0 then
+		*marker = x
+		${fresh ? '*marker = x + 1' : ''}
+		return x + 1
+	end
+	return right(n - 1, x + 1)
+end
+right = function(n, x)
+	if n == 0 then return x + 10 end
+	return left(n - 1, x + 1)
+end
+return left(3, 40)
+`;
+	const old = linkManagedTestSystem(source(false), 3);
+	const next = linkManagedTestSystem(source(true), 3);
+	const previousImage = old.layout, nextImage = next.layout;
+	const { functionIds, softwareFramesByFunction } = old.symbols.metadata;
+	const main = functionIds.indexOf('module:main/entry');
+	const left = functionIds.indexOf('module:main/entry/local:left');
+	const right = functionIds.indexOf('module:main/entry/assign:right');
+	const nextRight = next.symbols.metadata.functionIds.indexOf(functionIds[right]);
+	const call = softwareFramesByFunction[main]!.calls[0];
+	assert.deepEqual(call.targetFunctions, [left], 'the original call never presented the sibling as a callable target');
+	assert.equal(softwareFramesByFunction[left]!.tailJumps[0].targetFunction, right);
+	const oldPc = previousImage.functions[right].codeAddress;
+	const newPc = nextImage.functions[nextRight].codeAddress;
+	assert.notEqual(oldPc, newPc);
+	const runtime = createTestRuntime(writeTestBlua32Rom(old));
+	runtime.boot();
+	const { cpu, memory, executionAddressSpace } = runtime.machine;
+	cpu.setExecutionHook((_domain, pc) => pc === oldPc, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_EXECUTION_DOMAIN_MASK);
+	assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.ExecutionStopped);
+	cpu.setExecutionHook(null, 0, 0);
+	const depth = cpu.getFrameDepth(), frame = cpu.activeThread.currentFrame!;
+	assert.equal(cpu.readFrameFunctionAddress(depth - 1), previousImage.functions[main].address);
+	const oldLink = valuePayload(frame.registers.get(0));
+	assert.equal(oldLink, previousImage.functions[main].codeAddress + call.continuationWordOffset * INSTRUCTION_BYTES);
+	const sources = (image: typeof old) => new Map(Array.from(image.diagnosticSources, ([path, item]) => [path, item.source]));
+	const revision = buildBlua32ExecutionRevision(previousImage, old.symbols, sources(old), next, sources(next));
+	const newLink = relocatedContinuationPc(revision, previousImage, oldLink);
+	assert.notEqual(oldLink, newLink);
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage, nextImage, revision }, null, null], depth);
+	memory.installSystemRom(writeTestBlua32Rom(next));
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.activeThread.currentFrame, frame);
+	assert.equal(frame.pc, newPc);
+	assert.equal(frame.registers.get(0), valueInteger(newLink));
+	runGuestToHalt(cpu, 1_000_000);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueInteger(53)]);
 });

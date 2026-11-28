@@ -136,8 +136,15 @@ test('published functions reject cross-boundary flow and incomplete width before
 	const pc = textAddress / INSTRUCTION_BYTES;
 	const record = image.symbols.functionAddresses[0], sibling = image.symbols.functionAddresses[1];
 	const cases: [string, (rom: Uint8Array) => void, RegExp][] = [
-		['branch to sibling entry', rom => {
-			writeInstruction(rom, pc + prefix + 2, OpCode.JMP, 0, 0, 1);
+		['capture-closing branch to sibling entry', rom => {
+			writeInstruction(rom, pc + prefix + 2, OpCode.JMP, 1, 0, 1);
+		}, /branch target is not an instruction/],
+		['WIDE capture-closing branch to sibling entry', rom => {
+			writeInstruction(rom, pc + prefix, OpCode.WIDE, 1, 0, 0);
+			writeInstruction(rom, pc + prefix + 1, OpCode.JMP, 0, 0, 2);
+		}, /branch target is not an instruction/],
+		['conditional branch to sibling entry', rom => {
+			writeInstruction(rom, pc + prefix + 2, OpCode.JMPIF, 0, 0, 1);
 		}, /branch target is not an instruction/],
 		['branch to WIDE suffix', rom => {
 			writeInstruction(rom, pc + prefix - 1, OpCode.JMP, 0, 0, 1);
@@ -214,10 +221,16 @@ test('the same executable extent may be named by multiple record addresses', () 
 	assert.equal(dir.versions.length, 2 * RomFunctionLane.Count);
 });
 
-test('mapped code permits a branch between function extent hints only when explicitly declared', () => {
+test('a plain jump may cross a verified extent only at another declared entry', () => {
 	const { image, prefix, textAddress } = validImage();
-	const romBytes = image.romBytes.slice();
-	writeInstruction(romBytes, textAddress / INSTRUCTION_BYTES + prefix + 2, OpCode.JMP, 0, 0, 1);
+	const romBytes = image.romBytes.slice(), jumpWord = textAddress / INSTRUCTION_BYTES + prefix + 2;
+	writeInstruction(romBytes, jumpWord, OpCode.JMP, 0, 0, 1);
+	const fixed = createTestSystemCpu({ romBytes });
+	assert.equal(fixed.cpu.runUntilDepth(0, 4000), RunResult.Halted);
+	const fixedResult: Value[] = [];
+	fixed.cpu.readCompletionValues(fixedResult);
+	assert.deepEqual(fixedResult, [valueInteger(1)]);
+	writeInstruction(romBytes, jumpWord, OpCode.JMP, 0, 0, 2);
 	assert.throws(() => createTestSystemCpu({ romBytes }), /branch target is not an instruction/);
 	writeLE32(romBytes, image.image.address + BLUA32_IMAGE_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG);
 	const { cpu } = createTestSystemCpu({ romBytes });
@@ -225,5 +238,5 @@ test('mapped code permits a branch between function extent hints only when expli
 	assert.equal(cpu.runUntilDepth(0, 4000), RunResult.Halted);
 	const result: Value[] = [];
 	cpu.readCompletionValues(result);
-	assert.deepEqual(result, [valueInteger(1)]);
+	assert.deepEqual(result, [valueInteger(0)]);
 });

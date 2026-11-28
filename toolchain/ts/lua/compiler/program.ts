@@ -107,6 +107,7 @@ export type ProgramSoftwareFrameDebug = {
 		targetLiveWordRanges: readonly ProgramWordRange[];
 	}[];
 	readonly linkSlots: readonly { wordOffset: number; slot: number }[];
+	readonly tailJumps: readonly { wordOffset: number; targetProto: number }[];
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {

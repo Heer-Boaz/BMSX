@@ -106,10 +106,16 @@ struct Blua32SoftwareLinkSlotDebug {
 	u32 slot;
 };
 
+struct Blua32SoftwareTailJumpDebug {
+	u32 wordOffset;
+	u32 targetFunction;
+};
+
 struct Blua32SoftwareFrameDebug {
 	bool entry;
 	std::vector<Blua32SoftwareCallDebug> calls;
 	std::vector<Blua32SoftwareLinkSlotDebug> linkSlots;
+	std::vector<Blua32SoftwareTailJumpDebug> tailJumps;
 };
 
 struct Blua32StatementPoint {

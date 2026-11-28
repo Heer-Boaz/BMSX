@@ -16,11 +16,11 @@ import { createWindowCallTargetProof } from './window_call_targets';
 import { lowerWindowVararg, windowVarargRange, WINDOW_VARARG_SCRATCH_WORDS } from './window_varargs';
 
 type Body = { proto: Proto; instructions: readonly Instruction[] };
-type CallSite = { caller: number; instruction: number; producer: number; targets: readonly number[]; targetLive: readonly number[] };
+type CallSite = { caller: number; instruction: number; producer: number; targets: readonly number[]; targetLive: readonly number[];
+	tailDefinition: number };
 type ResultRange = { min: number; max: number };
 type BodyReturns = ResultRange & {
 	forwarded: number[]; suffixes: Map<number, number>; readsArgumentCount: boolean; variadic: boolean; hasOpenVararg: boolean;
-	selfTailCalls?: Map<number, number>;
 };
 type WindowLayout = ResultRange & {
 	width: number; sealed: boolean; bias: number; parameters: number; extras: ResultRange; scratch: number;
@@ -29,11 +29,13 @@ type WindowLayout = ResultRange & {
 type WindowCall = { callee: WindowLayout; supplied: ResultRange; directTarget?: number };
 type WindowCallSite = WindowCall & { targets: readonly number[]; targetLive: readonly number[] };
 type CallEdge = { targets: readonly WindowCandidate[]; site: CallSite };
+type TailTransfer = { definition: number; target: number; parameters: number };
 type WindowCandidate = StronglyConnectedNode<WindowCandidate> & {
 	protoIndex: number;
 	returns: BodyReturns;
 	dependencies: WindowCandidate[];
 	complete: boolean;
+	tailTransfers?: ReadonlyMap<number, TailTransfer>;
 };
 
 export type WindowBodyLowering = {
@@ -283,40 +285,44 @@ function prepareWindowCall(instructions: Instruction[], origin: Instruction, bas
 	return jump;
 }
 
-function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: ReadonlyMap<number, WindowCallSite> | undefined,
-	returns: BodyReturns | undefined): WindowBodyLowering {
+function lowerWindowBody(body: Body, protoIndex: number, entry: WindowLayout | undefined,
+	callees: ReadonlyMap<number, WindowCallSite> | undefined, returns: BodyReturns | undefined,
+	tailTransfers: ReadonlyMap<number, TailTransfer> | undefined): WindowBodyLowering {
 	const instructions: Instruction[] = [], origins: number[] = [], starts = new Array<number>(body.instructions.length + 1);
 	const branches: Instruction[] = [];
 	const softwareCalls: WindowBodyLowering['softwareCalls'][number][] = [];
 	const linkSlots: WindowBodyLowering['linkSlots'][number][] = [];
 	const placement = entry?.placement ?? 0;
 	const registerBias = entry === undefined ? 0 : entry.bias + placement;
-	const selfTailCalls = returns?.selfTailCalls;
-	const tailTargetLoads = selfTailCalls === undefined ? undefined : new Set(selfTailCalls.values());
+	const tailTargetLoads = tailTransfers === undefined ? undefined
+		: new Set(Array.from(tailTransfers.values(), site => site.definition));
 	let maxStack = entry === undefined ? body.proto.maxStack : entry.width + placement;
 	if (placement !== 0) linkSlots.push({ instruction: 0, slot: placement });
 	for (let i = 0; i < body.instructions.length; ++i) {
 		const instruction = body.instructions[i];
+		const tail = tailTransfers?.get(i), tailReturn = tailTransfers?.get(i - 1);
 		starts[i] = instructions.length;
 		if (entry !== undefined && tailTargetLoads?.has(i)) {
 			// Argument evaluation can raise Top through this outgoing lane.
 			// Define it without materializing the now-unused function address.
 			instructions.push(controlInstruction(instruction, OpCode.KNIL, instruction.a + registerBias, 0));
-		} else if (entry !== undefined && selfTailCalls?.has(i)) {
+		} else if (tail !== undefined) {
 			// The argument expressions already ran in their original order. Move
 			// their prepared slots down to the formals, without changing the link.
-			const copied = Math.min(entry.parameters, decodeValueCount(instruction.b, 0));
+			const copied = Math.min(tail.parameters, decodeValueCount(instruction.b, 0));
 			const source = instruction.a + registerBias + 1;
 			for (let formal = 0; formal < copied; ++formal)
 				instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + formal, source + formal));
-			if (copied < entry.parameters)
-				instructions.push(controlInstruction(instruction, OpCode.LOADNIL, registerBias + copied, entry.parameters - copied));
-			instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + entry.parameters, 0, ValueMoveKind.SetTopImmediate));
-		} else if (entry !== undefined && selfTailCalls?.has(i - 1)) {
+			if (copied < tail.parameters)
+				instructions.push(controlInstruction(instruction, OpCode.LOADNIL, registerBias + copied, tail.parameters - copied));
+			instructions.push(controlInstruction(instruction, OpCode.MOV, registerBias + tail.parameters, 0, ValueMoveKind.SetTopImmediate));
+		} else if (tailReturn !== undefined) {
 			const jump = controlInstruction(instruction, OpCode.JMP, 0, 0);
-			jump.target = 0;
+			if (tailReturn.target === protoIndex) {
+				jump.target = 0;
+				branches.push(jump);
+			} else jump.jumpProtoIndex = tailReturn.target;
 			instructions.push(jump);
-			branches.push(jump);
 		} else if (entry !== undefined && entry.discardResults && instruction.op === OpCode.RET) {
 			// Keep every expression producer without overwriting the link.
 			instructions.push(controlInstruction(instruction, OpCode.JREG, placement, 0, RegisterJumpMode.Jump));
@@ -447,12 +453,9 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			(found ??= new Set()).add(call);
 			const instruction = instructions[call];
 			const returns = signatures.get(caller);
-			if (direct && caller === callee && instruction.b !== 0 && returns !== undefined
+			const tailDefinition = direct && instruction.b !== 0 && returns !== undefined
 				&& !returns.variadic && !returns.readsArgumentCount && returns.suffixes.size === 0
-				&& returns.forwarded.includes(call + 1) && instructions[call + 1].a === instruction.a) {
-				(returns.selfTailCalls ??= new Map()).set(call, i);
-				continue;
-			}
+				&& returns.forwarded.includes(call + 1) && instructions[call + 1].a === instruction.a ? i : -1;
 			let producer = -1;
 			if (instruction.b === 0) {
 				const previous = instructions[call - 1];
@@ -465,7 +468,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				}
 				producer = call - 1;
 			}
-			const site = { caller, instruction: call, producer, targets, targetLive };
+			const site = { caller, instruction: call, producer, targets, targetLive, tailDefinition };
 			allSites.push(site);
 			for (const target of targets) {
 				const uses = sites.get(target);
@@ -474,29 +477,11 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			}
 		}
 	}
-	// A finite indirect call has only one physical ABI. If one arm needs
-	// results at any of its uses, every connected arm keeps the result ABI.
-	const observedResults = new Set<number>();
-	for (const site of allSites) {
-		if (bodies[site.caller].instructions[site.instruction].c !== 1)
-			for (const target of site.targets) observedResults.add(target);
-	}
-	for (const target of observedResults) {
-		for (const site of sites.get(target)!)
-			for (const other of site.targets) observedResults.add(other);
-	}
 	const candidates = new Map<number, WindowCandidate>();
 	const edges = new Map<number, Map<number, CallEdge>>();
 	for (const [protoIndex, returns] of signatures) {
 		const uses = sites.get(protoIndex);
 		if (uses === undefined) continue;
-		const selfTailCalls = returns.selfTailCalls;
-		if (selfTailCalls !== undefined) {
-			// This exit returns the current function's own result shape; only
-			// the remaining exits contribute evidence for that shape.
-			returns.forwarded = returns.forwarded.filter(pc => !selfTailCalls.has(pc - 1));
-			if (returns.max === -1 && returns.forwarded.length === 0) continue;
-		}
 		const candidate: WindowCandidate = { protoIndex, returns, dependencies: [], complete: true,
 			index: -1, lowlink: 0, component: -1, active: false };
 		candidates.set(protoIndex, candidate);
@@ -516,11 +501,50 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		const instructions = bodies[protoIndex].instructions;
 		const callees = edges.get(protoIndex);
 		for (let i = 0; i < instructions.length; ++i) {
-			if (instructions[i].op !== OpCode.CALL || candidate.returns.selfTailCalls?.has(i)) continue;
+			if (instructions[i].op !== OpCode.CALL) continue;
 			const edge = callees?.get(i);
 			if (edge === undefined) candidate.complete = false;
 			else dependencies.push(...edge.targets);
 		}
+	}
+	const components = stronglyConnectedComponents(candidates.values());
+	tailComponents: for (const component of components) {
+		const group = component[0].component;
+		if (component.length === 1 && !component[0].dependencies.includes(component[0])) continue;
+		const transfers: Map<number, TailTransfer>[] = [];
+		for (const member of component) {
+			if (!member.complete) continue tailComponents;
+			const internal = new Map<number, TailTransfer>();
+			for (const [pc, { targets, site }] of edges.get(member.protoIndex)!) {
+				if (!targets.some(target => target.component === group)) continue;
+				if (targets.length !== 1 || site.tailDefinition < 0) continue tailComponents;
+				const target = targets[0].protoIndex;
+				const parameters = bodies[target].proto.numParams;
+				if (parameters + 1 > MAX_EXT_REGISTER_A) continue tailComponents;
+				internal.set(pc, { definition: site.tailDefinition, target, parameters });
+			}
+			transfers.push(internal);
+		}
+		if (!component.some((member, index) => member.returns.max !== -1
+			|| member.returns.forwarded.some(pc => !transfers[index].has(pc - 1)))) continue;
+		if (!component.some(member => sites.get(member.protoIndex)!.some(site => candidates.get(site.caller)?.component !== group))) continue;
+		for (let i = 0; i < component.length; ++i) component[i].tailTransfers = transfers[i];
+	}
+
+	// Joined calls and tail-transfer components share one result ABI. Only
+	// real calls observe a result; a tail transfer retains the original link.
+	const isTailSite = (site: CallSite) => candidates.get(site.caller)?.tailTransfers?.has(site.instruction) === true;
+	const observedResults = new Set<number>();
+	for (const site of allSites) {
+		if (!isTailSite(site) && bodies[site.caller].instructions[site.instruction].c !== 1)
+			for (const target of site.targets) observedResults.add(target);
+	}
+	for (const target of observedResults) {
+		for (const site of sites.get(target)!)
+			for (const other of site.targets) observedResults.add(other);
+		const candidate = candidates.get(target);
+		if (candidate?.tailTransfers !== undefined)
+			for (const peer of components[candidate.component]) observedResults.add(peer.protoIndex);
 	}
 
 	// Operand counts do not depend on the transitive window extent. For
@@ -573,35 +597,44 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		inputBounds.set(protoIndex, bounds);
 		return bounds;
 	}
-	function boundResults({ protoIndex, returns }: WindowCandidate): ResultRange | null {
+	function boundResults(candidate: WindowCandidate): ResultRange | null {
+		const { protoIndex, tailTransfers } = candidate;
 		if (!observedResults.has(protoIndex)) return { min: 0, max: 0 };
 		const prior = resultBounds.get(protoIndex);
 		if (prior !== undefined) return prior;
-		resultBounds.set(protoIndex, null);
-		const { proto, instructions } = bodies[protoIndex];
-		let extras: ResultRange | undefined;
-		if (returns.suffixes.size !== 0 || returns.forwarded.some(pc => instructions[pc - 1].op === OpCode.VARARG)) {
-			const inputs = boundInputs(protoIndex);
-			if (inputs === null) return null;
-			extras = extraBounds(inputs, proto.numParams);
-		}
-		let { min, max } = returns;
-		for (const pc of returns.forwarded) {
-			const previous = instructions[pc - 1];
-			const edge = edges.get(protoIndex)?.get(pc - 1);
-			const results = previous.op === OpCode.VARARG ? extras! : edge === undefined ? null : edgeResultBounds(edge);
-			if (results === null) return null;
-			const prefix = previous.a - instructions[pc].a;
-			min = Math.min(min, prefix + results.min);
-			max = Math.max(max, prefix + results.max);
-		}
-		for (const skip of returns.suffixes.values()) {
-			const suffix = windowVarargRange(extras!, skip);
-			min = Math.min(min, suffix.min);
-			max = Math.max(max, suffix.max);
+		const members = components[candidate.component];
+		if (members.length !== 1 && tailTransfers === undefined) return null;
+		for (const member of members) resultBounds.set(member.protoIndex, null);
+		let min = Infinity, max = -1;
+		for (const member of members) {
+			const { protoIndex, returns, tailTransfers } = member;
+			const { proto, instructions } = bodies[protoIndex];
+			min = Math.min(min, returns.min);
+			max = Math.max(max, returns.max);
+			let extras: ResultRange | undefined;
+			if (returns.suffixes.size !== 0 || returns.forwarded.some(pc => instructions[pc - 1].op === OpCode.VARARG)) {
+				const inputs = boundInputs(protoIndex);
+				if (inputs === null) return null;
+				extras = extraBounds(inputs, proto.numParams);
+			}
+			for (const pc of returns.forwarded) {
+				if (tailTransfers?.has(pc - 1)) continue;
+				const previous = instructions[pc - 1];
+				const edge = edges.get(protoIndex)?.get(pc - 1);
+				const results = previous.op === OpCode.VARARG ? extras! : edge === undefined ? null : edgeResultBounds(edge);
+				if (results === null) return null;
+				const prefix = previous.a - instructions[pc].a;
+				min = Math.min(min, prefix + results.min);
+				max = Math.max(max, prefix + results.max);
+			}
+			for (const skip of returns.suffixes.values()) {
+				const suffix = windowVarargRange(extras!, skip);
+				min = Math.min(min, suffix.min);
+				max = Math.max(max, suffix.max);
+			}
 		}
 		const bounds = { min, max };
-		resultBounds.set(protoIndex, bounds);
+		for (const member of members) resultBounds.set(member.protoIndex, bounds);
 		return bounds;
 	}
 	function edgeResultBounds(edge: CallEdge): ResultRange | null {
@@ -629,14 +662,12 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 		return width === first.width ? first : { ...first, width };
 	}
-	components: for (const component of stronglyConnectedComponents(candidates.values())) {
-		const candidate = component[0], { complete, protoIndex, returns, dependencies } = candidate;
-		if (component.length !== 1 || !complete || dependencies.includes(candidate)) continue;
+	function sizeWindow({ protoIndex, returns, tailTransfers }: WindowCandidate, { min, max }: ResultRange,
+		publishesCount: boolean, sealed: boolean): WindowLayout | undefined {
 		const { proto, instructions } = bodies[protoIndex];
-		const inputs = boundInputs(protoIndex), results = boundResults(candidate);
-		if (inputs === null || results === null) continue;
-		const parameters = proto.numParams, { min, max } = results;
-		if (returns.selfTailCalls !== undefined && parameters + 1 > MAX_EXT_REGISTER_A) continue;
+		const inputs = boundInputs(protoIndex);
+		if (inputs === null) return;
+		const parameters = proto.numParams;
 		const extras = extraBounds(inputs, parameters);
 		const discardResults = !observedResults.has(protoIndex);
 		const returnsSuffix = !discardResults && returns.suffixes.size !== 0;
@@ -651,20 +682,17 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		const tupleEnd = returns.variadic || returnsSuffix || dynamicCount ? Math.max(parameters, inputs.max) + 1 : 1;
 		const argumentCountSlot = dynamicCount ? tupleEnd : 0;
 		const inputPrefix = tupleEnd + +dynamicCount;
-		const uses = sites.get(protoIndex)!;
-		const publishesCount = min !== max && uses.some(site => bodies[site.caller].instructions[site.instruction].c === 0);
-		if (publishesCount && max > MAX_ABX_REGISTER_A) continue;
 		const needsVarargScratch = dynamicSuffix || dynamicVararg;
 		const scratch = needsVarargScratch ? Math.max(inputPrefix, dynamicSuffix ? max + +publishesCount : 0) : 0;
 		const bias = needsVarargScratch ? scratch + WINDOW_VARARG_SCRATCH_WORDS + +dynamicSuffix : inputPrefix;
 		if ((needsVarargScratch && bias - 1 > MAX_ABX_REGISTER_A)
 			|| instructions.some(instruction => (instruction.format !== 'ABC' || (instruction.op === OpCode.ARGC && !dynamicCount))
-				&& instruction.a + bias > MAX_ABX_REGISTER_A)) continue;
+				&& instruction.a + bias > MAX_ABX_REGISTER_A)) return;
 		let width = Math.max(proto.maxStack, parameters) + bias;
 		for (const instruction of instructions) {
 			if (instruction.op === OpCode.VARARG && instruction.b === 0) {
 				const end = instruction.a + bias + extras.max;
-				if (extras.min === extras.max && end > MAX_EXT_REGISTER_A) continue components;
+				if (extras.min === extras.max && end > MAX_EXT_REGISTER_A) return;
 				width = Math.max(width, end);
 			}
 		}
@@ -672,16 +700,18 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		const callees = edges.get(protoIndex);
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
+				if (tailTransfers?.has(pc)) continue;
 				const { a, c } = instructions[pc], base = a + bias, wanted = decodeValueCount(c, -1);
 				const callee = sharedWindow(edge), supplied = boundCall(edge.site);
-				if (callee === undefined || supplied === null) continue components;
+				if (callee === undefined || supplied === null) return;
 				const call = { callee, supplied };
-				if (!windowFitsAt(base, wanted, call)) continue components;
+				if (!windowFitsAt(base, wanted, call)) return;
 				width = Math.max(width, callWindowEnd(base, wanted, call));
 			}
 		}
 		if (!discardResults) {
 			for (const pc of returns.forwarded) {
+				if (tailTransfers?.has(pc - 1)) continue;
 				const producer = instructions[pc - 1];
 				const child = producer.op === OpCode.VARARG ? extras : sharedWindow(callees!.get(pc - 1)!)!;
 				if (child.min !== child.max) forwardEnd = Math.max(forwardEnd, producer.a + bias + child.max);
@@ -689,17 +719,15 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 		if (forwardEnd !== -1) {
 			const end = Math.max(forwardEnd, max) + FORWARD_CONTROL_WORDS;
-			if (end - 1 > MAX_ABX_REGISTER_A) continue;
+			if (end - 1 > MAX_ABX_REGISTER_A) return;
 			width = Math.max(width, end);
 		}
-		const sealed = min !== max && (publishesCount
-			|| uses.some(site => decodeValueCount(bodies[site.caller].instructions[site.instruction].c, -1) > min));
 		const window = { min, max, width, sealed, bias, parameters, extras, scratch, argumentCountSlot, argumentCount: inputs.min,
 			discardResults, publishesCount, placement: 0 };
 		if (max !== 0) {
 			for (let pc = 0; pc < instructions.length; ++pc) {
 				const instruction = instructions[pc];
-				if (instruction.op !== OpCode.RET || returns.selfTailCalls?.has(pc - 1)) continue;
+				if (instruction.op !== OpCode.RET || tailTransfers?.has(pc - 1)) continue;
 				const skip = returns.suffixes.get(pc);
 				const suffix = skip === undefined ? undefined : windowVarargRange(extras, skip);
 				if (suffix !== undefined && suffix.min !== suffix.max) continue;
@@ -713,13 +741,48 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				width = Math.max(width, fixedReturnLink(window, source + count, count) + 1);
 			}
 		}
-		if (width > MAX_EXT_REGISTER_A + 1) continue;
+		if (width > MAX_EXT_REGISTER_A + 1) return;
 		window.width = width;
-		for (const site of uses) {
-			const { a, c } = bodies[site.caller].instructions[site.instruction], wanted = decodeValueCount(c, -1);
-			if (!windowFitsAt(a, wanted, { callee: window, supplied: argumentBounds.get(site)! })) continue components;
+		return window;
+	}
+	certify: for (const component of components) {
+		const candidate = component[0];
+		if (!candidate.complete || (candidate.tailTransfers === undefined
+			&& (component.length !== 1 || candidate.dependencies.includes(candidate)))) continue;
+		const results = boundResults(candidate);
+		if (results === null) continue;
+		const { min, max } = results;
+		let publishesCount = false, sealed = false;
+		if (min !== max) {
+			for (const member of component) for (const site of sites.get(member.protoIndex)!) {
+				if (isTailSite(site)) continue;
+				const c = bodies[site.caller].instructions[site.instruction].c;
+				publishesCount ||= c === 0;
+				sealed ||= decodeValueCount(c, -1) > min;
+			}
+			sealed ||= publishesCount;
+			if (publishesCount && max > MAX_ABX_REGISTER_A) continue;
 		}
-		windows.set(protoIndex, window);
+		const layouts: WindowLayout[] = [];
+		let width = 0;
+		for (const member of component) {
+			const window = sizeWindow(member, results, publishesCount, sealed);
+			if (window === undefined) continue certify;
+			layouts.push(window);
+			width = Math.max(width, window.width);
+		}
+		// The original caller backs the maximum extent of every possible
+		// tail peer. Publish the component together only after all uses fit.
+		for (let i = 0; i < component.length; ++i) {
+			const window = layouts[i];
+			window.width = width;
+			for (const site of sites.get(component[i].protoIndex)!) {
+				if (isTailSite(site)) continue;
+				const { a, c } = bodies[site.caller].instructions[site.instruction], wanted = decodeValueCount(c, -1);
+				if (!windowFitsAt(a, wanted, { callee: window, supplied: argumentBounds.get(site)! })) continue certify;
+			}
+		}
+		for (let i = 0; i < component.length; ++i) windows.set(component[i].protoIndex, layouts[i]);
 	}
 	// A joined site either has one physical ABI for the complete target
 	// set, or every arm keeps its ordinary tagged CodeFunction relocation.
@@ -762,14 +825,16 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 	// When every direct caller already supplies the same slots, a leaf can
 	// name them directly. No register shuffling, window switch or code clone.
 	for (const [index, window] of windows) {
-		const { returns, dependencies } = candidates.get(index)!;
-		if (window.bias !== 1 || window.min !== window.max || dependencies.length !== 0
+		const candidate = candidates.get(index)!;
+		const { returns, dependencies, tailTransfers } = candidate;
+		if (window.bias !== 1 || window.min !== window.max || dependencies.some(dependency => dependency !== candidate)
 			|| returns.readsArgumentCount || returns.variadic || (!window.discardResults && returns.suffixes.size !== 0)) continue;
-		const uses = sites.get(index)!;
+		const sitesAtEntry = sites.get(index)!;
+		const uses = tailTransfers === undefined ? sitesAtEntry : sitesAtEntry.filter(site => !isTailSite(site));
 		const { caller, instruction } = uses[0];
 		const placement = bodies[caller].instructions[instruction].a + (windows.get(caller)?.bias ?? 0);
 		if (placement === 0 || placement > MAX_ABX_REGISTER_A || placement + window.width > MAX_EXT_REGISTER_A + 1) continue;
-		if (returns.selfTailCalls !== undefined && placement + window.bias + window.parameters > MAX_EXT_REGISTER_A) continue;
+		if (tailTransfers !== undefined && placement + window.bias + window.parameters > MAX_EXT_REGISTER_A) continue;
 		if (uses.some(site => site.targets.length !== 1
 			|| bodies[site.caller].instructions[site.instruction].a + (windows.get(site.caller)?.bias ?? 0) !== placement)) continue;
 		if (bodies[index].instructions.some(row => row.format !== 'ABC' && row.a + window.bias + placement > MAX_ABX_REGISTER_A)) continue;
@@ -779,9 +844,11 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 	const rewrites = new Map<number, WindowBodyLowering>();
 	for (let protoIndex = 0; protoIndex < bodies.length; ++protoIndex) {
 		const window = windows.get(protoIndex), callees = edges.get(protoIndex);
+		const tailTransfers = window === undefined ? undefined : candidates.get(protoIndex)!.tailTransfers;
 		let lowered: Map<number, WindowCallSite> | undefined;
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
+				if (tailTransfers?.has(pc)) continue;
 				const callee = sharedWindow(edge);
 				if (callee !== undefined) (lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)!, targets: edge.site.targets,
 					targetLive: edge.site.targetLive,
@@ -789,7 +856,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			}
 		}
 		if (window !== undefined || lowered !== undefined)
-			rewrites.set(protoIndex, lowerWindowBody(bodies[protoIndex], window, lowered, signatures.get(protoIndex)));
+			rewrites.set(protoIndex, lowerWindowBody(bodies[protoIndex], protoIndex, window, lowered, signatures.get(protoIndex), tailTransfers));
 	}
 	return { entries: new Set(windows.keys()), bodies: rewrites };
 }

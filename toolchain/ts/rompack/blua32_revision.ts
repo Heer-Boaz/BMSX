@@ -160,9 +160,12 @@ function functionCodeMatches(
 	const freshOffset = freshFunction.codeAddress - freshImage.address;
 	const previousText = previousImage.bytes.subarray(previousOffset, previousOffset + previousFunction.codeByteCount);
 	const freshText = freshImage.bytes.subarray(freshOffset, freshOffset + freshFunction.codeByteCount);
-	const previousCalls = previousSymbols.metadata.softwareFramesByFunction[previousIndex]?.calls;
-	const freshCalls = freshSymbols.metadata.softwareFramesByFunction[freshIndex]?.calls;
-	let callIndex = 0;
+	const previousFrame = previousSymbols.metadata.softwareFramesByFunction[previousIndex];
+	const freshFrame = freshSymbols.metadata.softwareFramesByFunction[freshIndex];
+	const previousCalls = previousFrame?.calls, freshCalls = freshFrame?.calls;
+	const previousTails = previousFrame?.tailJumps, freshTails = freshFrame?.tailJumps;
+	if ((previousTails?.length ?? 0) !== (freshTails?.length ?? 0)) return false;
+	let callIndex = 0, jumpIndex = 0;
 	for (let word = 0; word < previousFunction.codeByteCount / INSTRUCTION_BYTES; ++word) {
 		const call = previousCalls?.[callIndex];
 		if (call !== undefined && word === call.wordOffset) {
@@ -181,6 +184,15 @@ function functionCodeMatches(
 				word = tail;
 				continue;
 			}
+		}
+		const jump = previousTails?.[jumpIndex];
+		if (jump !== undefined && word === jump.wordOffset) {
+			const fresh = freshTails![jumpIndex++];
+			if (word !== fresh.wordOffset || previousSymbols.metadata.functionIds[jump.targetFunction]
+				!== freshSymbols.metadata.functionIds[fresh.targetFunction]) return false;
+			// Both words belong to this same relocated, link-preserving JMP.
+			++word;
+			continue;
 		}
 		if (readInstructionWord(previousText, word) !== readInstructionWord(freshText, word)) return false;
 	}
