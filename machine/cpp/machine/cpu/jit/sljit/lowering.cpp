@@ -60,6 +60,15 @@ NativeRegisterCache::Operand NativeLowering::readTyped(
 	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_TO_F32, floatScratch, wordScratch);
 	return {floatScratch, tag, -1};
 }
+
+std::pair<sljit_s32, sljit_sw> NativeLowering::readIntegerOperand(int selector, sljit_s32 scratch) {
+	if (selector < 0) {
+		if (const auto word = nativeImageConstant(m_constants, -selector - 1))
+			return {SLJIT_IMM, toSignedWord(valuePayload(*word))};
+	}
+	return {readTyped(selector, ValueTag::Integer, scratch).reg, 0};
+}
+
 void NativeLowering::emitPoolWord(u32 index, sljit_s32 word) {
 	auto* c = m_compiler;
 	if (const auto constant = nativeImageConstant(m_constants, index)) {

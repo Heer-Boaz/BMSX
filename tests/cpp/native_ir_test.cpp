@@ -604,7 +604,7 @@ void undefinedMoveKindDoesNotBecomeANumericWordMove() {
 	move.op = static_cast<u8>(OpCode::MOV);
 	move.a = 2;
 	move.b = 1;
-	move.c = 3;
+	move.c = MAX_EXT_REGISTER_BC;
 	move.width = 2;
 	move.baseCycles = BASE_CYCLES[move.op];
 	const std::array instructions{NativeBlockInstruction{&move, 0x4100}};

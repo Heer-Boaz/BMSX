@@ -35,15 +35,8 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		}
 	} else switch (std::get<NativeComparisonStrategy>(comparison.strategy)) {
 	case NativeComparisonStrategy::Word: {
-		const auto word = [&](int selector, sljit_s32 scratch) -> std::pair<sljit_s32, sljit_sw> {
-			if (selector < 0) {
-				if (const auto constant = nativeImageConstant(m_constants, -1 - selector))
-					return {SLJIT_IMM, static_cast<i32>(valuePayload(*constant))};
-			}
-			return {readTyped(selector, ValueTag::Integer, scratch).reg, 0};
-		};
-		const auto [lhs, lhsArg] = word(comparison.left, SLJIT_R0);
-		const auto [rhs, rhsArg] = word(comparison.right, SLJIT_R1);
+		const auto [lhs, lhsArg] = readIntegerOperand(comparison.left, SLJIT_R0);
+		const auto [rhs, rhsArg] = readIntegerOperand(comparison.right, SLJIT_R1);
 		matched = sljit_emit_cmp(m_compiler, icmp, lhs, lhsArg, rhs, rhsArg);
 		break;
 	}

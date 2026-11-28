@@ -76,6 +76,7 @@ private:
 	void emitRawStore(int guest, sljit_s32 word, sljit_s32 tag, NativeOperandDemand demand = NativeOperandDemand::None);
 	NativeRegisterCache::Operand readTyped(
 		int selector, ValueTag tag, sljit_s32 wordScratch = SLJIT_R0, sljit_s32 floatScratch = SLJIT_FR0);
+	std::pair<sljit_s32, sljit_sw> readIntegerOperand(int selector, sljit_s32 scratch);
 	enum class Charge : u8 { Pending, Paid };
 	struct SemanticExit {
 		NativeBlockExitSite* site;

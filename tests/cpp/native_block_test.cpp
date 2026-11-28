@@ -867,6 +867,44 @@ void arithmeticAndWordDatapaths() {
 	}
 }
 
+void immutableIntegerOperandsKeepWordSemantics() {
+	constexpr i32 initial = -0x123456;
+	const std::array wordOps{OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::BAND, OpCode::BOR, OpCode::BXOR,
+		OpCode::SHL, OpCode::SHR};
+	for (const auto op : wordOps) {
+		for (const auto immediate : {INT32_MIN, -32, -31, -1, 0, 1, 31, 32, INT32_MAX}) {
+			const std::array constants{NativeImageConstant{0, valueInteger(immediate)},
+				NativeImageConstant{1, valueInteger(initial)}};
+			const auto pool = test::valueBank(std::array{constants[0].value, constants[1].value});
+			const auto spec = NativeCompileSpecializations{.imageConstants = constants};
+			for (const auto [left, right] : std::array<std::pair<i16, i16>, 3>{{{0, -1}, {-1, 0}, {-2, -1}}}) {
+				std::array<DecodedInstruction, 2> decoded{};
+				decoded[0].op = static_cast<u8>(OpCode::KSMI);
+				decoded[0].width = 2;
+				decoded[0].baseCycles = BASE_CYCLES[decoded[0].op];
+				decoded[0].setSbx(initial);
+				decoded[1].op = static_cast<u8>(op);
+				decoded[1].width = 2;
+				decoded[1].baseCycles = BASE_CYCLES[decoded[1].op];
+				decoded[1].b = left;
+				decoded[1].c = right;
+				const std::array instructions{NativeBlockInstruction{&decoded[0], 0x1000u},
+					NativeBlockInstruction{&decoded[1], 0x1008u}};
+				const std::array sources{NativeBlockSource{instructions}};
+				const auto region = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()), {}, spec);
+				auto& block = *region.front();
+				auto registers = test::valueBank(std::array{valueNil()});
+				NativeBlockRunState state{.constants = pool.view(), .remainingCycles = block.terminal.cycles};
+				const auto* exit = block.run(registers.view(), state);
+				require(exit == &block.terminal && state.remainingCycles == 0
+					&& registers.get(0) == evaluate(op, valueInteger(left == -1 ? immediate : initial),
+						valueInteger(right == -1 ? immediate : initial)),
+					"literal and register integer lanes produce the same charged, tagged word");
+			}
+		}
+	}
+}
+
 void provenOperandFaultNeedsOnlyItsOwnGrant() {
 	constexpr u32 pc = 0x1300;
 	for (const auto op : {OpCode::ADD, OpCode::MOV}) {
@@ -1477,6 +1515,7 @@ int main() {
 		linkedSlowExitPublishesTheWholeExecutedChain();
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
+		immutableIntegerOperandsKeepWordSemantics();
 		provenOperandFaultNeedsOnlyItsOwnGrant();
 		wordProducerFactsPreserveRawValuesAndOverwrites();
 		movesAndLiteralsPreserveRawValues();
