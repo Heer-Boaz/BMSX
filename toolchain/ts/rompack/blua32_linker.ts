@@ -85,6 +85,7 @@ import type {
 	ProgramBiosFunctionConstReloc,
 	ProgramConstValueReloc,
 	ProgramCartObjectImage,
+	ProgramObjectImage,
 	ProgramDataSymbol,
 	ProgramRodataSymbol,
 	ProgramStorageSymbol,
@@ -573,12 +574,14 @@ function localFunctionSlotsBySymbol(
 	return slots;
 }
 
-function planCartCodeFunctionLoads(
-	object: ProgramCartObjectImage,
+function planNamedCodeFunctionLoads(
+	object: ProgramObjectImage,
 	functionLayout: FunctionRecordLayout,
 	slotBySymbol: ReadonlyMap<string, number>,
+	directCode: Blua32CodeFunctionPlan | undefined,
 ): Blua32CodeFunctionPlan | undefined {
-	const targets = new Set<number>(), loads = new Map<number, number>(), unencodable = new Set<number>();
+	const targets = new Set(directCode?.targets), loads = new Map(directCode?.loads);
+	const namedLoads = new Map<number, number>(), unencodable = new Set<number>();
 	const { code, protos } = object.sections.text;
 	for (const reloc of object.link.constRelocs) {
 		// Only the dependency-analyzed named exports have symbol references.
@@ -589,15 +592,19 @@ function planCartCodeFunctionLoads(
 		const proto = protos[functionLayout.protoIndexBySlot[slot]];
 		if (!proto.staticClosure || proto.upvalueDescs.length !== 0) continue;
 		const prefix = readInstructionWord(code, reloc.wordIndex - 1);
-		if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) unencodable.add(slot);
-		targets.add(slot);
-		loads.set(reloc.wordIndex, slot);
+		if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) {
+			unencodable.add(slot);
+		} else {
+			namedLoads.set(reloc.wordIndex, slot);
+		}
 	}
 	// No mixture of code references and Closure materializations for one
 	// symbol. CLOSURE can name a wider destination than LOADK.
-	if (unencodable.size !== 0) {
-		for (const slot of unencodable) targets.delete(slot);
-		for (const [word, slot] of loads) if (unencodable.has(slot)) loads.delete(word);
+	for (const [word, slot] of namedLoads) {
+		if (!unencodable.has(slot)) {
+			targets.add(slot);
+			loads.set(word, slot);
+		}
 	}
 	return targets.size === 0 ? undefined : { targets, loads };
 }
@@ -648,7 +655,7 @@ function rewriteImageRelocation(
 function rewriteImageRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramImageConstReloc>,
-	codeLoads: ReadonlyMap<number, number> | undefined,
+	codeLoads: ReadonlyMap<number, number>,
 	localFunctionSlotBySymbol: ReadonlyMap<string, number>,
 	functionAddresses: ReadonlyArray<number>,
 	localModuleAddressByPath: ReadonlyMap<string, number>,
@@ -656,7 +663,7 @@ function rewriteImageRelocations(
 	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	for (const reloc of relocs) {
-		if (codeLoads?.has(reloc.wordIndex)) continue;
+		if (codeLoads.has(reloc.wordIndex)) continue;
 		rewriteImageRelocation(
 			code,
 			reloc,
@@ -696,9 +703,10 @@ function rewriteBiosFunctionRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramBiosFunctionConstReloc>,
 	imports: ReadonlyArray<Blua32BiosFunctionImport>,
+	codeLoads: ReadonlyMap<number, number>,
 ): void {
-	for (let index = 0; index < relocs.length; index += 1) {
-		const reloc = relocs[index];
+	for (const reloc of relocs) {
+		if (codeLoads.has(reloc.wordIndex)) continue;
 		rewriteResolvedABx(
 			code,
 			reloc.wordIndex,
@@ -748,13 +756,30 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const localFunctionSlotById = new Map<string, number>();
 	for (const [slot, id] of functionLayout.functionIds.entries()) localFunctionSlotById.set(id, slot);
 	const localFunctionSlotBySymbol = localFunctionSlotsBySymbol(rodata.moduleExports, object.link.symbols, localFunctionSlotById);
-	const codeFunctions = input.domain === 'system'
-		? input.codeFunctions : planCartCodeFunctionLoads(input.object, functionLayout, localFunctionSlotBySymbol);
+	const codeFunctions = planNamedCodeFunctionLoads(object, functionLayout, localFunctionSlotBySymbol,
+		input.domain === 'system' ? input.codeFunctions : undefined);
+	const codeLoads = new Map<number, number>();
 	const codeConstantSlots = new Map<number, number>();
+	const biosCodeConstantSlots = new Map<number, number>();
 	if (codeFunctions !== undefined) {
 		const used = new Set(codeFunctions.loads.values());
 		for (const slot of codeFunctions.targets) {
 			if (used.has(slot)) codeConstantSlots.set(slot, rodata.constPool.length + codeConstantSlots.size);
+		}
+		for (const [word, slot] of codeFunctions.loads) codeLoads.set(word, codeConstantSlots.get(slot)!);
+	}
+	if (input.domain === 'cart') {
+		for (const reloc of input.object.link.biosFunctionConstRelocs) {
+			// A wide destination uses CLOSURE's larger register encoding.
+			// The published System target still yields the same CodeFunction.
+			const prefix = readInstructionWord(text.code, reloc.wordIndex - 1);
+			if ((prefix & CLOSURE_DESTINATION_EXT_MASK) !== 0) continue;
+			let constant = biosCodeConstantSlots.get(reloc.importIndex);
+			if (constant === undefined) {
+				constant = rodata.constPool.length + codeConstantSlots.size + biosCodeConstantSlots.size;
+				biosCodeConstantSlots.set(reloc.importIndex, constant);
+			}
+			codeLoads.set(reloc.wordIndex, constant);
 		}
 	}
 
@@ -801,7 +826,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			: text.protos[protoIndex].upvalueDescs.length;
 		upvalueByteCount += upvalueCount * BLUA32_UPVALUE_RECORD_SIZE;
 	}
-	const constantBytes = (rodata.constPool.length + codeConstantSlots.size) * BLUA32_CONSTANT_RECORD_SIZE;
+	const constantBytes = (rodata.constPool.length + codeConstantSlots.size + biosCodeConstantSlots.size) * BLUA32_CONSTANT_RECORD_SIZE;
 	const globalNameBytes = globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const systemGlobalNameBytes = systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const tableBytes = upvalueByteCount + constantBytes + globalNameBytes + systemGlobalNameBytes;
@@ -874,7 +899,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	rewriteImageRelocations(
 		code,
 		input.object.link.constRelocs,
-		codeFunctions?.loads,
+		codeLoads,
 		localFunctionSlotBySymbol,
 		functionAddresses,
 		localModuleAddressByPath,
@@ -886,12 +911,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			code,
 			input.object.link.biosFunctionConstRelocs,
 			input.biosImports,
+			codeLoads,
 		);
 	}
-	if (codeFunctions !== undefined) {
-		for (const [wordIndex, target] of codeFunctions.loads)
-			rewriteResolvedABx(code, wordIndex, OpCode.LOADK, codeConstantSlots.get(target)!);
-	}
+	for (const [wordIndex, constant] of codeLoads) rewriteResolvedABx(code, wordIndex, OpCode.LOADK, constant);
 
 	const rodataAddress = input.loadAddress + rodataOffset;
 	const dataLoadAddress = input.loadAddress + dataLoadOffset;
@@ -910,6 +933,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	);
 	for (const target of codeConstantSlots.keys())
 		constants.push({ kind: 'code_function', word: functionAddresses[target] });
+	if (input.domain === 'cart') {
+		for (const target of biosCodeConstantSlots.keys())
+			constants.push({ kind: 'code_function', word: input.biosImports[target].functionAddress });
+	}
 	const rodataByteCount = rodata.bytes.byteLength;
 	const rodataBytes = rodata.bytes.slice();
 	for (let index = 0; index < object.link.rodataConstRelocs.length; index += 1) {
@@ -952,6 +979,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		const upvalues = currentProto === null
 			? input.previous!.image.functions[slot].upvalues
 			: currentProto.upvalueDescs;
+		const publicCode = input.domain === 'system' && slot < input.biosExports.length;
+		if (publicCode && (!record.staticClosure || upvalues.length !== 0))
+			throw new Error(`BIOS public function '${functionLayout.functionIds[slot]}' must be immutable and capture-free.`);
 		const recordOffset = functionTableOffset + slot * BLUA32_FUNCTION_RECORD_SIZE;
 		writeLE32(
 			bytes,
@@ -968,7 +998,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			recordOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
 			(record.isVararg ? BLUA32_FUNCTION_VARARG : 0)
 				| (record.staticClosure ? BLUA32_FUNCTION_STATIC : 0)
-				| (codeFunctions?.targets.has(slot) ? BLUA32_FUNCTION_CODE : 0),
+				| (publicCode || codeFunctions?.targets.has(slot) ? BLUA32_FUNCTION_CODE : 0),
 		);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, input.loadAddress + upvalueOffset);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, upvalues.length);
@@ -1071,8 +1101,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		const resumePoints = input.metadata.resumePointsByProto[protoIndex];
 		const firstWord = text.protos[protoIndex].entryPC / INSTRUCTION_BYTES;
-		resumePointsByFunction[slot] = codeFunctions === undefined ? resumePoints : resumePoints.map(point =>
-			point.op === OpCode.CLOSURE && codeFunctions.loads.has(firstWord + point.wordOffset + 1)
+		resumePointsByFunction[slot] = codeLoads.size === 0 ? resumePoints : resumePoints.map(point =>
+			point.op === OpCode.CLOSURE && codeLoads.has(firstWord + point.wordOffset + 1)
 				? { ...point, op: OpCode.LOADK } : point);
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];

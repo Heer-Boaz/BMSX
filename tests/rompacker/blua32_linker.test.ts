@@ -27,6 +27,7 @@ import type {
 	Proto,
 } from '../../toolchain/ts/lua/compiler/program';
 import {
+	BLUA32_FUNCTION_CODE,
 	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_STRING_NEXT_OFFSET,
 	BLUA32_STRING_RECORD_HEADER_SIZE,
@@ -528,7 +529,7 @@ test('optimizer instruction replacement discards obsolete symbolic relocations',
 	assert.equal(exportLoad.symbolicReloc, undefined);
 });
 
-test('BLua32 linker rewrites local and explicit BIOS-import closure operands to physical addresses', () => {
+test('BLua32 linker preserves a local CLOSURE operand and binds a public BIOS call as immutable code', () => {
 	const system = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 1 },
@@ -558,6 +559,7 @@ test('BLua32 linker rewrites local and explicit BIOS-import closure operands to 
 		}],
 	);
 	const importedFunctionAddress = linkedSystem.biosImports.functions[0].functionAddress;
+	assert.ok((linkedSystem.layout.functions[0].flags & BLUA32_FUNCTION_CODE) !== 0);
 	assert.equal(
 		decodeBx(linkedSystem.layout.textBytes, 1),
 		importedFunctionAddress >> 4,
@@ -585,12 +587,10 @@ test('BLua32 linker rewrites local and explicit BIOS-import closure operands to 
 	);
 	assert.equal(
 		(readInstructionWord(linkedCart.layout.textBytes, 1) >>> 18) & 0x3f,
-		OpCode.CLOSURE,
+		OpCode.LOADK,
 	);
-	assert.equal(
-		decodeBx(linkedCart.layout.textBytes, 1),
-		importedFunctionAddress >> 4,
-	);
+	assert.deepEqual(linkedCart.layout.constants[decodeBx(linkedCart.layout.textBytes, 1)],
+		{ kind: 'code_function', word: importedFunctionAddress });
 });
 
 test('system init vector pin follows public BIOS export pins without shifting their ABI', () => {

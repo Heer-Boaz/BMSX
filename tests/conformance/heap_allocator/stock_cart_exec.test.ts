@@ -61,6 +61,7 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const payload = 'socket one cartridge literal';
 			const clampPath = 'cartlib/util/clamp';
 			const clampSource = readFileSync(clampPath + '.lua', 'utf8');
+			const biosImports = readBlua32BiosImports(system);
 			const source = `bss report: word[0x2000]
 selected_payload = '${payload}'
 report[0] = 37
@@ -120,14 +121,16 @@ local function make_uncaptured()
 end
 local a, b = make_uncaptured(), make_uncaptured()
 report[16] = a ~= b and a() + b() or 0
+local sin<const> = require('math/sin')
+report[17] = sin(0x40000000)
 mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
 			const cart = (entrySource: string, path: string) => {
 				const program = compileLuaChunkToProgram(parseLuaChunk(entrySource, path), [
 					{ path: clampPath, source: clampSource, chunk: parseLuaChunk(clampSource, clampPath + '.lua') },
-				], { entrySource, optLevel });
-				return linkCartBlua32Image(readBlua32BiosImports(system), encodeCompiledProgramObject(program), program.metadata,
+				], { entrySource, optLevel, biosFunctions: biosImports.functions });
+				return linkCartBlua32Image(biosImports, encodeCompiledProgramObject(program), program.metadata,
 					CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
 			};
 			const slot0 = cart(source.replace('0x2000', '0x4000').replace(payload, 'unselected cartridge'), 'nonbootable-slot0.lua');
@@ -139,22 +142,29 @@ halt_until_irq
 			assert.equal(immutable.length, 1, 'ordinary lexical factories are not immutable cartridge symbols');
 			const literal = slot1.layout.constants.findIndex(c => typeof c === 'object' && c !== null
 				&& c.kind === 'code_function' && c.word === immutable[0].address);
+			const systemLiteral = slot1.layout.constants.findIndex(c => typeof c === 'object' && c !== null
+				&& c.kind === 'code_function' && c.word === biosImports.functions[0].functionAddress);
 			assert.ok(literal >= 0);
+			assert.ok(systemLiteral >= 0);
+			assert.notEqual(literal, systemLiteral);
 			const firstPc = slot1.layout.header.textAddress;
 			const lastPc = firstPc + slot1.layout.textBytes.length;
-			let bindings = 0, staticLoads = 0;
+			let bindings = 0, staticLoads = 0, systemLoads = 0;
 			for (let pc = firstPc; pc < lastPc;) {
 				const instruction = decodeBlua32InstructionAtPc(selected, CART_ROM_BASE, pc);
 				if (instruction.op === OpCode.CLOSURE) {
 					assert.equal(captured.has(instruction.bx * BLUA32_FUNCTION_ALIGNMENT), false);
 					assert.notEqual(instruction.bx * BLUA32_FUNCTION_ALIGNMENT, immutable[0].address);
+					assert.notEqual(instruction.bx * BLUA32_FUNCTION_ALIGNMENT, biosImports.functions[0].functionAddress);
 				}
 				if (instruction.op === OpCode.LOADK && instruction.bx === literal) ++staticLoads;
+				if (instruction.op === OpCode.LOADK && instruction.bx === systemLiteral) ++systemLoads;
 				if (instruction.op === OpCode.SVC && instruction.b === 2) bindings += 1;
 				pc = instruction.pc + INSTRUCTION_BYTES;
 			}
 			assert.equal(bindings, captured.size);
 			assert.equal(staticLoads, 2, 'both ordinary static calls share one immutable literal');
+			assert.equal(systemLoads, 1, 'the selected cartridge calls the public System export directly');
 			// Socket 0 has a distinct operand record but no startup vector.
 			writeLE32(other, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, 0);
 			const otherPath = join(output, 'slot0.rom'), selectedPath = join(output, 'slot1.rom');
@@ -223,7 +233,7 @@ halt_until_irq
 			const { bssAddress, bssByteCount } = slot1.layout.header;
 			assert.equal(memory.readMappedU32LE(bssAddress), 37);
 			assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
-			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1, 2027, 1010303, 74];
+			const expectedReport = [51, 89, 144, 256, 1, 1, 1, 144, 1, 233, 347, 1, 2027, 1010303, 74, 65536];
 			for (let slot = 0; slot < expectedReport.length; ++slot)
 				assert.equal(memory.readMappedU32LE(bssAddress + 4 * (slot + 2)), expectedReport[slot], `report word ${slot + 2}`);
 			const bank = nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
