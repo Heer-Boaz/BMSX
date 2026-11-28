@@ -11,14 +11,50 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { ValueTag, valueTag, valuePayload, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, ValueMoveKind, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { observeRegisterStores } from '../helpers/cpu_execution';
 import { allocateThreadRecordReference, resizeThreadStackReference } from '../helpers/thread_allocation_reference';
+
+test('generated register loads follow a rebound nonzero RAM window on both physical planes', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.MOV, 0, 12, ValueMoveKind.Tag);
+	writeInstruction(text, 1, OpCode.MOV, 1, 12, ValueMoveKind.Payload);
+	writeInstruction(text, 2, OpCode.MOV, 2, 3, ValueMoveKind.ReadIndexed);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 13 }] }, 256);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
+	const frame = cpu.rootThread.frameAtDepth(0);
+	frame.registers.setInteger(3, 9);
+	cpu.runUntilDepth(0, 1024);
+	const pc = image.image.functions[0].codeAddress, page = frame.decodedPage!;
+	const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+	const storage = new ValueSlots(0), window = new ValueSlots(0);
+	const first = image.image.header.bssAddress - RAM_BASE;
+	const grant = 3 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];
+	for (const [delta, base, direct, index, selected] of [
+		[0, 4, valueFloatBits(0x80000000), 9, valueFromTag(ValueTag.False, 37)],
+		[128, 6, valueInteger(-29), 10, valueFloatBits(0xffc01234)],
+	] as const) {
+		storage.bindRam(memory, first + delta, 24);
+		window.rebind(storage, base, 13);
+		window.set(12, direct);
+		window.setInteger(3, index);
+		window.set(index, selected);
+		const state = { remainingCycles: grant, registerTop: 13, effectiveAddress: 0 };
+		const exit = block.region.exits[block.region.execute(window, frame.executionImage.constWords, page, frame, block.entry, state)];
+		assert.equal(exit.nextPc, pc);
+		assert.equal(state.remainingCycles, 0);
+		for (const [slot, result] of [valueInteger(valueTag(direct)), valueInteger(valuePayload(direct) | 0), selected].entries()) {
+			assert.equal(memory.readRamRecordWord(window.ramOffset() + slot * 4), valuePayload(result));
+			assert.equal(memory.readRamRecordByte(window.tagRamOffset() + slot), valueTag(result));
+		}
+	}
+});
 
 test('both open and closed upvalue paths define output-only region bindings', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

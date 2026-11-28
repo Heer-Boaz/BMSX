@@ -40,6 +40,8 @@ export class JavaScriptRegisterCache {
 	private readonly locals = new Map<number, LocalValue>();
 	private readonly published = new Set<number>();
 	public localCount = 0;
+	public readsTagPlane = false;
+	public readsPayloadPlane = false;
 	public readonly residents: Map<number, boolean>;
 
 	public constructor(residents: ReadonlyMap<number, boolean>,
@@ -47,13 +49,21 @@ export class JavaScriptRegisterCache {
 		private readonly constants: Blua32ExecutionImage) {
 		this.residents = new Map(residents);
 	}
+	public frameTag(selector: number | string): string {
+		this.readsTagPlane = true;
+		return selector === 0 ? 'RT[TB]' : `RT[TB+${selector}]`;
+	}
+	public framePayload(selector: number | string): string {
+		this.readsPayloadPlane = true;
+		return selector === 0 ? 'RW[WB]' : `RW[WB+${selector}]`;
+	}
 	public tagOperand(selector: number): string {
 		if (selector < 0) return `${this.constants.constTags[-selector - 1]}`;
-		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `y${selector}` : `r.t(${selector})`);
+		return this.locals.get(selector)?.tag ?? (this.residents.has(selector) ? `y${selector}` : this.frameTag(selector));
 	}
 	public wordOperand(selector: number): string {
 		if (selector < 0) return `${this.constants.constWords[-selector - 1]}`;
-		return this.locals.get(selector)?.word ?? (this.residents.has(selector) ? `z${selector}` : `r.p(${selector})`);
+		return this.locals.get(selector)?.word ?? (this.residents.has(selector) ? `z${selector}` : this.framePayload(selector));
 	}
 	/** Exact int/f32 value for comparisons; arithmetic rounds Integer inputs separately. */
 	public numberOperand(selector: number): string {
@@ -89,13 +99,14 @@ export class JavaScriptRegisterCache {
 		return register === source ? '' : this.writeEncoded(register, this.tagOperand(source), this.wordOperand(source));
 	}
 	public copyFrom(register: number, bank: string, source: string): string {
+		if (bank === 'r') return this.writeEncoded(register, this.frameTag(source), this.framePayload(source));
 		return this.writeEncoded(register, `${bank}.t(${source})`, `${bank}.p(${source})`);
 	}
 	public reloadRange(first: number, end: number): string {
 		let source = '';
 		for (const register of this.residents.keys()) if (register >= first && register < end) {
 			this.locals.delete(register);
-			source += `y${register}=r.t(${register});z${register}=r.p(${register});`;
+			source += `y${register}=${this.frameTag(register)};z${register}=${this.framePayload(register)};`;
 			this.published.add(register);
 		}
 		return source;
@@ -112,7 +123,7 @@ export class JavaScriptRegisterCache {
 		for (const [register, written] of this.residents) if (written && target.get(register) !== true && !this.published.has(register))
 			source += `r.s(${register},y${register},z${register});`;
 		for (const register of target.keys()) if (!this.residents.has(register))
-			source += `y${register}=r.t(${register});z${register}=r.p(${register});`;
+			source += `y${register}=${this.frameTag(register)};z${register}=${this.framePayload(register)};`;
 		return source;
 	}
 	public discard(register: number): void { this.locals.delete(register); this.published.delete(register); }

@@ -95,8 +95,9 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 	const prologues = new Map<string, number[]>();
 	for (let index = 0; index < residents.length; ++index) {
 		let load = '';
+		const registers = blocks[index].registers;
 		for (const register of [...residents[index].keys()].sort((left, right) => left - right))
-			load += `y${register}=r.t(${register});z${register}=r.p(${register});`;
+			load += `y${register}=${registers.frameTag(register)};z${register}=${registers.framePayload(register)};`;
 		const group = prologues.get(load);
 		if (group === undefined) prologues.set(load, [index]);
 		else group.push(index);
@@ -133,6 +134,10 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 	}
 	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
 		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');
+	// The admitted frame has one contiguous view per lane. Keep those
+	// same views through the region; normal exits still publish via r.s.
+	if (blocks.some(block => block.registers.readsTagPlane)) source[1] += 'const RT=r.tagPlane,TB=r.tagRamOffset();';
+	if (blocks.some(block => block.registers.readsPayloadPlane)) source[1] += 'const RW=r.payloadPlane,WB=r.ramOffset()>>>2;';
 	// The only string literal in generated code is the directive, so template
 	// indentation carries no meaning.
 	const functionSource = source.join('\n').replace(/\n\s+/g, '\n');

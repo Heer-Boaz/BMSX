@@ -33,6 +33,9 @@ export class ValueSlots implements ValueWriteTarget {
 	public byteLength(): number { return this.size * 5; }
 	public ramOffset(): number { return this.wordBase * 4; }
 	public tagRamOffset(): number { return this.tagBase; }
+	// Admitted non-mirrored execution uses the bound physical planes.
+	public get payloadPlane(): ArrayLike<number> { return this.words; }
+	public get tagPlane(): ArrayLike<number> { return this.tags; }
 	public writeWatched(index: number): boolean {
 		const watches = this.ram!.ramWriteWatches();
 		return watches.anyWatched((this.wordBase + index) * 4, 4) || watches.anyWatched(this.tagBase + index, 1);
