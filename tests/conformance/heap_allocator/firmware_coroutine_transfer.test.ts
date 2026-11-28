@@ -1,4 +1,3 @@
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -7,7 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { FrameField, FRAME_WINDOW_MASK } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
@@ -20,7 +19,7 @@ import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `
 local co<const> = require('coroutine')
@@ -44,9 +43,6 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	const tsState = join(dir, 'ts.state'), cppState = join(dir, 'cpp.state');
 	writeFileSync(romPath, rom);
 	const addressOf = (id: string) => linked.symbols.functionAddresses[linked.symbols.metadata.functionIds.indexOf(id)];
-	const vector = linked.symbols.functionAddresses[linked.symbols.metadata.functionIds.findIndex(id =>
-		id.startsWith('module:kernel/exception_bridge/') && id.endsWith('|constant|enter'))];
-	const vectorPc = linked.layout.functions.find(fn => fn.address === vector)!.codeAddress;
 	const resume = addressOf('module:kernel/coroutine_resume/module');
 	const yieldWrapper = addressOf('module:kernel/coroutine_yield/module');
 	const entry = addressOf('module:kernel/coroutine_entry/module');
@@ -68,6 +64,8 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	}
 	for (let i = 0; !cpu.isHaltedUntilIrq() && i < 2048; ++i) grant(runtime, 1024);
 	assert.ok(cpu.isHaltedUntilIrq());
+	const vector = linked.layout.functions.find(fn => fn.address === cpu.captureRuntimeState().systemVectorWord);
+	assert.ok(vector, 'reset installed a System exception vector');
 	cpu.clearHaltUntilIrq();
 	commands.push('h');
 
@@ -75,7 +73,7 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	for (let i = 0; result !== RunResult.Halted && i < 65536; ++i) {
 		result = grant(runtime, 1);
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL
-			|| cpu.activeThread.currentFrame?.pc !== vectorPc) continue;
+			|| cpu.activeThread.currentFrame?.pc !== vector.codeAddress) continue;
 		const interrupted = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		const depth = cpu.readThreadFrameDepth(interrupted), frame = depth - 1;
 		const fn = cpu.readThreadFrameWord(interrupted, frame, FrameField.Function);
@@ -103,11 +101,13 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	function completed(rt: Runtime, result: RunResult) {
 		assert.equal(result, RunResult.Halted);
 		assert.equal(rt.machine.cpu.captureRuntimeState().hardHalted, false);
-		const values = rt.readCompletionValues(), diagnostic = nativeHeapReference(rt.machine.cpu).stringPool.find('cannot resume non-suspended coroutine')!;
+		const values = rt.readCompletionValues(), diagnostic = values[10];
+		assert.equal(valueTag(diagnostic), ValueTag.String);
+		assert.equal(rt.machine.cpu.stringPool.toString(valuePayload(diagnostic)), 'cannot resume non-suspended coroutine');
 		assert.deepEqual(values, [
 			valueBool(true), valueInteger(42), valueNil(), valueInteger(55),
 			valueBool(true), valueInteger(77), valueBool(false), valueNil(), valueInteger(88),
-			valueBool(false), valueString(diagnostic),
+			valueBool(false), diagnostic,
 		]);
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	}

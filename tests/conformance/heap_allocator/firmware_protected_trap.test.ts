@@ -1,4 +1,3 @@
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,7 +7,7 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueFloatBits, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueFloatBits, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
@@ -20,7 +19,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 for (const optLevel of [0, 3] as const) test(`BIOS catches ordinary protected traps and returns exact Lua values at O${optLevel}`, t => {
@@ -44,9 +43,6 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 	good, first, absent, last, outer, inner, nested, unwrapped, raw
 `, optLevel);
 	const rom = writeTestBlua32Rom(linked);
-	const vector = linked.layout.functions[linked.symbols.metadata.functionIds.findIndex(id =>
-		id.startsWith('module:kernel/exception_bridge/') && id.endsWith('|constant|enter'))];
-	assert.ok(vector);
 	const landing = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_handler/module')];
 	assert.ok(landing);
 	const path = mkdtempSync(join(tmpdir(), 'bmsx-protected-trap-'));
@@ -77,6 +73,8 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 	for (let i = 0; i < 1024 && !cpu.isHaltedUntilIrq(); ++i) grant(rt, 1024);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.fixedInterruptActive(), false);
+	const vector = linked.layout.functions.find(fn => fn.address === cpu.captureRuntimeState().systemVectorWord);
+	assert.ok(vector, 'reset installed a System exception vector');
 	const root = cpu.rootThread.address;
 	cpu.clearHaltUntilIrq();
 	commands.push('h');
@@ -136,16 +134,22 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		assert.equal(state, RunResult.Halted);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
+		const result = machine.readCompletionValues();
+		const invalid = result[3], handlerFailure = result[8];
+		assert.equal(valueTag(invalid), ValueTag.String);
+		assert.equal(valueTag(handlerFailure), ValueTag.String);
+		assert.equal(cpu.stringPool.toString(valuePayload(invalid)), 'Attempted to call a non-function value.');
+		assert.equal(cpu.stringPool.toString(valuePayload(handlerFailure)), 'error in error handling');
 		const values = [
 			valueBool(false), valueNil(),
-			valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('Attempted to call a non-function value.')!),
+			valueBool(false), invalid,
 			valueBool(false), bits, valueNil(),
-			valueBool(false), valueString(nativeHeapReference(cpu).stringPool.find('error in error handling')!),
+			valueBool(false), handlerFailure,
 			valueBool(true), valueInteger(11), valueNil(), valueInteger(17),
 			valueBool(true), valueBool(false), valueInteger(75),
 			valueBool(false), valueInteger(51),
 		];
-		assert.deepEqual(machine.readCompletionValues(), values);
+		assert.deepEqual(result, values);
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	}
 	completed(rt, outcome);
