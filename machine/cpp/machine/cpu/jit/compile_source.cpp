@@ -98,8 +98,9 @@ NativeCompilationProfile CPU::readNativeCompilationProfile() const {
 	return profile;
 }
 
-void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
+void CPU::prepareNativeBlock(CallFrame& frame, Blua32ExecutionImage& image, DecodedInstructionPage& page,
 	u32 pc, MappedBusSignals busSignals) {
+	const u32 function = &image == frame.executionImage ? frame.readControl(FrameField::Function) : 0u;
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	publishNativeCompilation();
 	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -111,15 +112,15 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 		// A changed dependency must be eligible for a fresh capture even
 		// when the original root is still being compiled.
 		if (!(job.pageCount && !job.invalidated
-			&& job.image == frame.executionImage && job.rootPc == pc
+			&& job.image == &image && job.rootPc == pc
 			&& job.slot == slot)) {
-			m_nativeDemand.enqueue({frame.executionImage, &page, frame.readControl(FrameField::Function), pc, slot});
+			m_nativeDemand.enqueue({&image, &page, function, pc, slot});
 		}
 		serviceNativeDemand();
 		return;
 	}
 #endif
-	compileNativeRoot(*frame.executionImage, frame.readControl(FrameField::Function), page, pc, busSignals);
+	compileNativeRoot(image, function, page, pc, busSignals);
 }
 
 void CPU::compileNativeRoot(Blua32ExecutionImage& image, u32 functionAddress, DecodedInstructionPage& page,

@@ -20,7 +20,7 @@ import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { GC_ROOT_BANKS_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, CPU_FIXED_VALUE_END, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -33,7 +33,8 @@ const word = INSTRUCTION_BYTES, valueSlots = 16, window = 8;
 const statusA = 0x41, statusB = 0x81;
 const markerA = 91, markerB = 173;
 const contexts = [CPU_FIXED_STACK_BASE - 0x4000, CPU_FIXED_STACK_BASE - 0x3000];
-const privateWord = contexts[0] + 0x300;
+const dataWord = contexts[0] + 0x300;
+const controlWord = CPU_FIXED_VALUE_END;
 const frameBlock = (context: number) => context + 0x100;
 const valueBlock = (context: number) => context + 0x200;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -91,7 +92,8 @@ function assemble(user: boolean) {
 		frame(frameBlock(contexts[1]), 2, 0, 0, 0);
 		frame(frameBlock(contexts[1]) + FRAME_CONTROL_BYTES, 3, 1, window, 5);
 		ownedValue(contexts[1], window + 4, markerB);
-		store(privateWord, markerA);
+		store(dataWord, markerA);
+		store(controlWord, markerA);
 		store(IO_IRQ_MASK, IRQ_VBLANK);
 		load(0, contexts[0]);
 		instructions.push([OpCode.MTC0, 0, COP0_CONTEXT, 0]);
@@ -118,12 +120,16 @@ function assemble(user: boolean) {
 			instructions.push([OpCode.MFC0, 4, COP0_CURRENT, 0]);
 			load(0, contexts[0]);
 			instructions.push([OpCode.MTC0, 0, COP0_CURRENT, 0]);
-			load(5, privateWord);
+			load(5, dataWord);
+			instructions.push([OpCode.LOAD_MEM, 4, 5, MemoryAccessKind.Word]);
+			load(4, markerB);
+			instructions.push([OpCode.STORE_MEM, 4, 5, MemoryAccessKind.Word]);
+			load(5, controlWord);
 			instructions.push([OpCode.LOAD_MEM, 4, 5, MemoryAccessKind.Word], [OpCode.STORE_MEM, 4, 5, MemoryAccessKind.Word]);
 		} else {
 			instructions.push([OpCode.MFC0, 1, COP0_CURRENT, 0]);
 			instructions.push([OpCode.MFC0, 2, COP0_STATUS, 0]);
-			load(5, privateWord);
+			load(5, dataWord);
 			instructions.push([OpCode.LOAD_MEM, 6, 5, MemoryAccessKind.Word], [OpCode.STORE_MEM, 4, 5, MemoryAccessKind.Word]);
 			load(3, statusB);
 			instructions.push([OpCode.MTC0, 3, COP0_STATUS, 0]);
@@ -161,7 +167,7 @@ function assemble(user: boolean) {
 	return { rom, linked };
 }
 
-for (const user of [false, true]) test(user ? 'a user context cannot read or replace the current CPU bank' :
+for (const user of [false, true]) test(user ? 'User mode reads CURRENT and CPU data without gaining control-bank writes' :
 	'bare ROM switches physical CPU banks at saved PCs and returns from interrupts', t => {
 	const { rom, linked } = assemble(user);
 	const [a, b] = contexts, aStart = linked[1].codeAddress, bStart = linked[3].codeAddress + word;
@@ -259,11 +265,9 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 		if (user) {
 			grant(rt); grant(rt);
 			assert.equal(cpu.isUserMode(), true);
-			const readPc = cpu.readFramePc(1);
-			grant(rt); // denied MFC0; destination must keep its original word and tag.
-			exception(CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, readPc, readPc + word);
+			grant(rt); // MFC0 CURRENT is readable without changing the selected bank.
 			assert.equal(cpu.isUserMode(), true);
-			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(markerB));
+			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(b));
 			grant(rt); // load the requested A address
 			const writePc = cpu.readFramePc(1);
 			grant(rt); // denied MTC0; RFE must still resume B in user mode.
@@ -273,14 +277,19 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 			assert.equal(cpu.readFrameRegister(1, 0), valueInteger(a));
 			assert.equal(cpu.getFrameDepth(), 2);
 			grant(rt);
+			grant(rt);
+			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(markerA), 'User data load reaches heap storage above RAM_END');
+			grant(rt); grant(rt);
+			assert.equal(memory.readRamRecordWord(dataWord), markerB, 'User data store reaches the same storage');
+			grant(rt);
 			const loadPc = cpu.readFramePc(1);
 			grant(rt);
 			exception(CPU_CAUSE_CODE_DATA_BUS_ERROR, loadPc, loadPc + word);
-			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(markerB), 'a refused load cannot expose private RAM');
+			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(markerB), 'a refused control-bank load preserves the destination');
 			const storePc = cpu.readFramePc(1);
 			grant(rt);
 			exception(CPU_CAUSE_CODE_DATA_BUS_ERROR, storePc, storePc + word);
-			assert.equal(memory.readRamRecordWord(privateWord), markerA, 'a refused store cannot mutate private RAM');
+			assert.equal(memory.readRamRecordWord(controlWord), markerA, 'a refused store cannot mutate the control interval');
 		} else {
 			cpu.requestNonMaskableInterrupt(); record('N');
 			assert.equal(cpu.enterPendingInterrupt(), true); record('I', 1);
@@ -296,9 +305,9 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 			assert.equal(cpu.readFrameRegister(1, 2), valueInteger(statusA));
 			assert.equal(cpu.readFrameRegister(1, 4), valueInteger(markerB));
 			grant(rt); grant(rt);
-			assert.equal(cpu.readFrameRegister(1, 6), valueInteger(markerA), 'ordinary System ROM code can load private RAM');
+			assert.equal(cpu.readFrameRegister(1, 6), valueInteger(markerA), 'ordinary System ROM code can load CPU data above RAM_END');
 			upToBank(rt, a);
-			assert.equal(memory.readRamRecordWord(privateWord), markerB, 'ordinary System ROM code can store private RAM');
+			assert.equal(memory.readRamRecordWord(dataWord), markerB, 'ordinary System ROM code can store CPU data above RAM_END');
 			assert.equal(cpu.readFramePc(0), aStart + 5 * word);
 			assert.equal(cpu.captureRuntimeState().statusWord, statusB, 'CURRENT does not select a private CP0 status');
 			grant(rt); grant(rt);
@@ -310,7 +319,8 @@ for (const user of [false, true]) test(user ? 'a user context cannot read or rep
 		checkRam(rt, frameBlock(a), FRAME_CONTROL_BYTES);
 		checkRam(rt, frameBlock(b), 2 * FRAME_CONTROL_BYTES);
 		checkRam(rt, valueBlock(b), 5 * valueSlots);
-		checkRam(rt, privateWord, word);
+		checkRam(rt, dataWord, word);
+		checkRam(rt, controlWord, word);
 		assertEmptyHeap(rt);
 	}
 	finish(runtime);

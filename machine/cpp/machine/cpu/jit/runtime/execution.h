@@ -10,6 +10,8 @@
 
 namespace bmsx {
 
+struct Blua32ExecutionImage;
+
 // A returning leaf must not retire the source region before its native
 // return address is used.
 inline constexpr u32 NATIVE_BUILTIN_LEAF_LIMIT = static_cast<u32>(BuiltinFunctionId::Next);
@@ -26,6 +28,16 @@ enum class NativeBuiltinCallOutcome : u32 {
 	CompletedResume,
 };
 
+struct NativeRamAliases {
+	struct Span { u32 offset, bytes; };
+
+	u32 first;
+	u32 end;
+	u32 threadOffset;
+	Span values;
+	Span frames;
+};
+
 // A CPU grant owns this transient native frame. The register/cycle prefix is
 // shared with the standalone block ABI; only the CPU dispatcher uses the tail.
 struct NativeCpuRunState {
@@ -33,7 +45,8 @@ struct NativeCpuRunState {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	~NativeCpuRunState();
 #endif
-	void enterFrame(CallFrame& frame, int budget);
+	void enterFrame(CallFrame& frame, Blua32ExecutionImage& image, int budget);
+	void bindRamAliases(const Thread& thread) noexcept;
 	struct Replay {
 		u32 pc;
 		std::optional<NativeArithmeticFeedback> arithmetic;
@@ -41,6 +54,7 @@ struct NativeCpuRunState {
 	NativeBlockRunState state;
 	CPU* cpu;
 	int targetDepth;
+	Blua32ExecutionImage* codeImage;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
 	u32 registerJumpLimit;
 	u32 cartridgeSlot = 0;
@@ -49,6 +63,7 @@ struct NativeCpuRunState {
 	u32 nativeFrameLimit = 0;
 	i32 haltedCallDepth = -1;
 	u32 closureCallHeader = 0;
+	NativeRamAliases ramAliases;
 	CallFrame* firstPendingFrame = nullptr;
 	// Materialize in the admitted RAM extent. Even a frame that returns
 	// entirely within the native grant leaves the ordinary retired words.

@@ -162,7 +162,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		instruction.width = decoded.width;
 		instruction.baseCycles = decoded.baseCycles;
 		block.sourceWords += decoded.width;
-		if (auto* control = std::get_if<NativeControlAccess>(&instruction.operation)) {
+		if (auto* control = std::get_if<NativeControlAccess>(&instruction.operation); control && control->checkPrivilege) {
 			control->checkPrivilege = !controlGuarded;
 			controlGuarded = true;
 		}

@@ -17,6 +17,8 @@
 
 namespace bmsx {
 
+enum class RamAperture : u8 { Bus, CpuData, SystemData };
+
 enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
 struct MemoryBusState {
@@ -132,39 +134,39 @@ public:
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
 
-	u32 readMappedWord(uint32_t addr, bool cpuProtected = false) const;
+	u32 readMappedWord(uint32_t addr, RamAperture aperture = RamAperture::CpuData) const;
 	void writeIoU32(uint32_t addr, u32 value);
-	void writeMappedWord(uint32_t addr, u32 value, bool cpuProtected = false);
+	void writeMappedWord(uint32_t addr, u32 value, RamAperture aperture = RamAperture::CpuData);
 
 	u8 readU8(uint32_t addr) const;
-	u8 readMappedU8(uint32_t addr, bool cpuProtected = false) const;
+	u8 readMappedU8(uint32_t addr, RamAperture aperture = RamAperture::CpuData) const;
 	void writeU8(uint32_t addr, u8 value);
-	void writeMappedU8(uint32_t addr, u8 value, bool cpuProtected = false);
+	void writeMappedU8(uint32_t addr, u8 value, RamAperture aperture = RamAperture::CpuData);
 
 	uint32_t readIoU32(uint32_t addr) const;
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readCountedU32(uint32_t addr, MemoryWordCounters& counters) const;
-	uint32_t readMappedU16LE(uint32_t addr, bool cpuProtected = false) const;
-	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, bool cpuProtected = false) const;
+	uint32_t readMappedU16LE(uint32_t addr, RamAperture aperture = RamAperture::CpuData) const;
+	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, RamAperture aperture = RamAperture::CpuData) const;
 	uint32_t readMappedBusU32LE(
 		uint32_t addr,
 		MappedBusSignals busSignals,
 		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32,
-		bool cpuProtected = false
+		RamAperture aperture = RamAperture::Bus
 	) const;
 	float readMappedF32LE(uint32_t addr) const;
-	double readMappedF64LE(uint32_t addr, bool cpuProtected = false) const;
+	double readMappedF64LE(uint32_t addr, RamAperture aperture = RamAperture::CpuData) const;
 	void writeU32(uint32_t addr, uint32_t value);
 	void countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const;
-	void writeMappedU16LE(uint32_t addr, uint32_t value, bool cpuProtected = false);
-	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, bool cpuProtected = false);
-	void writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, bool cpuProtected = false);
+	void writeMappedU16LE(uint32_t addr, uint32_t value, RamAperture aperture = RamAperture::CpuData);
+	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, RamAperture aperture = RamAperture::CpuData);
+	void writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, RamAperture aperture = RamAperture::Bus);
 	void transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 		u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals);
 	void writeMappedF32LE(uint32_t addr, float value);
-	void writeMappedF64LE(uint32_t addr, double value, bool cpuProtected = false);
-	const u8* readMappedValue(u32 addr) const;
-	bool writeMappedValue(u32 addr, u32 payload, u8 tag);
+	void writeMappedF64LE(uint32_t addr, double value, RamAperture aperture = RamAperture::CpuData);
+	const u8* readMappedValue(u32 addr, RamAperture aperture = RamAperture::CpuData) const;
+	bool writeMappedValue(u32 addr, u32 payload, u8 tag, RamAperture aperture = RamAperture::CpuData);
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
@@ -172,7 +174,7 @@ public:
 	bool bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Span<const u8>& out) const;
 	// Borrow contiguous backing for a complete transfer through the mapped bus.
 	bool bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
-	bool isRamRange(uint32_t addr, size_t length, bool cpuProtected = false) const;
+	bool isRamRange(uint32_t addr, size_t length, bool physical = false) const;
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
 	u32 mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const;
 
@@ -224,7 +226,8 @@ private:
 	std::array<IoWritePolicy, IO_SLOT_COUNT> m_ioWritePolicy{};
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
-	bool admitsMappedValue(u32 addr) const;
+	bool admitsRamTransfer(u32 addr, size_t bytes, RamAperture aperture) const;
+	bool admitsMappedValue(u32 addr, RamAperture aperture) const;
 	int ioAlignedSlot(uint32_t addr) const {
 		const uint32_t delta = addr - IO_BASE;
 		if (delta >= IO_SLOT_COUNT * IO_WORD_SIZE || (delta & (IO_WORD_SIZE - 1u)) != 0u) {
@@ -234,8 +237,8 @@ private:
 	}
 	u32 readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, MappedBusSignals busSignals);
-	bool writeRamU8(uint32_t addr, u8 value, bool cpuProtected = false);
-	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value, bool cpuProtected = false);
+	bool writeRamU8(uint32_t addr, u8 value, RamAperture aperture = RamAperture::Bus);
+	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value, RamAperture aperture = RamAperture::Bus);
 	template <auto Method, typename TObject>
 	static u32 readMember(void* context, uint32_t addr, MappedBusSignals) {
 		return (static_cast<TObject*>(context)->*Method)(addr);
@@ -247,8 +250,8 @@ private:
 	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	void onBusFaultAckWrite(uint32_t addr, u32 value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
-	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess, bool cpuProtected = false) const;
-	const u8* readBankedCartridgeBytes(u32 address, size_t length, bool cpuProtected) const;
+	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess, RamAperture aperture = RamAperture::Bus) const;
+	const u8* readBankedCartridgeBytes(u32 address, size_t length, RamAperture aperture) const;
 	void writeBusFaultSlots() const;
 };
 

@@ -29,6 +29,7 @@ constexpr uint32_t CPU_INTERRUPT_STATE_HALT = 0x80000000u;
 constexpr uint32_t CPU_INTERRUPT_STATE_WINDOW = 0x40000000u;
 
 constexpr bool cop0ReadAsZero(int field) { return field == COP0_EXEC || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR; }
+constexpr bool cop0UserReadable(int field) { return field == COP0_CURRENT || field == COP0_EVENT_CYCLES; }
 constexpr bool cop0WriteRetiresControl(int field) {
 	return field == COP0_STATUS || field == COP0_EXEC || field == COP0_CONTEXT
 		|| field == COP0_RAM_END || field == COP0_SYSTEM_VECTOR || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR

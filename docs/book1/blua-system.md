@@ -65,14 +65,16 @@ to the object; copying it copies the reference. Number details:
 | BLua storage | Strings, tables, functions, threads, call stacks | None |
 | Static storage | `bss`, `data` and `rodata` declarations | Fixed byte address |
 
-Programs exchange data with the devices only through static storage, because
-only static storage has a bus address. See
+Programs normally exchange data with devices through static storage. The
+language heap can be addressed by CPU loads and stores but is outside the
+device DMA range. See
 [static storage](blua-programs.md#sec-blua-programs-typed-storage-layouts-and-address-views).
 
 ### BLua storage {#sec-blua-system-blua-storage}
 
-BLua storage is the RAM from `RAM_END` to `083FC000H`, outside the area
-reachable on the bus (see
+BLua storage is the RAM from `RAM_END` to `083FC000H`. Both cartridge and
+system code can address it with CPU data instructions, but it is not an
+instruction-fetch or DMA area (see
 [[Main RAM](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}).
 The BIOS places new objects there and reclaims objects that the program can
 no longer reach, in small steps while the program runs.

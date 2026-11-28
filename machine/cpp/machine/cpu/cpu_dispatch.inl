@@ -473,7 +473,7 @@ DISPATCH_COMPARISON(LE)
 DISPATCH_LABEL(MFC0) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	if (b != COP0_EVENT_CYCLES && isUserMode()) {
+	if (!cop0UserReadable(b) && isUserMode()) {
 		PUBLISH_SCALAR_FRONTIER();
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		DISPATCH_CONTINUE();

@@ -11,11 +11,9 @@ import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
 import { compiledContextSupports, emitContext, emitWindowMove } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
-import { COP0_STATUS, COP0_RAM_END, COP0_EVENT_CYCLES, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
+import { COP0_STATUS, COP0_RAM_END, COP0_EVENT_CYCLES, cop0FieldImplemented, cop0UserReadable, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
 import type { CallFrame } from './call_state';
-import { SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../spec/blua32/execution_domain';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -230,7 +228,7 @@ export type EmittedJavaScriptBlock = {
 	readonly admissionVarargs: number;
 	readonly openVarargs: number;
 	readonly formatCycles: number;
-	readonly valueMemory: boolean;
+	readonly memoryAccesses: boolean;
 };
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
@@ -256,7 +254,7 @@ export function emitJavaScriptBlock(
 	let nextPc = pc;
 	let finalWord = firstWord;
 	let formatCycles = 0;
-	let valueMemory = false;
+	let memoryAccesses = false;
 	let controlAccess = false;
 	let stringOrderExit = -1;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
@@ -278,6 +276,7 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
 		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
+		const privilegedControl = control && (op === OpCode.MTC0 || !cop0UserReadable(page.b[word]));
 		const moveKind = page.c[word];
 		const windowMove = op === OpCode.MOV && moveKind >= ValueMoveKind.ReadTop && moveKind <= ValueMoveKind.SetTop;
 		if (windowMove) {
@@ -288,7 +287,7 @@ export function emitJavaScriptBlock(
 			resetsRegisterTop = false;
 		}
 		const sideExit = windowMove && moveKind !== ValueMoveKind.ReadTop ? CompiledBlockExit.ReservedInstruction
-			: control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word])
+			: control && !eventCycles && (!privilegedControl || controlAccess) && cop0FieldImplemented(page.b[word])
 				? undefined : sideExitKinds[op];
 		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
@@ -319,8 +318,9 @@ export function emitJavaScriptBlock(
 			const to = kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float;
 			source.push(`if(${registers.tagOperand(b)}!==${from}) ${numericFault}${registers.writeEncoded(page.a[word], `${to}`, registers.wordOperand(b))}`);
 		} else if (control) {
-			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess, numericFault));
-			if (!eventCycles) controlAccess = true;
+			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex,
+				privilegedControl && !controlAccess, numericFault));
+			if (privilegedControl) controlAccess = true;
 		} else if (compiledContextSupports(op)) {
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
@@ -337,15 +337,14 @@ export function emitJavaScriptBlock(
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
 			const address = displaced ? `(${base}+${page.operandByte[word] * 4})>>>0` : base;
 			const memoryExit = `{S.effectiveAddress=a;${registers.exit(exitIndex)}}`;
-			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
-			else if (page.c[word] === MemoryAccessKind.ContextWord) source.push(`{const a=${address};${memoryExit}}`);
-			else if (page.c[word] === MemoryAccessKind.Value) {
-				if (image.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID && ((currentPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE) {
-					valueMemory = true;
+			if (!words && page.c[word] === MemoryAccessKind.ContextWord) source.push(`{const a=${address};${memoryExit}}`);
+			else {
+				memoryAccesses = true;
+				if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
+				else if (page.c[word] === MemoryAccessKind.Value)
 					source.push(emitValueMemoryAccess(load, page.a[word], address, memoryExit, registers));
-				} else source.push(`{const a=${address};${memoryExit}}`);
+				else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
 			}
-			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
 		} else if (arithmetic) {
 			source.push(emitArithmetic(page, word, registers, numericFault));
 		} else {
@@ -418,7 +417,7 @@ export function emitJavaScriptBlock(
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
 		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex, stringOrderExit,
-		admissionCycles, admissionVarargs, openVarargs, formatCycles, valueMemory };
+		admissionCycles, admissionVarargs, openVarargs, formatCycles, memoryAccesses };
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,

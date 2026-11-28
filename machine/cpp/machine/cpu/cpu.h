@@ -72,6 +72,7 @@ struct NativeWarmupAdmission;
 struct NativeWarmupPages;
 class IrqController;
 class Memory;
+enum class RamAperture : u8;
 class DeviceScheduler;
 struct MappedPageBinding;
 
@@ -312,6 +313,7 @@ private:
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
 		ExecutionImageUpdate update);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
+	Blua32ExecutionImage* instructionImageForFrame(const CallFrame& frame, u32 pc) const;
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);
 	void resumeFrameBank();
@@ -319,9 +321,9 @@ private:
 	void clearNativeContinuationBindings();
 #endif
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
-	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
-	void refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc);
-	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
+	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, Blua32ExecutionImage& image, u32 pc);
+	void refreshDecodedFusion(CallFrame& frame, Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset, u32 pc);
+	bool decodeInstruction(CallFrame& frame, Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	void decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -361,6 +363,7 @@ private:
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
+	RamAperture dataAperture(u32 address, u32 bytes) const;
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);
 	bool executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
 	bool continueMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
@@ -406,7 +409,7 @@ private:
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void compileNativeRoot(Blua32ExecutionImage&, u32 functionAddress, DecodedInstructionPage&, u32 pc, MappedBusSignals);
-	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
+	void prepareNativeBlock(CallFrame&, Blua32ExecutionImage&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
 		MappedBusSignals, NativeWarmupAdmission* = nullptr);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);

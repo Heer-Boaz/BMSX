@@ -368,6 +368,12 @@ MappedBusSignals CPU::executionBusSignalsForDomain(ExecutionDomainId executionDo
 		: mappedBusSignalsForCartridgeSlot(static_cast<u32>(executionDomainId));
 }
 
+Blua32ExecutionImage* CPU::instructionImageForFrame(const CallFrame& frame, u32 pc) const {
+	// A raw branch changes the instruction source, not the activation's
+	// cartridge selection or authority.
+	return pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE ? m_systemImage : frame.executionImage;
+}
+
 void CPU::latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image) {
 	m_activeExecutionDomainId = domain;
 	m_activeExecutionImage = image;
@@ -415,10 +421,11 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	if (previousImage) {
 		visitThreadViews([&](Thread& thread) {
 			for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
-				if (frame->executionImage != previousImage.get()) continue;
-				frame->executionImage = activatedImage;
+				// A frame may have fetched from the replaced ROM without
+				// changing its own activation bank.
 				frame->decodedPage = nullptr;
 				frame->compilationEntry = true;
+				if (frame->executionImage == previousImage.get()) frame->executionImage = activatedImage;
 			}
 		});
 	}
@@ -581,14 +588,14 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 	}
 }
 
-DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
+DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, Blua32ExecutionImage& image, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 	const auto slot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 	const u64 key = mappedPageAddressKey(pageAddress, slot);
 	if (frame.decodedPage && frame.decodedPage->mapping.key == key) {
 		return *frame.decodedPage;
 	}
-	auto& directory = frame.executionImage->decodedPages;
+	auto& directory = image.decodedPages;
 	auto* page = directory.find(key);
 	if (!page) {
 		MappedPageBinding binding;
@@ -603,10 +610,11 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 
 void CPU::skipNextInstruction(CallFrame& frame) {
 	const u32 pc = frame.readControl(FrameField::Pc);
-	DecodedInstructionPage& page = decodedPageForFrame(frame, pc);
+	auto& image = *instructionImageForFrame(frame, pc);
+	DecodedInstructionPage& page = decodedPageForFrame(frame, image, pc);
 	const u32 offset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if ((page.refreshState[offset] & DECODED_REFRESH_DECODE) != 0u
-		&& !decodeInstruction(frame, page, offset, pc, false)) {
+		&& !decodeInstruction(frame, image, page, offset, pc, false)) {
 		return;
 	}
 	const u32 nextPc = pc + static_cast<u32>(page.words[offset].width) * INSTRUCTION_BYTES;
@@ -1605,9 +1613,11 @@ RunResult CPU::runLoop(
 
 dispatch_fetch:
 			pc = frame->readControl(FrameField::Pc);
+			image = instructionImageForFrame(*frame, pc);
 			if constexpr (Instrumented) {
-				if ((hookBinding.domainMask & executionDomainBit(m_activeExecutionDomainId)) != 0u
-					&& hookBinding.hook(hookBinding.context, m_activeExecutionDomainId, pc)) {
+				const auto domain = image ? image->executionDomainId : m_activeExecutionDomainId;
+				if ((hookBinding.domainMask & executionDomainBit(domain)) != 0u
+					&& hookBinding.hook(hookBinding.context, domain, pc)) {
 					return RunResult::ExecutionStopped;
 				}
 			}
@@ -1623,7 +1633,7 @@ dispatch_fetch:
 			}
 			if constexpr (!Instrumented) publishedTop = registerTop = frame->registerTop();
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			decodedPage = &decodedPageForFrame(*frame, pc);
+			decodedPage = &decodedPageForFrame(*frame, *image, pc);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_bound_page:
 			if constexpr (!Instrumented) {
@@ -1633,7 +1643,7 @@ dispatch_bound_page:
 					const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 					if (atTarget && !decodedPage->refreshState[word]
 						&& isNativeWarmDispatch(decodedPage->words[word].dispatchOp))
-						prepareNativeBlock(*frame, *decodedPage, pc, m_executionBusSignals);
+						prepareNativeBlock(*frame, *image, *decodedPage, pc, m_executionBusSignals);
 				}
 			}
 #endif
@@ -1652,7 +1662,7 @@ dispatch_decode:
 				rewritten = (refresh & DECODED_REFRESH_DECODE) && decoded->width != 0u;
 #endif
 				PUBLISH_SCALAR_FRONTIER();
-				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) continue;
+				if (!decodeInstruction(*frame, *image, *decodedPage, pageOffset, pc, !Instrumented)) continue;
 				if constexpr (!Instrumented) {
 					canReuseFrame = !(decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE);
 					publishedTop = registerTop = frame->registerTop();
@@ -1782,7 +1792,7 @@ dispatch_instruction:
 						if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
 						if (entry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
 							&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
-							prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
+							prepareNativeBlock(FRAME, IMAGE, *decodedPage, pc, m_executionBusSignals);
 							if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock))
 								dispatchOp = decoded->dispatchOp;
 						}
@@ -1864,13 +1874,14 @@ dispatch_instruction:
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = nextPc;
-					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
+					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, IMAGE, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
 						PUBLISH_SCALAR_FRONTIER();
 						if (!decodeInstruction(
 							FRAME,
+							IMAGE,
 							successorPage,
 							successorOffset,
 							successorPc,
@@ -1919,13 +1930,14 @@ dispatch_instruction:
 						DISPATCH_CONTINUE();
 					}
 					const u32 successorPc = nextPc;
-					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, successorPc);
+					DecodedInstructionPage& successorPage = decodedPageForFrame(FRAME, IMAGE, successorPc);
 					const u32 successorOffset = (successorPc & MAPPED_PAGE_BYTE_MASK) >> 2;
 					if ((successorPage.refreshState[successorOffset]
 						& DECODED_REFRESH_DECODE) != 0u) {
 						PUBLISH_SCALAR_FRONTIER();
 						if (!decodeInstruction(
 							FRAME,
+							IMAGE,
 							successorPage,
 							successorOffset,
 							successorPc,
@@ -1963,7 +1975,7 @@ dispatch_instruction:
 dispatch_native_block: {
 				PUBLISH_SCALAR_FRONTIER();
 				const int nativeBudget = instructionBudgetRemaining + nativeFirstDispatchCycles;
-				nativeState.enterFrame(*frame, nativeBudget);
+				nativeState.enterFrame(*frame, *image, nativeBudget);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 				const int nativeStartBudget = nativeState.state.remainingCycles;
 #endif
@@ -2002,11 +2014,13 @@ dispatch_rebind_frame:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				pc = frame->readControl(FrameField::Pc);
+				image = instructionImageForFrame(*frame, pc);
 				// A function record can supply a raw unaligned code address. Leave
 				// its address exception to the ordinary instruction-fetch boundary.
-				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+				if (image && (pc & (INSTRUCTION_BYTES - 1u)) == 0u
+					&& (!resetBankSelected() || pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE)) {
 					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-					decodedPage = &decodedPageForFrame(FRAME, pc);
+					decodedPage = &decodedPageForFrame(FRAME, *image, pc);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 						if (nativeBlock && std::endian::native == std::endian::little && !thread.stackRequiresScalar()) {

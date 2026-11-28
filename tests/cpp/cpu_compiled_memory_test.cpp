@@ -2,6 +2,7 @@
 #include "support/string_pool_reference.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
+#include "machine/cpu/frame_placement.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "support/native_region_fixture.h"
 #include "machine/cpu/table.h"
@@ -223,12 +224,13 @@ void ramScalarDatapathsAndGuards() {
 	const u32 publicEnd = memory.ramBusEnd();
 	registers.set(1, valueInteger(target));
 	memory.setRamBusEnd(target + 4u);
-	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
-		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
-		"a published F64 block uses the new live aperture and exits before its bus continuation");
+	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal
+		&& memory.readMappedF64LE(target) == 1.0,
+		"a published F64 data transfer crosses the current fetch and DMA aperture");
+	const auto reads = memory.readBusFaultSequence();
+	memory.readMappedBusU32LE(target + 4u, MAPPED_BUS_INSTRUCTION_FETCH);
+	require(memory.readBusFaultSequence() == reads + 1u, "fetch still honors the narrower bus aperture");
 	memory.setRamBusEnd(publicEnd);
-	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles}) == &block->terminal,
-		"the same published block readmits its destination after the aperture grows");
 
 	ValueSlots shortRegisters(3);
 	shortRegisters.set(0, valueFloat(4.25f));
@@ -308,7 +310,8 @@ void generatedMemoryBoundaries() {
 
 }
 
-void wideTransfersRespectThePublicRamBoundary() {
+void wideTransfersRespectTheCpuDataBoundary() {
+	constexpr u32 end = RAM_BASE + MAIN_RAM_SIZE;
 	for (const bool load : {false, true}) {
 		const OpCode op = load ? OpCode::LOAD_MEM_D : OpCode::STORE_MEM_WORDS_D;
 		auto image = memoryLoop(op, MemoryAccessKind::F64LE);
@@ -320,7 +323,7 @@ void wideTransfersRespectThePublicRamBoundary() {
 		const int prefix = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
 		const int loopCycles = prefix + memoryCycles + BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-		constexpr u32 publicRam = DYNAMIC_RAM_BASE + 0x1000u;
+		constexpr u32 warmRam = DYNAMIC_RAM_BASE + 0x1000u;
 		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu;
 			auto user = cpu.captureRuntimeState();
@@ -328,29 +331,26 @@ void wideTransfersRespectThePublicRamBoundary() {
 			cpu.restoreRuntimeState(user);
 			auto& frame = *cpu.activeThread()->frameAtDepth(0);
 			frame.registers.set(0, valueInteger(17));
-			frame.registers.set(1, valueInteger(publicRam));
+			frame.registers.set(1, valueInteger(warmRam));
 			require(cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 2) * loopCycles) == RunResult::Yielded,
 				"ordinary public transfers warm the loop");
 			if (machine == &native) test::waitForNativeEntry(cpu, *frame.decodedPage, entry);
-			const u32 end = machine->memory.ramBusEnd();
 			machine->memory.writeMappedU32LE(end - 4u, 29u);
 			frame.registers.set(0, valueInteger(17));
 			frame.registers.set(1, valueInteger(end - 4u));
 			frame.registers.set(4, valueInteger(97));
 			frame.registers.set(6, valueInteger(99));
 		}
-		const u32 end = native.memory.ramBusEnd();
-		const auto privateWord = native.memory.readRamRecordWord(end);
 		require(test::runCpuParity(native.cpu, scalar.cpu, prefix + memoryCycles) == RunResult::Yielded,
 			"the charged fault does not execute the handler or following instruction");
 		require(native.cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && native.cpu.readEpcWord() == start + INSTRUCTION_BYTES
-			&& native.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == end, "the private word faults at the exact WIDE instruction");
+			&& native.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == end, "the uninstalled word faults at the exact WIDE instruction");
 		const auto& interrupted = *native.cpu.rootThread()->frameAtDepth(0);
 		require(native.cpu.fixedInterruptActive() && interrupted.registers.get(0) == valueInteger(17)
 			&& interrupted.registers.get(4) == valueInteger(1) && interrupted.registers.get(6) == valueInteger(99),
 			"only the completed prefix and transfer are observable in the interrupted frame");
-		require(native.memory.readMappedU32LE(end - 4u) == (load ? 29u : 17u)
-			&& native.memory.readRamRecordWord(end) == privateWord, "a counted public store commits only the admitted low word");
+		require(native.memory.readMappedU32LE(end - 4u) == (load ? 29u : 17u),
+			"a counted store commits only the admitted low word");
 	}
 }
 
@@ -368,7 +368,7 @@ void generatedNumericRamUsesLivePrivilege() {
 		{MemoryAccessKind::U32LE, 0, BUS_FAULT_ACCESS_U32, initial, source},
 	};
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	bool privateTransfersStayedNative = true;
+	bool dynamicTransfersStayedNative = true;
 #endif
 	for (const auto& format : formats) for (const bool load : {false, true}) {
 		const auto op = static_cast<u8>(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM);
@@ -388,7 +388,7 @@ void generatedNumericRamUsesLivePrivilege() {
 		image.exceptionFunctionIndex = 1;
 		CpuMachine native(image), scalar(image, true);
 		const auto start = native.rom.textAddress, entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		const u32 protectedWord = native.memory.ramBusEnd();
+		const u32 dynamicWord = native.memory.ramBusEnd();
 		const auto position = [&](CpuMachine& m, u32 pc) {
 			m.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m.rom.functionAddresses[0], pc);
 		};
@@ -446,11 +446,11 @@ void generatedNumericRamUsesLivePrivilege() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			const auto exits = gate(memoryExit) - before;
 			if (!admitted) require(exits == 1, "one cold native guard reaches the bus owner without speculative effects");
-			else if (word == protectedWord) privateTransfersStayedNative &= exits == 0 && gate(NativeBlockExit::Continue) > continues;
+			else if (word == dynamicWord) dynamicTransfersStayedNative &= exits == 0 && gate(NativeBlockExit::Continue) > continues;
 			else require(exits == 0 && gate(NativeBlockExit::Continue) > continues, "the public operation really executes in native code without a memory gate");
 #endif
 		};
-		run(protectedWord, true);
+		run(dynamicWord, true);
 		for (auto* m : {&native, &scalar}) {
 			position(*m, start + statusWord * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->registers.set(7, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
@@ -459,10 +459,91 @@ void generatedNumericRamUsesLivePrivilege() {
 			&& native.cpu.isUserMode() && scalar.cpu.isUserMode(), "an ordinary MTC0 changes live permission without replacing the System ROM");
 		require(page->nativeBlocks->entries[entry].get() == warm, "the privilege transition retains the original warm native body");
 		run(publicWord, true);
-		run(protectedWord, false);
+		run(dynamicWord, true);
+		run(CPU_CONTROL_RAM_END + 8u, true);
+		run(CPU_FIXED_VALUE_END, false);
 	}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(privateTransfersStayedNative, "admitted protected numeric RAM should stay in generated code without a ReadMemory or WriteMemory gate");
+	require(dynamicTransfersStayedNative, "admitted dynamic RAM stays in generated code in both modes");
+#endif
+}
+
+void generatedProtectedRamFollowsContextWithinGrant() {
+	constexpr u32 privateWord = CPU_FIXED_VALUE_END;
+	constexpr u32 original = 0x2359abcdu;
+	constexpr int contextEntry = 4, exceptionEntry = 9;
+	constexpr auto numeric = static_cast<u8>(MemoryAccessKind::U32LE);
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(10 * INSTRUCTION_BYTES);
+	const auto put = [&](int pc, OpCode op, u8 a = 0, u8 b = 0, u8 c = 0) {
+		writeInstruction(image.text, pc, static_cast<u8>(op), a, b, c);
+	};
+	put(0, OpCode::MTC0, 0, COP0_CURRENT);
+	put(1, OpCode::MTC0, 4, COP0_STATUS);
+	put(2, OpCode::STORE_MEM, 2, 1, numeric);
+	put(3, OpCode::RET, 0, 1);
+	put(4, OpCode::K1, 2);
+	put(5, OpCode::LOAD_MEM, 3, 1, numeric);
+	put(6, OpCode::LOAD_MEM, 5, 4, numeric);
+	put(7, OpCode::MTC0, 0, COP0_CURRENT);
+	put(8, OpCode::RET, 0, 1);
+	put(9, OpCode::RFE);
+	image.functions = {{.firstWord = 0, .wordCount = contextEntry, .maxStack = 5},
+		{.firstWord = contextEntry, .wordCount = exceptionEntry - contextEntry, .maxStack = 6},
+		{.firstWord = exceptionEntry, .wordCount = 1}};
+	image.exceptionFunctionIndex = 2;
+	CpuMachine native(image), scalar(image, true);
+	u32 context;
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto& memory = machine->memory;
+		auto& root = *cpu.rootThread();
+		context = test::allocateThreadRecordReference(cpu, 0u);
+		const auto layout = ThreadRecord::storageLayout(memory, context);
+		const u32 pc = machine->rom.textAddress + contextEntry * INSTRUCTION_BYTES;
+		const FrameEntryControl frame{machine->rom.functionAddresses[1], pc, pc,
+			frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID), 5, 0, {}, 0, 0u, 0, 6};
+		frame.writeWords([&](FrameField field, u32 word) {
+			memory.writeRamRecordWord(layout.frameAddress(0) + static_cast<u32>(field), word);
+		});
+		memory.writeRamRecordWord(context + static_cast<u32>(ThreadField::FrameDepth), 1u);
+		memory.writeRamRecordWord(context + static_cast<u32>(ThreadField::StackTop), 6u);
+		auto slots = layout.slots(memory);
+		slots.set(0, valueInteger(root.address));
+		slots.set(1, valueInteger(RAM_BASE + layout.offset() + 2u * sizeof(u32)));
+		slots.set(2, valueInteger(57));
+		slots.set(4, valueInteger(RAM_BASE + root.stackOffset() + 2u * sizeof(u32)));
+		root.currentFrame->registers.set(0, valueInteger(context));
+		root.currentFrame->registers.set(1, valueInteger(privateWord));
+		root.currentFrame->registers.set(2, valueInteger(73));
+		root.currentFrame->registers.set(4, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
+		root.currentFrame->setTop(5);
+		memory.writeRamRecordWord(privateWord, original);
+	}
+	native.cpu.prepareSystemNativeCode();
+	const int grant = 3 * BASE_CYCLES[static_cast<u8>(OpCode::MTC0)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+		+ 2 * BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM)];
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
+		&& native.cpu.instructionBudgetRemaining == 0, "both contexts and the status change execute in one exact grant");
+	for (auto* machine : {&native, &scalar}) {
+		const auto slots = ThreadRecord::storageLayout(machine->memory, context).slots(machine->memory);
+		require(slots.get(3) == valueInteger(1) && slots.get(5) == valueInteger(73),
+			"the new active register alias sees the just-written value while the old context is ordinary RAM");
+		require(machine->cpu.fixedInterruptActive()
+			&& machine->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
+			&& machine->cpu.readEpcWord() == machine->rom.textAddress + 2u * INSTRUCTION_BYTES
+			&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == privateWord
+			&& machine->memory.readRamRecordWord(privateWord) == original,
+			"the warm System continuation must observe the User-mode write and reject the store without touching RAM");
+	}
+	require(test::sameLanguageRam(native.cpu, scalar.cpu), "context switching and a protection fault publish identical RAM");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& exits = native.cpu.nativeGateProfile().exits;
+	require(exits[static_cast<size_t>(NativeBlockExit::WriteControl)].entries == 3
+		&& exits[static_cast<size_t>(NativeBlockExit::ReadMemory)].entries == 1
+		&& exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries == 1,
+		"native switches both contexts, exits for the active register alias only, and rejects the unauthorized store");
 #endif
 }
 
@@ -587,6 +668,9 @@ void generatedTaggedValueTransfers() {
 			CpuMachine native(image), scalar(image, true);
 			const Value value = displaced ? valueFloatBits(0xff812345u) : valueFromTag(ValueTag::Nil, 0xdecafbad);
 			for (auto* machine : {&native, &scalar}) {
+				auto user = machine->cpu.captureRuntimeState();
+				user.statusWord |= CPU_STATUS_USER_MODE_CURRENT;
+				machine->cpu.restoreRuntimeState(user);
 				auto& registers = machine->cpu.activeThread()->currentFrame->registers;
 				registers.set(0, value);
 				registers.set(1, valueInteger(destination - displacement * INSTRUCTION_BYTES));
@@ -608,7 +692,7 @@ void generatedTaggedValueTransfers() {
 				require(result.size() == 1 && result.get(0) == value && readLE32(cell) == valuePayload(value)
 					&& cell[VALUE_MEMORY_TAG_OFFSET] == static_cast<u8>(valueTag(value))
 					&& cell[5] == 0xb6 && cell[6] == 0xb6 && cell[7] == 0xb6,
-					"tagged transfer neither normalizes tag/payload nor overwrites the padding");
+					"a User-mode tagged transfer preserves its tag/payload and padding");
 				if (watchTag) {
 					constexpr auto tagPage = (offset + VALUE_MEMORY_TAG_OFFSET) >> MAPPED_PAGE_BYTE_SHIFT;
 					require(machine->memory.ramWriteWatches().historyPageDirty(tagPage, tagPage + 1u),
@@ -852,7 +936,11 @@ void externalTakeoverFlushesOnlyTheUnacceptedStore() {
 		image.constants = {static_cast<i32>(0x87654321u), static_cast<i32>(IO_BASE + 0x5000u)};
 		CpuMachine machine(image, scalar);
 		auto& cpu = machine.cpu;
-		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		auto& thread = *cpu.activeThread();
+		// Injection uses the already admitted window on top of the paused caller.
+		test::reserveReferenceThreadFrame(test::GcHeap(cpu), thread,
+			thread.stackTop() + registerWindowBucket(image.functions.back().maxStack));
+		auto& frame = *thread.frameAtDepth(0);
 		const u32 port = IO_BASE + 0x5000u;
 		frame.registers.set(0, valueInteger(0x12345678u));
 		frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x1000u));
@@ -922,7 +1010,7 @@ void generatedBusOrdering() {
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers.set(0, valueFloat(3.25f)); frame.registers.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x1004));
 		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
-		const u32 target = machine.memory.ramBusEnd() - 4u;
+		const u32 target = CPU_FIXED_FRAME_ADDRESS - 4u;
 		machine.memory.writeMappedWord(target, 0xaaaaaaaau);
 		frame.registers.set(1, valueInteger(target));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
@@ -1209,14 +1297,22 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
 				machine->rom.textAddress + 7 * INSTRUCTION_BYTES);
 		}
-		test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1);
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1;
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& native.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::BAND)],
+			"the faulting word operation charges itself and the preceding MOV exactly once");
 		for (auto* machine : {&native, &scalar}) {
-			const auto& r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
-			require(machine->cpu.readEpcWord() == machine->rom.textAddress + 8 * INSTRUCTION_BYTES
-				&& machine->cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			const auto& cpu = machine->cpu;
+			const auto& interrupted = *cpu.rootThread();
+			const auto& r = interrupted.frameAtDepth(0)->registers;
+			require(cpu.fixedInterruptActive()
+				&& machine->memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) == interrupted.address
+				&& cpu.readEpcWord() == machine->rom.textAddress + 8 * INSTRUCTION_BYTES
+				&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 				&& r.get(2) == valueFloat(-1.75f) && r.get(6) == valueInteger(99),
 				"a faulting word operation keeps its old destination after the preceding MOV commits");
 		}
+		require(test::sameLanguageRam(native.cpu, scalar.cpu), "word fault publishes the same interrupted RAM in both backends");
 	}
 }
 
@@ -1236,8 +1332,9 @@ int main(int argc, char** argv) {
 		generatedTaggedValueTransfers();
 		generatedTransfersAliasRegisterBacking();
 		generatedMemoryBoundaries();
-		wideTransfersRespectThePublicRamBoundary();
+		wideTransfersRespectTheCpuDataBoundary();
 		generatedNumericRamUsesLivePrivilege();
+		generatedProtectedRamFollowsContextWithinGrant();
 		generatedBusOrdering();
 		localIoStoresFollowLivePortBindings();
 		resumedStoreRetainsDecodedOperation();

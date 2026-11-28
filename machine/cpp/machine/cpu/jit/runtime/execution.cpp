@@ -38,18 +38,36 @@ NativeCpuRunState::~NativeCpuRunState() {
 }
 #endif
 
+void NativeCpuRunState::bindRamAliases(const Thread& thread) noexcept {
+	if (thread.address == CPU_RESET_BANK_ADDRESS) {
+		// The fixed backing is entirely inside the architecturally unmapped interval.
+		ramAliases.first = MAIN_RAM_SIZE;
+		return;
+	}
+	auto& aliases = ramAliases;
+	aliases.threadOffset = thread.address & RAM_RECORD_WORD_MASK;
+	aliases.values = {thread.stackOffset(), thread.stackByteLength()};
+	aliases.frames = {thread.boundFrameOffset, thread.boundFrameCapacity * FRAME_CONTROL_BYTES};
+	aliases.end = std::max({aliases.threadOffset + static_cast<u32>(THREAD_HEAP_BYTES),
+		aliases.values.offset + aliases.values.bytes, aliases.frames.offset + aliases.frames.bytes});
+	aliases.first = aliases.end > MAIN_RAM_SIZE ? 0u
+		: std::min({aliases.threadOffset, aliases.values.offset, aliases.frames.offset});
+}
+
 // Entry from scalar execution. A native-to-native edge already has the
 // grant and transfers only the activation state affected by that edge.
-void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
+void NativeCpuRunState::enterFrame(CallFrame& frame, Blua32ExecutionImage& image, int budget) {
 	auto& thread = *frame.thread;
-	const auto& image = *frame.executionImage;
+	const auto domain = frame.executionImage->executionDomainId;
 	thread.recordNativeWrites(cpu->m_memory.ramWriteWatches());
-	frameBank = frameBankWord(image.executionDomainId);
-	closureCallHeader = ClosureRecord::fixedCallHeader(image.executionDomainId);
+	frameBank = frameBankWord(domain);
+	bindRamAliases(thread);
+	closureCallHeader = ClosureRecord::fixedCallHeader(domain);
 	nativeStackCapacity = thread.stackCapacity;
 	nativeFrameLimit = thread.retainedFrameLimit();
 	haltedCallDepth = cpu->m_haltedUntilIrqThreadAddress == thread.address ? cpu->m_haltedUntilIrqFrameDepth : -1;
 	cartridgeSlot = cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
+	codeImage = &image;
 	codeRoot = image.nativeCodeLookup->root(cartridgeSlot);
 	static_assert(SYSTEM_ROM_BASE == 0u);
 	// With aligned destinations, all 32-bit PCs are below UINT32_MAX.

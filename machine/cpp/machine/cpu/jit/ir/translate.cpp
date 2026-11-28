@@ -45,7 +45,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 			? !implemented ? NativeControlMode::ReadFault : cop0ReadAsZero(b) ? NativeControlMode::ReadZero : NativeControlMode::ReadWord
 			: !implemented || cop0WriteRetiresControl(b) ? NativeControlMode::WriteSemantic
 			: b == COP0_EPC ? NativeControlMode::WriteWord : NativeControlMode::ConsumeWord;
-		return NativeControlAccess{a, static_cast<u16>(b), mode, true};
+		return NativeControlAccess{a, static_cast<u16>(b), mode, op == OpCode::MTC0 || !cop0UserReadable(b)};
 	}
 	case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
 		return NativeMemoryAccess{a, b, op == OpCode::LOAD_MEM_D ? instruction.bx() * 4u : 0u,

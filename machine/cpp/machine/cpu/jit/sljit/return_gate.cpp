@@ -142,6 +142,9 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R1),
 		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticReturn);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage));
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(state),
+		offsetof(NativeCpuRunState, codeImage)), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), pending);
 	auto* physical = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, target, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, previous));

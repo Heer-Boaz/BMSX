@@ -19,12 +19,12 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { COP0_EXEC, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { COP0_CURRENT, COP0_EXEC, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
 } from '../../machine/ts/spec/blua32/image_format';
-import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_EXT_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_EXT_BX, RegisterJumpMode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
@@ -373,6 +373,51 @@ test('data SELECT does not change the physical socket supplying executable instr
 			assert.equal(frame.registers.get(0), valueInteger((select & 1) === 0 ? 22 : 33));
 			assert.equal(frame.executionImage.executionDomainId, 0);
 		}
+	}
+});
+
+test('a cartridge jumps to System ROM and back without leaving its user context', () => {
+	const systemText = new Uint8Array(8 * INSTRUCTION_BYTES);
+	writeInstruction(systemText, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(systemText, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word);
+	writeInstruction(systemText, 2, OpCode.MTC0, 0, COP0_EXEC, 0);
+	writeInstruction(systemText, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(systemText, 4, OpCode.RFE, 0, 0, 0);
+	writeInstruction(systemText, 5, OpCode.LOADK, 2, 0, 1);
+	writeInstruction(systemText, 6, OpCode.MFC0, 3, COP0_CURRENT, 0);
+	writeInstruction(systemText, 7, OpCode.JREG, 1, 0, RegisterJumpMode.Jump);
+	const system = linkRawTestSystemBlua32({ text: systemText, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 4 }, { firstWord: 4, wordCount: 1 }, { firstWord: 5, wordCount: 3, maxStack: 4 }],
+		constants: [integerConstant(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), integerConstant(23)],
+		exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
+	const cartText = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(cartText, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(cartText, 1, OpCode.JREG, 0, 1, RegisterJumpMode.Link);
+	writeInstruction(cartText, 2, OpCode.LOADK, 4, 0, 1);
+	writeInstruction(cartText, 3, OpCode.ADD, 5, 2, 4);
+	writeInstruction(cartText, 4, OpCode.RET, 0, 1, 0);
+	const target = system.image.header.textAddress + 5 * INSTRUCTION_BYTES;
+	const pair = linkRawTestBlua32Pair(system, { text: cartText, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 5, maxStack: 6 }], constants: [integerConstant(target), integerConstant(64)] });
+	const { cpu } = machine(pair.systemRomBytes, cartridgeSlots(pair.cartRomBytes), CpuExecutionBackend.Interpreter);
+	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM]
+		+ BASE_CYCLES[OpCode.MTC0] + BASE_CYCLES[OpCode.JREG]), RunResult.Yielded);
+	assert.equal(cpu.readFramePc(0), target);
+	assert.equal(cpu.isUserMode(), true);
+	assert.equal(cpu.readFrameExecutionDomain(0), 0);
+	const checkpoint = captureCpuCheckpoint(cpu);
+	const remaining = 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.MFC0]
+		+ BASE_CYCLES[OpCode.JREG] + BASE_CYCLES[OpCode.ADD];
+	for (let replay = 0; replay < 2; ++replay) {
+		assert.equal(cpu.runUntilDepth(0, remaining), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(cpu.readFrameRegister(0, 2), valueInteger(23));
+		assert.equal(cpu.readFrameRegister(0, 3), valueInteger(cpu.rootThread.address));
+		assert.equal(cpu.readFrameRegister(0, 5), valueInteger(87));
+		assert.equal(cpu.readFrameExecutionDomain(0), 0);
+		assert.equal(cpu.isUserMode(), true);
+		assert.equal(cpu.readCauseWord(), 0);
+		if (replay === 0) restoreCpuCheckpoint(cpu, checkpoint);
 	}
 });
 

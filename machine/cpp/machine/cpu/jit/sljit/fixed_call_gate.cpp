@@ -40,6 +40,11 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R1),
 		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticCall);
+	// Unpublished activations inherit the source frame's image, not the
+	// instruction image of a raw jump into another ROM.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage));
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(state),
+		offsetof(NativeCpuRunState, codeImage)), semanticCall);
 	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
 		offsetof(NativeBlockExitSite, callStrategy));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,

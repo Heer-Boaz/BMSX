@@ -136,7 +136,7 @@ void* CPU::resumeScalarAfterNativeTransfer(NativeCpuRunState& run, const NativeB
 	cpu.lastPc = exit.lastPc;
 	// Native transfers stay in the currently bound image. Attribute the
 	// executed instruction before publishing the receiving activation.
-	cpu.m_lastExecutionDomainId = cpu.m_activeExecutionDomainId;
+	cpu.m_lastExecutionDomainId = run.codeImage->executionDomainId;
 	cpu.instructionBudgetRemaining = run.state.remainingCycles;
 	run.publishActivation(pc);
 	// The transfer is committed. Null instead declines it and runs the
@@ -147,6 +147,7 @@ void* CPU::resumeScalarAfterNativeTransfer(NativeCpuRunState& run, const NativeB
 void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
+	if (run->codeImage != state.frame->executionImage) return nullptr;
 	state.publishRegisterBase();
 	auto& caller = *state.frame;
 	const auto& call = exit->operands.call;

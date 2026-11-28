@@ -256,7 +256,11 @@ little-endian.
 | 0 | Cartridge slot 0 |
 | 1 | Cartridge slot 1 |
 
-A cartridge program reads its instructions from its own cartridge slot.
+A cartridge program reads cartridge instructions from its own slot. A branch
+into System ROM can execute code there without changing the selected slot,
+register window or privilege. Indexed instruction operands such as `LOADK`
+refer to the System image while the PC is in System ROM. A register jump back
+to the caller resumes with the cartridge's own operands.
 
 ### Instruction fetch {#sec-cpu-fetch-and-conditional-skip}
 
@@ -990,8 +994,9 @@ WIDE, an unreadable function record, or an EXEC of a function that is not STATIC
 interrupt enable. System programs start with Status = 1, cartridge programs with
 Status = 3.
 
-`MFC0`, `MTC0` and `RFE` work only in supervisor mode; in user mode they raise
-Coprocessor Unusable.
+`MTC0` and `RFE` work only in supervisor mode. User code can read `CURRENT`
+and `EVENT_CYCLES` with `MFC0`. Other user-mode CP0 accesses raise Coprocessor
+Unusable.
 
 ### Registers {#sec-cpu-cp0-fields}
 
@@ -1006,11 +1011,13 @@ For `MFC0` and `MTC0`, A is the register and B the CP0 register number.
 | 14 | `EPC` | Read | Write |
 | 15 | `EXEC` | 0 | Start an addressed static function; see below |
 | 16 | `CONTEXT` | Previous root context address | Select a prepared context; see below |
-| 17 | `RAM_END` | 0 | Set the end of ordinary RAM on the bus; see below |
+| 17 | `RAM_END` | Current boundary | Set the RAM boundary; see below |
 | 18 | `SYSTEM_VECTOR` | System exception function address | Set the System exception function; see below |
 | 19 | `PREVIOUS_ACTIVE` | Previous active context address | Ignored |
+| 22 | `CURRENT` | Active context address | Select an execution context; supervisor only |
+| 23 | `EVENT_CYCLES` | Cycles until the next device deadline | Ignored |
 
-Another number stops the CPU (hard halt).
+An unimplemented CP0 selector stops the CPU (hard halt).
 
 Status bit 8 (`00000100H`) inhibits system reset. In supervisor mode, only an
 instruction executing from System ROM in the System execution domain can
@@ -1020,7 +1027,8 @@ request is not cleared by changing this bit. See
 
 #### RAM_END {#sec-cpu-ram-end}
 
-`RAM_END` sets the exclusive end of main RAM visible on the system bus.
+`RAM_END` sets the exclusive end of main RAM for instruction fetch and DMA.
+It does not limit ordinary CPU data loads and stores.
 A supervisor instruction may write it only when it executes from System ROM
 in the System execution domain. Otherwise the write raises Coprocessor
 Unusable.

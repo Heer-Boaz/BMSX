@@ -52,8 +52,8 @@ Main RAM is divided as follows:
 | I/O area | `08000000H` | `08040000H` | 256 KiB |
 | System DATA and BSS | `08040000H` | End of system BSS | Set by the BIOS |
 | Program DATA and BSS | Chosen by the program | End of program BSS | Set by the program |
-| Private storage | `RAM_END` | `083FC000H` | Not mapped on the system bus |
-| System work area | `083FC000H` | `08400000H` | 16 KiB; not mapped on the system bus |
+| BLua storage | `RAM_END` | `083FC000H` | CPU data access; not a fetch or DMA area |
+| System work area | `083FC000H` | `08400000H` | 16 KiB, including the fixed CPU bank below |
 
 The device registers occupy the first 66,632 bytes of the I/O area, up to
 `08010447H`. The rest of the I/O area is reserved: do not use it for program
@@ -66,21 +66,23 @@ places its DATA directly after the end of the system BSS, and its BSS directly
 after its DATA. The program image records the addresses used; see
 [[Program images and startup](program-images.md#sec-memory-blua32-executable-image)]{.content-visible when-format="html"}[Book II, §11.5]{.content-visible when-format="pdf"}.
 
-### Main RAM on the system bus {#sec-memory-language-heap}
+### CPU data, instruction fetch and DMA {#sec-memory-language-heap}
 
-Main RAM is installed up to `08400000H`, but only the range from `08040000H`
-up to `RAM_END` is available as ordinary RAM on the system bus. The I/O
-reservation below that range is separate. The firmware can change the end
-in 4 KiB units up to `083FC000H` using
+CPU data loads and stores can address main RAM from `08040000H` up to
+`08400000H` in either execution mode, except for the fixed CPU area described
+below. This includes the BIOS heap and language objects. These are working
+data, not free storage for a cartridge: ordinary writes can overwrite live
+objects and allocator state.
+
+Instruction fetch and DMA can use only the range from `08040000H` up to
+`RAM_END`. The I/O reservation is separate. The firmware can change the
+boundary in 4 KiB units up to `083FC000H` using
 [[CP0 RAM_END](cpu.md#sec-cpu-ram-end)]{.content-visible when-format="html"}[Book II, §12.13.1]{.content-visible when-format="pdf"}.
-The last 16 KiB of installed RAM are always outside the ordinary range. The
-BIOS uses private RAM for language values and other work.
 
 At power-on `RAM_END` is `08040000H`; a system reset leaves it unchanged.
-Moving the boundary changes access to the bytes, not their contents. Ordinary
-fetch, load, store and DMA addresses from `RAM_END` up to `08400000H`
-are unmapped (UNMAPPED).
-Place program sections and device buffers within the mapped range.
+Moving the boundary does not change the contents of RAM. Fetch or DMA from
+`RAM_END` to `08400000H` is unmapped (UNMAPPED). Place program sections and
+device buffers below `RAM_END`.
 
 ### Reset bank {#sec-memory-reset-bank}
 
@@ -92,11 +94,12 @@ The fixed reset bank uses the following ranges in the system work area.
 | Value backing | `083FD000H` | `083FD780H` | 384 slots, 5 bytes each |
 | Context record | `083FD880H` | `083FD8D0H` | 80 bytes |
 
-While supervisor code executes in the reset bank, CPU data loads and stores
-can also access private RAM from `RAM_END` to `08400000H`. Instruction fetch
-and DMA do not gain this access. Leaving the reset bank through
-[[CP0 CONTEXT](cpu.md#sec-cpu-context)]{.content-visible when-format="html"}[Book II, §12.13.1]{.content-visible when-format="pdf"}
-ends this access.
+User-mode data accesses cannot address `083FC880H`–`083FD8DBH`. This range
+includes the fixed backing and the exception-control words. The CPU uses the
+fixed backing through its register and context mechanisms, not ordinary
+loads and stores. System-domain supervisor code executing from System ROM can
+access the exception-control words. This does not grant any additional fetch
+or DMA access.
 
 ## VRAM used by the BIOS {#sec-memory-firmware-reservation-in-vram}
 

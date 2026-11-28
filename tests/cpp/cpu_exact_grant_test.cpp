@@ -641,6 +641,131 @@ void compileRegisterJumpReceiver() {
 #endif
 }
 
+void registerJumpBetweenRoms() {
+	test::Blua32TestImage bios;
+	bios.mappedCode = false;
+	bios.text.resize(3u * INSTRUCTION_BYTES);
+	bios.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 5},
+		{.firstWord = 1, .wordCount = 2, .maxStack = 5}};
+	bios.constants = {i32{19}};
+	writeInstruction(bios.text, 0, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(bios.text, 1, static_cast<u8>(OpCode::LOADK), 4, 0, 0);
+	writeInstruction(bios.text, 2, static_cast<u8>(OpCode::JREG), 2, 0, 0);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, bios);
+	const u32 entry = system.textAddress + INSTRUCTION_BYTES;
+
+	test::Blua32TestImage cart;
+	cart.mappedCode = false;
+	cart.text.resize(5u * INSTRUCTION_BYTES);
+	cart.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 5}};
+	cart.constants = {i32{73}, static_cast<i32>(entry)};
+	writeInstruction(cart.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(cart.text, 1, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
+	writeInstruction(cart.text, 2, static_cast<u8>(OpCode::JREG), 1, 2, 1);
+	writeInstruction(cart.text, 3, static_cast<u8>(OpCode::LOADK), 3, 0, 0);
+	writeInstruction(cart.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	const auto slot0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cart);
+	cart.constants.front() = i32{101};
+	const auto slot1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cart);
+	struct Machine {
+		Memory memory;
+		IrqController irq;
+		ExecutionAddressSpace addresses;
+		CPU cpu;
+		const Blua32ExecutionImage* systemImage;
+		Machine(const test::Blua32TestRom& system, const test::Blua32TestImage& bios,
+			const test::Blua32TestRom& slot0, const test::Blua32TestRom& slot1, bool scalar)
+			: memory(MemoryInit{system.bytes, test::cartridgeSlots(slot0.bytes, slot1.bytes)}, PSX_MACHINE_SPEC.ramBytes),
+			  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
+			test::seedManagedFixture(cpu, addresses, system, bios);
+			for (const ExecutionDomainId slot : {0, 1}) {
+				const auto boot = *addresses.resolveDomain(slot);
+				test::installFixtureOperands(cpu, addresses, boot);
+				cpu.replaceExecutionImage(boot);
+			}
+			auto state = cpu.captureRuntimeState();
+			state.statusWord = CPU_STATUS_CART_ENTRY;
+			cpu.restoreRuntimeState(state);
+			systemImage = cpu.activeThread()->currentFrame->executionImage;
+			if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr,
+				ALL_EXECUTION_DOMAINS_MASK, 0u});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			else cpu.prepareSystemNativeCode();
+#endif
+		}
+	} generated(system, bios, slot0, slot1, false), scalar(system, bios, slot0, slot1, true);
+	const auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
+	auto& cpu = generated.cpu;
+	for (const ExecutionDomainId slot : {0, 1}) {
+		const auto& rom = slot == 0 ? slot0 : slot1;
+		const u32 link = rom.textAddress + 3u * INSTRUCTION_BYTES;
+		const Value expected = valueInteger(slot == 0 ? 73 : 101);
+		const auto setup = [&] {
+			for (auto* lane : {&generated.cpu, &scalar.cpu}) {
+				lane->writeFrameExecution(0, slot, rom.functionAddresses[0], rom.textAddress);
+				lane->activeThread()->currentFrame->setTop(0);
+			}
+		};
+		const auto authority = [&] {
+			for (auto* lane : {&generated.cpu, &scalar.cpu}) {
+				require(lane->getFrameDepth() == 1 && lane->readFrameExecutionDomain(0) == slot
+					&& lane->readFrameFunctionAddress(0) == rom.functionAddresses[0]
+					&& lane->activeCartridgeSlot() == slot
+					&& lane->captureRuntimeState().statusWord == CPU_STATUS_CART_ENTRY,
+					"the ROM crossing leaves one original cartridge activation and User authority");
+			}
+		};
+		setup();
+		require(test::runCpuParity(cpu, scalar.cpu, 2 * cycles(OpCode::LOADK) + cycles(OpCode::JREG)) == RunResult::Yielded
+			&& cpu.readFramePc(0) == entry && cpu.readFrameRegister(0, 0) == expected
+			&& cpu.readFrameRegister(0, 2) == valueInteger(link),
+			"ordinary register linking retires the cartridge continuation before entering BIOS");
+		authority();
+		require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::LOADK)) == RunResult::Yielded
+			&& cpu.readFramePc(0) == entry + INSTRUCTION_BYTES && cpu.readFrameRegister(0, 4) == valueInteger(19)
+			&& cpu.readLastExecutionDomain() == SYSTEM_EXECUTION_DOMAIN_ID,
+			"BIOS ROM resolves its own pool rather than the issuing cartridge pool");
+		authority();
+		const auto finish = [&] {
+			require(cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == link + INSTRUCTION_BYTES
+				&& cpu.readFrameRegister(0, 3) == expected && cpu.readLastExecutionDomain() == slot
+				&& test::sameLanguageRam(cpu, scalar.cpu),
+				"the raw return resumes the original slot and uses its constant pool with an exact grant");
+			authority();
+		};
+		require(test::runCpuParity(cpu, scalar.cpu, cycles(OpCode::JREG) + cycles(OpCode::LOADK)) == RunResult::Yielded,
+			"the BIOS return and one cartridge instruction fit in the same grant");
+		finish();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const auto& systemLookup = *generated.systemImage->nativeCodeLookup;
+		const auto* biosCell = systemLookup.findEntryCellInRoot(systemLookup.root(slot), entry);
+		require(biosCell && *biosCell, "the BIOS entry publishes native code usable from either cartridge slot");
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+		for (;;) {
+			setup();
+			require(test::runCpuParity(cpu, scalar.cpu, 4 * cycles(OpCode::LOADK) + 2 * cycles(OpCode::JREG)) == RunResult::Yielded,
+				"the complete unframed round trip fits in a single grant");
+			finish();
+			const auto& cartLookup = cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+			if (cartLookup) {
+				const auto* cartCell = cartLookup->findEntryCellInRoot(cartLookup->root(slot), rom.textAddress);
+				if (cartCell && *cartCell) break;
+			}
+			require(std::chrono::steady_clock::now() < deadline, "the same physical cartridge code eventually publishes a native entry");
+			std::this_thread::yield();
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& jumps = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::RegisterJump)];
+		const auto before = jumps.entries;
+		setup();
+		require(test::runCpuParity(cpu, scalar.cpu, 4 * cycles(OpCode::LOADK) + 2 * cycles(OpCode::JREG)) == RunResult::Yielded
+			&& jumps.entries == before + 2u, "both raw ROM crossings execute generated JREG in the same User grant");
+		finish();
+#endif
+#endif
+	}
+}
+
 void reservedRegisterJumpModes() {
 	const auto jreg = static_cast<u8>(OpCode::JREG);
 	for (const u32 mode : {2u, 3u, 4u, 5u, 1u << BASE_OPERAND_BC_BITS}) {
@@ -1874,6 +1999,7 @@ int main(int argc, char** argv) {
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
 		else if (scenario == "register-jump") { exactRegisterJumpGrant(); reservedRegisterJumpModes(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); exactResidentRebasedEdges(); }
+		else if (scenario == "cross-rom-jump") registerJumpBetweenRoms();
 		else if (scenario == "physical-window-moves") exactPhysicalWindowMoves();
 		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }

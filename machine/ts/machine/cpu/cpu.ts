@@ -2,7 +2,7 @@ import { RegisterJumpMode, ReturnSource, ValueMoveKind } from '../../spec/blua32
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_STACK_BASE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CART_READ_QUALIFIER, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_CONTROL_RAM_END, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, CPU_FIXED_STACK_BASE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, IO_WORD_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -10,6 +10,7 @@ import {
 	type MappedPageInvalidator,
 	type Memory,
 	type MemoryByteView,
+	RamAperture,
 } from '../memory/memory';
 import {
 	MAPPED_BUS_INSTRUCTION_FETCH,
@@ -22,7 +23,7 @@ import type { IrqController } from '../devices/irq/controller';
 import type { DeviceScheduler } from '../scheduler/device';
 import { BASE_CYCLES, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
-	cop0FieldImplemented, cop0ReadAsZero,
+	cop0FieldImplemented, cop0ReadAsZero, cop0UserReadable,
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
@@ -99,7 +100,7 @@ import {
 	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_SYSTEM_OFFSET,
 	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MEMORY_ACCESS_KIND_BYTE_SIZES, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/numeric';
 import {
@@ -900,8 +901,8 @@ export class CPU implements MappedPageInvalidator {
 				for (const thread of this.threadBanks) {
 					if (thread.address === 0) continue;
 					for (let frame = thread.firstFrame; frame !== null; frame = frame.next) {
-						if (frame.executionImage !== previous) continue;
-						frame.executionImage = image;
+						// A frame can fetch System code without changing its activation bank.
+						if (frame.executionImage === previous) frame.executionImage = image;
 						frame.decodedPage = null;
 						frame.compilationEntry = true;
 					}
@@ -1056,6 +1057,12 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private instructionImageForFrame(frame: CallFrame, pc: number): Blua32ExecutionImage {
+		// A jump can execute System ROM without changing the caller's context,
+		// cartridge chip select or privilege. Indexed operands follow the code.
+		return pc < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE ? this.systemImage : frame.executionImage;
+	}
+
 	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
@@ -1064,7 +1071,7 @@ export class CPU implements MappedPageInvalidator {
 		if (cached !== null && cached.key === key) {
 			return cached;
 		}
-		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot);
+		const page = this.decodedPageForAddress(this.instructionImageForFrame(frame, pc), pageAddress, key, slot);
 		frame.decodedPage = page;
 		frame.compilationEntry = true;
 		return page;
@@ -1077,7 +1084,7 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 		allowFusion: boolean,
 	): boolean {
-		const image = frame.executionImage;
+		const image = this.instructionImageForFrame(frame, pc);
 		let instructionCacheable = page.cacheable;
 		let bodyPage: DecodedInstructionPage | null = null;
 		let width = 1;
@@ -1214,7 +1221,7 @@ export class CPU implements MappedPageInvalidator {
 		if (instructionCacheable && bodyPage !== null && bodyPage.writeWatches !== null) {
 			bodyPage.writeWatches.armWord(bodyPage.writeWatchIndex, 0);
 		}
-		const observed = this.instructionObserver?.points[frame.executionImage.executionDomainId + 1];
+		const observed = this.instructionObserver?.points[image.executionDomainId + 1];
 		if (observed?.has(pc)) {
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.Observe;
 			page.dispatchCycles[pageOffset] = 0;
@@ -1238,7 +1245,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
-		if (observed?.has(nextPc)) return true;
+		if (this.instructionImageForFrame(frame, nextPc) !== image || observed?.has(nextPc)) return true;
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
 		if (!nextPage.cacheable) {
 			return true;
@@ -2139,8 +2146,8 @@ export class CPU implements MappedPageInvalidator {
 							return RunResult.Yielded;
 						}
 						const frame = scalarFrame ?? thread.currentFrame!;
-						const image = frame.executionImage;
-						if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
+						const activation = frame.executionImage;
+						if (activation !== null && this.activeExecutionImage !== activation) this.latchActiveExecutionImage(activation.executionDomainId, activation);
 						if (canInterrupt && (this.nonMaskableInterruptPending || this.canAcceptMaskableInterruptLine())) {
 								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.enterPendingInterrupt();
@@ -2157,12 +2164,13 @@ export class CPU implements MappedPageInvalidator {
 							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 							continue;
 						}
-						if (image === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
+						if (activation === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
 							if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.cop0Words[COP0_BAD_ADDRESS] = pc;
 							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 							continue;
 						}
+						const image = this.instructionImageForFrame(frame, pc);
 						const page = this.decodedPageForFrame(frame, pc);
 						for (;;) {
 							const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
@@ -2195,6 +2203,7 @@ export class CPU implements MappedPageInvalidator {
 							this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
 							const result = this.executeInstruction(
 								frame,
+								image,
 								page,
 								pageOffset,
 								dispatchOp,
@@ -2261,17 +2270,17 @@ export class CPU implements MappedPageInvalidator {
 						return RunResult.Yielded;
 					}
 					const frame = thread.currentFrame!;
-					const image = frame.executionImage;
-					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
+					const activation = frame.executionImage;
+					if (activation !== null && this.activeExecutionImage !== activation) this.latchActiveExecutionImage(activation.executionDomainId, activation);
 					if (canInterrupt && this.nonMaskableInterruptPending) {
 						this.enterPendingInterrupt();
 						continue;
 					}
 					if (canInterrupt && this.canAcceptMaskableInterruptLine()) {
 						const interruptedFrame = thread.currentFrame!;
-						if ((preMaskableInterruptExecutionDomainMask
-							& executionDomainBit(this.activeExecutionDomainId)) !== 0
-							&& executionHook(this.activeExecutionDomainId, interruptedFrame.pc)) {
+						const domain = this.instructionImageForFrame(interruptedFrame, interruptedFrame.pc).executionDomainId;
+						if ((preMaskableInterruptExecutionDomainMask & executionDomainBit(domain)) !== 0
+							&& executionHook(domain, interruptedFrame.pc)) {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
@@ -2282,8 +2291,8 @@ export class CPU implements MappedPageInvalidator {
 						continue;
 					}
 					const pc = frame.pc;
-					if ((executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
-						&& executionHook(this.activeExecutionDomainId, pc)) {
+					const domain = pc < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE ? SYSTEM_EXECUTION_DOMAIN_ID : this.activeExecutionDomainId;
+					if ((executionDomainMask & executionDomainBit(domain)) !== 0 && executionHook(domain, pc)) {
 						return RunResult.ExecutionStopped;
 					}
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
@@ -2291,11 +2300,12 @@ export class CPU implements MappedPageInvalidator {
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 						continue;
 					}
-					if (image === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
+					if (activation === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
 						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 						continue;
 					}
+					const image = this.instructionImageForFrame(frame, pc);
 					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
@@ -2312,6 +2322,7 @@ export class CPU implements MappedPageInvalidator {
 					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
 					this.executeInstruction(
 						frame,
+						image,
 						page,
 						pageOffset,
 						op,
@@ -2552,17 +2563,17 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeFusedNumericPair(
 		frame: CallFrame,
+		image: Blua32ExecutionImage,
 		page: DecodedInstructionPage,
 		pageOffset: number,
 		op: DecodedDispatchOp,
 	): void {
 		const registers = frame.registers;
-		const image = frame.executionImage;
 		const a = page.a[pageOffset];
 		if (page.requiredSlots[pageOffset] > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const rkB = page.b[pageOffset];
 		const rkC = page.c[pageOffset];
-		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
+		const left = this.readRKValue(registers, image, rkB), right = this.readRKValue(registers, image, rkC);
 		const isAddShl = op === DecodedDispatchOp.FusedAddShl;
 		const firstResult = isAddShl ? valueAdd(left, right) : valueInteger(op === DecodedDispatchOp.FusedShlBxor
 			? luaShiftLeft(integerOperand(left), integerOperand(right)) : luaShiftRight(integerOperand(left), integerOperand(right)));
@@ -2595,8 +2606,8 @@ export class CPU implements MappedPageInvalidator {
 		if (secondPage.requiredSlots[secondPageOffset] > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const secondRkB = secondPage.b[secondPageOffset];
 		const secondRkC = secondPage.c[secondPageOffset];
-		const secondLeft = integerOperand(this.readRKValue(frame, secondRkB));
-		const secondRight = integerOperand(this.readRKValue(frame, secondRkC));
+		const secondLeft = integerOperand(this.readRKValue(registers, image, secondRkB));
+		const secondRight = integerOperand(this.readRKValue(registers, image, secondRkC));
 		const secondResult = isAddShl ? luaShiftLeft(secondLeft, secondRight) : secondLeft ^ secondRight;
 		this.setRegisterIntegerFast(frame, registers, secondPage.a[secondPageOffset], secondResult);
 	}
@@ -2720,18 +2731,20 @@ export class CPU implements MappedPageInvalidator {
 		if (top >= 0) frame.top = top;
 	}
 
+	private dataAperture(address: number, bytes: number): RamAperture {
+		return ((address < CPU_CONTROL_RAM_END && address + bytes > CPU_FIXED_FRAME_ADDRESS)
+			|| (address & CART_READ_QUALIFIER) !== 0) && !this.isUserMode() && this.executingSystemRom()
+			? RamAperture.SystemData : RamAperture.CpuData;
+	}
+
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 			return;
 		}
-		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
+		const aperture = this.dataAperture(address, MEMORY_ACCESS_KIND_BYTE_SIZES[kind]);
 		if (kind === MemoryAccessKind.Value) {
-			if (!cpuProtected) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return;
-			}
-			const offset = this.memory.readMappedValueOffset(address);
+			const offset = this.memory.readMappedValueOffset(address, aperture);
 			if (offset === undefined) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 				return;
@@ -2744,14 +2757,14 @@ export class CPU implements MappedPageInvalidator {
 		const faultSequence = this.memory.readBusFaultSequence();
 		let value: Value;
 		switch (kind) {
-			case MemoryAccessKind.Word: value = valueInteger(this.memory.readMappedWord(address, cpuProtected) | 0); break;
-			case MemoryAccessKind.U8: value = valueInteger(this.memory.readMappedU8(address, cpuProtected)); break;
-			case MemoryAccessKind.U16LE: value = valueInteger(this.memory.readMappedU16LE(address, cpuProtected)); break;
-			case MemoryAccessKind.U32LE: value = valueInteger(this.memory.readMappedU32LE(address, undefined, cpuProtected) | 0); break;
-			case MemoryAccessKind.F32LE: value = valueFloatBits(this.memory.readMappedU32LE(address, undefined, cpuProtected)); break;
-			case MemoryAccessKind.F64LE: value = valueFloat(this.memory.readMappedF64LE(address, cpuProtected)); break;
+			case MemoryAccessKind.Word: value = valueInteger(this.memory.readMappedWord(address, aperture) | 0); break;
+			case MemoryAccessKind.U8: value = valueInteger(this.memory.readMappedU8(address, aperture)); break;
+			case MemoryAccessKind.U16LE: value = valueInteger(this.memory.readMappedU16LE(address, aperture)); break;
+			case MemoryAccessKind.U32LE: value = valueInteger(this.memory.readMappedU32LE(address, undefined, aperture) | 0); break;
+			case MemoryAccessKind.F32LE: value = valueFloatBits(this.memory.readMappedU32LE(address, undefined, aperture)); break;
+			case MemoryAccessKind.F64LE: value = valueFloat(this.memory.readMappedF64LE(address, aperture)); break;
 			case MemoryAccessKind.ContextWord:
-				if (!cpuProtected || !this.fixedInterruptActive()) {
+				if (this.isUserMode() || !this.executingSystemRom() || !this.fixedInterruptActive()) {
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				}
@@ -2772,12 +2785,8 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		if (kind === MemoryAccessKind.Value) {
-			if (this.isUserMode() || !this.executingSystemRom()) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return;
-			}
 			const registers = frame.registers;
-			if (!this.memory.writeMappedValue(address, registers.getPayload(source), registers.getTag(source)))
+			if (!this.memory.writeMappedValue(address, registers.getPayload(source), registers.getTag(source), this.dataAperture(address, VALUE_MEMORY_SIZE)))
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
 		}
@@ -2800,18 +2809,18 @@ export class CPU implements MappedPageInvalidator {
 		if (source >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const value = frame.registers.get(source);
 		const faultSequence = this.memory.readBusFaultSequence();
-		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
+		const aperture = this.dataAperture(address, MEMORY_ACCESS_KIND_BYTE_SIZES[kind]);
 		switch (kind) {
-			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, wordOperand(value), cpuProtected); break;
-			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, wordOperand(value), cpuProtected); break;
-			case MemoryAccessKind.U16LE: this.memory.writeMappedU16LE(address, wordOperand(value), cpuProtected); break;
-			case MemoryAccessKind.U32LE: this.memory.writeMappedU32LE(address, wordOperand(value), undefined, cpuProtected); break;
+			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, wordOperand(value), aperture); break;
+			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, wordOperand(value), aperture); break;
+			case MemoryAccessKind.U16LE: this.memory.writeMappedU16LE(address, wordOperand(value), aperture); break;
+			case MemoryAccessKind.U32LE: this.memory.writeMappedU32LE(address, wordOperand(value), undefined, aperture); break;
 			case MemoryAccessKind.F32LE:
 				if (!valueIsNumber(value)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				this.memory.writeMappedU32LE(address, valueIsFloat(value) ? valuePayload(value) : numberToF32Bits(asInteger(value)), undefined, cpuProtected); break;
+				this.memory.writeMappedU32LE(address, valueIsFloat(value) ? valuePayload(value) : numberToF32Bits(asInteger(value)), undefined, aperture); break;
 			case MemoryAccessKind.F64LE:
 				if (!valueIsNumber(value)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				this.memory.writeMappedF64LE(address, valueIsInteger(value) ? asInteger(value) : asFloat(value), cpuProtected); break;
+				this.memory.writeMappedF64LE(address, valueIsInteger(value) ? asInteger(value) : asFloat(value), aperture); break;
 		}
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -2842,11 +2851,11 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.charge(valueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
-		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
+		const aperture = this.dataAperture(addr, valueCount * IO_WORD_SIZE);
 		const available = Math.max(0, Math.min(valueCount, frame.registers.capacity() - valueBase));
 		let writeAddr = addr;
 		for (let offset = 0; offset < available; offset += 1) {
-			this.memory.writeMappedWord(writeAddr, wordOperand(frame.registers.get(valueBase + offset)), cpuProtected);
+			this.memory.writeMappedWord(writeAddr, wordOperand(frame.registers.get(valueBase + offset)), aperture);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 				return;
@@ -2887,8 +2896,8 @@ export class CPU implements MappedPageInvalidator {
 		else this.continueWordStores(frame, address, registerIndex, wordCount);
 	}
 
-	private prepareCompiledRegion(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
-		const pc = this.currentInstructionPc, image = frame.executionImage;
+	private prepareCompiledRegion(frame: CallFrame, image: Blua32ExecutionImage, page: DecodedInstructionPage, word: number): void {
+		const pc = this.currentInstructionPc;
 		const pagePc = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
 		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const romView = this.executionReadView, domain = image.executionDomainId;
@@ -3018,30 +3027,29 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): Value | number | undefined {
+	private executeCompiledBlock(frame: CallFrame, image: Blua32ExecutionImage, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): Value | number | undefined {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (cache.visits[word] < COMPILED_BLOCK_THRESHOLD) ++cache.visits[word];
 			if (frame.compilationEntry && cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
-				this.prepareCompiledRegion(frame, page, word);
+				this.prepareCompiledRegion(frame, image, page, word);
 			}
 		}
 		const thread = this.activeThread;
 		let block = cache.entries[word];
 		if (block === null || thread.stackRequiresScalar()) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
-			return this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
+			return this.executeInstruction(frame, image, page, word, page.ops[word], targetDepth);
 		}
 		// The first instruction was admitted with positive budget and charged by
 		// dispatch. Execute its bounded segment and return the complete charge.
 		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
 		if (!compiledBlockAdmits(block, frame, remaining)) {
 			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
-			return this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
+			return this.executeInstruction(frame, image, page, word, page.ops[word], targetDepth);
 		}
 		for (;;) {
 			const registers = frame.registers;
-			const image = frame.executionImage;
 			let current = block;
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
@@ -3092,7 +3100,7 @@ export class CPU implements MappedPageInvalidator {
 					redispatch = !this.executeReturn(frame, exit.exitA, exit.exitB);
 					break;
 				case CompiledBlockExit.StringOrder: {
-					const left = valuePayload(this.readRKValue(frame, exit.exitB)), right = valuePayload(this.readRKValue(frame, exit.exitC));
+					const left = valuePayload(this.readRKValue(registers, image, exit.exitB)), right = valuePayload(this.readRKValue(registers, image, exit.exitC));
 					this.beginStringComparison(frame, left, right, this.stringPool.byteLength(left), this.stringPool.byteLength(right),
 						exit.page.ops[exit.exitWord] === OpCode.LE, exit.exitA !== 0);
 					redispatch = true; break;
@@ -3140,15 +3148,15 @@ export class CPU implements MappedPageInvalidator {
 						const result = this.resolveTableFieldIndexCached(base, exit.page, exit.exitWord, key);
 						if (this.finishTableRead(frame, exit.exitA, base, valueString(key), result)) return;
 					} else if (this.loadTableIndex(base, exit.exit === CompiledBlockExit.ReadInteger
-						? valueInteger(exit.exitC) : this.readRKValue(frame, exit.exitC), frame, exit.exitA)) return;
+						? valueInteger(exit.exitC) : this.readRKValue(registers, image, exit.exitC), frame, exit.exitA)) return;
 					break;
 				}
 				case CompiledBlockExit.WriteField:
 				case CompiledBlockExit.WriteInteger:
 				case CompiledBlockExit.WriteIndex: {
-					const base = registers.get(exit.exitA), value = this.readRKValue(frame, exit.exitC);
+					const base = registers.get(exit.exitA), value = this.readRKValue(registers, image, exit.exitC);
 					const key = exit.exit === CompiledBlockExit.WriteField ? valueString(image.constWords[exit.exitB])
-						: exit.exit === CompiledBlockExit.WriteInteger ? valueInteger(exit.exitB) : this.readRKValue(frame, exit.exitB);
+						: exit.exit === CompiledBlockExit.WriteInteger ? valueInteger(exit.exitB) : this.readRKValue(registers, image, exit.exitB);
 					const invoked = valueTag(key) === ValueTag.String
 						? this.storeTableFieldIndexCached(frame, base, exit.page, exit.exitWord, valuePayload(key), value)
 						: this.storeTableIndex(frame, base, key, value);
@@ -3175,9 +3183,9 @@ export class CPU implements MappedPageInvalidator {
 				if (!compiledBlockAdmits(block, frame, remaining)) return;
 				continue;
 			}
-			if (frame.executionImage !== image) return;
+			if (this.instructionImageForFrame(frame, pc) !== image) return;
 			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
-			const lookup = frame.executionImage.compiledCodeLookup;
+			const lookup = image.compiledCodeLookup;
 			if (lookup === null) return;
 			const nextPage = lookup.find(pc, this.memory.cartridgeController.selectedSlot(this.executionBusSignals));
 			if (nextPage === null) return;
@@ -3189,7 +3197,7 @@ export class CPU implements MappedPageInvalidator {
 			// Only shared-memory system code entering the selectable cartridge
 			// window needs a fresh chip-select lookup on each traversal.
 			if (pc === exit.nextPc && (exit.resumesFrame || exit.exit === CompiledBlockExit.Continue) && exit.linkedBlock === null
-				&& (frame.executionImage.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
+				&& (image.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
 					|| pc < CART_ROM_BASE || exit.currentPc >= CART_ROM_BASE)) linkCompiledBlock(exit, next);
 			block = next;
 		}
@@ -3197,6 +3205,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeInstruction(
 		frame: CallFrame,
+		image: Blua32ExecutionImage,
 		page: DecodedInstructionPage,
 		pageOffset: number,
 		op: number,
@@ -3204,7 +3213,6 @@ export class CPU implements MappedPageInvalidator {
 		rewritten = false,
 	): Value | number | undefined {
 		const registers = frame.registers;
-		const image = frame.executionImage;
 		const a = page.a[pageOffset];
 		if (op < OPCODE_COUNT && page.requiredSlots[pageOffset] > registers.capacity()) {
 			switch (op) {
@@ -3224,21 +3232,21 @@ export class CPU implements MappedPageInvalidator {
 		switch (op) {
 				case DecodedDispatchOp.CompiledWarm:
 				case DecodedDispatchOp.Compiled:
-					return this.executeCompiledBlock(frame, page, pageOffset, targetDepth, rewritten);
+					return this.executeCompiledBlock(frame, image, page, pageOffset, targetDepth, rewritten);
 				case DecodedDispatchOp.Observe:
 					frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]);
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
 					this.instructionBudgetRemaining -= decodedInstructionBaseCycles(page, pageOffset);
-					return this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
+					return this.executeInstruction(frame, image, page, pageOffset, page.ops[pageOffset], targetDepth);
 				case DecodedDispatchOp.FusedShlBxor:
 				case DecodedDispatchOp.FusedShrBxor:
 				case DecodedDispatchOp.FusedAddShl:
 					if (frame.thread.stackRequiresScalar()) {
-						this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
+						this.executeInstruction(frame, image, page, pageOffset, page.ops[pageOffset], targetDepth);
 						return;
 					}
-					this.executeFusedNumericPair(frame, page, pageOffset, op);
+					this.executeFusedNumericPair(frame, image, page, pageOffset, op);
 					return;
 				case OpCode.WIDE:
 					this.hardHalt();
@@ -3335,7 +3343,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.SETI: {
-					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(frame, page.c[pageOffset]);
+					const base = registers.get(a), index = page.b[pageOffset], value = this.readRKValue(registers, image, page.c[pageOffset]);
 					if (valueTag(base) !== ValueTag.Table || !this.tables.storeIntegerArrayKey(valuePayload(base), index, valueTag(value), valuePayload(value))) {
 						this.storeTableIndex(frame, base, valueInteger(index), value);
 					}
@@ -3358,13 +3366,13 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.SETFIELD:
-					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(frame, page.c[pageOffset]));
+					this.storeTableFieldIndexCached(frame, registers.get(a), page, pageOffset, image.constWords[page.b[pageOffset]], this.readRKValue(registers, image, page.c[pageOffset]));
 					return;
 				case OpCode.HALT: this.haltUntilIrq(); return;
 				case OpCode.GETT:
-					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]), frame, a); return;
+					this.loadTableIndex(registers.get(page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]), frame, a); return;
 				case OpCode.SETT:
-					this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]));
+					this.storeTableIndex(frame, registers.get(a), this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]));
 					return;
 				case OpCode.ARGC:
 					this.setRegisterIntegerFast(frame, registers, a, frame.argumentCount);
@@ -3389,37 +3397,37 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.ADD:
-					this.setRegisterValueFast(frame, registers, a, valueAdd(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueAdd(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.SUB:
-					this.setRegisterValueFast(frame, registers, a, valueSubtract(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueSubtract(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.MUL:
-					this.setRegisterValueFast(frame, registers, a, valueMultiply(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueMultiply(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.DIV:
-					this.setRegisterValueFast(frame, registers, a, valueDivide(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueDivide(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.MOD:
-					this.setRegisterValueFast(frame, registers, a, valueModulo(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueModulo(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.FLOORDIV:
-					this.setRegisterValueFast(frame, registers, a, valueFloorDivide(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valueFloorDivide(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.POW:
-					this.setRegisterValueFast(frame, registers, a, valuePower(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
+					this.setRegisterValueFast(frame, registers, a, valuePower(this.readRKValue(registers, image, page.b[pageOffset]), this.readRKValue(registers, image, page.c[pageOffset]))); return;
 				case OpCode.BAND: {
-					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					const left = integerOperand(this.readRKValue(registers, image, page.b[pageOffset])), right = integerOperand(this.readRKValue(registers, image, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, left & right); return;
 				}
 				case OpCode.BOR: {
-					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					const left = integerOperand(this.readRKValue(registers, image, page.b[pageOffset])), right = integerOperand(this.readRKValue(registers, image, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, left | right); return;
 				}
 				case OpCode.BXOR: {
-					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					const left = integerOperand(this.readRKValue(registers, image, page.b[pageOffset])), right = integerOperand(this.readRKValue(registers, image, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, left ^ right); return;
 				}
 				case OpCode.SHL: {
-					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					const left = integerOperand(this.readRKValue(registers, image, page.b[pageOffset])), right = integerOperand(this.readRKValue(registers, image, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, luaShiftLeft(left, right)); return;
 				}
 				case OpCode.SHR: {
-					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
+					const left = integerOperand(this.readRKValue(registers, image, page.b[pageOffset])), right = integerOperand(this.readRKValue(registers, image, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, luaShiftRight(left, right)); return;
 				}
 				case OpCode.UNM: {
@@ -3444,14 +3452,14 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.EQ: {
 					const rkB = page.b[pageOffset];
 					const rkC = page.c[pageOffset];
-					const eq = this.readRKEquals(frame, rkB, rkC);
+					const eq = valuesEqual(this.readRKValue(registers, image, rkB), this.readRKValue(registers, image, rkC));
 					if (eq !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
 					return;
 				}
 				case OpCode.LT: {
-					const left = this.readRKValue(frame, page.b[pageOffset]), right = this.readRKValue(frame, page.c[pageOffset]);
+					const left = this.readRKValue(registers, image, page.b[pageOffset]), right = this.readRKValue(registers, image, page.c[pageOffset]);
 					let ok = false;
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) === NumericOrder.Less;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
@@ -3469,7 +3477,7 @@ export class CPU implements MappedPageInvalidator {
 
 				case OpCode.MFC0: {
 					const field = page.b[pageOffset];
-					if (field !== COP0_EVENT_CYCLES && this.isUserMode()) {
+					if (!cop0UserReadable(field) && this.isUserMode()) {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
@@ -3503,7 +3511,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 
 				case OpCode.LE: {
-					const left = this.readRKValue(frame, page.b[pageOffset]), right = this.readRKValue(frame, page.c[pageOffset]);
+					const left = this.readRKValue(registers, image, page.b[pageOffset]), right = this.readRKValue(registers, image, page.c[pageOffset]);
 					let ok = false;
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) <= NumericOrder.Equal;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
@@ -3577,7 +3585,7 @@ export class CPU implements MappedPageInvalidator {
 					if (c === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
 					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
 					const addr = displaced ? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
-						: wordOperand(this.readRKValue(frame, b));
+						: wordOperand(this.readRKValue(registers, image, b));
 					const load = op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM;
 					if (load) this.executeMemoryLoad(frame, a, c, addr);
 					else this.executeMemoryStore(frame, a, c, addr);
@@ -3588,7 +3596,7 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					const address = op === OpCode.STORE_MEM_WORDS_D
 						? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
-						: wordOperand(this.readRKValue(frame, b));
+						: wordOperand(this.readRKValue(registers, image, b));
 					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;
 				}
@@ -3793,11 +3801,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 
-	private readRKEquals(frame: CallFrame, left: number, right: number): boolean {
-		return valuesEqual(this.readRKValue(frame, left), this.readRKValue(frame, right));
-	}
-	private readRKValue(frame: CallFrame, rk: number): Value {
-		return rk < 0 ? valueFromTag(frame.executionImage.constTags[-1 - rk], frame.executionImage.constWords[-1 - rk]) : frame.registers.get(rk);
+	private readRKValue(registers: ValueSlots, image: Blua32ExecutionImage, rk: number): Value {
+		return rk < 0 ? valueFromTag(image.constTags[-1 - rk], image.constWords[-1 - rk]) : registers.get(rk);
 	}
 
 	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {

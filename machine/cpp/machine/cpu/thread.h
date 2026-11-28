@@ -98,7 +98,7 @@ private:
 	}
 	friend struct CallFrame;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	friend class NativeLowering;
+	friend struct NativeCpuRunState;
 #endif
 	u32 frameCapacity() const;
 	u32 frameControlAddress(u32 index) const;

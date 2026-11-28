@@ -222,10 +222,10 @@ void CPU::decodeInstructionWords(
 }
 
 bool CPU::decodeInstruction(
-	CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
+	CallFrame& frame, Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion
 ) {
 	if (page.refreshState[pageOffset] == DECODED_REFRESH_FUSION) {
-		refreshDecodedFusion(frame, page, pageOffset, pc);
+		refreshDecodedFusion(frame, image, page, pageOffset, pc);
 		return true;
 	}
 	DecodedInstruction& decoded = page.words[pageOffset];
@@ -248,23 +248,23 @@ bool CPU::decodeInstruction(
 	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		const u32 bodyPc = pc + INSTRUCTION_BYTES;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
-			bodyPage = &decodedPageForFrame(frame, bodyPc);
+			bodyPage = &decodedPageForFrame(frame, image, bodyPc);
 			instructionCacheable &= bodyPage->mapping.cacheable;
 		}
 		if (!fetchWord(bodyPage ? *bodyPage : page, bodyPc, bodyWord)) return false;
 	}
-	decodeInstructionWords(*frame.executionImage, page, pageOffset, pc,
+	decodeInstructionWords(image, page, pageOffset, pc,
 		sourceWord, bodyWord, instructionCacheable, bodyPage);
 	if (instructionCacheable && decoded.dispatchOp == decoded.op && decodedDispatchCanFuse(decoded.op)) {
 		page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
-		if (allowFusion) refreshDecodedFusion(frame, page, pageOffset, pc);
+		if (allowFusion) refreshDecodedFusion(frame, image, page, pageOffset, pc);
 	}
 	return true;
 }
 
 // Fusion is dispatch metadata, not an instruction fetch. Use a cached
 // successor or inspect a fully backed encoding without touching the bus.
-void CPU::refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc) {
+void CPU::refreshDecodedFusion(CallFrame& frame, Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset, u32 pc) {
 	auto& head = page.words[pageOffset];
 	page.refreshState[pageOffset] = 0;
 	if (head.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)) return;
@@ -273,11 +273,11 @@ void CPU::refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u
 		|| head.dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)) return;
 #endif
 	head.dispatchOp = head.op;
-	auto& image = *frame.executionImage;
 	const u32 nextPc = pc + head.width * INSTRUCTION_BYTES;
 	if (m_instructionObserver.points[static_cast<size_t>(image.executionDomainId + 1)].contains(nextPc)) return;
 	const u32 nextOffset = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	auto& nextPage = nextOffset > pageOffset ? page : decodedPageForFrame(frame, nextPc);
+	if (nextOffset <= pageOffset && instructionImageForFrame(frame, nextPc) != &image) return;
+	auto& nextPage = nextOffset > pageOffset ? page : decodedPageForFrame(frame, image, nextPc);
 	if (!nextPage.mapping.cacheable) return;
 	if (nextPage.refreshState[nextOffset] & DECODED_REFRESH_DECODE) {
 		const auto& binding = nextPage.mapping;

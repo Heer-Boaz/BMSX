@@ -19,7 +19,7 @@ void NativeLowering::lowerOperation(const NativeControlAccess& access, const Nat
 	const bool writesWord = access.mode == NativeControlMode::WriteWord;
 	const bool integer = access.operand == NativeWordSource::Integer;
 	constexpr auto bank = offsetof(NativeBlockRunState, cop0Words);
-	if (access.checkPrivilege || readsWord || (integer && writesWord))
+	if (access.checkPrivilege || (readsWord && access.field != COP0_CURRENT && access.field != COP0_RAM_END) || (integer && writesWord))
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
 	if (access.checkPrivilege) {
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), COP0_STATUS * sizeof(u32), SLJIT_IMM,

@@ -9,6 +9,7 @@ namespace bmsx {
 
 void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& state = run->state;
+	if (run->codeImage != state.frame->executionImage) return nullptr;
 	state.publishRegisterBase();
 	auto& leaving = *state.frame;
 	auto* caller = leaving.previous;
@@ -50,7 +51,7 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	auto cell = pending ? pending->continuationCells[run->cartridgeSlot] : caller->nativeContinuationCells[run->cartridgeSlot];
 	if (!cell || (!pending && caller->nativeContinuationPc != pc))
 		cell = NativeCodeLookup::findEntryCellInRoot(run->codeRoot, pc);
-	void* const target = cell ? *cell : nullptr;
+	void* const target = cell && run->cpu->instructionImageForFrame(*caller, pc) == run->codeImage ? *cell : nullptr;
 
 	// Place the return once even if the caller's next instruction needs
 	// scalar dispatch. The admitted stack needs no growth or bus access.

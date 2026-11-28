@@ -8,7 +8,7 @@ import {
 	CART_READ_SLOT_SHIFT,
 	CART_ROM_BASE,
 	CART_ROM_END,
-	CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END,
+	CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END, CPU_CONTROL_RAM_END,
 	CART_ROM_SIZE,
 	IO_BASE,
 	IO_WORD_SIZE,
@@ -192,6 +192,8 @@ type StoredIoWriteReadyHandler = (
 	addr: number,
 	busSignals: MappedBusSignals,
 ) => boolean;
+
+export const enum RamAperture { Bus, CpuData, SystemData }
 
 export type MemoryBusState = {
 	ramBusEnd: number;
@@ -554,10 +556,10 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	private readQualifiedCartridge(addr: number, width: 1 | 2 | 4, cpuProtected: boolean): number | null {
+	private readQualifiedCartridge(addr: number, width: 1 | 2 | 4, aperture: RamAperture): number | null {
 		if ((addr & CART_READ_QUALIFIER) === 0) return null;
 		const address = addr & CART_READ_ADDRESS_MASK;
-		if (address < CART_ROM_BASE || address > (cpuProtected ? CART_RAM_END : CART_ROM_END) - width) return null;
+		if (address < CART_ROM_BASE || address > (aperture === RamAperture.SystemData ? CART_RAM_END : CART_ROM_END) - width) return null;
 		const signals = mappedBusSignalsForCartridgeSlot(addr >>> CART_READ_SLOT_SHIFT);
 		const controller = this.cartridgeController;
 		switch (width) {
@@ -567,19 +569,19 @@ export class Memory {
 		}
 	}
 
-	private readMainMemoryU8(addr: number, faultAccess: number, cpuProtected = false): number {
+	private readMainMemoryU8(addr: number, faultAccess: number, aperture = RamAperture.Bus): number {
 		if (addr < RAM_BASE) {
 			if (addr < this.systemRom.bytes.byteLength) return this.systemRom.bytes[addr];
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
-			if (this.isRamRange(addr, 1, cpuProtected)) {
+			if (this.admitsRamTransfer(addr, 1, aperture)) {
 				return this.ram[offset];
 			}
 		} else if (addr < CART_BUS_END) {
 			const value = this.cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU);
 			if (value !== null) return value;
 		} else {
-			const value = this.readQualifiedCartridge(addr, 1, cpuProtected);
+			const value = this.readQualifiedCartridge(addr, 1, aperture);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -610,28 +612,23 @@ export class Memory {
 		}
 	}
 
-	private writeRamU8(addr: number, value: number, cpuProtected = false): boolean {
-		if (!this.isRamRange(addr, 1, cpuProtected)) return false;
+	private writeRamU8(addr: number, value: number, aperture = RamAperture.Bus): boolean {
+		if (!this.admitsRamTransfer(addr, 1, aperture)) return false;
 		const offset = addr - RAM_BASE;
 		this.ram[offset] = value & 0xff;
-		this.ramPageWriteWatches.invalidateWrite(offset, 1, RAM_BASE, this.mappedPageInvalidator!);
+		this.invalidateRamWrite(offset, 1);
 		return true;
 	}
 
-	private writeRamWordLE(addr: number, byteLength: 2 | 4, value: number, cpuProtected = false): boolean {
-		if (!this.isRamRange(addr, byteLength, cpuProtected)) return false;
+	private writeRamWordLE(addr: number, byteLength: 2 | 4, value: number, aperture = RamAperture.Bus): boolean {
+		if (!this.admitsRamTransfer(addr, byteLength, aperture)) return false;
 		const offset = addr - RAM_BASE;
 		if (byteLength === 2) {
 			writeLE16(this.ram, offset, value);
 		} else {
 			writeLE32(this.ram, offset, value);
 		}
-		this.ramPageWriteWatches.invalidateWrite(
-			offset,
-			byteLength,
-			RAM_BASE,
-			this.mappedPageInvalidator!,
-		);
+		this.invalidateRamWrite(offset, byteLength);
 		return true;
 	}
 
@@ -647,23 +644,23 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	public readMappedWord(addr: number, cpuProtected = false): number {
-		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD, cpuProtected);
+	public readMappedWord(addr: number, aperture = RamAperture.CpuData): number {
+		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD, aperture);
 	}
 
 	public writeIoU32(addr: number, value: number): void {
 		this.ioSlots[(addr - IO_BASE) / IO_WORD_SIZE] = value;
 	}
 
-	public writeMappedWord(addr: number, value: number, cpuProtected = false): void {
-		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD, cpuProtected);
+	public writeMappedWord(addr: number, value: number, aperture = RamAperture.CpuData): void {
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD, aperture);
 	}
 
 	public readU8(addr: number): number {
 		return this.readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
 	}
 
-	public readMappedU8(addr: number, cpuProtected = false): number {
+	public readMappedU8(addr: number, aperture = RamAperture.CpuData): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			return this.readIoSlot(slot, addr, MAPPED_BUS_MASTER_CPU) & 0xff;
@@ -672,7 +669,7 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
 			return 0;
 		}
-		return this.readMainMemoryU8(addr, BUS_ACCESS_READ_U8, cpuProtected);
+		return this.readMainMemoryU8(addr, BUS_ACCESS_READ_U8, aperture);
 	}
 
 	public writeU8(addr: number, value: number): void {
@@ -686,13 +683,13 @@ export class Memory {
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 	}
 
-	public writeMappedU8(addr: number, value: number, cpuProtected = false): void {
+	public writeMappedU8(addr: number, value: number, aperture = RamAperture.CpuData): void {
 		if (this.isIoRegionRange(addr, 1)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U8);
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
-			if (this.writeRamU8(addr, value, cpuProtected)) {
+			if (this.writeRamU8(addr, value, aperture)) {
 				return;
 			}
 		} else if (addr < CART_BUS_END) {
@@ -729,7 +726,7 @@ export class Memory {
 		return 0;
 	}
 
-	public readMappedU16LE(addr: number, cpuProtected = false): number {
+	public readMappedU16LE(addr: number, aperture = RamAperture.CpuData): number {
 		if (this.isIoRegionRange(addr, 2)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 			return 0;
@@ -740,22 +737,22 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
-			if (this.isRamRange(addr, 2, cpuProtected)) {
+			if (this.admitsRamTransfer(addr, 2, aperture)) {
 				return readLE16(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 2) {
 			const value = this.cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU);
 			if (value !== null) return value;
 		} else {
-			const value = this.readQualifiedCartridge(addr, 2, cpuProtected);
+			const value = this.readQualifiedCartridge(addr, 2, aperture);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 		return 0;
 	}
 
-	public readMappedU32LE(addr: number, faultAccess = BUS_ACCESS_READ_U32, cpuProtected = false): number {
-		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
+	public readMappedU32LE(addr: number, faultAccess = BUS_ACCESS_READ_U32, aperture = RamAperture.CpuData): number {
+		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess, aperture);
 	}
 
 
@@ -763,7 +760,7 @@ export class Memory {
 		addr: number,
 		busSignals: MappedBusSignals,
 		faultAccess = BUS_ACCESS_READ_U32,
-		cpuProtected = false,
+		aperture = RamAperture.Bus,
 	): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
@@ -784,7 +781,7 @@ export class Memory {
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
-			if (this.isRamRange(addr, 4, cpuProtected)) {
+			if (this.admitsRamTransfer(addr, 4, aperture)) {
 				return readLE32(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
@@ -795,7 +792,7 @@ export class Memory {
 			const value = this.cartridgeController.readU32(addr, busSignals);
 			if (value !== null) return value;
 		} else if ((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY)) === 0) {
-			const value = this.readQualifiedCartridge(addr, 4, cpuProtected);
+			const value = this.readQualifiedCartridge(addr, 4, aperture);
 			if (value !== null) return value;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -807,13 +804,13 @@ export class Memory {
 		return this.mappedFloatView.getFloat32(0, true);
 	}
 
-	public readMappedF64LE(addr: number, cpuProtected = false): number {
+	public readMappedF64LE(addr: number, aperture = RamAperture.CpuData): number {
 		const faultSequence = this.busFaultSequence;
-		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr, BUS_ACCESS_READ_F64, cpuProtected), true);
+		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr, BUS_ACCESS_READ_F64, aperture), true);
 		if (this.busFaultSequence !== faultSequence) {
 			return 0;
 		}
-		this.mappedFloatView.setUint32(4, this.readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64, cpuProtected), true);
+		this.mappedFloatView.setUint32(4, this.readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64, aperture), true);
 		if (this.busFaultSequence !== faultSequence) {
 			return 0;
 		}
@@ -842,13 +839,13 @@ export class Memory {
 		counters.otherWords = (counters.otherWords + 1) >>> 0;
 	}
 
-	public writeMappedU16LE(addr: number, value: number, cpuProtected = false): void {
+	public writeMappedU16LE(addr: number, value: number, aperture = RamAperture.CpuData): void {
 		if (this.isIoRegionRange(addr, 2)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
-			if (this.writeRamWordLE(addr, 2, value, cpuProtected)) {
+			if (this.writeRamWordLE(addr, 2, value, aperture)) {
 				return;
 			}
 		} else if (addr <= CART_BUS_END - 2) {
@@ -857,8 +854,8 @@ export class Memory {
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 	}
 
-	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32, cpuProtected = false): void {
-		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
+	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32, aperture = RamAperture.CpuData): void {
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess, aperture);
 	}
 
 	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
@@ -955,7 +952,7 @@ export class Memory {
 		}
 	}
 
-	public writeMappedBusU32LE(addr: number, value: number, busSignals: MappedBusSignals, faultAccess = BUS_ACCESS_WRITE_U32, cpuProtected = false): void {
+	public writeMappedBusU32LE(addr: number, value: number, busSignals: MappedBusSignals, faultAccess = BUS_ACCESS_WRITE_U32, aperture = RamAperture.Bus): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0) {
@@ -971,7 +968,7 @@ export class Memory {
 			return;
 		}
 		if (addr < CART_ROM_BASE) {
-			if (this.writeRamWordLE(addr, 4, value, cpuProtected)) {
+			if (this.writeRamWordLE(addr, 4, value, aperture)) {
 				return;
 			}
 		} else if (addr <= CART_BUS_END - 4) {
@@ -985,28 +982,34 @@ export class Memory {
 		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true), BUS_ACCESS_WRITE_F32);
 	}
 
-	public writeMappedF64LE(addr: number, value: number, cpuProtected = false): void {
+	public writeMappedF64LE(addr: number, value: number, aperture = RamAperture.CpuData): void {
 		this.mappedFloatView.setFloat64(0, value, true);
 		const faultSequence = this.busFaultSequence;
-		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true), BUS_ACCESS_WRITE_F64, cpuProtected);
+		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true), BUS_ACCESS_WRITE_F64, aperture);
 		if (this.busFaultSequence !== faultSequence) {
 			return;
 		}
-		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true), BUS_ACCESS_WRITE_F64, cpuProtected);
+		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true), BUS_ACCESS_WRITE_F64, aperture);
 	}
 
-	private admitMappedValue(addr: number, access: number): boolean {
-		if (addr >= IO_BASE + this.ioByteLength && this.isRamRange(addr, VALUE_MEMORY_SIZE, true)) return true;
+	private admitsRamTransfer(addr: number, length: number, aperture: RamAperture): boolean {
+		if (aperture !== RamAperture.CpuData) return this.isRamRange(addr, length, aperture === RamAperture.SystemData);
+		return addr >= RAM_BASE && addr + length <= RAM_BASE + this.ram.byteLength
+			&& (addr + length <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_CONTROL_RAM_END);
+	}
+
+	private admitMappedValue(addr: number, access: number, aperture: RamAperture): boolean {
+		if (addr >= IO_BASE + this.ioByteLength && this.admitsRamTransfer(addr, VALUE_MEMORY_SIZE, aperture)) return true;
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, access);
 		return false;
 	}
 
-	public readMappedValueOffset(addr: number): number | undefined {
-		if (this.admitMappedValue(addr, BUS_ACCESS_READ_VALUE)) return addr - RAM_BASE;
+	public readMappedValueOffset(addr: number, aperture = RamAperture.CpuData): number | undefined {
+		if (this.admitMappedValue(addr, BUS_ACCESS_READ_VALUE, aperture)) return addr - RAM_BASE;
 	}
 
-	public writeMappedValue(addr: number, payload: number, tag: number): boolean {
-		if (!this.admitMappedValue(addr, BUS_ACCESS_WRITE_VALUE)) return false;
+	public writeMappedValue(addr: number, payload: number, tag: number, aperture = RamAperture.CpuData): boolean {
+		if (!this.admitMappedValue(addr, BUS_ACCESS_WRITE_VALUE, aperture)) return false;
 		const offset = addr - RAM_BASE;
 		writeLE32(this.ram, offset, payload);
 		this.ram[offset + VALUE_MEMORY_TAG_OFFSET] = tag;
@@ -1044,8 +1047,8 @@ export class Memory {
 		return false;
 	}
 
-	public isRamRange(addr: number, length: number, cpuProtected = false): boolean {
-		const end = cpuProtected ? RAM_BASE + this.ram.byteLength : this.busEnd;
+	public isRamRange(addr: number, length: number, physical = false): boolean {
+		const end = physical ? RAM_BASE + this.ram.byteLength : this.busEnd;
 		return addr >= RAM_BASE && addr + length <= end
 			&& (addr + length <= CPU_RESET_BANK_ADDRESS || addr >= CPU_RESET_BANK_END)
 			&& (addr + length <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_FIXED_VALUE_END);

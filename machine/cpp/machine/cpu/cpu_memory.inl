@@ -1,18 +1,21 @@
 // Shared bus-visible scalar transfers. Generated bodies leave for the stable
 // dispatcher: a device access can fault, block or retire its executing source.
 
+inline RamAperture CPU::dataAperture(u32 address, u32 bytes) const {
+	if (((address < CPU_CONTROL_RAM_END && static_cast<u64>(address) + bytes > CPU_FIXED_FRAME_ADDRESS)
+		|| (address & CART_READ_QUALIFIER) != 0u) && supervisorSystemInstruction())
+		return RamAperture::SystemData;
+	return RamAperture::CpuData;
+}
+
 inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
 	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)]) != 0u) {
 		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 		return;
 	}
-	const bool cpuProtected = supervisorSystemInstruction();
+	const auto aperture = dataAperture(address, MEMORY_ACCESS_KIND_BYTE_SIZES[static_cast<size_t>(kind)]);
 	if (kind == MemoryAccessKind::Value) {
-		if (!cpuProtected) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return;
-		}
-		const auto* slot = m_memory.readMappedValue(address);
+		const auto* slot = m_memory.readMappedValue(address, aperture);
 		if (!slot) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
@@ -24,14 +27,14 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (kind) {
-		case MemoryAccessKind::Word: value = valueInteger(static_cast<i32>(m_memory.readMappedWord(address, cpuProtected))); break;
-		case MemoryAccessKind::U8: value = valueInteger(m_memory.readMappedU8(address, cpuProtected)); break;
-		case MemoryAccessKind::U16LE: value = valueInteger(m_memory.readMappedU16LE(address, cpuProtected)); break;
-		case MemoryAccessKind::U32LE: value = valueInteger(static_cast<i32>(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, cpuProtected))); break;
-		case MemoryAccessKind::F32LE: value = valueFloatBits(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, cpuProtected)); break;
-		case MemoryAccessKind::F64LE: value = valueFloat(static_cast<float>(m_memory.readMappedF64LE(address, cpuProtected))); break;
+		case MemoryAccessKind::Word: value = valueInteger(static_cast<i32>(m_memory.readMappedWord(address, aperture))); break;
+		case MemoryAccessKind::U8: value = valueInteger(m_memory.readMappedU8(address, aperture)); break;
+		case MemoryAccessKind::U16LE: value = valueInteger(m_memory.readMappedU16LE(address, aperture)); break;
+		case MemoryAccessKind::U32LE: value = valueInteger(static_cast<i32>(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, aperture))); break;
+		case MemoryAccessKind::F32LE: value = valueFloatBits(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, aperture)); break;
+		case MemoryAccessKind::F64LE: value = valueFloat(static_cast<float>(m_memory.readMappedF64LE(address, aperture))); break;
 		case MemoryAccessKind::ContextWord:
-			if (!cpuProtected || !fixedInterruptActive()) {
+			if (!supervisorSystemInstruction() || !fixedInterruptActive()) {
 				enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return;
 			}
@@ -54,12 +57,8 @@ inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKi
 		return true;
 	}
 	if (kind == MemoryAccessKind::Value) {
-		if (!supervisorSystemInstruction()) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return true;
-		}
 		const Value value = frame.registers.get(source);
-		if (!m_memory.writeMappedValue(address, valuePayload(value), static_cast<u8>(valueTag(value))))
+		if (!m_memory.writeMappedValue(address, valuePayload(value), static_cast<u8>(valueTag(value)), dataAperture(address, VALUE_MEMORY_SIZE)))
 			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 		return true;
 	}
@@ -75,19 +74,19 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 	if (static_cast<size_t>(source) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const Value value = frame.registers.get(source);
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const bool cpuProtected = supervisorSystemInstruction();
+	const auto aperture = dataAperture(address, MEMORY_ACCESS_KIND_BYTE_SIZES[static_cast<size_t>(kind)]);
 	switch (kind) {
-		case MemoryAccessKind::Word: m_memory.writeMappedWord(address, wordOperand(value), cpuProtected); break;
-		case MemoryAccessKind::U8: m_memory.writeMappedU8(address, static_cast<u8>(wordOperand(value)), cpuProtected); break;
-		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(address, wordOperand(value), cpuProtected); break;
-		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(address, wordOperand(value), BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, cpuProtected); break;
+		case MemoryAccessKind::Word: m_memory.writeMappedWord(address, wordOperand(value), aperture); break;
+		case MemoryAccessKind::U8: m_memory.writeMappedU8(address, static_cast<u8>(wordOperand(value)), aperture); break;
+		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(address, wordOperand(value), aperture); break;
+		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(address, wordOperand(value), BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, aperture); break;
 		case MemoryAccessKind::F32LE:
 			if (!valueIsNumber(value)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			m_memory.writeMappedU32LE(address, valueIsFloat(value) ? valuePayload(value) : numberToF32Bits(static_cast<float>(asInteger(value))),
-				BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, cpuProtected); break;
+				BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32, aperture); break;
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			m_memory.writeMappedF64LE(address, valueIsInteger(value) ? static_cast<double>(asInteger(value)) : static_cast<double>(asFloat(value)), cpuProtected); break;
+			m_memory.writeMappedF64LE(address, valueIsInteger(value) ? static_cast<double>(asInteger(value)) : static_cast<double>(asFloat(value)), aperture); break;
 		case MemoryAccessKind::Value: // Tagged stores never wait on a bus device.
 		case MemoryAccessKind::ContextWord: BMSX_UNREACHABLE();
 	}
@@ -114,10 +113,10 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 	}
 	instructionBudgetRemaining -= count;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const bool cpuProtected = supervisorSystemInstruction();
+	const auto aperture = dataAperture(address, count * sizeof(u32));
 	const int available = std::clamp(static_cast<int>(frame.registers.size()) - source, 0, count);
 	for (int offset = 0; offset < available; ++offset) {
-		m_memory.writeMappedWord(address, wordOperand(frame.registers.get(source + offset)), cpuProtected);
+		m_memory.writeMappedWord(address, wordOperand(frame.registers.get(source + offset)), aperture);
 		if (m_memory.readBusFaultSequence() != faultSequence) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return true;

@@ -9,7 +9,7 @@ import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import { Memory, RamAperture } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -89,7 +89,7 @@ test('socket-qualified public data reads expose only immutable cartridge ROM', (
 		assert.equal(memory.readIoU32(IO_CART_SELECT), selected);
 	}
 	memory.cartridgeController.writeU32(CART_RAM_BASE, 0x12345678, mappedBusSignalsForCartridgeSlot(1));
-	assert.equal(memory.readMappedU32LE(ram1, undefined, true), 0x12345678);
+	assert.equal(memory.readMappedU32LE(ram1, undefined, RamAperture.SystemData), 0x12345678);
 	assert.equal(memory.readBusFaultSequence(), sequence);
 	for (const [address, signal] of [
 		[aliased1 + 4, MAPPED_BUS_MASTER_CPU],
@@ -108,7 +108,7 @@ test('socket-qualified public data reads expose only immutable cartridge ROM', (
 	}
 	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
 	const before = memory.readBusFaultSequence();
-	memory.writeMappedU32LE(aliased1, 0, undefined, true);
+	memory.writeMappedU32LE(aliased1, 0, undefined, RamAperture.SystemData);
 	assert.equal(memory.readBusFaultSequence(), before + 1);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), aliased1);
 	assert.equal(memory.readMappedU32LE(aliased1), 0x88776655);

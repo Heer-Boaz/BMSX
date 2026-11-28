@@ -307,18 +307,18 @@ void Memory::restoreBusState(const MemoryBusState& state) {
 	writeBusFaultSlots();
 }
 
-u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess, bool cpuProtected) const {
+u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess, RamAperture aperture) const {
 	if (addr < RAM_BASE) {
 		if (addr < m_systemRom.size()) return m_systemRom[addr];
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (isRamRange(addr, 1u, cpuProtected)) {
+		if (admitsRamTransfer(addr, 1u, aperture)) {
 			return m_ram[offset];
 		}
 	} else if (addr < CART_BUS_END) {
 		if (const auto value = m_cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU)) return static_cast<u8>(*value);
 	} else if ((addr & CART_READ_QUALIFIER) != 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 1u, cpuProtected)) return *bytes;
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 1u, aperture)) return *bytes;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	return 0;
@@ -347,33 +347,23 @@ void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, Ma
 	}
 }
 
-bool Memory::writeRamU8(uint32_t addr, u8 value, bool cpuProtected) {
-	if (!isRamRange(addr, 1u, cpuProtected)) return false;
+bool Memory::writeRamU8(uint32_t addr, u8 value, RamAperture aperture) {
+	if (!admitsRamTransfer(addr, 1u, aperture)) return false;
 	const size_t offset = addr - RAM_BASE;
 	m_ram[offset] = value;
-	m_ramPageWriteWatches.invalidateWrite(
-		offset,
-		1u,
-		RAM_BASE,
-		m_mappedPageInvalidator
-	);
+	invalidateRamWrite(offset, 1u);
 	return true;
 }
 
-bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value, bool cpuProtected) {
-	if (!isRamRange(addr, byteLength, cpuProtected)) return false;
+bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value, RamAperture aperture) {
+	if (!admitsRamTransfer(addr, byteLength, aperture)) return false;
 	const size_t offset = addr - RAM_BASE;
 	if (byteLength == 2) {
 		writeLE16(m_ram.data() + offset, value);
 	} else {
 		writeLE32(m_ram.data() + offset, value);
 	}
-	m_ramPageWriteWatches.invalidateWrite(
-		offset,
-		byteLength,
-		RAM_BASE,
-		m_mappedPageInvalidator
-	);
+	invalidateRamWrite(offset, byteLength);
 	return true;
 }
 
@@ -391,23 +381,23 @@ void Memory::clearBusFault() {
 	writeBusFaultSlots();
 }
 
-u32 Memory::readMappedWord(uint32_t addr, bool cpuProtected) const {
-	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD, cpuProtected);
+u32 Memory::readMappedWord(uint32_t addr, RamAperture aperture) const {
+	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD, aperture);
 }
 
 void Memory::writeIoU32(uint32_t addr, u32 value) {
 	m_ioSlots[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = value;
 }
 
-void Memory::writeMappedWord(uint32_t addr, u32 value, bool cpuProtected) {
-	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD, cpuProtected);
+void Memory::writeMappedWord(uint32_t addr, u32 value, RamAperture aperture) {
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD, aperture);
 }
 
 u8 Memory::readU8(uint32_t addr) const {
 	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
 }
 
-u8 Memory::readMappedU8(uint32_t addr, bool cpuProtected) const {
+u8 Memory::readMappedU8(uint32_t addr, RamAperture aperture) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		return static_cast<u8>(readIoSlot(slot, addr, MAPPED_BUS_MASTER_CPU) & 0xffu);
@@ -416,7 +406,7 @@ u8 Memory::readMappedU8(uint32_t addr, bool cpuProtected) const {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
 		return 0;
 	}
-	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8, cpuProtected);
+	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8, aperture);
 }
 
 void Memory::writeU8(uint32_t addr, u8 value) {
@@ -430,13 +420,13 @@ void Memory::writeU8(uint32_t addr, u8 value) {
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 }
 
-void Memory::writeMappedU8(uint32_t addr, u8 value, bool cpuProtected) {
+void Memory::writeMappedU8(uint32_t addr, u8 value, RamAperture aperture) {
 	if (isIoRegionRange(addr, 1)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U8);
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamU8(addr, value, cpuProtected)) {
+		if (writeRamU8(addr, value, aperture)) {
 			return;
 		}
 	} else if (addr < CART_BUS_END) {
@@ -481,7 +471,7 @@ uint32_t Memory::readCountedU32(uint32_t addr, MemoryWordCounters& counters) con
 	return readRawU32<true>(addr, &counters);
 }
 
-uint32_t Memory::readMappedU16LE(uint32_t addr, bool cpuProtected) const {
+uint32_t Memory::readMappedU16LE(uint32_t addr, RamAperture aperture) const {
 	if (isIoRegionRange(addr, 2)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 		return 0;
@@ -492,27 +482,27 @@ uint32_t Memory::readMappedU16LE(uint32_t addr, bool cpuProtected) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (isRamRange(addr, 2u, cpuProtected)) {
+		if (admitsRamTransfer(addr, 2u, aperture)) {
 			return readLE16(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
 		if (const auto value = m_cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU)) return *value;
 	} else if ((addr & CART_READ_QUALIFIER) != 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 2u, cpuProtected)) return readLE16(bytes);
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 2u, aperture)) return readLE16(bytes);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 	return 0;
 }
 
-uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess, bool cpuProtected) const {
-	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
+uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess, RamAperture aperture) const {
+	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess, aperture);
 }
 
 uint32_t Memory::readMappedBusU32LE(
 	uint32_t addr,
 	MappedBusSignals busSignals,
 	uint32_t faultAccess,
-	bool cpuProtected
+	RamAperture aperture
 ) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
@@ -533,7 +523,7 @@ uint32_t Memory::readMappedBusU32LE(
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (isRamRange(addr, 4u, cpuProtected)) {
+		if (admitsRamTransfer(addr, 4u, aperture)) {
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
@@ -544,7 +534,7 @@ uint32_t Memory::readMappedBusU32LE(
 		if (const auto value = m_cartridgeController.readU32(addr, busSignals)) return *value;
 	} else if ((addr & CART_READ_QUALIFIER) != 0u
 		&& (busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY)) == 0u) {
-		if (const auto* bytes = readBankedCartridgeBytes(addr, 4u, cpuProtected)) return readLE32(bytes);
+		if (const auto* bytes = readBankedCartridgeBytes(addr, 4u, aperture)) return readLE32(bytes);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	return 0;
@@ -557,13 +547,13 @@ float Memory::readMappedF32LE(uint32_t addr) const {
 	return value;
 }
 
-double Memory::readMappedF64LE(uint32_t addr, bool cpuProtected) const {
+double Memory::readMappedF64LE(uint32_t addr, RamAperture aperture) const {
 	const uint32_t faultSequence = m_busFaultSequence;
-	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr, BUS_ACCESS_READ_F64, cpuProtected));
+	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr, BUS_ACCESS_READ_F64, aperture));
 	if (m_busFaultSequence != faultSequence) {
 		return 0.0;
 	}
-	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64, cpuProtected));
+	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64, aperture));
 	if (m_busFaultSequence != faultSequence) {
 		return 0.0;
 	}
@@ -595,13 +585,13 @@ void Memory::countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const
 	++counters.otherWords;
 }
 
-void Memory::writeMappedU16LE(uint32_t addr, uint32_t value, bool cpuProtected) {
+void Memory::writeMappedU16LE(uint32_t addr, uint32_t value, RamAperture aperture) {
 	if (isIoRegionRange(addr, 2)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamWordLE(addr, 2, value, cpuProtected)) {
+		if (writeRamWordLE(addr, 2, value, aperture)) {
 			return;
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
@@ -610,8 +600,8 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value, bool cpuProtected) 
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 }
 
-void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, bool cpuProtected) {
-	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
+void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, RamAperture aperture) {
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess, aperture);
 }
 
 // Only declared end-silent FIFO ports may batch the prefix. Arbitrary MMIO
@@ -712,7 +702,7 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 	}
 }
 
-void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess, bool cpuProtected) {
+void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess, RamAperture aperture) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if ((busSignals & MAPPED_BUS_DMA_MEMORY) != 0u) {
@@ -728,7 +718,7 @@ void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamWordLE(addr, 4, value, cpuProtected)) {
+		if (writeRamWordLE(addr, 4, value, aperture)) {
 			return;
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
@@ -743,15 +733,15 @@ void Memory::writeMappedF32LE(uint32_t addr, float value) {
 	writeMappedU32LE(addr, bits, BUS_ACCESS_WRITE_F32);
 }
 
-void Memory::writeMappedF64LE(uint32_t addr, double value, bool cpuProtected) {
+void Memory::writeMappedF64LE(uint32_t addr, double value, RamAperture aperture) {
 	uint64_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(bits));
 	const uint32_t faultSequence = m_busFaultSequence;
-	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull), BUS_ACCESS_WRITE_F64, cpuProtected);
+	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull), BUS_ACCESS_WRITE_F64, aperture);
 	if (m_busFaultSequence != faultSequence) {
 		return;
 	}
-	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32), BUS_ACCESS_WRITE_F64, cpuProtected);
+	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32), BUS_ACCESS_WRITE_F64, aperture);
 }
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
@@ -805,36 +795,43 @@ bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals b
 	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
 }
 
-const u8* Memory::readBankedCartridgeBytes(u32 address, size_t length, bool cpuProtected) const {
+const u8* Memory::readBankedCartridgeBytes(u32 address, size_t length, RamAperture aperture) const {
 	const u32 bus = address & CART_READ_ADDRESS_MASK;
-	if (bus < CART_ROM_BASE || bus > (cpuProtected ? CART_RAM_END : CART_ROM_END) - length) return nullptr;
+	if (bus < CART_ROM_BASE || bus > (aperture == RamAperture::SystemData ? CART_RAM_END : CART_ROM_END) - length) return nullptr;
 	Span<const u8> bytes;
 	return m_cartridgeController.bindMappedReadView(bus, length,
 		mappedBusSignalsForCartridgeSlot(address >> CART_READ_SLOT_SHIFT), bytes) ? bytes.data() : nullptr;
 }
 
-bool Memory::isRamRange(uint32_t addr, size_t length, bool cpuProtected) const {
-	const size_t end = cpuProtected ? RAM_BASE + m_ram.size() : m_ramBusEnd;
+bool Memory::isRamRange(uint32_t addr, size_t length, bool physical) const {
+	const size_t end = physical ? RAM_BASE + m_ram.size() : m_ramBusEnd;
 	return addr >= RAM_BASE && addr <= end && length <= end - addr
 		&& (addr + length <= CPU_RESET_BANK_ADDRESS || addr >= CPU_RESET_BANK_END)
 		&& (addr + length <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_FIXED_VALUE_END);
 }
 
-bool Memory::admitsMappedValue(u32 addr) const {
-	constexpr u32 ioEnd = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
-	return addr >= ioEnd && isRamRange(addr, VALUE_MEMORY_SIZE, true);
+bool Memory::admitsRamTransfer(u32 addr, size_t bytes, RamAperture aperture) const {
+	if (aperture != RamAperture::CpuData) return isRamRange(addr, bytes, aperture == RamAperture::SystemData);
+	const size_t offset = addr - RAM_BASE;
+	return offset <= m_ram.size() && bytes <= m_ram.size() - offset
+		&& (addr + bytes <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_CONTROL_RAM_END);
 }
 
-const u8* Memory::readMappedValue(u32 addr) const {
-	if (!admitsMappedValue(addr)) {
+bool Memory::admitsMappedValue(u32 addr, RamAperture aperture) const {
+	constexpr u32 ioEnd = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	return addr >= ioEnd && admitsRamTransfer(addr, VALUE_MEMORY_SIZE, aperture);
+}
+
+const u8* Memory::readMappedValue(u32 addr, RamAperture aperture) const {
+	if (!admitsMappedValue(addr, aperture)) {
 		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_VALUE);
 		return nullptr;
 	}
 	return m_ram.data() + (addr - RAM_BASE);
 }
 
-bool Memory::writeMappedValue(u32 addr, u32 payload, u8 tag) {
-	if (!admitsMappedValue(addr)) {
+bool Memory::writeMappedValue(u32 addr, u32 payload, u8 tag, RamAperture aperture) {
+	if (!admitsMappedValue(addr, aperture)) {
 		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_VALUE);
 		return false;
 	}

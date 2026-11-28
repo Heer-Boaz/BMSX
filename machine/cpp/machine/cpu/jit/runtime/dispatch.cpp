@@ -19,7 +19,8 @@ namespace {
 enum class NativeBlockTransition : u8 {
 	Redispatch,
 	RebindFrame,
-	// The same frame/image remains active; its register storage may have changed.
+	// The same frame/image remains active. Its register window can change
+	// within the already-bound physical Thread backing.
 	NextInstruction,
 	// Read-only lookup plus a result write in the already-admitted window.
 	SameWindow,
@@ -87,7 +88,7 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 	}
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
-	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
+	cpu.m_lastExecutionDomainId = run->codeImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
 	if (completion == NativeBuiltinCallOutcome::CompletedResume && static_cast<int>(state.frameDepth) > run->targetDepth) {
 		void* const* const cell = exit->continuationCells[run->cartridgeSlot];
@@ -118,7 +119,7 @@ void CPU::retireNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExit
 #endif
 	frame.compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
-	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
+	cpu.m_lastExecutionDomainId = run->codeImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
 	if ((target & (INSTRUCTION_BYTES - 1u)) != 0u) {
 		cpu.instructionBudgetRemaining = state.remainingCycles;
@@ -151,10 +152,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	++gateProfile.entries;
 #endif
 	CallFrame* frame = state.frame;
+	const auto& codeImage = *run->codeImage;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
 		if (exit->operands.replay.hasCompletedInstruction) {
 			cpu.m_currentInstructionPc = exit->currentPc;
-			cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
+			cpu.m_lastExecutionDomainId = codeImage.executionDomainId;
 			cpu.lastPc = exit->lastPc;
 		}
 		cpu.instructionBudgetRemaining = state.remainingCycles;
@@ -169,7 +171,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	const bool continuing = kind == NativeBlockExit::Continue;
 	frame->compilationEntry = true;
 	cpu.m_currentInstructionPc = exit->currentPc;
-	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
+	cpu.m_lastExecutionDomainId = codeImage.executionDomainId;
 	cpu.lastPc = exit->lastPc;
 	if (continuing && state.remainingCycles > 0 && (exit->nextPc & (INSTRUCTION_BYTES - 1u)) == 0u) {
 		// A pure edge cannot rebind the activation or bank. Keep the native
@@ -183,7 +185,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				// Shared system code entering a selectable cartridge bank must
 				// resolve that bank on each traversal instead of patching the edge.
 				if (exit->link.patchAddress != 0 && !exit->link.target
-					&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+					&& (codeImage.executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
 						|| exit->nextPc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 				++gateProfile.resumes;
@@ -347,8 +349,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const auto access = exit->operands.table;
 			const Value base = frame->registers.get(access.receiver);
 			const Value key = kind == NativeBlockExit::ReadInteger ? valueInteger(access.key)
-				: kind == NativeBlockExit::ReadField ? frame->executionImage->constPool.get(access.key)
-				: readRK(*frame->executionImage, frame->registers, access.key);
+				: kind == NativeBlockExit::ReadField ? codeImage.constPool.get(access.key)
+				: readRK(codeImage, frame->registers, access.key);
 			const bool stringKey = kind == NativeBlockExit::ReadField || valueIsString(key);
 			const TableRecord table(cpu.m_memory, cpu.tableIndexAddress(base));
 			TableLookupResult result;
@@ -416,9 +418,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const Value base = frame->registers.get(access.receiver);
 			const bool field = exit->exit == NativeBlockExit::WriteField;
 			const Value key = field
-				? frame->executionImage->constPool.get(access.key)
-				: readRK(*frame->executionImage, frame->registers, access.key);
-			const Value value = readRK(*frame->executionImage, frame->registers, access.value);
+				? codeImage.constPool.get(access.key)
+				: readRK(codeImage, frame->registers, access.key);
+			const Value value = readRK(codeImage, frame->registers, access.value);
 			if (field || valueIsString(key)) {
 				// The decoder owns this slot even if the write retires the
 				// executable block and destroys its exit descriptor.
@@ -430,14 +432,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::WriteInteger: {
 			const auto& access = exit->operands.table;
 			if (cpu.storeTableIntegerIndex(*frame, frame->registers.get(access.receiver), access.key,
-				readRK(*frame->executionImage, frame->registers, access.value))) transition = NativeBlockTransition::Redispatch;
+				readRK(codeImage, frame->registers, access.value))) transition = NativeBlockTransition::Redispatch;
 			break;
 		}
 		case NativeBlockExit::ReadMemory:
 		case NativeBlockExit::WriteMemory:
 		case NativeBlockExit::WriteWords: {
 			const auto& access = exit->operands.memory;
-			const u32 address = wordOperand(readRK(*frame->executionImage, frame->registers, access.address)) + access.displacement;
+			const u32 address = wordOperand(readRK(codeImage, frame->registers, access.address)) + access.displacement;
 			if (exit->exit == NativeBlockExit::ReadMemory)
 				cpu.executeMemoryLoad(*frame, access.slot, access.format, address);
 			else if (exit->exit == NativeBlockExit::WriteMemory)
@@ -520,13 +522,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #endif
 			return nullptr;
 		}
-		const auto& lookup = frame->executionImage->nativeCodeLookup;
-		if (!lookup) {
+		auto* receivingCode = cpu.instructionImageForFrame(*frame, pc);
+		if (!receivingCode || !receivingCode->nativeCodeLookup) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
 #endif
 			return nullptr;
 		}
+		const auto& lookup = receivingCode->nativeCodeLookup;
 		const u32 slot = cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals);
 		auto* page = lookup->find(pc, slot);
 		if (!page || !page->nativeBlocks) {
@@ -544,12 +547,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		// Every helper can change socket selection, even without changing the
 		// frame/image. Bind the live physical bank again before native dispatch.
+		run->codeImage = receivingCode;
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
 		run->closureCallHeader = ClosureRecord::fixedCallHeader(frame->executionImage->executionDomainId);
+		state.constants = receivingCode->constPool;
 		if (!sameFrame) {
-			state.constants = frame->executionImage->constPool;
+			run->bindRamAliases(*frame->thread);
 			state.closure = frame->closureAddress();
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;

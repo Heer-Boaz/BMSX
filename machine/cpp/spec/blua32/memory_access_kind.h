@@ -12,7 +12,7 @@ enum class MemoryAccessKind : uint8_t {
 	U32LE = 3,
 	F32LE = 4,
 	F64LE = 5,
-	Value = 6, // Tagged System RAM transfer.
+	Value = 6, // Tagged RAM transfer.
 	ContextWord = 7,
 };
 
@@ -21,6 +21,8 @@ inline constexpr uint32_t VALUE_MEMORY_SIZE = 8u;
 inline constexpr uint32_t VALUE_MEMORY_TAG_OFFSET = 4u;
 
 inline constexpr int F64_ACCESS_EXTRA_CYCLES = 2;
+
+inline constexpr std::array<uint32_t, 8> MEMORY_ACCESS_KIND_BYTE_SIZES{4u, 1u, 2u, 4u, 4u, 8u, VALUE_MEMORY_SIZE, 4u};
 
 inline constexpr std::array<uint32_t, 8> MEMORY_ACCESS_KIND_ALIGNMENT_MASKS{
 	3u,
