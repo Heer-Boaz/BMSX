@@ -19,12 +19,6 @@ constexpr size_t COLLECTION_RESERVE_SHIFT = 3;
 constexpr size_t GC_ASSIST_MIN_WORDS = 512;
 }
 
-#if defined(BMSX_GC_STRESS)
-// Defined by the stress runner. Only its allocator translation unit uses this
-// seam; ordinary cores contain neither a callback nor a runtime mode check.
-void stressHeapAllocation(LuaHeap& heap);
-#endif
-
 LuaHeap::LuaHeap(CPU& cpu, test::LocalStringRoots* roots)
 	: m_cpu(cpu), m_arena(cpu.memory()), m_roots(roots)
 	, m_targetAddress(m_arena.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET)
@@ -78,18 +72,10 @@ void LuaHeap::creditLogicalAssist(size_t byteCount, size_t debt, bool pressure, 
 }
 
 bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
-#if defined(BMSX_GC_STRESS)
-	(void)byteCount;
-	return false;
-#else
 	return allocationDebt(byteCount) == 0;
-#endif
 }
 
 bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread, const int* sourceBudget) {
-#if defined(BMSX_GC_STRESS)
-	stressHeapAllocation(*this);
-#endif
 	const i32 debt = allocationDebt(byteCount);
 	if (debt < 0) return false;
 	if (debt > 0) {

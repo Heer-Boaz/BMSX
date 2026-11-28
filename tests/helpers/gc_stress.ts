@@ -53,13 +53,14 @@ for round = 1, 12 do
   local captured = deep(32, round)
   local table = {}
   for i = 1, 48 do table['field:' .. i] = captured end
-  local before, capacity = collectgarbage(1)
+  local before = collectgarbage('count')
+  local capacity = collectgarbage('capacity')
   assert(before > 0 and capacity > before)
   local ok = pcall(collectgarbage, 1.5)
   assert(not ok)
-  assert(not pcall(collectgarbage, 'count'))
+  assert(not pcall(collectgarbage, 'unknown'))
   local finished = false
-  for i = 1, 256 do if collectgarbage(2) then finished = true break end end
+  for i = 1, 256 do if collectgarbage('step') then finished = true break end end
   assert(finished)
   local a, f = table['field:48']()
   assert(a == round and f == round + 5)
