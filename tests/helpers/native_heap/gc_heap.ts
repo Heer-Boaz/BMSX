@@ -394,7 +394,8 @@ export class GcHeap {
 		if (!resumed) {
 			if (!atomic) this.appendVisit(GC_THREAD_VISITS, address);
 			this.markThread(memory.readRamRecordWord(address + ThreadField.Resumer));
-			this.markClosure(memory.readRamRecordWord(address + ThreadField.Entry));
+			const entry = memory.readRamRecordWord(address + ThreadField.Entry);
+			if ((entry & 1) === 0) this.markClosure(entry); // Only RAM Closure entries are heap references.
 			this.markValue(valueFromTag(memory.readRamRecordByte(address + ThreadField.ErrorKind), memory.readRamRecordWord(address + ThreadField.ErrorWord)));
 			work = (THREAD_HEAP_BYTES >>> 2) + strings.takeMarkWork();
 		}

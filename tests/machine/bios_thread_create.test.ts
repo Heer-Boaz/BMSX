@@ -315,13 +315,17 @@ test('Thread creation maps and pins the original mutations and raw layout', () =
 	Object.assign(files, {
 		K: 'machine/ts/machine/cpu/cpu.ts', L: 'machine/cpp/machine/cpu/cpu.cpp',
 		O: 'machine/ts/machine/cpu/gc_heap.ts', R: 'machine/cpp/machine/cpu/gc_heap.cpp',
+		CF: 'machine/ts/machine/cpu/value.ts', FA: 'machine/ts/spec/blua32/image_format.ts',
 	});
 	const refs = new Map(Object.entries(files).map(([label, path]) => [label, {
-		lines: execFileSync('git', ['show', `${'KLOR'.includes(label) ? ingress : 'DEWXYZ'.includes(label) ? '08c4a76d41e49d689c13a47fed3de37cece84072' : basis}:${path}`], { encoding: 'utf8' }).split('\n'), covered: new Set<number>(),
+		lines: execFileSync('git', ['show', `${label === 'CF' || label === 'FA' ? 'ac4e312c8' : 'KLOR'.includes(label) ? ingress : 'DEWXYZ'.includes(label) ? '08c4a76d41e49d689c13a47fed3de37cece84072' : basis}:${path}`], { encoding: 'utf8' }).split('\n'), covered: new Set<number>(),
 	}]));
-	for (const [i, line] of source.split('\n').entries()) {
+	const lines = source.split('\n');
+	const exports = lines.indexOf('return {');
+	assert.ok(exports > 0);
+	for (const [i, line] of lines.slice(0, exports).entries()) {
 		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$|return \{)/.test(line)) continue;
-		const origin = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
+		const origin = /\s--\s+((?:[A-Z]+:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
 		assert.ok(origin, `${port}:${i + 1} is unmapped`);
 		for (const span of origin[1].trim().split(/\s+/)) {
 			const [label, ranges] = span.split(':'), ref = refs.get(label);

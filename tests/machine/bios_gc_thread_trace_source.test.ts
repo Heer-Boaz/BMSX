@@ -14,12 +14,13 @@ const pins = [
 	['M', 'machine/ts/spec/bmsx/memory_map.ts'], ['O', 'machine/ts/machine/cpu/gc_object.ts'], ['P', 'machine/cpp/machine/cpu/gc_object.h'],
 	['Q', 'machine/ts/machine/cpu/cpu.ts'],
 	['A', 'machine/ts/machine/common/numeric.ts'], ['B', 'machine/cpp/machine/common/numeric.h'],
+	['R', 'machine/ts/spec/blua32/image_format.ts'],
 ] as const;
 
 test('Thread trace maps both native stage machines and the payload-before-tag clear', () => {
 	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
 	for (const [key, path] of pins) {
-		const lines = execFileSync('git', ['show', basis + ':' + path], { encoding: 'utf8' }).split('\n');
+		const lines = execFileSync('git', ['show', (key === 'R' ? 'ac4e312c8' : basis) + ':' + path], { encoding: 'utf8' }).split('\n');
 		sources.set(key, { lines, covered: new Set() });
 	}
 	const lines = readFileSync(port, 'utf8').split('\n');

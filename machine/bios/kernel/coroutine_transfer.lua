@@ -9,6 +9,7 @@ local frames<const> = require('kernel/thread_frame_storage')
 local allocator<const> = require('kernel/dlmalloc')
 local entries<const> = require('bmsx/startup')
 local yieldable<const> = require('kernel/coroutine_yieldable')
+local types<const> = require('kernel/value_type')
 
 local word_mask<const> = 0x003ffffc
 local window_mask<const> = 0x000fffff
@@ -17,7 +18,7 @@ local extend_top<const> = 1 << 5
 local exception_frame<const> = 1 << 1
 local maximum_values<const> = 0x00400000 // 5
 local new<const>, running<const>, normal<const>, suspended<const>, dead<const>, failed<const> = 0, 1, 2, 3, 4, 5
-local false_tag<const>, true_tag<const>, string_tag<const>, closure_tag<const> = 1, 2, 5, 7
+local false_tag<const>, true_tag<const>, string_tag<const> = 1, 2, 5
 local out_of_memory<const>, invalid_argument<const> = 9, 10
 
 rodata resume_refusal: string[2] = {
@@ -103,19 +104,21 @@ end
 
 local first_resume<const> = function(interrupted, target, first, count) -- TS:4699–4704 C++:1434–1442; install the ordinary entry wrapper
 	local context<const>: *stopped_thread = target
+	local entry<const> = context.entry
+	local code<const> = (entry & layout.thread_entry_code_bit) ~= 0
 	local fn<const> = entries.coroutine_entry
 	local prototype<const>: *system_entry_record = fn
 	local base<const> = count + 1
 	local extent<const> = base + prototype.maximum
 	if extent > maximum_values then return nil end
 	if extent > context.stack_capacity or (context.frame_capacity & control_count_mask) < 2 then
-		if frames.prepare_frame_space(layout.management_offset, target, extent, 2, context.entry, 0) ~= 0 then return nil end
+		if frames.prepare_frame_space(layout.management_offset, target, extent, 2, code and 0 or entry, 0) ~= 0 then return nil end
 	end
 	local word_address<const>, tag_address<const> = frames.internal.value_planes(target, 1)
 	if count ~= 0 then copy_values(interrupted, first, word_address, tag_address, count) end
 	local word<const>: *u32 = word_address + 4 * count
 	local tag<const>: *u8 = tag_address + count
-	*word, *tag = context.entry, closure_tag
+	*word, *tag = entry & ~layout.thread_entry_code_bit, code and types.code_tag or types.closure_tag
 	local frame<const>: *stopped_frame = context.frame_block
 	frame.fn, frame.call_site, frame.head, frame.flags = fn, 0, 0, 0
 	frame.pc, frame.vararg_base, frame.argument_count = prototype.code, 1, base

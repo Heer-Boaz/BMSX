@@ -10,7 +10,8 @@ module<const>
 local control_layout<const> = require('kernel/gc_control') -- T:416 C:413
 local captures<const> = require('kernel/gc_capture_trace') -- T:436,442 C:435,442
 local mark<const> = require('kernel/gc_mark') -- T:413,417-419,431,453,474 C:414-416,430,456,482
-local ram_base<const> = 0x08000000 -- M:6
+local layout<const> = require('kernel/gc_runtime_layout') -- M:6 R:30
+local ram_base<const> = layout.ram_base -- M:6
 local ram_size<const> = 0x00400000 -- M:7
 local byte_mask<const> = ram_size - 1 -- M:7
 local word_mask<const> = ram_size - 4 -- M:9
@@ -105,7 +106,10 @@ local trace_thread<const> = function(control, arena, metadata, address, atomic, 
 	if resumed == 0 then -- T:415 C:412
 		if atomic == 0 then control_layout.append_visit(control, thread_visits, address) end -- T:416 C:413
 		mark.mark_record(control, arena, thread.resumer, thread_kind, trace_head, replace_color_byte) -- T:306-318,417 C:259-265,272-273,414
-		mark.mark_record(control, arena, thread.entry, closure_kind, trace_head, replace_color_byte) -- T:312-318,328-329,418 C:259-265,280-281,415
+		local entry<const> = thread.entry -- T:418 C:415
+		if (entry & layout.thread_entry_code_bit) == 0 then -- R:30; only heap Closure entries are collectible
+			mark.mark_record(control, arena, entry, closure_kind, trace_head, replace_color_byte) -- T:312-318,328-329,418 C:259-265,280-281,415
+		end
 		local _<const>, strings<const> = mark.mark_value(control, arena, metadata, thread.error_tag, thread.error_word, trace_head, replace_color_byte) -- T:419 C:416 J:67-69
 		work = (thread_bytes >> 2) + pending_string_work + strings -- T:420 C:417
 		pending_string_work = 0 -- T:420 C:417; native String latch drain

@@ -6038,11 +6038,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 			return true;
 		}
-		if (operation !== 'closure') {
+		if (operation !== 'closure' && operation !== 'code_function') {
 			throw new Error(`Unknown blua32 operation '${operation}'.`);
 		}
 		if (expression.arguments.length !== 1) {
-			throw new Error('blua32.closure expects one function-record address.');
+			throw new Error(`blua32.${operation} expects one function-record address.`);
 		}
 		const address = expression.arguments[0];
 		const linked = this.program.managedEntries.size === 0 ? undefined : evaluateStaticNumeric(this, undefined, address);
@@ -6056,6 +6056,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.program.recordExportProto(slotName, buildModuleProtoId(entry.path));
 			this.emitModuleFunctionTargetLoad({ kind: 'export_proto', path: SYSTEM_STARTUP_MODULE_PATH, exportPathKey: entry.symbol }, target);
 		} else {
+			if (operation === 'code_function') {
+				throw new Error('blua32.code_function requires a callable System startup symbol.');
+			}
 			const addressRegister = this.allocTemp();
 			this.compileExpressionInto(address, addressRegister, 1);
 			this.emitClosureAddressRegister(target, addressRegister);

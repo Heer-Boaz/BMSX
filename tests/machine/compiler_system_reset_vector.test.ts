@@ -146,10 +146,11 @@ for (const optLevel of [0, 3] as const) test(`only an exact callable startup sym
 	const entry = `module<entry>
 local entries<const> = require('bmsx/startup')
 local address<const> = entries.callable_entry
-local fn<const> = blua32.closure(address)
+local fn<const> = blua32.code_function(address)
 return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closure(address + 0)
 `;
-	const body = 'return function(value) return value + 1 end';
+	const callableBody = 'return function(value, ...) return value + 1 end';
+	const ordinaryBody = 'return function(value) return value + 1 end';
 	const managedEntries = [
 		{ symbol: 'callable_entry', path: 'fixture/callable-entry', callable: true },
 		{ symbol: 'ordinary_entry', path: 'fixture/ordinary-entry' },
@@ -157,7 +158,10 @@ return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closur
 	const modules = [
 		{ path: 'main', displayPath: 'main.lua', source: entry, chunk: parseLuaChunk(entry, 'main') },
 		...authored.slice(1),
-		...managedEntries.map(({ path }) => ({ path, displayPath: path + '.lua', source: body, chunk: parseLuaChunk(body, path) })),
+		...managedEntries.map(({ path, ...entry }) => {
+			const source = 'callable' in entry ? callableBody : ordinaryBody;
+			return { path, displayPath: path + '.lua', source, chunk: parseLuaChunk(source, path) };
+		}),
 	];
 	const { linked, entryCodeAddress } = buildBlua32Image({
 		domain: 'system', luaModules: modules, generatedLuaModules: [], loadAddress: 0x100,
@@ -168,6 +172,7 @@ return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closur
 	const [callable, ordinary] = managedEntries.map(({ symbol }) =>
 		functions[linked.functionProtoIndices.indexOf(linked.symbols.metadata.functionDisplayNames.indexOf(symbol))]);
 	assert.equal(callable.flags & BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_CODE);
+	assert.equal(callable.isVararg, true);
 	assert.equal(ordinary.flags & BLUA32_FUNCTION_CODE, 0);
 	const entryRecord = functions.find(fn => fn.codeAddress === entryCodeAddress)!;
 	const instructions = [];

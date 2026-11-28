@@ -361,7 +361,8 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 	if (!resumed) {
 		if (!atomic) appendVisit(GC_THREAD_VISITS, address);
 		markThread(ThreadRecord::read(memory, address, ThreadField::Resumer));
-		markClosure(ThreadRecord::read(memory, address, ThreadField::Entry));
+		const u32 entry = ThreadRecord::read(memory, address, ThreadField::Entry);
+		if ((entry & 1u) == 0u) markClosure(entry); // Only RAM Closure entries are heap references.
 		markValue(ThreadRecord::error(memory, address));
 		work = THREAD_HEAP_BYTES / sizeof(u32) + m_stringPool.takeMarkWork();
 	}

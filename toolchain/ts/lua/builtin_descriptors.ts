@@ -116,6 +116,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'os.difftime', params: ['t2', 't1'], signature: 'os.difftime(t2, t1)' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])', description: 'Converts a BMSX civil-time date table, or returns elapsed BMSX machine time in seconds when omitted.' },
 	{ name: 'blua32.closure', params: ['function_address'], signature: 'blua32.closure(function_address)', description: 'Creates a closure from a mapped BLua32 function-record address. Compiles to the indirect CLOSURE ISA form and is not a first-class Lua function.' },
+	{ name: 'blua32.code_function', params: ['startup_symbol'], signature: 'blua32.code_function(startup_symbol)', description: 'Links a callable System startup symbol as an immutable function value without runtime binding.' },
 	{ name: 'blua32.argument_count', params: [], signature: 'blua32.argument_count()', description: 'Reads the exact number of arguments supplied to this function, including explicitly supplied nil values. Emits ARGC; not a function value.' },
 	{ name: 'blua32.argument_suffix', params: ['start'], signature: 'return blua32.argument_suffix(start)', description: 'Returns the extra arguments starting at a zero-based Integer offset without copying them into a separate register window. Must be the only expression in return.' },
 	{ name: 'blua32.svc', params: ['value'], signature: 'blua32.svc(value)', description: 'Raises a supervisor exception with the supplied value. Emits SVC as a statement, not a function value.' },

@@ -14,6 +14,7 @@ local allocator<const> = require('kernel/dlmalloc') -- T:179-183,191-193 C:191-1
 local collector<const> = require('kernel/gc_control') -- T:186-187 C:195-197 U:147-155 V:235-244
 local admission<const> = require('kernel/heap_admission') -- T:42-106,175-176 C:41-116,187-188
 local collection<const> = require('kernel/gc_step') -- U:1110-1124 V:1213-1227
+local types<const> = require('kernel/value_type') -- CF:8-11; immutable callable kind
 
 local object_prefix<const> = 8 -- T:179,185 C:191,194 P:6,9 Q:9,13
 local thread_kind<const> = 4 -- I:33 H:18
@@ -91,8 +92,9 @@ local create_thread<const> = function(management, entry) -- T:170,178 C:182,190;
 	return 0 -- T:195 C:205; caller takes the original recovery branch
 end
 
-local allocate_coroutine<const> = function(management, entry, source_cycles) -- T:170,174-178,195 C:182,186-190,205; ingress has already resolved the Closure
+local allocate_coroutine<const> = function(management, entry, source_cycles) -- T:170,174-178,195 C:182,186-190,205; ingress has already resolved the entry
 	local arena<const> = management + layout.arena_offset -- T:177 A:25 C:189 B:20
+	local root<const> = (entry & layout.thread_entry_code_bit) == 0 and entry or 0 -- CF:11,21-23 FA:30; only a Closure entry is collectible
 	local roots_published = false -- X:3996-4010 Y:169-184; no root publication on allocator-only attempts
 	local recovery = current_or_fresh -- T:92,175 C:103,187
 	local debt<const> = admission.allocation_debt(arena, charged) -- T:75,85 C:85,97
@@ -108,7 +110,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 				root_inputs.publish(management) -- T:95,174 C:106,186 U:1123 V:1226
 				roots_published = true -- X:3996-4005 Y:169-178
 			end
-			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; Entry is the single explicit root
+			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, root) -- U:1123 V:1226; only Closure Entry is a heap root
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5179-5181 Z:2791-2793; preserve the source grant, not a clock debit
 		until admission.logical_fits(arena, charged) ~= 0 -- T:96 C:107
 	elseif debt > 0 and source_cycles >= admission.internal.work_word_cycles then -- T:77-79 C:87-90 X:5183-5188 Z:2795-2801
@@ -116,7 +118,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 		local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- T:79 C:89-90 X:5183-5187 Z:2795-2799
 		root_inputs.publish(management) -- T:79,174 C:90,186 X:3996 Y:169
 		roots_published = true -- X:3996-4005 Y:169-178
-		local work<const> = collection.step(management, words, 0, 0, entry) -- X:5189 Z:2801
+		local work<const> = collection.step(management, words, 0, 0, root) -- X:5189 Z:2801
 		source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5190 Z:2802
 		admission.credit_logical_assist(arena, charged, debt, pressure, work) -- T:80 C:91
 	end
@@ -126,7 +128,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 			root_inputs.publish(management) -- T:105,176 C:116,188 X:3996 Y:169
 			roots_published = true -- X:3996-4005 Y:169-178
 		end
-		collection.step(management, words, 0, 0, entry) -- X:5189 Z:2801
+		collection.step(management, words, 0, 0, root) -- X:5189 Z:2801
 	end
 	while true do -- T:178 C:190
 		local offset<const> = create_thread(management, entry) -- T:179-193 C:191-203
@@ -140,24 +142,28 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 			root_inputs.publish(management) -- T:195 C:205 X:3996 Y:169
 			roots_published = true -- X:3996-4005 Y:169-178
 		end
-		collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; retry starts at raw reservation, not admission
+		collection.finish_epoch(management, collection.step_words, 0, 0, root) -- U:1123 V:1226; retry starts at raw reservation, not admission
 	end
-	if roots_published then collection.finish_operation(management, entry) end -- X:4007-4010 Y:181-184
+	if roots_published then collection.finish_operation(management, root) end -- X:4007-4010 Y:181-184
 	return 0 -- U:1111 V:1214 D:43
 end
 
 -- CALL ingress basis: f48d8f3c8917ccae4ffded4d790acb9ebd194cfc. K/L: TS/C++ CPU gate; O/R: exact tagged Closure decode.
 local create_from_value<const> = function(entry, tag, source_cycles) -- K:4559-4570 L:1301-1309
 	local management<const> = layout.management_offset -- K:4564 L:1306
-	if tag ~= closure_tag then -- K:4560-4561 L:1302-1303
+	if tag == closure_tag then -- K:4560-4561 L:1302-1303
+		local offset<const> = entry & record_mask -- O:139-143,151-153 R:254-257,276-278
+		local kind<const>: *u8 = layout.ram_base + offset -- O:140-142 R:255-257
+		if *kind ~= closure_tag or allocator.bmsx_dlmalloc_is_object(management + layout.arena_offset, offset - object_prefix) == 0 then -- O:140-143 R:255-257
+			return 0, invalid_argument -- K:4561 L:1303
+		end
+		entry = layout.ram_base + offset -- K:4564-4568 L:1306-1308
+	elseif tag == types.code_tag then -- CF:11; immutable callable kind
+		entry = entry | layout.thread_entry_code_bit -- FA:30; the aligned ROM payload leaves bit 0 free
+	else -- K:4560-4561 L:1302-1303 CF:11
 		return 0, invalid_argument -- K:4561 L:1303
 	end
-	local offset<const> = entry & record_mask -- O:139-143,151-153 R:254-257,276-278
-	local kind<const>: *u8 = layout.ram_base + offset -- O:140-142 R:255-257
-	if *kind ~= closure_tag or allocator.bmsx_dlmalloc_is_object(management + layout.arena_offset, offset - object_prefix) == 0 then -- O:140-143 R:255-257
-		return 0, invalid_argument -- K:4561 L:1303
-	end
-	local thread<const> = allocate_coroutine(management, layout.ram_base + offset, source_cycles) -- K:4564-4568 L:1306-1308 T:174-195 C:186-205
+	local thread<const> = allocate_coroutine(management, entry, source_cycles) -- K:4564-4568 L:1306-1308 T:174-195 C:186-205
 	if thread == 0 then -- T:195 U:1111 C:205 V:1214 D:43
 		return 0, out_of_memory -- T:195 U:1111 C:205 V:1214 D:43
 	end
