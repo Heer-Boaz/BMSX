@@ -12,7 +12,7 @@ import type {
 } from '../program';
 import { inlineCallChainContainsFunction, ROOT_INLINE_CALL_SITES } from '../inline_debug';
 import { MAX_EXT_CONST, MAX_EXT_REGISTER_A } from '../../../../../machine/ts/spec/blua32/instruction_format';
-import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, remapInstructions, type Block } from '../control_flow';
+import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, remapInstructions, rewriteBranchTargets, visitBranchTargets, type Block } from '../control_flow';
 import {
 	cloneDuplicatedInstruction,
 	cloneInstruction,
@@ -53,6 +53,7 @@ export type Instruction = {
 	format: InstructionFormat;
 	rkMask: number;
 	target: number | null;
+	branchTargets?: readonly number[];
 	callProtoIndex?: number | null;
 	tableConstructor?: true;
 	/** Only the explicit window is observed; the issuer frame identity is immaterial. */
@@ -236,6 +237,9 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
 				break;
 			}
+			case OpCode.JREG:
+				for (const target of instruction.branchTargets!) pushWorklistCandidate(worklist, target, count);
+				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT: {
 				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
@@ -282,14 +286,9 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 		return set;
 	}
 	const inboundTargets = new Array<number>(count).fill(0);
+	const countTarget = (target: number) => { if (target < count) inboundTargets[target] += 1; };
 	for (const instruction of instructions) {
-		if (!isJump(instruction)) {
-			continue;
-		}
-		const target = getJumpTarget(instruction);
-		if (target < count) {
-			inboundTargets[target] += 1;
-		}
+		visitBranchTargets(instruction, countTarget);
 	}
 	const keep = new Array<boolean>(count).fill(true);
 	let removed = 0;
@@ -420,6 +419,9 @@ const computeBlockConstantIn = (
 					continue;
 				}
 				switch (instruction.op) {
+					case OpCode.JREG:
+						if (instruction.c !== 0) constants.delete(instruction.b);
+						break;
 					case OpCode.MOV: {
 						const source = instruction.c === ValueMoveKind.Copy ? constants.get(instruction.b) : undefined;
 						if (source) {
@@ -667,6 +669,9 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				}
 				case OpCode.SVC:
 					clearRegisterRange(constants, instruction.a, instruction.b);
+					break;
+				case OpCode.JREG:
+					if (instruction.c !== 0) constants.delete(instruction.b);
 					break;
 				case OpCode.CALL: {
 					clearRegisterRange(constants, instruction.a, null);
@@ -974,6 +979,9 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
+				case OpCode.JREG:
+					if (instruction.c !== 0) killRegister(constants, copies, instruction.b);
+					break;
 				case OpCode.SVC:
 					if (instruction.b === 0) rewriteCopyInstructionOperand(instruction, 'a', copies);
 					else for (let slot = instruction.a; slot < instruction.a + instruction.b; slot++)
@@ -1100,7 +1108,7 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 		return set;
 	}
 	for (let i = 0; i < count; i += 1) {
-		if (isSkipInstruction(instructions[i])) {
+		if (instructions[i].op === OpCode.JREG || isSkipInstruction(instructions[i])) {
 			// Skip-next semantics depend on adjacency; reordering blocks would break them.
 			return set;
 		}
@@ -1449,6 +1457,9 @@ const applyClosureTransferForInlining = (
 			return;
 		case OpCode.SVC:
 			clearRegisterRange(closures, instruction.a, instruction.b);
+			return;
+		case OpCode.JREG:
+			if (instruction.c !== 0) closures.delete(instruction.b);
 			return;
 		default:
 			return;
@@ -1930,11 +1941,10 @@ const inlineCallAtIndex = (
 		if (i === callIndex) {
 			indexMap[i] = writeIndex;
 			const localStart = writeIndex;
+			const remapInlineTarget = (target: number) => localStart + target;
 			for (let j = 0; j < expansionCount; j += 1) {
 				const instruction = cloneInstruction(expansion.instructions[j]);
-				if (isJump(instruction)) {
-					instruction.target = localStart + getJumpTarget(instruction);
-				}
+				rewriteBranchTargets(instruction, remapInlineTarget);
 				nextInstructions[writeIndex] = instruction;
 				nextRanges[writeIndex] = expansion.ranges[j];
 				writeIndex += 1;
@@ -1948,6 +1958,7 @@ const inlineCallAtIndex = (
 		writeIndex += 1;
 	}
 	indexMap[count] = nextCount;
+	const remapTarget = (target: number) => indexMap[target];
 
 	for (let i = 0; i < nextCount; i += 1) {
 		const sourceIndex = origin[i];
@@ -1955,11 +1966,7 @@ const inlineCallAtIndex = (
 			continue;
 		}
 		const instruction = nextInstructions[i];
-		if (!isJump(instruction)) {
-			continue;
-		}
-		const oldTarget = getJumpTarget(instructions[sourceIndex]);
-		instruction.target = oldTarget === count ? nextCount : indexMap[oldTarget];
+		rewriteBranchTargets(instruction, remapTarget);
 	}
 
 	return { instructions: nextInstructions, ranges: nextRanges };
@@ -2009,6 +2016,7 @@ const inlineFunctionCalls = (
 			}
 			// These instructions expose the physical frame or its resumable PC.
 			if (instruction.op === OpCode.CLOSURE
+				|| instruction.op === OpCode.JREG
 				|| instruction.op === OpCode.VARARG
 				|| instruction.op === OpCode.ARGC
 				|| instruction.op === OpCode.HALT
@@ -2154,7 +2162,10 @@ export const optimizeInstructions = (
 		const inlineLocalSlots = current.inlineLocalSlots;
 		const inlineOuterBindings = current.inlineOuterBindings;
 		current = cleanupControlFlow(current);
-		current = applyGlobalOptimizations(current, context);
+		// This SSA pipeline does not model address-taken successors yet.
+		// Local control-flow, liveness, constants and register allocation do.
+		if (!current.instructions.some(instruction => instruction.op === OpCode.JREG))
+			current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
 		current = scalarReplacePrivateTables(current, context);
 		current = runMidLevelOptimizations(current, context);

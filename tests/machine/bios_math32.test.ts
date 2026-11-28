@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
+import { nativeConformanceRunner } from '../helpers/native_conformance.mjs';
 
 const bootSource = `local startup<const> = require('bmsx/startup')
 return {pcall=blua32.closure(startup.protected_call),error=__bmsx_error}`;
@@ -21,6 +27,52 @@ function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 
 	return { romBytes, cpu, results };
 }
 const math = "local boot<const> = require('test/boot'); error=boot.error; local math<const> = require('math')\n";
+for (const opt of [0, 3] as const) test(`BIOS log O${opt} branches to one natural-log body with two distinct continuations`, t => {
+	const source = math + 'return math.log(1), math.log(8, 4), math.log(16, 4), math.log(8, 2), math.log(0, 3)';
+	const linked = linkManagedTestSystem(source, opt, modules);
+	const fn = linked.layout.functions[linked.symbols.metadata.functionDisplayNames.indexOf('log')];
+	assert.ok(fn);
+	const linkRegisters: number[] = [], returnRegisters: number[] = [];
+	const labelSlots: number[] = [];
+	let previous: ReturnType<typeof decodeBlua32InstructionAtPc> | undefined;
+	for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+		const decoded = decodeBlua32InstructionAtPc(linked.bytes, linked.layout.address, pc);
+		assert.notEqual(decoded.op, OpCode.CALL, 'the natural-log kernel does not create a language frame');
+		assert.notEqual(decoded.op, OpCode.SVC);
+		if (decoded.op === OpCode.JREG) {
+			if (decoded.c === 1) {
+				assert.ok(previous?.op === OpCode.LOADK && previous.a === decoded.a);
+				assert.equal(decoded.b, decoded.a);
+				labelSlots.push(previous.bx);
+				linkRegisters.push(decoded.a);
+			} else returnRegisters.push(decoded.a);
+		}
+		pc = decoded.pc + INSTRUCTION_BYTES;
+		previous = decoded;
+	}
+	assert.equal(returnRegisters.length, 1);
+	assert.deepEqual(linkRegisters, [returnRegisters[0], returnRegisters[0]]);
+	assert.equal(labelSlots[0], labelSlots[1]);
+
+	const romBytes = writeTestBlua32Rom(linked);
+	const expected = [0, 1.5, 2, 3, -Infinity].map(v.valueFloat);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu } = createTestSystemCpu({ romBytes }, backend);
+		runGuestToHalt(cpu, 1_000_000);
+		const results: v.Value[] = [];
+		cpu.readCompletionValues(results);
+		assert.deepEqual(results, expected);
+	}
+	const temp = mkdtempSync(join(tmpdir(), 'bmsx-firmware-log-'));
+	t.after(() => rmSync(temp, { recursive: true, force: true }));
+	const rom = join(temp, 'system.rom'), trace = join(temp, 'trace');
+	writeFileSync(rom, romBytes);
+	writeFileSync(trace, 'E 1000000\n'.repeat(8) + 'c\n');
+	const nativeMachine = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	const rows = execFileSync(nativeMachine, [rom, trace, join(temp, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n');
+	assert.equal(rows.at(-1), [expected.length, ...expected.flatMap(value => [v.valueTag(value), v.valuePayload(value)])].join(' '));
+});
+
 const numericSource = readFileSync('tests/fixtures/compiler32/math.lua', 'utf8');
 const numericExpected = [v.valueInteger(2147483647), v.valueInteger(-2147483648),
 'integer', 'float', 'float', 'float', v.valueNil(),

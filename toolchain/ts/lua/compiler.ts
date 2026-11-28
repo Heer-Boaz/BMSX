@@ -166,6 +166,7 @@ import {
 
 type ProgramCompilerConstReloc =
 	| ProgramImageConstReloc
+	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number }
 	| {
 		wordIndex: number;
 		kind: 'bios_function';
@@ -623,7 +624,7 @@ class ProgramBuilder {
 	}
 
 	public constValueRelocIndex(
-		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr'>,
+		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr' | 'text_addr'>,
 		symbolIndex: number,
 		addend: number,
 	): number {
@@ -671,6 +672,12 @@ class ProgramBuilder {
 
 	public relocatedConstIndexSet(): ReadonlySet<number> {
 		return this.relocatedConstIndices;
+	}
+
+	public reserveAddressConstant(): number {
+		const index = this.allocateConstantSlot(integerConstant(0));
+		this.relocatedConstIndices.add(index);
+		return index;
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
@@ -1112,6 +1119,10 @@ class ProgramBuilder {
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
 				switch (reloc.kind) {
+					case 'local_text_addr':
+						imageConstRelocs.push({ wordIndex: targetOffsetWords + reloc.wordIndex, kind: 'bx', constIndex: reloc.constIndex });
+						this.constValueRelocs.push({ constIndex: reloc.constIndex, kind: 'text_addr', offset: targetOffsetBytes + reloc.offset });
+						continue;
 					case 'module_init':
 						imageConstRelocs.push({
 							wordIndex: targetOffsetWords + reloc.wordIndex,
@@ -1335,6 +1346,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly localBindings = new Map<string, LocalBinding>();
 	// Nested closures, including IRQ handlers, alias their owner's open-upvalue registers.
 	private readonly closureWrittenRegisters = new Set<number>();
+	private hasCapturedLocals = false;
 	private readonly scopeStack: ScopeFrame[] = [];
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private nextArgumentIndex = 0;
@@ -1346,6 +1358,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly loopStack: LoopContext[] = [];
 	private readonly labelPositions = new Map<LuaLabelStatement, { index: number; top: number }>();
 	private readonly gotoJumps: Array<ScopedJump & { target: LuaLabelStatement }> = [];
+	private readonly registerJumps: Array<{ instruction: Instruction; labels: string[] }> = [];
 	private jumpBindings!: ReturnType<typeof getLuaJumpBindings>;
 	private registerLifetimes!: FileRegisterLifetimes;
 	private currentRange: SourceRange | null = null;
@@ -1439,7 +1452,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.registerLifetimes = this.program.registerLifetimes(file);
 		this.reuseScopedRegisters = !this.registerLifetimes.hasRawWindow(expression);
 		this.jumpBindings = getLuaJumpBindings(body);
-		this.flowAnalysis = new ValueKindFlowAnalyzer(body, this.semantics, this.jumpBindings.targets.size !== 0);
+		this.flowAnalysis = new ValueKindFlowAnalyzer(body, this.semantics, body.hasJumps);
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
@@ -1959,7 +1972,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const cWide = (instr.rkMask & RK_C) !== 0
 					? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
 					: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
-				wordWidths[index] = forceWide || forceFieldWide || aWide || bWide || cWide ? 2 : 1;
+				const labelLoad = instr.op === OpCode.JREG && instr.c === 1 ? 2 : 0;
+				wordWidths[index] = labelLoad + (forceWide || forceFieldWide || aWide || bWide || cWide ? 2 : 1);
 				continue;
 			}
 			if (instr.format === 'ABx') {
@@ -2025,11 +2039,31 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const finalRanges: Array<SourceRange | null> = new Array(endIndex);
 		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(endIndex);
 		const constRelocs: ProgramCompilerConstReloc[] = [];
+		let labelConstants: Map<number, number> | undefined;
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
 			const width = wordWidths[index];
 			const range = ranges[index];
+			const labelLoad = instr.op === OpCode.JREG && instr.c === 1;
+			if (labelLoad) {
+				const offset = instrStartIndex[instr.branchTargets![0]] * INSTRUCTION_BYTES;
+				const constants = labelConstants ??= new Map();
+				let constIndex = constants.get(offset);
+				if (constIndex === undefined) {
+					constIndex = this.program.reserveAddressConstant();
+					constants.set(offset, constIndex);
+					constRelocs.push({ wordIndex: cursor + 1, kind: 'local_text_addr', constIndex, offset });
+				} else {
+					constRelocs.push({ wordIndex: cursor + 1, kind: 'bx', constIndex });
+				}
+				const split = splitUnsignedOperand(constIndex, 'Bx', MAX_BX_BITS, EXT_BX_BITS, true);
+				writeInstruction(code, cursor, OpCode.WIDE, instr.a >>> MAX_OPERAND_BITS, split.wide, 0);
+				finalRanges[cursor++] = range;
+				writeInstruction(code, cursor, OpCode.LOADK, instr.a & MAX_LOW_OPERAND,
+					(split.low >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, split.low & MAX_LOW_OPERAND, split.ext);
+				finalRanges[cursor++] = range;
+			}
 			const integer = wideIntegers?.get(index);
 			if (integer !== undefined) {
 				code.set(integer, cursor * INSTRUCTION_BYTES);
@@ -2037,7 +2071,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				cursor += width;
 				continue;
 			}
-			const hasWide = width === 2;
+			const hasWide = width - (labelLoad ? 2 : 0) === 2;
 			if (instr.format === 'ABC') {
 				if (isDisplacedMemoryOp(instr.op)) {
 					const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
@@ -2244,6 +2278,20 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const target = this.labelPositions.get(jump.target)!;
 			this.patchScopedJump(jump, target.index, target.top);
 		}
+		if (this.registerJumps.length === 0) return;
+		if (this.hasCapturedLocals)
+			throw new Error('Register branches require a function without captured locals.');
+		const labels = new Map<string, number>();
+		for (const [statement, target] of this.labelPositions) {
+			labels.set(statement.label, labels.has(statement.label) ? -1 : target.index);
+		}
+		for (const { instruction, labels: destinations } of this.registerJumps) {
+			instruction.branchTargets = destinations.map(label => {
+				const target = labels.get(label);
+				if (target === undefined || target < 0) throw new Error(`Register branch label '${label}' must name a unique local label.`);
+				return target;
+			});
+		}
 	}
 
 	private patchScopedJump(jump: ScopedJump, target: number, targetTop: number): void {
@@ -2408,6 +2456,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const parentLocal = this.parent.localBindings.get(symbolHandle);
 		if (parentLocal) {
+			this.parent.hasCapturedLocals = true;
 			parentLocal.captured = true;
 			parentLocal.scope.firstCapture = Math.min(parentLocal.scope.firstCapture, parentLocal.reg);
 			const index = this.upvalueDescs.length;
@@ -4374,6 +4423,24 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private compileBlua32Statement(expression: LuaCallExpression): boolean {
 		const operation = this.resolveBlua32Operation(expression);
+		if (operation === 'jump_link' || operation === 'jump_register') {
+			const link = operation === 'jump_link';
+			const [operand, ...destinations] = expression.arguments;
+			if (operand?.kind !== LuaSyntaxKind.IdentifierExpression || destinations.length === 0
+				|| (link && destinations.length !== 1))
+				throw new Error(`blua32.${operation} expects a register local and ${link ? 'one' : 'one or more'} literal labels.`);
+			const reference = getResolvedIdentifierReference(this.semantics, operand);
+			const binding = this.resolveReferenceVisibleBinding(reference);
+			if (!binding || binding.moduleBinding !== null || (link && binding.kind === 'const'))
+				throw new Error(`blua32.${operation} requires ${link ? 'a writable' : 'a'} register local.`);
+			const labels = destinations.map(label => {
+				if (label.kind !== LuaSyntaxKind.StringLiteralExpression) throw new Error('Register branch labels must be string literals.');
+				return label.value;
+			});
+			this.emitABC(OpCode.JREG, binding.reg, link ? binding.reg : 0, link ? 1 : 0);
+			this.registerJumps.push({ instruction: this.code[this.code.length - 1], labels });
+			return true;
+		}
 		if (operation === 'rfe') {
 			if (expression.arguments.length !== 0) throw new Error('blua32.rfe expects 0 arguments.');
 			this.emitABC(OpCode.RFE, 0, 0, 0);

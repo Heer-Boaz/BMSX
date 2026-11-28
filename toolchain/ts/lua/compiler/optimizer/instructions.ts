@@ -21,6 +21,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,
+	branchTargets: instruction.branchTargets,
 	callProtoIndex: instruction.callProtoIndex,
 	tableConstructor: instruction.tableConstructor,
 	inlineSupervisorWindow: instruction.inlineSupervisorWindow,
@@ -74,6 +75,9 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 	};
 	for (const instruction of instructions) {
 		switch (instruction.op) {
+			case OpCode.JREG:
+				updateMax(instruction.a);
+				break;
 			case OpCode.KNIL:
 			case OpCode.KFALSE:
 			case OpCode.KTRUE:

@@ -199,6 +199,10 @@ export function allocateFrameSlots(
 			return a === instruction.a ? instruction : { ...instruction, a };
 		}
 		const reads = OPCODE_SCALAR_REGISTER_READS[instruction.op];
+		if (instruction.op === OpCode.JREG) {
+			const a = slots[instruction.a];
+			return { ...instruction, a, b: instruction.c === 0 ? 0 : a };
+		}
 		const a = (reads & REGISTER_OPERAND_A) !== 0 || OPCODE_WRITES_REGISTER_A[instruction.op] !== 0
 			? slots[instruction.a] : instruction.a;
 		const b = (reads & REGISTER_OPERAND_B) !== 0 && instruction.b >= 0 ? slots[instruction.b] : instruction.b;

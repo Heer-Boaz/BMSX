@@ -349,6 +349,7 @@ function buildStaticLayoutToken(
 function resolveConstValueRelocation(
 	reloc: ProgramConstValueReloc,
 	functionAddresses: ReadonlyArray<number>,
+	textAddress: number,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
 	dataAddress: number,
 	dataLoadAddress: number,
@@ -360,6 +361,8 @@ function resolveConstValueRelocation(
 	switch (reloc.kind) {
 		case 'function_addr':
 			return integerConstant(functionAddresses[reloc.protoIndex]);
+		case 'text_addr':
+			return integerConstant(textAddress + reloc.offset);
 		case 'data_addr':
 			return integerConstant(dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'data_lma_addr':
@@ -377,6 +380,7 @@ function resolveConstValues(
 	constants: ReadonlyArray<ObjectConstant>,
 	relocs: ReadonlyArray<ProgramConstValueReloc>,
 	functionAddresses: ReadonlyArray<number>,
+	textAddress: number,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
 	dataAddress: number,
 	dataLoadAddress: number,
@@ -391,6 +395,7 @@ function resolveConstValues(
 		resolved[reloc.constIndex] = resolveConstValueRelocation(
 			reloc,
 			functionAddresses,
+			textAddress,
 			dataSymbols,
 			dataAddress,
 			dataLoadAddress,
@@ -870,6 +875,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		rodata.constPool,
 		object.link.constValueRelocs,
 		functionAddressByProtoIndex,
+		input.loadAddress + textOffset,
 		data.symbols,
 		input.dataAddress,
 		dataLoadAddress,

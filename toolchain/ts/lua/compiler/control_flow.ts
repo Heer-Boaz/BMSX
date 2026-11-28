@@ -25,6 +25,16 @@ export const getJumpTarget = (instruction: Instruction): number => {
 	return instruction.target;
 };
 
+export function visitBranchTargets(instruction: Instruction, visit: (target: number) => void): void {
+	if (isJump(instruction)) visit(getJumpTarget(instruction));
+	else if (instruction.op === OpCode.JREG) for (const target of instruction.branchTargets!) visit(target);
+}
+
+export function rewriteBranchTargets(instruction: Instruction, remap: (target: number) => number): void {
+	if (isJump(instruction)) instruction.target = remap(getJumpTarget(instruction));
+	else if (instruction.op === OpCode.JREG) instruction.branchTargets = instruction.branchTargets!.map(remap);
+}
+
 export const remapInstructions = (
 	instructions: Instruction[],
 	ranges: Array<SourceRange | null>,
@@ -53,22 +63,20 @@ export const remapInstructions = (
 
 	const nextInstructions: Instruction[] = new Array(newIndex);
 	const nextRanges: Array<SourceRange | null> = new Array(newIndex);
+	const remapTarget = (target: number): number => {
+		const mappedTarget = target === count
+			? newIndex
+			: (forwardRemovedTargets ? forwardMap[target] : indexMap[target]);
+		if (mappedTarget < 0) throw new Error(`[ProgramOptimizer] Jump target ${target} was removed.`);
+		return mappedTarget;
+	};
 	let writeIndex = 0;
 	for (let i = 0; i < count; i += 1) {
 		if (!keep[i]) {
 			continue;
 		}
 		const instruction = instructions[i];
-		if (isJump(instruction)) {
-			const target = getJumpTarget(instruction);
-			const mappedTarget = target === count
-				? newIndex
-				: (forwardRemovedTargets ? forwardMap[target] : indexMap[target]);
-			if (mappedTarget < 0) {
-				throw new Error(`[ProgramOptimizer] Jump target ${target} was removed.`);
-			}
-			instruction.target = mappedTarget;
-		}
+		rewriteBranchTargets(instruction, remapTarget);
 		nextInstructions[writeIndex] = instruction;
 		nextRanges[writeIndex] = ranges[i];
 		writeIndex += 1;
@@ -99,6 +107,10 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 				if (next < count) {
 					leaders.add(next);
 				}
+				break;
+			case OpCode.JREG:
+				for (const target of instruction.branchTargets!) if (target < count) leaders.add(target);
+				if (next < count) leaders.add(next);
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
@@ -191,6 +203,9 @@ export const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 				break;
 			case OpCode.JMP:
 				addIndexSuccessor(blockIndex, getJumpTarget(instruction));
+				break;
+			case OpCode.JREG:
+				for (const target of instruction.branchTargets!) addIndexSuccessor(blockIndex, target);
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:

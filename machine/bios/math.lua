@@ -230,39 +230,11 @@ local exp<const> = function(value)
 	return exp_positive(value)
 end
 
-local log_e<const> = function(value)
-	if value < 0 then
-		return nan
-	end
-	if value == 0 then
-		return -huge
-	end
-	if value == huge then
-		return huge
-	end
-	local exponent = 0
-	local mantissa = value
-	while mantissa >= sqrt_two do
-		mantissa = mantissa * 0.5
-		exponent = exponent + 1
-	end
-	while mantissa < sqrt_half do
-		mantissa = mantissa * 2.0
-		exponent = exponent - 1
-	end
-	local z<const> = (mantissa - 1.0) / (mantissa + 1.0)
-	local z2<const> = z * z
-	local term = z
-	local sum = term
-	for denominator = 3, 31, 2 do
-		term = term * z2
-		sum = sum + (term / denominator)
-	end
-	return (2.0 * sum) + (exponent * ln2)
-end
-
 local log<const> = function(value, base)
-	local natural<const> = log_e(value)
+	local link, answer
+	blua32.jump_link(link, 'natural_log')
+	::value_ready::
+	local natural<const> = answer
 	if base == nil then
 		return natural
 	end
@@ -272,7 +244,47 @@ local log<const> = function(value, base)
 	if base == 2 then
 		return natural / ln2
 	end
-	return natural / log_e(base)
+	value = base
+	blua32.jump_link(link, 'natural_log')
+	::base_ready::
+	do return natural / answer end
+
+	::natural_log::
+	do
+		if value < 0 then
+			answer = nan
+			goto kernel_return
+		end
+		if value == 0 then
+			answer = -huge
+			goto kernel_return
+		end
+		if value == huge then
+			answer = huge
+			goto kernel_return
+		end
+		local exponent = 0
+		local mantissa = value
+		while mantissa >= sqrt_two do
+			mantissa = mantissa * 0.5
+			exponent = exponent + 1
+		end
+		while mantissa < sqrt_half do
+			mantissa = mantissa * 2.0
+			exponent = exponent - 1
+		end
+		local z<const> = (mantissa - 1.0) / (mantissa + 1.0)
+		local z2<const> = z * z
+		local term = z
+		local sum = term
+		for denominator = 3, 31, 2 do
+			term = term * z2
+			sum = sum + (term / denominator)
+		end
+		answer = (2.0 * sum) + (exponent * ln2)
+	end
+	::kernel_return::
+	blua32.jump_register(link, 'value_ready', 'base_ready')
 end
 
 local ult<const> = function(left, right)

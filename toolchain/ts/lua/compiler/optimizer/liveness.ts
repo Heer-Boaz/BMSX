@@ -54,6 +54,9 @@ export function visitInstructionUses<T>(
 	visitor: RegisterVisitor<T>,
 ): void {
 	switch (instruction.op) {
+		case OpCode.JREG:
+			if (instruction.c === 0) visitRegister(state, visitor, instruction.a);
+			break;
 		case OpCode.MOV:
 		case OpCode.UNM:
 		case OpCode.NOT:
@@ -180,6 +183,9 @@ export function visitInstructionDefs<T>(
 	visitor: RegisterVisitor<T>,
 ): void {
 	switch (instruction.op) {
+		case OpCode.JREG:
+			if (instruction.c !== 0) visitRegister(state, visitor, instruction.b);
+			break;
 		case OpCode.MOV:
 		case OpCode.KNIL:
 		case OpCode.KFALSE:
