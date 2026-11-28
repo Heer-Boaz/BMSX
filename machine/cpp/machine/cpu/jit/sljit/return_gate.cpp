@@ -198,9 +198,9 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::ReturnCount), SLJIT_R0, 0, SLJIT_IMM, 1);
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, closure));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Closure), SLJIT_R0, 0);
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, ram), SLJIT_R0, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Function), SLJIT_MEM1(SLJIT_R1), CLOSURE_PROTOTYPE_ADDRESS);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Function),
+		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeFunction));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::OpenHead), SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Flags),
 		SLJIT_MEM1(state), offsetof(NativeCpuRunState, frameBank));

@@ -438,15 +438,20 @@ void exactImmutableCodeClosureGrant() {
 	constexpr u8 destination = 5;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	image.text.resize(6 * INSTRUCTION_BYTES);
+	image.text.resize(10 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 1, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), destination, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), destination, 1, 2);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
-		{.firstWord = 5, .wordCount = 1, .codeFunction = true}};
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::KSMI), 0, 0, 37);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
+		{.firstWord = 6, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true},
+		{.firstWord = 8, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true}};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	struct ResetMachine {
@@ -510,6 +515,59 @@ void exactImmutableCodeClosureGrant() {
 	require(test::runCpuParity(native, scalar.cpu, prefixCycles) == RunResult::Yielded
 		&& native.instructionBudgetRemaining == 0, "an exact prefix grant stops before the WIDE head");
 	check(wide, start, 2, valueNil());
+
+	// Repeat the same fixed CALL after it has learned the ROM target and
+	// retained a receiver frame. Split the grant inside the callee.
+	const u32 call = successor + INSTRUCTION_BYTES;
+	const int callCycles = BASE_CYCLES[static_cast<size_t>(OpCode::CALL)];
+	const int retCycles = BASE_CYCLES[static_cast<size_t>(OpCode::RET)];
+	for (const auto [prototype, warm] : {std::pair{1u, false}, std::pair{1u, true}, std::pair{2u, false}}) {
+		const u32 target = start + (4 + 2 * prototype) * INSTRUCTION_BYTES;
+		const auto callee = valueFromTag(ValueTag::CodeFunction, rom.functionAddresses[prototype]);
+		const auto result = valueInteger(prototype == 1 ? 1 : 37);
+		for (auto* cpu : {&native, &scalar.cpu}) {
+			cpu->writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], successor);
+			cpu->activeThread()->currentFrame->registers.set(destination, callee);
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto callEntries = exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
+#endif
+		require(test::runCpuParity(native, scalar.cpu, prefixCycles + callCycles + 2) == RunResult::Yielded
+			&& native.instructionBudgetRemaining == 1 - prefixCycles,
+			"CALL places one missing formal and enters the target with the same grant");
+		for (auto* cpu : {&native, &scalar.cpu}) {
+			const auto& frame = *cpu->activeThread()->currentFrame;
+			require(cpu->getFrameDepth() == 2 && cpu->readFramePc(0) == call + INSTRUCTION_BYTES
+				&& cpu->readFramePc(1) == target + INSTRUCTION_BYTES
+				&& frame.readControl(FrameField::Function) == rom.functionAddresses[prototype]
+				&& frame.readControl(FrameField::Closure) == 0
+				&& frame.readControl(FrameField::ArgumentCount) == 0
+				&& frame.registers.get(0) == result, "the interrupted callee is an ordinary closure-free frame");
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (warm || prototype == 2) {
+			const auto& activeImage = *native.activeThread()->currentFrame->executionImage;
+			const auto* callPage = activeImage.nativeCodeLookup->find(successor, 0);
+			const auto* block = callPage->nativeBlocks->entries[(successor & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+			if (warm) {
+				require(block && block->terminal.callStrategy == NativeCallStrategy::Fixed
+					&& block->terminal.fixedCall.plan.acceptsCodeFunction, "a warm ordinary CALL has a fixed CodeFunction plan");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+				require(exits[static_cast<size_t>(NativeBlockExit::Call)].entries == callEntries,
+					"the resident call does not go through the semantic CALL dispatcher");
+#endif
+			} else {
+				require(block && block->terminal.callStrategy == NativeCallStrategy::Generic,
+					"a different function address contradicts the learned plan");
+			}
+		}
+#else
+		(void)warm;
+#endif
+		require(test::runCpuParity(native, scalar.cpu, retCycles + 1) == RunResult::Yielded
+			&& native.getFrameDepth() == 1 && native.readFrameRegister(0, destination) == result
+			&& test::sameLanguageRam(native, scalar.cpu), "return places the fixed result after the grant boundary");
+	}
 }
 
 void exactGrant(bool store) {

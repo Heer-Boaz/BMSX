@@ -11,10 +11,11 @@ namespace bmsx {
 namespace {
 
 inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitSite& exit, CallFrame& callee,
-	u32 closure, int stackBase, int varargBase, size_t capacity, int top, int cycles) noexcept {
+	u32 prototype, u32 closure, int stackBase, int varargBase, size_t capacity, int top, int cycles) noexcept {
 	auto& state = run.state;
 	callee.executionImage = state.frame->executionImage;
 	callee.registers = callee.thread->stack.linearSubspan(stackBase, capacity);
+	callee.pendingNativeFunction = prototype;
 	callee.pendingNativeClosure = closure;
 	callee.pendingNativeStackBase = stackBase;
 	callee.pendingNativeVarargBase = varargBase;
@@ -38,7 +39,7 @@ void NativeCpuRunState::writePendingFrame(CallFrame& frame, u32 pc, i32 top) con
 	const auto base = frame.pendingNativeStackBase;
 	const auto varargBase = frame.pendingNativeVarargBase;
 	const auto closure = frame.pendingNativeClosure;
-	const auto prototype = cpu->memory().readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+	const auto prototype = frame.pendingNativeFunction;
 	const FrameEntryControl entry{prototype, pc, site.lastPc, frameBank,
 		varargBase, supplied, CallResultPlacement::call(call.callee, call.requested),
 		top, closure, base, static_cast<i32>(frame.registers.size())};
@@ -92,7 +93,9 @@ std::optional<NativeFixedCallPlan> CPU::captureNativeFixedCall(Blua32ExecutionIm
 	const auto layout = ArgumentPlacement::forEntry(0, supplied, *function);
 	if (!layout) return std::nullopt;
 	return NativeFixedCallPlan{prototype, function->codeAddress, static_cast<u32>(layout->capacity),
-		layout->formals.copied, layout->formals.padded};
+		layout->formals.copied, layout->formals.padded,
+		image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID && !image.romFunctions.mappedCode
+			&& isStaticCodeFunction(version->entry.flags, version->upvalueCount)};
 }
 
 void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page, u32 pc) {
@@ -100,14 +103,26 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	auto& decoded = page.words[word];
 	if (decoded.nativeCallTarget() != DecodedInstruction::CALL_TARGET_UNSEEN || decoded.a >= frame.registers.size()) return;
 	const auto value = frame.registers.get(decoded.a);
-	if (!valueIsClosure(value)) return;
-	const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(value));
-	if (!closure) return;
-	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto& image = *frame.executionImage;
-	if (binding.latched() || binding.domain() != image.executionDomainId) return;
-	const u32 prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-	if (!captureNativeFixedCall(image, prototype, decodeValueCount(decoded.b, -1))) return;
+	u32 prototype;
+	const auto tag = valueTag(value);
+	switch (tag) {
+		case ValueTag::CodeFunction:
+			if (&image != m_systemImage) return;
+			prototype = valuePayload(value);
+			break;
+		case ValueTag::Closure: {
+			const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(value));
+			if (!closure) return;
+			const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+			if (binding.latched() || binding.domain() != image.executionDomainId) return;
+			prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+			break;
+		}
+		default: return;
+	}
+	const auto plan = captureNativeFixedCall(image, prototype, decodeValueCount(decoded.b, -1));
+	if (!plan || (tag == ValueTag::CodeFunction && !plan->acceptsCodeFunction)) return;
 	decoded.setNativeCallTarget(prototype);
 }
 
@@ -133,32 +148,41 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (exit->callStrategy == NativeCallStrategy::Fixed) return tryCallNativeFixedFrame(run, exit);
 	const int base = call.callee;
 	// Run-state frames are bound to the linear value planes of the grant.
-	switch (static_cast<ValueTag>(caller.registers.tags()[base])) {
+	const auto tag = static_cast<ValueTag>(caller.registers.tags()[base]);
+	auto& image = *caller.executionImage;
+	u32 closure = 0, functionAddress;
+	RomCallBinding* romBinding = nullptr;
+	FunctionEntry latched;
+	const FunctionEntry* function;
+	switch (tag) {
 		case ValueTag::BuiltinFunction: {
 			const u32 builtin = caller.registers.admittedPayload(base);
 			return nativeBuiltinLeafId(builtin) ? tryRunNativeBuiltinLeaf(run, exit, builtin) : nullptr;
 		}
-		case ValueTag::Closure: break;
+		case ValueTag::CodeFunction:
+			if (&image != cpu.m_systemImage) return nullptr;
+			functionAddress = caller.registers.admittedPayload(base);
+			romBinding = image.bindRomFunction(cpu.m_memory, functionAddress);
+			if (!romBinding) return nullptr;
+			function = &romBinding->entry;
+			break;
+		case ValueTag::Closure: {
+			closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
+			if (!closure) return nullptr;
+			const ClosureRecord::BindingFlags binding{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+			if (binding.domain() != image.executionDomainId) return nullptr;
+			functionAddress = cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+			if (binding.latched()) {
+				latched = ClosureRecord::readLatchedEntry(cpu.m_memory, closure);
+				function = &latched;
+			} else {
+				romBinding = image.bindRomFunction(cpu.m_memory, functionAddress);
+				if (!romBinding) return nullptr;
+				function = &romBinding->entry;
+			}
+			break;
+		}
 		default: return nullptr;
-	}
-
-	const u32 closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
-	if (!closure) return nullptr;
-	const ClosureRecord::BindingFlags binding{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
-	auto& image = *caller.executionImage;
-	if (binding.domain() != image.executionDomainId) return nullptr;
-	const u32 functionAddress = cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-
-	RomCallBinding* romBinding = nullptr;
-	FunctionEntry latched;
-	const FunctionEntry* function;
-	if (binding.latched()) {
-		latched = ClosureRecord::readLatchedEntry(cpu.m_memory, closure);
-		function = &latched;
-	} else {
-		romBinding = image.bindRomFunction(cpu.m_memory, functionAddress);
-		if (!romBinding) return nullptr;
-		function = &romBinding->entry;
 	}
 
 	// The shared CALL gate reads the site's binding on every entry. Publish
@@ -170,7 +194,8 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (observed != DecodedInstruction::CALL_TARGET_UNSEEN && observed != functionAddress) {
 			decoded.setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
 			exit->callStrategy = NativeCallStrategy::Generic;
-		} else if (const auto plan = cpu.captureNativeFixedCall(image, functionAddress, call.supplied)) {
+		} else if (const auto plan = cpu.captureNativeFixedCall(image, functionAddress, call.supplied);
+			plan && (closure != 0 || plan->acceptsCodeFunction)) {
 			decoded.setNativeCallTarget(functionAddress);
 			std::construct_at(&exit->fixedCall, NativeFixedCallBinding{*plan, romBinding->entryCells});
 			exit->callStrategy = NativeCallStrategy::Fixed;
@@ -209,7 +234,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	} else {
 		thread.stack.clearAdmitted(placement.stackBase + copied, padded);
 	}
-	enterNativeActivation(*run, *exit, *callee, closure, placement.stackBase, placement.varargBase,
+	enterNativeActivation(*run, *exit, *callee, functionAddress, closure, placement.stackBase, placement.varargBase,
 		placement.capacity, placement.top(), cycles);
 	return target ? target : resumeScalarAfterNativeTransfer(*run, *exit, function->codeAddress);
 }
@@ -233,16 +258,16 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	};
 	// A prototype version identifies code and frame layout, never captures.
 	// The actual heap closure remains the owner of every capture slot.
-	if (static_cast<ValueTag>(caller.registers.tags()[base]) != ValueTag::Closure) {
-		return miss();
-	}
-	const u32 closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
-	if (!closure) {
-		return miss();
-	}
-	const ClosureRecord::BindingFlags flags{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
-	if (flags.latched() || flags.domain() != caller.executionImage->executionDomainId
-		|| cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) != plan.prototype) {
+	const auto tag = static_cast<ValueTag>(caller.registers.tags()[base]);
+	u32 closure = 0;
+	if (tag == ValueTag::Closure) {
+		closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
+		if (!closure) return miss();
+		const ClosureRecord::BindingFlags flags{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+		if (flags.latched() || flags.domain() != caller.executionImage->executionDomainId
+			|| cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) != plan.prototype) return miss();
+	} else if (tag != ValueTag::CodeFunction || !plan.acceptsCodeFunction
+		|| caller.registers.admittedPayload(base) != plan.prototype) {
 		return miss();
 	}
 
@@ -261,7 +286,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 
 	const int top = plan.copied + plan.padded;
 	thread.stack.clearAdmitted(stackBase + plan.copied, plan.padded);
-	enterNativeActivation(*run, *exit, *callee, closure, stackBase, stackBase + top, plan.capacity, top, plan.padded);
+	enterNativeActivation(*run, *exit, *callee, plan.prototype, closure, stackBase, stackBase + top, plan.capacity, top, plan.padded);
 	return target ? target : resumeScalarAfterNativeTransfer(*run, *exit, plan.entryPc);
 }
 

@@ -177,6 +177,8 @@ struct CallFrame {
 	// The native grant owns this activation until return or publication
 	// before an observer. Its call site stays live until publication.
 	const NativeBlockExitSite* pendingNativeCall = nullptr;
+	// Function and Closure are distinct architectural words.
+	u32 pendingNativeFunction;
 	u32 pendingNativeClosure;
 	i32 pendingNativeStackBase;
 	// Excess arguments, if any, occupy [varargBase, stackBase).
