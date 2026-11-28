@@ -1,3 +1,5 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
@@ -175,13 +177,13 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
-	assert.equal(cpu.getGlobalByKey(saved),v.valueFloatBits(0xffa54321));assert.equal(cpu.getSystemGlobalByKey(system),v.valueInteger(-2147483648));
-	const restored=v.valuePayload(cpu.getGlobalByKey(graphKey)),restoredChild=v.valuePayload(cpu.tables.getStringKey(restored, childKey));
+	assert.equal(readStockGlobalValue(cpu.memory, saved),v.valueFloatBits(0xffa54321));assert.equal(readStockGlobalValue(cpu.memory, system, SYSTEM_GLOBAL_BANK_OFFSET),v.valueInteger(-2147483648));
+	const restored=v.valuePayload(readStockGlobalValue(cpu.memory, graphKey)),restoredChild=v.valuePayload(cpu.tables.getStringKey(restored, childKey));
 	assert.equal(restored,hash);assert.equal(restoredChild,childHash);
 	assert.equal(v.valuePayload(cpu.tables.getStringKey(restored, self)),restored);assert.equal(cpu.tables.metatableAddress(restoredChild),restored);
 	assert.deepEqual(cpu.captureRuntimeState(),state);
 	cpu.runUntilDepth(0,100);const result:v.Value[]=[];cpu.readCompletionValues(result);assert.equal(result[0],v.valueFloatBits(0xffa12345));
-	nativeHeapReference(cpu).gc.collect();assert.equal(v.valuePayload(cpu.getGlobalByKey(graphKey)),restored);
+	nativeHeapReference(cpu).gc.collect();assert.equal(v.valuePayload(readStockGlobalValue(cpu.memory, graphKey)),restored);
 });
 
 }

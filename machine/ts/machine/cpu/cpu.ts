@@ -2517,17 +2517,8 @@ export class CPU implements MappedPageInvalidator {
 		this.activeThread.frameAtDepth(childFrameIndex).callSitePc = pc;
 	}
 
-	public getSystemGlobalByKey(key: StringId): Value {
-		return this.systemGlobalBank.slots.get(this.systemGlobalBank.find(key)!);
-	}
-
 	public get globalSlotCount(): number {
 		return this.globalBank.count;
-	}
-
-	public getGlobalByKey(key: StringId): Value {
-		const slot = this.globalBank.find(key);
-		return slot === undefined ? valueNil() : this.globalBank.slots.get(slot);
 	}
 
 	private executeFusedNumericPair(

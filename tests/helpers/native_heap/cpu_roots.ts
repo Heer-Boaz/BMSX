@@ -6,6 +6,7 @@ import { LUA_FAULT_REASON_EXPLICIT_ERROR, LUA_FAULT_REASON_INDEX_NAN } from '../
 import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, type ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
 import { GcHeap, GcDiagnosticField, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { nativeHeapReference } from './reference';
+import { readStockGlobalName } from '../../../toolchain/ts/firmware/stock_global_bank';
 
 export function chargeCollectionWork(cpu: CPU, work: number): void {
 	if (nativeHeapReference(cpu).runKind !== CpuRunKind.Idle) cpu['charge'](GC_WORK_WORD_CYCLES * work);
@@ -50,7 +51,7 @@ export function markRootBank(cpu: CPU, heap: GcHeap, bank: GcRootBank, first: nu
 		const names = bank === GcRootBank.SystemGlobals ? cpu['systemGlobalBank'] : cpu['globalBank'];
 		const slots = names.slots;
 		for (let slot = first; slot < end; ++slot) {
-			heap.markString(names.name(slot)); heap.markSlot(slots, slot);
+			heap.markString(readStockGlobalName(cpu.memory, names['descriptor'], slot)); heap.markSlot(slots, slot);
 		}
 		return;
 	}

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -28,14 +29,14 @@ return exercise(0)
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), name = nativeHeapReference(cpu).stringPool.find('advance')!;
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), nativeHeapReference(cpu).gc));
+	cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, name), nativeHeapReference(cpu).gc));
 	runGuestToHalt(cpu, 30_000_000, depth);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(10000)]);
 	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let iteration = 0; iteration < 2; iteration++) {
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), nativeHeapReference(cpu).gc));
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, name), nativeHeapReference(cpu).gc));
 		runGuestToHalt(cpu, 30_000_000, depth);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(20000)]);
 		assert.equal(cpu.getFrameDepth(), depth);
@@ -72,7 +73,7 @@ return park(42)
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('named_completion_probe')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
+	cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('named_completion_probe')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
 	runGuestToHalt(cpu, 30_000_000, depth);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	assert.equal(cpu.getFrameDepth(), depth);
@@ -126,7 +127,7 @@ return exercise(42)
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('discover_stopped_scope')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
+	cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('discover_stopped_scope')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
 	runGuestToHalt(cpu, 30_000_000, depth);
 	const values = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(values, [valueBool(true), valueBool(true)], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));

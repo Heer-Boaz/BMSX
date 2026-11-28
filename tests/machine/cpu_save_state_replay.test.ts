@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { GcPhase, asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -60,7 +61,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	cpu.readCompletionValues(values);
 	assert.equal(values.length, 1);
 	if (name === 'constant') assert.deepEqual(values, [valueInteger(1)]);
-	else assert.ok(values[0] === cpu.tables.getInteger(valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak')!)), 1));
+	else assert.ok(values[0] === cpu.tables.getInteger(valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('weak')!)), 1));
 });
 
 test('a closure completion value refers to separate physical closure and capture records', () => {
@@ -121,10 +122,10 @@ test('checkpoint capture preserves the authoritative global registers without mu
 	const heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()];
 	const snapshot = cpu.captureRuntimeState();
 	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()], heap);
-	assert.equal(cpu.getGlobalByKey(key), valueInteger(1));
+	assert.equal(readStockGlobalValue(cpu.memory, key), valueInteger(1));
 	cpu.restoreRuntimeState(snapshot);
 	assert.deepEqual(cpu.captureRuntimeState(), snapshot);
-	assert.equal(cpu.getGlobalByKey(key), valueInteger(1));
+	assert.equal(readStockGlobalValue(cpu.memory, key), valueInteger(1));
 });
 
 test('restore retains weak referents until the original allocation-triggered collection', () => {
@@ -144,7 +145,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	const anchor = cpu.captureRuntimeState();
 
 	const allocateUntilCollected = (): number => {
-		const current = valuePayload(cpu.getGlobalByKey(weakKey));
+		const current = valuePayload(readStockGlobalValue(cpu.memory, weakKey));
 		assert.ok(valueIsTable(cpu.tables.getInteger(current, 1)));
 		for (let count = 1; count < 4096; count += 1) {
 			createReferenceTable(cpu, 256, 0);
@@ -276,7 +277,7 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	other.memory.restoreSaveState(ram);
 	other.restoreRuntimeState(saved);
 	assert.equal(nativeHeapReference(other).gc.tableRecordAddress(future), 0);
-	const restored = valuePayload(other.getGlobalByKey(key));
+	const restored = valuePayload(readStockGlobalValue(other.memory, key));
 	assert.equal(restored, root);
 	assert.notEqual(other.tables.getInteger(restored, 1), other.tables.getInteger(restored, 2));
 	const child = valuePayload(other.tables.getInteger(restored, 1024));
@@ -300,7 +301,7 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 	for (let index = 0; index < values.length; index += 1) nativeHeapReference(cpu).gc.tables.setInteger(table, index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const restored = valuePayload(cpu.getGlobalByKey(key));
+	const restored = valuePayload(readStockGlobalValue(cpu.memory, key));
 	for (let index = 0; index < values.length; index += 1) assert.equal(cpu.tables.getInteger(restored, index + 1), values[index]);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
@@ -319,7 +320,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	nativeHeapReference(cpu).gc.tables.setInteger(tail, 1, valueTable(root));
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const restored = valuePayload(cpu.getGlobalByKey(key));
+	const restored = valuePayload(readStockGlobalValue(cpu.memory, key));
 	let current = restored;
 	for (let index = 0; index < 4096; index += 1) current = valuePayload(cpu.tables.getInteger(current, 1));
 	assert.equal(current, restored);
@@ -341,7 +342,7 @@ test('table boundary hints and mixed numeric hash layout survive restore without
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, 64, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, -32, valueInteger(999));
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
-	const restored = valuePayload(cpu.getGlobalByKey(key));
+	const restored = valuePayload(readStockGlobalValue(cpu.memory, key));
 	assert.equal(cpu.tables.length(restored), 64);
 	assert.equal(cpu.tables.getInteger(restored, -32), valueInteger(-32));
 	assert.deepEqual(cpu.captureRuntimeState(), state);

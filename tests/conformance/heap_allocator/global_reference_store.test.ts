@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
@@ -59,8 +60,8 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	runGuestToHalt(cpu, 4_194_304);
 	assert.ok(cpu.isHaltedUntilIrq());
 	const name = (text: string) => nativeHeapReference(cpu).stringPool.find(text)!;
-	assert.equal(cpu.getGlobalByKey(name('ordinary_result')), valueInteger(17));
-	assert.equal(cpu.getSystemGlobalByKey(name('irq')), valueInteger(29));
+	assert.equal(readStockGlobalValue(cpu.memory, name('ordinary_result')), valueInteger(17));
+	assert.equal(readStockGlobalValue(cpu.memory, name('irq'), SYSTEM_GLOBAL_BANK_OFFSET), valueInteger(29));
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const object = createReferenceTable(cpu);
 	const string = nativeHeapReference(cpu).stringPool.intern('RAM string only in this conformance setup');

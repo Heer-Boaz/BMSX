@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -23,7 +24,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	const started = await tools.execute('studio_event_history', { target, action: 'status' });
 	assert.ok('status' in started.data);
 	assert.equal(started.data.status, 'live');
-	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [valueInteger(3)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const request = { target, generation: events.generation, sequence: 1, count: 1 };
@@ -77,7 +78,7 @@ test('event navigation is admitted by recording provenance and cancelled by the 
 	const history = runtime.history;
 	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 	history.captureCheckpoint();
-	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [valueInteger(1)]);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const event = f.events.at(0);

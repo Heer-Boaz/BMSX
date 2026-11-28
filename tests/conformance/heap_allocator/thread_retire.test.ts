@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -102,7 +103,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 		const names = ['saved_object', 'saved_text', 'saved_child', 'saved_relay', 'saved_root'];
 		const cells = names.map(name => {
-			const closure = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
+			const closure = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!));
 			const cell = captureAddress(memory, closure, 0);
 			assert.ok(isOpen(memory, cell), `${name} is genuinely open`);
 			tracked.push([cell & RAM_RECORD_WORD_MASK, UPVALUE_HEAP_BYTES]);

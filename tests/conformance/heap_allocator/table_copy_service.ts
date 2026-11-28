@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -72,7 +73,7 @@ try {
 			const atCopy = () => systemVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10020);
 			for (let i = 0; i < 200_000 && !atCopy(); ++i) run(23);
 			assert.ok(atCopy(), 'public Table copy entered the ordinary System vector');
-			const source = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('copy_source')!));
+			const source = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('copy_source')!));
 			const member = nativeHeapReference(cpu).stringPool.find('__newindex')!;
 			const tables = nativeHeapReference(cpu).gc.tables;
 			assert.equal(tables.arrayCapacity(source), 1024);
@@ -129,7 +130,7 @@ try {
 				assert.equal(asInteger(runtime.readCompletionValues()[0]), completion);
 				observe('C', completion);
 				if (scenario !== 'oom') {
-					const copy = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('copy_result')!));
+					const copy = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('copy_result')!));
 					assert.ok(isNil(tables.getStringKey(copy, member)));
 					assert.equal(memory.readRamRecordByte(copy + TableHeader.NewIndexAbsent), 1, 'copy carries the proof from after recovery');
 					assert.equal(tables.hashSize(copy), tables.hashSize(source));

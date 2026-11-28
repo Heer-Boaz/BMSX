@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valueInteger, valueNil, valueBool } from '../../machine/ts/machine/cpu/value';
@@ -91,14 +92,14 @@ test('init annotations have no cold semantics and tooling invokes modules in dep
 	const { cpu } = createTestSystemCpu(image);
 	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('trace')), valueInteger(0));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('trace')), valueInteger(0));
 
 	cpu.beginCompletionCallInExecutionDomain(
 		SYSTEM_EXECUTION_DOMAIN_ID,
 		image.vectors.initFunctionAddress,
 	);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('trace')), valueInteger(1234));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('trace')), valueInteger(1234));
 });
 
 test('init participant slots follow the compiled program domain', () => {
@@ -137,7 +138,7 @@ test('an explicit source init call runs once cold and the tooling vector invokes
 		image.vectors.initFunctionAddress,
 	);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('marker')), valueInteger(2));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('marker')), valueInteger(2));
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()], 'preparation returns exactly one nil, not the participant result');
 });
 
@@ -196,7 +197,7 @@ test('module initialization alone publishes a callable public preparation sequen
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.image.header.initFunctionAddress);
 	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueNil()]);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('constructed')), valueInteger(1));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('constructed')), valueInteger(1));
 });
 
 test('cart init vector invokes retained cart-global closures', () => {
@@ -220,10 +221,10 @@ test('cart init vector invokes retained cart-global closures', () => {
 	const image = linkTestBlua32Pair(system, cart);
 	const { cpu } = createTestBlua32PairCpu(image);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('value')), valueInteger(2));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('value')), valueInteger(2));
 	cpu.beginCompletionCallInExecutionDomain(0, image.cartVectors.initFunctionAddress);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('value')), valueInteger(4));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('value')), valueInteger(4));
 });
 
 test('init function placement and signature are compile-time contracts', () => {

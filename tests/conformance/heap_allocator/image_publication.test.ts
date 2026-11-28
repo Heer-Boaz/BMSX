@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -77,7 +78,7 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const owned = ram.slice(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), operands = ram.slice(base, base + size);
 	const stringId = nativeHeapReference(cpu).stringPool.find(label)!;
 	assert.equal(cpu.stringPool.toString(stringId), label);
-	const probeClosure = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('publication_probe')!), nativeHeapReference(cpu).gc);
+	const probeClosure = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('publication_probe')!), nativeHeapReference(cpu).gc);
 	assert.equal(cpu.captureClosureBinding(probeClosure).functionAddress, probe);
 	// Exercise the real published Global slot, not a constant-folded initializer.
 	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.find('publication_amount')!, valueInteger(59));

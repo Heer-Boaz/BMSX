@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -174,7 +175,7 @@ return ok, result, trailing
 		assert.equal(decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, returnPc).op, OpCode.RET);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 		assert.equal(memory.readRamRecordWord(counter), 1);
-		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('observed_error')!), diagnostic);
+		assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('observed_error')!), diagnostic);
 		const results = parent ? [valueBool(true), valueBool(false), sentinel] : [valueBool(false), sentinel, valueNil()];
 		assert.deepEqual(rt.readCompletionValues(), results);
 		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${returnPc}`);

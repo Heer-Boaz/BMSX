@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
@@ -111,7 +112,7 @@ return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
 		runGuestToHalt(cpu, 1_000_000);
 		assert.ok(cpu.isHaltedUntilIrq());
-		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('waiting_to_resume')!), valueBool(true));
+		assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('waiting_to_resume')!), valueBool(true));
 		const saved = captureCpuCheckpoint(cpu);
 		let expected: ReturnType<typeof captureCpuCheckpoint>;
 		for (let replay = 0; replay < 2; ++replay) {

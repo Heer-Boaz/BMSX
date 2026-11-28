@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -94,7 +95,7 @@ for (const scenario of ['chain', 'table', 'memory', 'upvalue', 'words', 'control
 					return { result, remaining:m.cpu.instructionBudgetRemaining, pc:frame.pc, top:frame.top,
 						registers:Array.from({ length:24 },(_,i)=>frame.registers.get(i)), completion,
 						epc:m.cpu.readEpcWord(),fault:m.cpu.readLuaFaultReasonWord(),upvalue:Upvalue.load(m.cpu.memory, m.upvalue),
-						other:m.other.stackRegisters.get(8),saved:m.cpu.getGlobalByKey(nativeHeapReference(m.cpu).stringPool.find('saved')!),
+						other:m.other.stackRegisters.get(8),saved:readStockGlobalValue(m.cpu.memory, nativeHeapReference(m.cpu).stringPool.find('saved')!),
 						memory:[m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x200),m.cpu.memory.readMappedU32LE(DYNAMIC_RAM_BASE+0x204)] };
 				});
 				assert.deepEqual(results[1],results[0],`${scenario} ${source}, value ${v.valueTag(value)}:${v.valuePayload(value)}, grant ${grant}`);

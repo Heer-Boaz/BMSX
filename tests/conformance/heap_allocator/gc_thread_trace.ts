@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { bindOpen, initialize as initializeCell } from '../../helpers/native_heap/upvalue_record';
 import { initializeRecord as initializeClosure } from '../../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
@@ -71,7 +72,7 @@ try {
 		nativeHeapReference(cpu).gc.publishObject(cell);
 		bindOpen(memory, cell, thread, 0, 0);
 		const closure = allocateClosureRecordReference(cpu, 0);
-		const prototype = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('collector_probe')!);
+		const prototype = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('collector_probe')!);
 		initializeClosure(memory, closure, cpu.captureClosureBinding(valuePayload(prototype)), false, nativeHeapReference(cpu).gc.white(), 0);
 		nativeHeapReference(cpu).gc.publishObject(closure);
 		memory.writeRamRecordWord(thread + ThreadField.FrameDepth, 1);

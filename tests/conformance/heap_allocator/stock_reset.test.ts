@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -1176,7 +1177,7 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(bssAddress), 37);
 	assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
 	const key = nativeHeapReference(cpu).stringPool.find('selected_payload')!;
-	const value = cpu.getGlobalByKey(key);
+	const value = readStockGlobalValue(cpu.memory, key);
 	assert.equal(valueTag(value), ValueTag.String);
 	assert.equal(valuePayload(value) >>> 31, 1, 'the compiled cartridge read the socket-1 String record');
 	const absoluteFloor = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(bssAddress + bssByteCount);

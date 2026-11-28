@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -88,7 +89,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	restoredCpu.memory.restoreSaveState(cpu.memory.captureSaveState());
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
-		restoredCpu.getGlobalByKey(nativeHeapReference(restoredCpu).stringPool.intern('foo')),
+		readStockGlobalValue(restoredCpu.memory, nativeHeapReference(restoredCpu).stringPool.intern('foo')),
 		valueBuiltinFunction(BuiltinFunctionId.Next),
 	);
 });

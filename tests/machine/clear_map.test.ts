@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -24,7 +25,7 @@ probe = { map = map, count = #keys }
 function probe.clear() clear(map) end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		const map = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('map')!));
 		const clear = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('clear')!), nativeHeapReference(cpu).gc);
 		const next = cpu.tables.nextStoredEntry;
@@ -65,7 +66,7 @@ end
 function probe.clear() clear(map) end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		const seed = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('seed')!), nativeHeapReference(cpu).gc);
 		const clear = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('clear')!), nativeHeapReference(cpu).gc);
 		let warmed = 0;
@@ -98,7 +99,7 @@ kernel = function(count)
 end
 `, { optLevel });
 		runGuestToHalt(cpu, 10_000_000);
-		const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+		const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 128);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

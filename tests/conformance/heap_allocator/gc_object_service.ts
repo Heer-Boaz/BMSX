@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
@@ -88,7 +89,7 @@ try {
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		assert.equal(gc.fullEpochs(), 1);
-		const live = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('fixture_live_thread'));
+		const live = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('fixture_live_thread'));
 		assert.equal(valueTag(live), ValueTag.Thread);
 		const liveThread = valuePayload(live);
 		const liveCapacity = () => memory.readRamRecordWord(liveThread + ThreadField.StackCapacity);
@@ -98,7 +99,7 @@ try {
 
 		// Adjust roots before the firmware publishes the frozen root projection.
 		const dropRoot = (name: string, tag: ValueTag) => {
-			const key = nativeHeapReference(cpu).stringPool.intern(name), value = cpu.getGlobalByKey(key);
+			const key = nativeHeapReference(cpu).stringPool.intern(name), value = readStockGlobalValue(cpu.memory, key);
 			assert.equal(valueTag(value), tag);
 			const address = valuePayload(value);
 			setReferenceGlobal(cpu, key, valueNil());

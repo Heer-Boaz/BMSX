@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -56,8 +57,8 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		const { images } = compileCartlibProgram(inputSource, { optLevel, modules: inputModules });
 		const { cpu, memory } = createTestBlua32PairCpu(images, backend);
 		runGuestToHalt(cpu, 20_000_000);
-		const read = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('word32_read_axis')!), nativeHeapReference(cpu).gc);
-		const sample = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('word32_sample_axis')!), nativeHeapReference(cpu).gc);
+		const read = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('word32_read_axis')!), nativeHeapReference(cpu).gc);
+		const sample = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('word32_sample_axis')!), nativeHeapReference(cpu).gc);
 		// Supply the ICU's retained raw word at the CPU/MMIO boundary. This
 		// exercises cartlib, not the physical controller or host input transport.
 		const axis = 0x080000a0;

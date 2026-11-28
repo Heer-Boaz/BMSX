@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asThread } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ test('a failed thread retains its physical error word, tag and authored frames',
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_EXPLICIT_ERROR);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	const value = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('failed_thread')!);
+	const value = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('failed_thread')!);
 	const failed = asThread(value, nativeHeapReference(cpu).gc);
 	assert.equal(valuePayload(value), failed);
 	assert.equal(cpu.memory.readRamRecordByte(failed + ThreadField.Header), THREAD_RECORD_KIND);
@@ -35,7 +36,7 @@ test('a dead coroutine is collected after its last stack roots return', () => {
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	nativeHeapReference(cpu).gc.collect();
-	const weak = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('weak_threads')!));
+	const weak = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('weak_threads')!));
 	assert.equal(cpu.tables.getInteger(weak, 1), valueNil());
 });
 

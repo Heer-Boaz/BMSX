@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { initializeRecord } from '../helpers/native_heap/closure_record';
 import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -71,7 +72,7 @@ for (const level of [0, 3] as const) {
 		}
 		const { cpu, irqController } = machine(), { cpu: oracle } = machine(), { memory } = cpu, { heapAllocator: arena } = nativeHeapReference(cpu);
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
-		const closure = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('hold')!));
+		const closure = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('hold')!));
 		const prototypeAddress = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 		const prototype = linked.layout.functions.find(f => f.address === prototypeAddress)!;
 		assert.ok(prototype);

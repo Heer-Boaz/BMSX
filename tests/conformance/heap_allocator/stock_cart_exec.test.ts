@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -173,7 +174,7 @@ halt_until_irq
 			assert.deepEqual(memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), beforeExec,
 				'EXEC consumes the installed binding without replacing it');
 			assert.deepEqual(memory.ramData().subarray(owned, owned + FIRMWARE_IMAGE_BACKING_SIZE), beforeBacking);
-			const constant = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('selected_payload')!);
+			const constant = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('selected_payload')!);
 			assert.equal(valueTag(constant), ValueTag.String);
 			assert.equal(valuePayload(constant) >>> 31, 1, 'the executed literal belongs to socket 1');
 			const floor = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(bssAddress + bssByteCount);

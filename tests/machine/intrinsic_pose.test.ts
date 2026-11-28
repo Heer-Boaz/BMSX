@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -148,7 +149,7 @@ end}
 `);
 test('intrinsic native semantic edits and tuple queries reserve no guest heap storage warm', t => {
 	const cpu = rom.run(warmQueries, 30_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const measured = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('run')!), nativeHeapReference(cpu).gc), 256);
 	assert.equal(measured.reservations, 0); assert.equal(measured.reservedBytes, 0);
 	assert.equal(measured.retainedAfter, measured.retainedBefore);

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
@@ -76,12 +77,12 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		const metadata = tail.diagnostics!.symbols.metadata;
 		const target = image.layout.functions[metadata.functionDisplayNames.indexOf('probe_target')];
 		assert.ok(target, 'the fixture contains the named diagnostic target');
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('inspect_scope')), nativeHeapReference(cpu).gc),
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('inspect_scope')), nativeHeapReference(cpu).gc),
 			[valueInteger(target.address), valueInteger(target.codeAddress)]);
 		// The BIOS materializes descriptor Tables on ordinary guest grants.
 		runGuestToHalt(cpu, 300_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueString(nativeHeapReference(cpu).stringPool.intern('probe_target')), valueBool(true), valueBool(true)]);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('inspect_location')), nativeHeapReference(cpu).gc), [valueInteger(target.codeAddress)]);
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('inspect_location')), nativeHeapReference(cpu).gc), [valueInteger(target.codeAddress)]);
 		runGuestToHalt(cpu, 100_000);
 		const [complete, locationAddress, sourceAddress] = materializeCpuCompletionValues(cpu);
 		assert.equal(complete, valueBool(true));

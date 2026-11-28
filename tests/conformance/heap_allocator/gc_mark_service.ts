@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -55,8 +56,8 @@ try {
 		const control = nativeHeapReference(cpu).heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const epochWork = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK - 4);
 		const index = () => memory.readRamRecordWord(control + GC_TRACE_HEAD) & GC_GRAY_INDEX_MASK;
-		const weakValue = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_weak')!);
-		const liveValue = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_live')!);
+		const weakValue = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fixture_weak')!);
+		const liveValue = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fixture_live')!);
 		assert.equal(valueTag(weakValue), ValueTag.Table);
 		assert.equal(valueTag(liveValue), ValueTag.Table);
 		const weak = valuePayload(weakValue), live = valuePayload(liveValue);

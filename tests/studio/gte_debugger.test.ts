@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -52,7 +53,7 @@ function fixture() {
 	const input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	return { runtime, history, input, issue };

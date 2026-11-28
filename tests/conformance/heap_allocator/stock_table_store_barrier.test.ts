@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
@@ -78,8 +79,8 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.ok(cpu.isHaltedUntilIrq());
 		const name = (identifier: string) => nativeHeapReference(cpu).stringPool.find(identifier)!;
-		const reference = valuePayload(cpu.getGlobalByKey(name('store_reference')));
-		let receiver = valuePayload(cpu.getGlobalByKey(name('store_subject')));
+		const reference = valuePayload(readStockGlobalValue(cpu.memory, name('store_reference')));
+		let receiver = valuePayload(readStockGlobalValue(cpu.memory, name('store_subject')));
 		let key = mode === 2 ? valueString(name('edge')) : valueInteger(1);
 		const count = 4, home = (value: number) => hashCanonicalTableKey(value) & (count - 1);
 		let anchor = valueNil(), displaced = valueNil();

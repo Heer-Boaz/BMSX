@@ -1,3 +1,4 @@
+import { findStockGlobalSlot } from '../../toolchain/ts/firmware/stock_global_bank';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -191,8 +192,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		assert.equal(cpu.heapServiceResult(), nativeHeapReference(oracle).gc['traceRootBanks'](limit, work, stop));
 		compare(`limit=${limit}, initial=${work}, stop=${stop}`);
 	}
-	const nameSlot = cpu['systemGlobalBank'].find(name)!;
-	const lateSlot = moved === null ? 0 : (moved === GcRootBank.SystemGlobals ? cpu['systemGlobalBank'] : cpu['globalBank']).find(lateName)!;
+	const nameSlot = findStockGlobalSlot(cpu.memory, cpu['systemGlobalBank']['descriptor'], name)!;
+	const lateSlot = moved === null ? 0 : findStockGlobalSlot(cpu.memory, namespace, lateName)!;
 	const cursor = () => memory.readRamRecordWord(control + GC_ROOT_CURSOR);
 	const depth = () => memory.readRamRecordWord(control + GC_TRACE_HEAD);
 	const index = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT;

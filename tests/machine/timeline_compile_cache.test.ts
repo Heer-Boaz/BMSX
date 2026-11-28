@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueNil, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -31,7 +32,7 @@ end
 compile()
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	assert.notEqual(cpu.tables.getInteger(probe, 1), valueNil());
 	assert.notEqual(cpu.tables.getInteger(probe, 2), valueNil());
 	nativeHeapReference(cpu).gc.collect();
@@ -68,7 +69,7 @@ function probe.exercise()
 end
 `, { optLevel });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('exercise')!), nativeHeapReference(cpu).gc), []);
 	const refs = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('refs')!));
 	assert.notEqual(cpu.tables.getInteger(refs, 1), valueNil());
@@ -145,7 +146,7 @@ function probe.recreate()
 end
 `, { optLevel, modules: instrumentedModules });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const refs = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('refs')!));
 	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('seed')!), nativeHeapReference(cpu).gc), []);
 	nativeHeapReference(cpu).gc.collect();

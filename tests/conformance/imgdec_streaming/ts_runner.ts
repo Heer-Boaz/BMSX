@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
@@ -50,11 +51,11 @@ async function main() {
 		const audio = runtime.machine.audioController.synchronizeOutput();
 		while (audio.queuedFrames() !== 0) if (audio.readFramePacked() !== 0) audibleFrames += 1;
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0, 'streaming must not fault');
-		const frame = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('stream_completed_frames')) as number;
+		const frame = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('stream_completed_frames')) as number;
 		if (tick >= 100) {
 			assert.equal(frame, previousFrame + 1, 'each physical VBlank must complete another uploaded image');
-			assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('stream_late_frames')), 0, 'guest work fits in one physical frame');
-			assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('stream_uploads')), frame * configuration.uploads);
+			assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('stream_late_frames')), 0, 'guest work fits in one physical frame');
+			assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('stream_uploads')), frame * configuration.uploads);
 			const vram = backend.gxGpuSoftware.vram;
 			let displayed = 0;
 			for (let bit = 0; bit < 16; bit += 1) {
@@ -88,7 +89,7 @@ async function main() {
 		'configured PCM voices must be audible; the zero-voice control must stay silent');
 	assert.equal(runtime.machine.audioController.captureState().output.voices.length,
 		configuration.voices, 'every requested voice must still be active after sustained streaming');
-	assert.equal((cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('stream_checksum')) as number) > 0, configuration.actors > 0);
+	assert.equal((readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('stream_checksum')) as number) > 0, configuration.actors > 0);
 	console.log(JSON.stringify({ host: 'ts-software-reference', ticks: +ticks, configuration, completedFrames: previousFrame,
 		checkedFrames, audibleFrames, elapsedMs: performance.now() - start }));
 }

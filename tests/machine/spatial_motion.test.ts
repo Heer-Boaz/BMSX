@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -240,7 +241,7 @@ for (const optLevel of [3] as const) {
 		const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 		runGuestToHalt(cpu, 20_000_000);
 		if (optLevel === 3) {
-			const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+			const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
 				const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 				const profile = profileWarmGuestKernel(cpu, run, 512);

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../tests/helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../../tests/helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../tests/helpers/global_bank_reference';
@@ -58,7 +59,7 @@ for (const nameCount of [0, 16]) {
 	const finalCharge = globalCpu.luaHeap.usedBytes();
 	for (let index = 0; index < nameCount; index += 1) {
 		const name = nativeHeapReference(globalCpu).stringPool.intern(names[index]);
-		if (globalCpu.getGlobalByKey(name) !== index) {
+		if (readStockGlobalValue(globalCpu.memory, name) !== index) {
 			throw Error(`global slot ${index} did not retain its guest-written Number`);
 		}
 	}

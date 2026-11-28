@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -197,7 +198,7 @@ observed[6]=pose.oy
 `);
 test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
 	const cpu = manualRom.run(mixedClockGroups);
-	const observed = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('observed')!));
+	const observed = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('observed')!));
 	assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.tables.getInteger(observed, index + 1))),
 		[7, 1.25, 10, 2.5, 17, 3.75]);
 });
@@ -340,7 +341,7 @@ observed[11]=manual.presentation
 `);
 test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
 	const cpu = manualRom.run(manualClock);
-	const observed = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('observed')!));
+	const observed = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('observed')!));
 	assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.tables.getInteger(observed, index + 1))),
 		[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
 		'manual playback must retain its explicit driver without joining World clock views');
@@ -401,7 +402,7 @@ probe={
 `);
 test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
 	const cpu = scheduledRom.run(externalClock);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const step = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('step')!), nativeHeapReference(cpu).gc);
 	const space = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('space')!), nativeHeapReference(cpu).gc);
 	const restart = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('restart')!), nativeHeapReference(cpu).gc);
@@ -438,7 +439,7 @@ probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1)
 `);
 test('warmed grouped curve sampling makes no guest heap reservations', t => {
 	const cpu = manualRom.run(warmSampling);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('run')!), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = nativeHeapReference(cpu).luaHeap;

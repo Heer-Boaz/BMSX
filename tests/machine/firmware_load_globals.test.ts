@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -107,15 +108,15 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
-		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), nativeHeapReference(cpu).gc), []);
-		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
+		runCompletionClosure(cpu, asClosure(readStockGlobalValue(cpu.memory, name), nativeHeapReference(cpu).gc), []);
+		assert.equal(readStockGlobalValue(cpu.memory, score), valueInteger(10000));
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
 		const stackBytes = logicalThreadBytes(cpu);
 		const collected = collectReferenceHeapBytes(cpu);
 		assert.equal(heap - collected, stackBytes - logicalThreadBytes(cpu));
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
-		assert.equal(cpu.getGlobalByKey(score), valueInteger(0));
+		assert.equal(readStockGlobalValue(cpu.memory, score), valueInteger(0));
 	}
 });
 

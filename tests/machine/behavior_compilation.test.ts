@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -36,7 +37,7 @@ probe.drop_definition()
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	runGuestToHalt(cpu, 10_000_000);
 	nativeHeapReference(cpu).gc.collect();
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const weak = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('weak_inputs')!));
 	assert.equal(cpu.tables.getInteger(weak, 1), valueNil(), 'capture does not retain the mutable declaration');
 	assert.equal(cpu.tables.getInteger(weak, 2), valueNil(), 'declaration identity map dies with the compilation layout');
@@ -57,7 +58,7 @@ probe.drop_definition()
 	for (let replay = 0; replay < 2; replay += 1) {
 
 		restoreCpuCheckpoint(cpu, anchor);
-		const restored = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const restored = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		assert.equal(restored, probe, "the unmodified probe occupies the same guest address");
 		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(restored, nativeHeapReference(cpu).stringPool.find('run')!), nativeHeapReference(cpu).gc), [valueInteger(32)]);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
@@ -212,7 +213,7 @@ function probe.drop_first() probe.first = nil end
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	runGuestToHalt(cpu, 10_000_000);
 	nativeHeapReference(cpu).gc.collect();
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	for (const name of ['old', 'unused']) {
 		const references = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)!));
 		assert.notEqual(cpu.tables.getInteger(references, 1), valueNil(), name);
@@ -284,7 +285,7 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 		for (const mode of modes) {
 			const { cpu } = createTestBlua32PairCpu(images);
 			runGuestToHalt(cpu, 10_000_000);
-			const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+			const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 			const ready = collectReferenceHeapBytes(cpu);
 			if (mode === 'captured' || mode === 'cold-only') {
 				runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('observe')!), nativeHeapReference(cpu).gc), []);

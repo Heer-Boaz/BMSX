@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
@@ -14,7 +15,7 @@ export function exerciseNestedHistory(runtime: Runtime): void {
 	const observe = () => {
 		const depth = cpu.getFrameDepth();
 		return { active: cpu.activeThread.address, depth, pc: depth === 0 ? 0 : cpu.readFramePc(depth - 1),
-			progress: cpu.getGlobalByKey(marker) };
+			progress: readStockGlobalValue(cpu.memory, marker) };
 	};
 
 	const threads = new Set<number>();
@@ -57,7 +58,7 @@ export function exerciseNestedHistory(runtime: Runtime): void {
 
 	history.restore(memory, finalPages, midPages);
 	applyRuntimeCheckpointState(runtime, midState, RuntimeRestoreOrigin.HistorySeek);
-	do { result = step(); } while (result === RunResult.Yielded && cpu.getGlobalByKey(marker) === middle.progress);
+	do { result = step(); } while (result === RunResult.Yielded && readStockGlobalValue(cpu.memory, marker) === middle.progress);
 	assert.equal(result, RunResult.Yielded, 'an uncaptured prefix writes the guest marker while the child runs');
 	history.restore(memory, midPages, midPages);
 	applyRuntimeCheckpointState(runtime, midState, RuntimeRestoreOrigin.HistorySeek);

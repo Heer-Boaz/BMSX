@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -200,7 +201,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	const oldSystemSpan = memory.readRamRecordWord(systemBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET);
 	const oldBindings = ram.slice(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE);
 	const oldBackings = ram.slice(systemBacking, backing + FIRMWARE_IMAGE_BACKING_SIZE);
-	const readGlobal = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+	const readGlobal = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 	const alias = valuePayload(readGlobal('retained_alias'));
 	const oldString = valuePayload(readGlobal('saved_literal'));
 	const probe = valuePayload(readGlobal('replacement_probe'));

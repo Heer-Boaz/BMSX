@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -50,5 +51,5 @@ assert(current.members.nested ~= nil)
 fixture_passed = true
 `, { optLevel, modules: WORLD_CPU_MODULES });
 	runGuestToHalt(cpu, 10_000_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_passed')!), valueBool(true));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fixture_passed')!), valueBool(true));
 });

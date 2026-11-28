@@ -1,3 +1,5 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -64,8 +66,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			assert.equal(cpu.tables.getStringKey(table, key), valueInteger(completed >= 9 ? 23 : 17));
 			assert.equal(cpu.tables.getInteger(table, 1), valueInteger(completed >= 10 ? 23 : 11));
 			assert.equal(r.get(18), completed >= 12 ? valueTable(table) : valueNil());
-			assert.equal(cpu.getSystemGlobalByKey(global), valueInteger(completed >= 14 ? 23 : 31));
-			assert.equal(cpu.getGlobalByKey(global), valueInteger(completed >= 16 ? 23 : 37));
+			assert.equal(readStockGlobalValue(cpu.memory, global, SYSTEM_GLOBAL_BANK_OFFSET), valueInteger(completed >= 14 ? 23 : 31));
+			assert.equal(readStockGlobalValue(cpu.memory, global), valueInteger(completed >= 16 ? 23 : 37));
 		}
 	});
 

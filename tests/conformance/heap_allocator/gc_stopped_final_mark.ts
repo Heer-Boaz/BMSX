@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
@@ -163,7 +164,7 @@ try {
 				assert.equal(asInteger(runtime.readCompletionValues()[0]), 73);
 				observe('C', '73');
 				if (allocation) {
-					const value = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('final_mark_result_root')!);
+					const value = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('final_mark_result_root')!);
 					assert.equal(valueTag(value), ValueTag.Table);
 					const record = valuePayload(value);
 					assert.equal(gc.sweepGarbage(record), false, 'the constructor result was marked before the mutator received it');

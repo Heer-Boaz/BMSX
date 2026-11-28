@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -81,7 +82,7 @@ test('stock hash erasure gives only unresolved String method proofs to firmware'
 		}
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.ok(cpu.isHaltedUntilIrq());
-		const receiver = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('table_owner')!));
+		const receiver = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('table_owner')!));
 		assert.equal(tables.metatableAddress(receiver), 0, 'the receiver itself is used as a metatable but has no metatable');
 		const hash = tables.hashSize(receiver), backing = tables.hashAddress(receiver);
 		assert.equal(hash, 128, 'exercise the large hash live-count lane');

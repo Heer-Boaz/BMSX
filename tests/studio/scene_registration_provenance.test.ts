@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,10 +44,10 @@ last = scenes.instantiate('same')
 	cpu.setInstructionObserver(provenance);
 	try { runGuestToHalt(cpu, 10_000_000); }
 	finally { cpu.setInstructionObserver(null); }
-	assert.equal(asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('registration_visits')!)), 15);
+	assert.equal(asInteger(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('registration_visits')!)), 15);
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');
 	const plans = ['first', 'second', 'third', 'last'].map(name => {
-		const scene = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
+		const scene = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!));
 		return valuePayload(cpu.tables.getStringKey(scene, nativeHeapReference(cpu).stringPool.find('definition')!));
 	});
 	assert.equal(new Set(plans.map(plan => plan)).size, 4, 'plan identity survives repeated registry keys');

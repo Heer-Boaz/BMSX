@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -13,8 +14,8 @@ import { runGuestToHalt } from '../helpers/cpu_test_harness';
 test('steady-state table deletion and reinsertion do not reserve guest heap', t => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest(tableIterationVectors.delete_reinsert_churn, 3));
 	runGuestToHalt(cpu, 10_000_000);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('churn_kernel')!), nativeHeapReference(cpu).gc);
-	const table = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('churn_values')!));
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('churn_kernel')!), nativeHeapReference(cpu).gc);
+	const table = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('churn_values')!));
 	assert.equal(cpu.tables.storedSlotCount(table), 32);
 	const profile = profileWarmGuestKernel(cpu, kernel, 128);
 	assert.equal(profile.reservations, 0);

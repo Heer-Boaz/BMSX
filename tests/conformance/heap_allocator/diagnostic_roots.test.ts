@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -71,7 +72,7 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
-		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+		const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 		const receiver = global('receiver');
 		const probe = asClosure(global('probe'), nativeHeapReference(cpu).gc);
 		const args = [receiver, valueInteger(41)];

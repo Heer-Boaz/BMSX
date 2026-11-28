@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from './native_heap/reference';
 import assert from 'node:assert/strict';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -89,7 +90,7 @@ export function runGcPressureStage(cpu: CPU): void {
 
 export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 	const diagnostics = nativeHeapReference(cpu).gc.diagnostics = new GcDiagnostics();
-	const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+	const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 	runGcPressureStage(cpu);
 	if (compiled) for (const name of ['assign', 'change']) {
 		const fn = cpu.memory.readRamRecordWord(valuePayload(global(name)) + Closure.CLOSURE_PROTOTYPE_ADDRESS);

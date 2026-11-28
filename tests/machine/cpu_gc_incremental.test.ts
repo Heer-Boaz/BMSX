@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { initializeRecord, setCaptureAddress } from '../helpers/native_heap/closure_record';
 import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../helpers/native_heap/gc_heap';
@@ -263,7 +264,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 			assert.equal(gc.tables.getInteger(descendant, 1), valueInteger(73));
 			assert.equal(gc.tables.getInteger(weak, 1), valueTable(weakTarget), 'final roots are visible before weak cleanup');
 			assert.equal(nativeHeapReference(cpu).stringPool.find(appendedName), appendedKey, 'the committed global name is a root even when its Value is scalar');
-			assert.equal(cpu.getGlobalByKey(appendedKey), valueInteger(41));
+			assert.equal(readStockGlobalValue(cpu.memory, appendedKey), valueInteger(41));
 			return memory.captureSaveState();
 		};
 		const stoppedExpected = finishStopped();

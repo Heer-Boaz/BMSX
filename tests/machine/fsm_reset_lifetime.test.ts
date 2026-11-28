@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueInteger, valueBool, valueNil, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -45,7 +46,7 @@ function probe.reset_tree()
 end
 `, { optLevel });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const seed = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('seed')!), nativeHeapReference(cpu).gc);
 	const resetLocal = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('reset_local')!), nativeHeapReference(cpu).gc);
 	const resetTree = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('reset_tree')!), nativeHeapReference(cpu).gc);

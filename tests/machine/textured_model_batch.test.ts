@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueNil, valueInteger, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -92,7 +93,7 @@ return failed
 	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')));
 	const profile = profileWarmGuestKernel(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('steady')), nativeHeapReference(cpu).gc), 128);
 	assert.equal(profile.reservations, 0, 'warm clipping/order/residency paths allocate no guest heap');
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(4)]);

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -557,7 +558,7 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('run')!), nativeHeapReference(cpu).gc);
 	const measured = measureWarmKernel(cpu, run, 2048);
 	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
@@ -586,7 +587,7 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const read = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('read')!), nativeHeapReference(cpu).gc);
 	const shallow = cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('shallow')!);
 	const deep = cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('deep')!);
@@ -648,7 +649,7 @@ probe = {
 	end,
 }
 `, 3);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	for (const lane of ['root', 'basis'] as const) {
 		const run = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(`run_${lane}`)!), nativeHeapReference(cpu).gc);
 		const measured = measureWarmKernel(cpu, run, 2048);

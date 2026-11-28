@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -43,8 +44,8 @@ original, duplicate = source, copy
 `);
 	runGuestToHalt(cpu, 20_000_000);
 	const tables = nativeHeapReference(cpu).gc.tables;
-	const source = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('original')!));
-	const copy = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('duplicate')!));
+	const source = v.valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('original')!));
+	const copy = v.valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('duplicate')!));
 	assert.equal(tables.hashSize(source), 128);
 	assert.equal(tables.hashSize(copy), 256);
 	for (let key = 1; key <= 128; ++key) {
@@ -65,8 +66,8 @@ original, duplicate = source, table.copy(source)
 `);
 	runGuestToHalt(cpu, 20_000_000);
 	const tables = nativeHeapReference(cpu).gc.tables;
-	const source = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('original')!));
-	const copy = v.valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('duplicate')!));
+	const source = v.valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('original')!));
+	const copy = v.valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('duplicate')!));
 	assert.equal(tables.hashSize(source), 2048);
 	assert.equal(tables.hashSize(copy), 2048);
 	const sourceBacking = tables.hashAddress(source) & RAM_RECORD_WORD_MASK;
@@ -371,7 +372,7 @@ test('machine snapshots restore table records and their references to a differen
 	for (let i = 0; i < 5; ++i) createReferenceTable(target);
 	target.memory.restoreSaveState(source.memory.captureSaveState());
 	target.restoreRuntimeState(source.captureRuntimeState());
-	const restored = v.valuePayload(target.getGlobalByKey(name));
+	const restored = v.valuePayload(readStockGlobalValue(target.memory, name));
 	assert.equal(restored, table);
 	assert.equal(target.tables.metatableAddress(restored), meta);
 	assert.equal(target.tables.getInteger(restored, 1), v.valueFloatBits(0xffa54321));

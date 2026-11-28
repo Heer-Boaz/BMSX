@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -589,11 +590,11 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const selectedClosureResultName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	const slot0Closure = cpu.getGlobalByKey(selectedClosureName);
+	const slot0Closure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	const slot0Object = asClosure(slot0Closure, nativeHeapReference(cpu).gc);
 	const guest = new SuspendedGuestSession(runtime);
 	assert.deepEqual(guest.linkedFunctionLocation(slot0Closure), { domain: 0, address: cpu.captureClosureBinding(slot0Object).functionAddress });
-	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
+	assert.equal(readStockGlobalValue(cpu.memory, selectedClosureResultName), valueInteger(111));
 	const savedClosureName = nativeHeapReference(cpu).stringPool.intern('saved_closure');
 	const closureTableName = nativeHeapReference(cpu).stringPool.intern('closure_table');
 	const closureTable = createReferenceTable(cpu);
@@ -608,13 +609,13 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'entering a system exception frame does not replace the EXEC latch');
 	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
-	const slot1Closure = cpu.getGlobalByKey(selectedClosureName);
+	const slot1Closure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
 	assert.equal(cpu.captureClosureBinding(asClosure(slot1Closure, nativeHeapReference(cpu).gc)).functionAddress, cpu.captureClosureBinding(slot0Object).functionAddress, 'both slots use the same mapped address');
 	assert.equal(cpu.tables.get(closureTable, slot0Closure), valueInteger(77));
 	assert.equal(cpu.tables.get(closureTable, slot1Closure), valueNil());
 	assert.deepEqual(guest.linkedFunctionLocation(slot1Closure), { domain: 1, address: cpu.captureClosureBinding(asClosure(slot1Closure, nativeHeapReference(cpu).gc)).functionAddress });
-	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(222));
+	assert.equal(readStockGlobalValue(cpu.memory, selectedClosureResultName), valueInteger(222));
 	assert.deepEqual(runtime.callClosure(slot0Object), [valueInteger(111)], 'a slot 0 closure still executes slot 0 while slot 1 is active');
 	assert.deepEqual(runtime.callClosure(asClosure(slot1Closure, nativeHeapReference(cpu).gc)), [valueInteger(222)], 'the slot 1 closure executes slot 1');
 	assert.equal(cpu.activeCartridgeSlot(), 1);
@@ -641,7 +642,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
+	assert.equal(readStockGlobalValue(cpu.memory, selectedClosureResultName), valueInteger(111));
 
 		applyRuntimeSaveState(
 			runtime,
@@ -651,15 +652,15 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 				runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
 			),
 		);
-	const restoredClosure = cpu.getGlobalByKey(savedClosureName);
-	const restoredTable = valuePayload(cpu.getGlobalByKey(closureTableName));
+	const restoredClosure = readStockGlobalValue(cpu.memory, savedClosureName);
+	const restoredTable = valuePayload(readStockGlobalValue(cpu.memory, closureTableName));
 	assert.equal(restoredClosure, slot0Closure, 'restoring the heap retains the slot 0 closure address');
 	assert.equal(cpu.tables.get(restoredTable, restoredClosure), valueInteger(77));
-	const restoredPublishedClosure = cpu.getGlobalByKey(selectedClosureName);
+	const restoredPublishedClosure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	assert.notEqual(restoredPublishedClosure, restoredClosure);
 	assert.equal(cpu.tables.get(restoredTable, restoredPublishedClosure), valueNil());
 	assert.equal(cpu.activeCartridgeSlot(), 1);
-	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(222));
+	assert.equal(readStockGlobalValue(cpu.memory, selectedClosureResultName), valueInteger(222));
 	assert.equal(guest.linkedFunctionLocation(restoredClosure)!.domain, 0, 'wire restore retains the closure-bound domain');
 	assert.equal(guest.linkedFunctionLocation(restoredPublishedClosure)!.domain, 1);
 	assert.deepEqual(runtime.callClosure(asClosure(restoredClosure, nativeHeapReference(cpu).gc)), [valueInteger(111)]);
@@ -677,12 +678,12 @@ test('distinct non-static closures remain distinct table keys through the runtim
 
 	runGuestToHalt(cpu, 100_000);
 	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
-	const firstClosure = cpu.getGlobalByKey(selectedClosureName);
+	const firstClosure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	runGuestToHalt(cpu, 100_000);
-	const secondClosure = cpu.getGlobalByKey(selectedClosureName);
+	const secondClosure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	assert.notEqual(firstClosure, secondClosure);
 	assert.deepEqual(cpu.captureClosureBinding(asClosure(firstClosure, nativeHeapReference(cpu).gc)), cpu.captureClosureBinding(asClosure(secondClosure, nativeHeapReference(cpu).gc)));
 
@@ -706,9 +707,9 @@ test('distinct non-static closures remain distinct table keys through the runtim
 		),
 	);
 
-	const restoredFirst = cpu.getGlobalByKey(firstName);
-	const restoredSecond = cpu.getGlobalByKey(secondName);
-	const restoredTable = valuePayload(cpu.getGlobalByKey(tableName));
+	const restoredFirst = readStockGlobalValue(cpu.memory, firstName);
+	const restoredSecond = readStockGlobalValue(cpu.memory, secondName);
+	const restoredTable = valuePayload(readStockGlobalValue(cpu.memory, tableName));
 	assert.notEqual(restoredFirst, restoredSecond);
 	assert.deepEqual(cpu.captureClosureBinding(asClosure(restoredFirst, nativeHeapReference(cpu).gc)), cpu.captureClosureBinding(asClosure(restoredSecond, nativeHeapReference(cpu).gc)));
 	assert.equal(cpu.tables.get(restoredTable, restoredFirst), valueInteger(11));
@@ -735,12 +736,12 @@ test('mixed static and non-static cartridge closures keep their identities acros
 
 	runGuestToHalt(cpu, 100_000);
 	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
-	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName);
+	const dynamicClosure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	runGuestToHalt(cpu, 100_000);
-	const canonicalClosure = cpu.getGlobalByKey(selectedClosureName);
+	const canonicalClosure = readStockGlobalValue(cpu.memory, selectedClosureName);
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(cpu.captureClosureBinding(asClosure(dynamicClosure, nativeHeapReference(cpu).gc)).functionAddress, cpu.captureClosureBinding(asClosure(canonicalClosure, nativeHeapReference(cpu).gc)).functionAddress);
 
@@ -762,9 +763,9 @@ test('mixed static and non-static cartridge closures keep their identities acros
 			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
 		),
 	);
-	let restoredDynamic = cpu.getGlobalByKey(dynamicName);
-	let restoredCanonical = cpu.getGlobalByKey(canonicalName);
-	let restoredTable = valuePayload(cpu.getGlobalByKey(tableName));
+	let restoredDynamic = readStockGlobalValue(cpu.memory, dynamicName);
+	let restoredCanonical = readStockGlobalValue(cpu.memory, canonicalName);
+	let restoredTable = valuePayload(readStockGlobalValue(cpu.memory, tableName));
 	assert.notEqual(restoredDynamic, restoredCanonical);
 	assert.equal(cpu.tables.get(restoredTable, restoredDynamic), valueInteger(11));
 	assert.equal(cpu.tables.get(restoredTable, restoredCanonical), valueInteger(22));
@@ -781,9 +782,9 @@ test('mixed static and non-static cartridge closures keep their identities acros
 			runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
 		),
 	);
-	restoredDynamic = cpu.getGlobalByKey(dynamicName);
-	restoredCanonical = cpu.getGlobalByKey(canonicalName);
-	restoredTable = valuePayload(cpu.getGlobalByKey(tableName));
+	restoredDynamic = readStockGlobalValue(cpu.memory, dynamicName);
+	restoredCanonical = readStockGlobalValue(cpu.memory, canonicalName);
+	restoredTable = valuePayload(readStockGlobalValue(cpu.memory, tableName));
 	assert.notEqual(restoredDynamic, restoredCanonical);
 	assert.equal(cpu.tables.get(restoredTable, restoredDynamic), valueInteger(11));
 	assert.equal(cpu.tables.get(restoredTable, restoredCanonical), valueInteger(22));
@@ -792,6 +793,6 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(selectedClosureName), restoredCanonical);
-	assert.equal(cpu.tables.get(restoredTable, cpu.getGlobalByKey(selectedClosureName)), valueInteger(22));
+	assert.equal(readStockGlobalValue(cpu.memory, selectedClosureName), restoredCanonical);
+	assert.equal(cpu.tables.get(restoredTable, readStockGlobalValue(cpu.memory, selectedClosureName)), valueInteger(22));
 });

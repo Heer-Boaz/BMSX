@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -132,7 +133,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
-			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(name)), nativeHeapReference(cpu).gc));
+			cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern(name)), nativeHeapReference(cpu).gc));
 			runGuestToHalt(cpu, 100);
 			const values: Value[] = [];
 			cpu.readCompletionValues(values);
@@ -217,7 +218,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		const table = cpu.rootThread.currentFrame!.registers.get(2);
 		assert.equal(cpu.rootThread.currentFrame!.registers.getTag(2), ValueTag.Table, 'capture owns its cell independently of the open result range');
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0); cpu.runUntilDepth(0, 100);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('read')), nativeHeapReference(cpu).gc));
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('read')), nativeHeapReference(cpu).gc));
 		cpu.runUntilDepth(0, 100);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [table]);

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { StockStringIndex } from '../../toolchain/ts/firmware/stock_string_index';
 
@@ -57,7 +58,7 @@ export class GuestFixture {
 		const cpu = this.runtime.machine.cpu;
 		this.initialized = true;
 		// The preloaded suite exports and its literal case keys are already installed.
-		this.beginCall('bind', [cpu.getGlobalByKey(this.stringIndex.find(this.suiteSlot)!), caseName === null ? valueNil() : valueString(this.stringIndex.find(caseName)!)]);
+		this.beginCall('bind', [readStockGlobalValue(cpu.memory, this.stringIndex.find(this.suiteSlot)!), caseName === null ? valueNil() : valueString(this.stringIndex.find(caseName)!)]);
 	}
 
 	/** A physical exception returns first; it is never truncated to admit a host call. */
@@ -103,14 +104,14 @@ export class GuestFixture {
 	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
 	public readContext(): number {
 		const cpu = this.runtime.machine.cpu;
-		const execution = valuePayload(cpu.getGlobalByKey(this.stringIndex.find(EXECUTION_SLOT)!));
+		const execution = valuePayload(readStockGlobalValue(cpu.memory, this.stringIndex.find(EXECUTION_SLOT)!));
 		return valuePayload(cpu.tables.getStringKey(execution, this.stringIndex.find('context')!));
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
 		const cpu = this.runtime.machine.cpu;
 		// Resolve the current guest module, not closures borrowed from an older heap.
-		const execution = valuePayload(cpu.getGlobalByKey(this.stringIndex.find(EXECUTION_SLOT)!));
+		const execution = valuePayload(readStockGlobalValue(cpu.memory, this.stringIndex.find(EXECUTION_SLOT)!));
 		this.returnThread = cpu.activeThread.address;
 		this.returnDepth = cpu.getFrameDepth();
 		cpu.beginCompletionCall(valuePayload(cpu.tables.getStringKey(execution, this.stringIndex.find(method)!)), args);

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -145,7 +146,7 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: num
 for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kernels have coarse, allocation-free datapaths (O${optLevel})`, t => {
 	const { cpu, images } = createCartlibProgramHarness(fixture, { optLevel, modules: WORLD_CPU_MODULES });
 	runGuestToHalt(cpu, 20_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const exports = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('kernels')!));
 	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
 	for (const name of ['resolve','write_origin2','write_origin3','write_local2','write_local3','evaluate2','evaluate3','visual']) {

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -76,7 +77,7 @@ for (const optLevel of [0, 3] as const) {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+		const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 		const target = global('abandoned'), record = valuePayload(target);
 		const capture = Closure.captureAddress(memory, asClosure(global('escaped'), nativeHeapReference(cpu).gc), 0);
 		const read = (field: ThreadField) => memory.readRamRecordWord(record + field);

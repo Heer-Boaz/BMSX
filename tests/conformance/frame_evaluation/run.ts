@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -36,8 +37,8 @@ try {
 			assert.ok(cpu.isHaltedUntilIrq(), 'restore recovers the original parked activation');
 			assert.equal(cpu.getFrameDepth(), depth);
 			assert.equal(cpu.readFramePc(depth - 1), pc);
-			if (cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fixture_inject_completion')!) === valueBool(true)) {
-				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('stopped_probe')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
+			if (readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fixture_inject_completion')!) === valueBool(true)) {
+				cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('stopped_probe')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
 				runGuestToHalt(cpu, 1_000_000, depth);
 				assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
 				assert.equal(cpu.getFrameDepth(), depth);

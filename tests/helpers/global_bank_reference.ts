@@ -7,6 +7,7 @@ import type { StringId } from '../../machine/ts/machine/cpu/string_pool';
 import { valueNil, valuePayload, valueString, valueTag, valueTagIsStorageReference, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
+import { findStockGlobalName, findStockGlobalSlot, stockGlobalNameBucket, STOCK_GLOBAL_NAME_BYTES_PER_SLOT } from '../../toolchain/ts/firmware/stock_global_bank';
 
 const GLOBAL_NAME_BUDGET_BYTES = 9;
 
@@ -37,7 +38,7 @@ export function writeReferenceGlobalSlot(gc: GcHeap, bank: GlobalBank, slot: num
 export function clearReferenceGlobalBank(gc: GcHeap, bank: GlobalBank): void {
 	const memory = bank['memory'], descriptor = bank['descriptor'];
 	const base = memory.readRamRecordWord(descriptor + GlobalBankField.Values)
-		- 12 * memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
+		- STOCK_GLOBAL_NAME_BYTES_PER_SLOT * memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
 	if (base !== 0) gc.budget.releaseRecord(base, GLOBAL_NAME_BUDGET_BYTES * bank.count);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Values, 0);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Capacity, 0);
@@ -49,23 +50,23 @@ function growReferenceBank(bank: GlobalBank, oldBase: number, base: number, capa
 	const memory = bank['memory'], descriptor = bank['descriptor'];
 	const offset = base & RAM_RECORD_WORD_MASK, source = oldBase & RAM_RECORD_WORD_MASK;
 	const ram = memory.ramData();
-	ram.fill(0, offset, offset + 12 * capacity);
+	ram.fill(0, offset, offset + STOCK_GLOBAL_NAME_BYTES_PER_SLOT * capacity);
 	ram.copyWithin(offset, source, source + 4 * count);
-	memory.invalidateRamWrite(offset, 12 * capacity);
-	memory.writeRamRecordWord(descriptor + GlobalBankField.Values, base + 12 * capacity);
+	memory.invalidateRamWrite(offset, STOCK_GLOBAL_NAME_BYTES_PER_SLOT * capacity);
+	memory.writeRamRecordWord(descriptor + GlobalBankField.Values, base + STOCK_GLOBAL_NAME_BYTES_PER_SLOT * capacity);
 	memory.writeRamRecordWord(descriptor + GlobalBankField.Capacity, capacity);
-	bank.slots.bindRam(memory, offset + 12 * capacity, capacity, true);
+	bank.slots.bindRam(memory, offset + STOCK_GLOBAL_NAME_BYTES_PER_SLOT * capacity, capacity, true);
 	for (let slot = 0; slot < count; ++slot) {
 		const key = memory.readRamRecordWord(base + 4 * slot);
-		memory.writeRamRecordWord(base + 4 * (capacity + bank['bucketFor'](base, capacity, key)), slot + 1);
+		memory.writeRamRecordWord(base + 4 * (capacity + stockGlobalNameBucket(memory, base, capacity, key)), slot + 1);
 	}
 }
 
 export function registerReferenceGlobalName(gc: GcHeap, bank: GlobalBank, key: StringId, pending: Value = valueNil()): number {
 	const memory = bank['memory'], descriptor = bank['descriptor'];
 	let capacity = memory.readRamRecordWord(descriptor + GlobalBankField.Capacity);
-	let base = memory.readRamRecordWord(descriptor + GlobalBankField.Values) - 12 * capacity;
-	const prior = bank['findSlot'](base, capacity, key);
+	let base = memory.readRamRecordWord(descriptor + GlobalBankField.Values) - STOCK_GLOBAL_NAME_BYTES_PER_SLOT * capacity;
+	const prior = findStockGlobalName(memory, base, capacity, key);
 	if (prior !== undefined) return prior;
 	const slot = bank.count;
 	let oldBase = 0;
@@ -78,7 +79,7 @@ export function registerReferenceGlobalName(gc: GcHeap, bank: GlobalBank, key: S
 	} else {
 		gc.budget.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 	}
-	const bucket = bank['bucketFor'](base, capacity, key);
+	const bucket = stockGlobalNameBucket(memory, base, capacity, key);
 	memory.writeRamRecordWord(base + 4 * slot, key);
 	bank.slots.setNil(slot);
 	memory.writeRamRecordWord(base + 4 * (capacity + bucket), slot + 1);
@@ -95,7 +96,7 @@ export function setReferenceGlobal(cpu: CPU, key: StringId, value: Value): void 
 }
 
 export function setReferenceSystemGlobal(cpu: CPU, key: StringId, value: Value): void {
-	const bank = cpu['systemGlobalBank'], slot = bank.find(key);
+	const bank = cpu['systemGlobalBank'], slot = findStockGlobalSlot(cpu.memory, bank['descriptor'], key);
 	if (slot === undefined)
 		throw new Error(`System global '${cpu.stringPool.toString(key)}' has no register slot.`);
 	writeReferenceGlobalSlot(nativeHeapReference(cpu).gc, bank, slot, value);

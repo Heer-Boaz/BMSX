@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -140,7 +141,7 @@ end
 `);
 	test(`Overlap releases disposed actors, colliders and their stage after ${retire} retirement (O${optLevel})`, () => {
 		const cpu = rom.run(retirement, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('retire')!), nativeHeapReference(cpu).gc), []);
 		nativeHeapReference(cpu).gc.collect();
 		const weak = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('weak')!));
@@ -163,7 +164,7 @@ end
 `);
 test(`Warm overlap history and scalar contacts allocate nothing while pairs enter and leave (O${optLevel})`, t => {
 	const cpu = rom.run(warmHistory, 20_000_000);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu, kernel, 128, 50_000_000);
 	assert.equal(profile.reservations, 0);
 	assert.equal(profile.reservedBytes, 0);

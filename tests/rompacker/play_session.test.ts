@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
@@ -79,7 +80,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	};
 	const game = (): number => {
 		const cpu = target.runtime.machine.cpu;
-		return valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(buildModuleExportSlotName('game', []))));
+		return valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern(buildModuleExportSlotName('game', []))));
 	};
 	const field = (name: string) => {
 		const table = game();

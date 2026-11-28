@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -25,8 +26,8 @@ try {
 		runtime.rebootSystem();
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		assert.ok(cpu.isHaltedUntilIrq());
-		const table = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('checkpoint_table')!));
-		const key = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('checkpoint_key')!);
+		const table = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('checkpoint_table')!));
+		const key = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('checkpoint_key')!);
 		assert.equal(cpu.tables.get(table, key), valueNil(), 'restore must not revive a deleted mapping');
 	}), 1, 'restore exactly one suspended iterator');
 	assert.equal(execFileSync(nativeRunner, [path, 'table'], { encoding: 'utf8' }).trim(), '1');

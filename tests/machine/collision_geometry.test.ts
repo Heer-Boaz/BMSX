@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueBool } from '../../machine/ts/machine/cpu/value';
@@ -84,7 +85,7 @@ return true
 test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
 	const cpu = rom.run(reflectedSource);
 	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu,kernel,256);
 	assert.equal(profile.reservations,0);
 	assert.equal(profile.reservedBytes,0);
@@ -120,7 +121,7 @@ return true
 test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
 	const cpu = rom.run(areaPublication);
 	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu,kernel,256);
 	assert.equal(profile.reservations,0);
 	assert.equal(profile.reservedBytes,0);
@@ -225,7 +226,7 @@ return true
 test(`Collider source admission reserves animation bounds and separates physical geometry from presentation (O${optLevel})`, t => {
 	const cpu = rom.run(animationBounds);
 	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu,kernel,256);
 	assert.equal(profile.reservations,0);
 	assert.equal(profile.reservedBytes,0);
@@ -317,7 +318,7 @@ return true
 test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
 	const cpu = rom.run(stripAdmission);
 	assert.deepEqual(materializeCpuCompletionValues(cpu),[valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu,kernel,128);
 	assert.equal(profile.reservations,0);
 	assert.equal(profile.reservedBytes,0);

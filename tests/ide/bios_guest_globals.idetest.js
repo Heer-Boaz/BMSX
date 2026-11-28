@@ -20,7 +20,8 @@ const names = [
 	'sys_img_ctrl',
 	'img_ctrl_start',
 ];
+const strings = new StockStringIndex(cpu.memory);
 for (const name of names) {
-	const value = cpu.getGlobalByKey(cpu.stringPool.intern(name));
-	t.assert(value === null, `${name} must not be a guest CPU global`);
+	const key = strings.find(name);
+	t.assert(key === undefined || readStockGlobalValue(cpu.memory, key) === value.valueNil(), `${name} must not be a guest CPU global`);
 }

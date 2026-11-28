@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -78,7 +79,7 @@ for (const optLevel of [0, 3] as const) test(`cartridge binding retires captures
 	assert.ok(cpu.isHaltedUntilIrq());
 	const owner = cpu.rootThread.address, depth = cpu.getFrameDepth();
 	const captures = ['saved_outer', 'saved_inner'].map((name, i) => {
-		const keeper = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!));
+		const keeper = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!));
 		const address = captureAddress(memory, keeper, 0);
 		const frame = depth - 2 + i;
 		assert.equal(cpu.readThreadFrameWord(owner, frame, FrameField.OpenHead), address);

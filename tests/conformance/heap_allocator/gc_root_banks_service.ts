@@ -1,3 +1,5 @@
+import { findStockGlobalSlot } from '../../../toolchain/ts/firmware/stock_global_bank';
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -61,7 +63,7 @@ try {
 		driver.launch();
 		const globals = management + GLOBAL_BANK_OFFSET;
 		driver.reach(() => rootCursor() !== 0, 'root scan admitted');
-		const globalSlot = cpu['globalBank'].find(name)!;
+		const globalSlot = findStockGlobalSlot(cpu.memory, cpu['globalBank']['descriptor'], name)!;
 		const globalValues = memory.readRamRecordWord(globals + GlobalBankField.Values);
 		const capacity = memory.readRamRecordWord(globals + GlobalBankField.Capacity);
 		assert.equal(memory.readRamRecordWord(globals + GlobalBankField.Count), cpu.globalSlotCount);
@@ -100,7 +102,7 @@ try {
 		assert.equal((beforeThread >>> 8) & GC_COLOR_MASK, gc.white());
 		driver.checkpoint('cleared-cursor', [[control + GC_ROOT_CURSOR, control + GC_ROOT_CURSOR + 4], [rootThread - RAM_BASE, rootThread - RAM_BASE + 4]]);
 		driver.finish(57, () => {
-			assert.equal(cpu.getGlobalByKey(name), valueString(value));
+			assert.equal(readStockGlobalValue(cpu.memory, name), valueString(value));
 			assert.deepEqual(constantTexts.map(text => nativeHeapReference(cpu).stringPool.find(text)), constants);
 		});
 

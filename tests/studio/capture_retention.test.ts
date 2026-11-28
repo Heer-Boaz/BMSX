@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -52,7 +53,7 @@ return 42`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const depth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('evaluate')), nativeHeapReference(cpu).gc), [valueInteger(1)]);
+	cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('evaluate')), nativeHeapReference(cpu).gc), [valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(8)]);
 	const fresh = compile(before.replace('value + 7', 'value * 2 + 9'), initial, optLevel);
@@ -65,7 +66,7 @@ return 42`;
 	applyHotResumeRelocation(cpu, relocation);
 	assert.equal(cpu.lastPc, lastPc, 'ROM replacement is not an instruction fetch');
 	assert.equal(cpu.getFrameDepth(), depth);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('evaluate')), nativeHeapReference(cpu).gc), [valueInteger(1)]);
+	cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('evaluate')), nativeHeapReference(cpu).gc), [valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11)]);
 });
@@ -99,8 +100,8 @@ return { world = world }` },
 	for (let run = 0; run < 2; run += 1) {
 		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.layout.header.initFunctionAddress);
 		runGuestToHalt(cpu, 100000);
-		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('load_trace')), valueInteger(1234));
-		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('hook_trace')), valueInteger(1234));
+		assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('load_trace')), valueInteger(1234));
+		assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('hook_trace')), valueInteger(1234));
 		cpu.beginCompletionCall(asClosure(read, nativeHeapReference(cpu).gc));
 		runGuestToHalt(cpu, 100000);
 		assert.equal(materializeCpuCompletionValues(cpu)[0], world);

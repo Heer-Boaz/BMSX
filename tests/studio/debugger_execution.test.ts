@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure, asThread } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
@@ -295,7 +296,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'step'); assert.equal(f.line(), 7);
 		assert.equal(f.state.source.stop!.thread, parent);
-		assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('child_value')), valueInteger(2));
+		assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('child_value')), valueInteger(2));
 	});
 	for (const failure of [false, true]) for (const mode of ['over', 'out'] as const)
 	test(`O${optLevel}: selected thread ${failure ? 'failure' : 'return'} completes ${mode} before resumer code`, async t => {
@@ -315,7 +316,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		assert.equal((await operation.completion).reason, 'thread-completed');
 		assert.equal(f.cpu.readThreadStatus(child), failure ? ThreadStatus.Failed : ThreadStatus.Dead);
 		assert.equal(f.cpu.activeThread.address, f.cpu.rootThread.address);
-		assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('root_value')), valueNil(), 'the operation never runs its resumer');
+		assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('root_value')), valueNil(), 'the operation never runs its resumer');
 		assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
 	});
 	test(`O${optLevel}: a selected-thread step still honors other coroutine breakpoints`, async t => {
@@ -329,7 +330,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
 		assert.equal(f.state.source.stop!.reason, RuntimeDebuggerStopReason.Breakpoint);
-		assert.equal(f.state.source.stop!.thread, asThread(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('child')), nativeHeapReference(f.cpu).gc));
+		assert.equal(f.state.source.stop!.thread, asThread(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('child')), nativeHeapReference(f.cpu).gc));
 	});
 	for (const recompile of [false, true]) test(`O${optLevel}: another thread cannot consume resume suppression at the same depth (Hot Resume ${recompile})`, t => {
 		const f = fixture(t, `require('thread_primitives'); other = function()
@@ -346,7 +347,7 @@ write_parent()`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 7);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
-		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('invoke')), nativeHeapReference(f.cpu).gc));
+		f.cpu.beginCompletionCall(asClosure(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('invoke')), nativeHeapReference(f.cpu).gc));
 		assert.equal(runCpuWithinBudget(f.cpu, 100_000, depth), RunResult.ExecutionStopped);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
 		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread.address);
@@ -356,7 +357,7 @@ write_parent()`, optLevel, THREAD_PRIMITIVES);
 		runCpuWithinBudget(f.cpu, 100_000, depth);
 		assert.notEqual(f.state.source.domainMask, 0, 'the parked parent still owns resume suppression');
 		runCpuWithinBudget(f.cpu, 100_000);
-		assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('root_value')), valueInteger(1));
+		assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('root_value')), valueInteger(1));
 		f.state.breakpoints.set(RESOURCE, []);
 		assert.equal(f.state.source.domainMask, 0, 'the last suppression releases the instrumented path');
 	});

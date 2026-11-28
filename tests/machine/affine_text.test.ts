@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -153,7 +154,7 @@ for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
 	const id = rom.add(fixture);
 	test(`Text ${name} retains local layout and transforms its complete geometry (O3)`, t => {
 		const cpu = rom.run(id, 30_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
 			const kernel = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 			const profile = profileWarmGuestKernel(cpu, kernel, 256);

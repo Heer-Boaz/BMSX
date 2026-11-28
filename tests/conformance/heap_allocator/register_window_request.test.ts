@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -55,7 +56,7 @@ return park(blua32.float_from_bits(0x80000000), nil, blua32.float_from_bits(0xff
 	const modeMask = CPU_STATUS_INTERRUPT_ENABLE_CURRENT | CPU_STATUS_USER_MODE_CURRENT;
 	const mode = cpu.captureRuntimeState().statusWord & modeMask;
 	const retired = nativeHeapReference(cpu).stringPool.find('retired')!;
-	assert.equal(cpu.getGlobalByKey(retired), valueNil());
+	assert.equal(readStockGlobalValue(cpu.memory, retired), valueNil());
 	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], expected: string[] = [];
 	function observe(command: string, row: string | number) {
@@ -113,7 +114,7 @@ return park(blua32.float_from_bits(0x80000000), nil, blua32.float_from_bits(0xff
 		assert.equal(root.stackTop, top);
 		assert.equal(cpu.captureRuntimeState().statusWord & modeMask, mode);
 		assert.ok(cpu.isHaltedUntilIrq(), 'software handling the reservation did not wake the caller');
-		assert.equal(cpu.getGlobalByKey(retired), valueNil(), 'the next caller instruction did not run');
+		assert.equal(readStockGlobalValue(cpu.memory, retired), valueNil(), 'the next caller instruction did not run');
 		assert.deepEqual(raw.subarray(controlsAt(), controlsAt() + frames.length), frames);
 		assert.deepEqual(stack(), parkedValues);
 		if (grow) {

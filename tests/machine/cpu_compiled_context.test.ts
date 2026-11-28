@@ -1,3 +1,6 @@
+import { findStockGlobalSlot } from '../../toolchain/ts/firmware/stock_global_bank';
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -63,8 +66,8 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		}
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-		assert.equal(js.getSystemGlobalByKey(nativeHeapReference(js).stringPool.find('copied')!), frame.registers.get(12));
-		assert.equal(js.getGlobalByKey(nativeHeapReference(js).stringPool.find('copied')!), valueInteger(73));
+		assert.equal(readStockGlobalValue(js.memory, nativeHeapReference(js).stringPool.find('copied')!, SYSTEM_GLOBAL_BANK_OFFSET), frame.registers.get(12));
+		assert.equal(readStockGlobalValue(js.memory, nativeHeapReference(js).stringPool.find('copied')!), valueInteger(73));
 		assert.equal(frame.top, 3, 'global stores do not extend top to the source register');
 	}
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
@@ -98,7 +101,7 @@ for (const system of [false, true]) test(`generated ${system ? 'SETSYS' : 'SETGL
 	assert.equal(gc.isAlive(target), false);
 	const source = system ? 1 : 0;
 	const bank = system ? cpu['systemGlobalBank'] : cpu['globalBank'];
-	const slot = bank.find(nativeHeapReference(cpu).stringPool.find(system ? 'system-slot' : 'cart-slot')!)!;
+	const slot = findStockGlobalSlot(cpu.memory, bank['descriptor'], nativeHeapReference(cpu).stringPool.find(system ? 'system-slot' : 'cart-slot')!)!;
 	const word = RAM_BASE + bank.slots.ramOffset() + 4 * slot;
 	const tag = RAM_BASE + bank.slots.ramOffset() + 4 * bank.slots.capacity() + slot;
 	const successor = pc + (source + 1) * INSTRUCTION_BYTES;
@@ -235,8 +238,8 @@ test('fixed selectors must name an entry of the expected kind in their own image
 				assert.equal(frame.registers.get(0), valueInteger(73));
 				assert.equal(frame.registers.get(1), valueInteger(75));
 				assert.equal(frame.top, 0);
-				assert.equal(cpu.getGlobalByKey(g), valueInteger(81));
-				assert.equal(cpu.getSystemGlobalByKey(s), valueInteger(91));
+				assert.equal(readStockGlobalValue(cpu.memory, g), valueInteger(81));
+				assert.equal(readStockGlobalValue(cpu.memory, s, SYSTEM_GLOBAL_BANK_OFFSET), valueInteger(91));
 				assert.equal(observations, dispatch === 'observed' ? 1 : 0);
 			}
 		}
@@ -436,7 +439,7 @@ end
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
-		const setter = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('set_captured')!), gc);
+		const setter = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);
 

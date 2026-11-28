@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -49,9 +50,9 @@ ready = true
 while true do halt_until_irq end`, optLevel);
 		afterTest(t, () => target.dispose());
 		const cpu = target.runtime.machine.cpu, ready = nativeHeapReference(cpu).stringPool.intern('ready'), interrupted = nativeHeapReference(cpu).stringPool.intern('interrupted');
-		await target.runUntil(() => cpu.getGlobalByKey(ready) === valueBool(true));
+		await target.runUntil(() => readStockGlobalValue(cpu.memory, ready) === valueBool(true));
 		cpu.requestNonMaskableInterrupt();
-		await target.runUntil(() => cpu.getGlobalByKey(interrupted) === valueBool(true));
-		assert.equal(cpu.getGlobalByKey(interrupted), valueBool(true));
+		await target.runUntil(() => readStockGlobalValue(cpu.memory, interrupted) === valueBool(true));
+		assert.equal(readStockGlobalValue(cpu.memory, interrupted), valueBool(true));
 	});
 }

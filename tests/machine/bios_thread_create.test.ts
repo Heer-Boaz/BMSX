@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { bindReferenceDlmalloc } from '../helpers/native_heap/dlmalloc_wasm';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -176,7 +177,7 @@ halt_until_irq
 
 function detachEntry(f: ReturnType<typeof fixture>): number {
 	return f.same(cpu => {
-		const key = nativeHeapReference(cpu).stringPool.intern('detached_entry'), operand = cpu.getGlobalByKey(key);
+		const key = nativeHeapReference(cpu).stringPool.intern('detached_entry'), operand = readStockGlobalValue(cpu.memory, key);
 		assert.equal(valueTag(operand), ValueTag.Closure);
 		setReferenceGlobal(cpu, key, valueNil());
 		// O3 can retain a now-dead physical temporary. Explicitly remove it

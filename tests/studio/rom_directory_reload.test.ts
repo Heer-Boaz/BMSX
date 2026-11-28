@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -104,8 +105,8 @@ end`;
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, linked.vectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.equal(asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('preparations'))), 2, 'preparation retains the live program');
-	assert.equal(isNil(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('ready_image'))), false, 'directory refresh precedes dependent init');
+	assert.equal(asInteger(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('preparations'))), 2, 'preparation retains the live program');
+	assert.equal(isNil(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.intern('ready_image'))), false, 'directory refresh precedes dependent init');
 	assert.deepEqual(lookup('warm'), [valueInteger(CART_ROM_BASE + 0x120), valueInteger(8)]);
 	assert.deepEqual(lookup('late'), [valueInteger(CART_ROM_BASE + 0x130), valueInteger(12)]);
 	assert.deepEqual(lookup('removed'), [valueNil()]);

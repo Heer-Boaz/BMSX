@@ -1,3 +1,5 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, executionDomain } from '../../machine/ts/machine/cpu/closure';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -81,11 +83,11 @@ export class SuspendedGuestSession {
 	}
 
 	public global(name: string): SuspendedGuestValue {
-		return this.cpu.getGlobalByKey(this.stringIndex.find(name)!);
+		return readStockGlobalValue(this.cpu.memory, this.stringIndex.find(name)!);
 	}
 
 	public systemGlobal(name: string): SuspendedGuestValue {
-		return this.cpu.getSystemGlobalByKey(this.stringIndex.find(name)!);
+		return readStockGlobalValue(this.cpu.memory, this.stringIndex.find(name)!, SYSTEM_GLOBAL_BANK_OFFSET);
 	}
 
 	/** Decode semantic String data, without invoking value presentation. */

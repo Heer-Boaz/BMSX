@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -228,7 +229,7 @@ return true
 test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
 	const cpu = rom.run(rectangleAffine);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
+	const kernel = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu, kernel, 256);
 	assert.equal(profile.reservations, 0);
 	assert.equal(profile.reservedBytes, 0);
@@ -568,7 +569,7 @@ return {
 	runGuestToHalt(cpu, 20_000_000);
 	const [failure] = materializeCpuCompletionValues(cpu);
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
-	const sources = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('sources')!));
+	const sources = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('sources')!));
 	let sourceBytes = 0;
 	for (let index = 1; index <= 1024; index += 1) sourceBytes += nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(valuePayload(cpu.tables.getInteger(sources, index)));
 	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
@@ -609,7 +610,7 @@ probe = {
 }
 `, { optLevel: 3, modules });
 	runGuestToHalt(cpu, 20_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	for (const lane of ['translation', 'affine']) {
 		const kernel = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);

@@ -1,3 +1,5 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -51,7 +53,7 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 `;
 	const cpu = run(source, level, modules);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil(), valueInteger(13), valueInteger(0), valueInteger(78)]);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('alias')!), cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('shared')!));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('alias')!), readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('shared')!));
 	assert.ok(cpu.memory.readRamRecordWord(nativeHeapReference(cpu).heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity) >= 128);
 });
 
@@ -73,7 +75,7 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);
 	assert.deepEqual(values.slice(3), [valueBool(false), valueBool(false), valueBool(false)]);
 	assert.equal(values[2], valueInteger(3));
-	assert.ok(valueIsClosure(cpu.getSystemGlobalByKey(nativeHeapReference(cpu).stringPool.find('irq')!)));
+	assert.ok(valueIsClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('irq')!, SYSTEM_GLOBAL_BANK_OFFSET)));
 });
 
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
@@ -105,7 +107,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	const memory = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
 	const usage = nativeHeapReference(cpu).luaHeap.usedBytes();
-	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(`dynamic${index}`)!), valueInteger(index));
+	for (let index = 0; index < 257; index++) assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(`dynamic${index}`)!), valueInteger(index));
 	setReferenceGlobal(cpu, objectKey, valueNil());
 	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('future'), valueInteger(100));
 	nativeHeapReference(cpu).gc.collect();
@@ -114,7 +116,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	cpu.restoreRuntimeState(anchor);
 	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), usage, 'restore retains the logical count independently of capacity');
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);
-	assert.equal(cpu.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(objectKey)), 1), valueInteger(42));
+	assert.equal(cpu.tables.getInteger(tableAddressPayload(readStockGlobalValue(cpu.memory, objectKey)), 1), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(nilKey), 'nil-name');
 	assert.equal(cpu.globalSlotCount, count + 259);
 });
@@ -126,8 +128,8 @@ test('registered writes allocate no guest heap and missing reads create no regis
 	const count = cpu.globalSlotCount, heap = [nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()];
 	for (let index = 0; index < 10000; index++) {
 		setReferenceGlobal(cpu, key, valueInteger(index));
-		assert.equal(cpu.getGlobalByKey(key), valueInteger(index));
-		assert.equal(cpu.getGlobalByKey(absent), valueNil());
+		assert.equal(readStockGlobalValue(cpu.memory, key), valueInteger(index));
+		assert.equal(readStockGlobalValue(cpu.memory, absent), valueNil());
 	}
 	assert.equal(cpu.globalSlotCount, count);
 	assert.deepEqual([nativeHeapReference(cpu).luaHeap.usedBytes(), nativeHeapReference(cpu).luaHeap.collectionTarget()], heap);

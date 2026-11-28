@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -212,7 +213,7 @@ probe.steady(2)
 return draw.count,draw.commands[1],draw.commands[2],draw.commands[3],draw.commands[4],draw.calls
 `, optLevel);
 		assert.deepEqual(values, [4, 0x20000022, 0x20000011, 0x20000044, 0x20000033, 4].map(valueInteger));
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')));
 		const steady = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('steady')), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, steady, 128);
 		assert.equal(profile.reservations, 0, 'warm collection, mergesort and repeated packed submission allocate no guest heap');

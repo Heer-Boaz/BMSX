@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -131,7 +132,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 			assert.equal(cpu.getFrameDepth(), depth + 1);
 			assert.equal(cpu.readEpcWord(), returnPc);
 
-			const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+			const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 			const getter = asClosure(global('saved_capture'), gc);
 			const cell = Closure.captureAddress(memory, getter, 0), cellOffset = cell & GC_RECORD_MASK;
 			assert.equal(cpu.activeThread.currentFrame!.openUpvalueHead, cell);

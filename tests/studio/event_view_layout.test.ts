@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -30,7 +31,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
 	runGuestToHalt(cpu, BUDGET);
-	const emit = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const emit = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(emit, [valueInteger(count)]);
 	runGuestToHalt(cpu, BUDGET);
 	const input = new EventViewerInput(history);

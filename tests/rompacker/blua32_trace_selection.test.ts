@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -75,6 +76,6 @@ return producer
 		cartRomBytes: writeTestBlua32Rom(cart.linked),
 	});
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('system_observed')!), valueInteger(3));
+	assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('system_observed')!), valueInteger(3));
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);
 });

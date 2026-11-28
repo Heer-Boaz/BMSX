@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { CLOSURE_CANONICAL } from '../../toolchain/ts/firmware/stock_object_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { GcPhase } from '../helpers/native_heap/gc_heap';
@@ -114,7 +115,7 @@ test('Hot Resume retires warmed generated code and runs the edited function with
 	const f = await fixture(t, `function calculate(x) return x + 3 end
 retained = 0
 for i = 1, 512 do retained = calculate(retained) end`);
-	assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('retained')), valueInteger(1536));
+	assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('retained')), valueInteger(1536));
 	const depth = f.cpu.getFrameDepth();
 	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
 	const compiledEntry = (pc: number) => {
@@ -122,7 +123,7 @@ for i = 1, 512 do retained = calculate(retained) end`);
 		f.cpu.memory.bindMappedPage((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 		return image.decodedPages.get(binding.key)?.compiledBlocks?.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	};
-	let calculate = f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('calculate'));
+	let calculate = readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('calculate'));
 	assert.equal(valueTag(calculate), ValueTag.Closure);
 	const original = compiledEntry(f.cpu.captureClosureBinding(valuePayload(calculate)).codeAddress);
 	assert.ok(original, 'the installed program must have generated the callable itself');
@@ -137,9 +138,9 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
 	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.activeThread.frameAtDepth(depth - 1), parked);
 	assert.equal(f.cpu.isHaltedUntilIrq(), true);
-	assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('retained')), valueInteger(9876), 'Hot Resume must not repeat startup or replace live globals');
+	assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('retained')), valueInteger(9876), 'Hot Resume must not repeat startup or replace live globals');
 	const caller = f.cpu.readFramePc(depth - 1); // Installation may relocate the parked instruction.
-	calculate = f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('calculate'));
+	calculate = readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('calculate'));
 	assert.equal(valueTag(calculate), ValueTag.Closure);
 	for (let attempt = 0; attempt < 12; ++attempt) {
 		f.cpu.beginCompletionCall(valuePayload(calculate), [valueInteger(2)]);
@@ -156,8 +157,8 @@ test('Hot Resume binds a new global and literal in firmware before running the e
 function probe() return retained end`);
 	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
 	const oldMedia = f.sources.currentBlua32Media;
-	const original = cpu.getGlobalByKey(f.guest.stringIndex.find('retained')!);
-	const probe = cpu.getGlobalByKey(f.guest.stringIndex.find('probe')!);
+	const original = readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('retained')!);
+	const probe = readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('probe')!);
 	const old = 'return retained';
 	f.model.pushEditOperations([{ offset: f.source.indexOf(old), deleteLength: old.length,
 		text: "introduced = 'first seen in this edit'; return retained, introduced" }]);
@@ -175,14 +176,14 @@ function probe() return retained end`);
 	assert.notEqual(f.sources.currentBlua32Media, oldMedia);
 	assert.equal(cpu.activeThread.address, thread);
 	assert.equal(cpu.getFrameDepth(), depth);
-	assert.equal(cpu.getGlobalByKey(f.guest.stringIndex.find('probe')!), probe);
-	assert.equal(cpu.getGlobalByKey(f.guest.stringIndex.find('retained')!), original);
+	assert.equal(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('probe')!), probe);
+	assert.equal(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('retained')!), original);
 	const introduced = f.guest.stringIndex.find('introduced')!, literal = valueString(f.guest.stringIndex.find('first seen in this edit')!);
-	assert.equal(cpu.getGlobalByKey(introduced), valueNil(), 'installing the name does not run the edited function');
+	assert.equal(readStockGlobalValue(cpu.memory, introduced), valueNil(), 'installing the name does not run the edited function');
 	cpu.beginCompletionCall(valuePayload(probe));
 	assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [original, literal]);
-	assert.equal(cpu.getGlobalByKey(introduced), literal);
+	assert.equal(readStockGlobalValue(cpu.memory, introduced), literal);
 });
 
 test('Hot Resume appends cartridge BSS without clearing or relocating escaped live addresses', async t => {
@@ -195,7 +196,7 @@ end
 *score = 73`);
 	const { cpu, runtime } = f, { memory } = runtime.machine;
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
-	const read = (name: string) => cpu.getGlobalByKey(f.guest.stringIndex.find(name)!);
+	const read = (name: string) => readStockGlobalValue(cpu.memory, f.guest.stringIndex.find(name)!);
 	const probe = valuePayload(read('probe'));
 	const escaped = read('escaped'), address = valuePayload(escaped);
 	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
@@ -272,8 +273,8 @@ test('one Hot Resume publishes new System and cartridge operands without restart
 		'module<entry>\nfunction system_probe() return 38 end');
 	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
 	const oldMedia = f.sources.currentBlua32Media;
-	const systemProbe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('system_probe')!));
-	const cartProbe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('cart_probe')!));
+	const systemProbe = valuePayload(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('system_probe')!));
+	const cartProbe = valuePayload(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('cart_probe')!));
 	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.path2lua['entry.lua'];
 	const systemModel = f.models.retain({ ...f.model.resource, contextId: TEST_SYSTEM_CONTEXT_ID }, 'lua', system.src);
 	const spelling = 'first bound by two replacement images';
@@ -325,9 +326,9 @@ end
 old_label = 'bygone'`);
 	const { cpu, runtime } = f;
 	const depth = cpu.getFrameDepth();
-	const describe = valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find('describe')!));
+	const describe = valuePayload(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find('describe')!));
 	const label = f.guest.stringIndex.find('old_label')!;
-	const retained = cpu.getGlobalByKey(label);
+	const retained = readStockGlobalValue(cpu.memory, label);
 	function describeFirst() {
 		cpu.beginCompletionCall(describe, [valueInteger(1)]);
 		assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
@@ -342,7 +343,7 @@ old_label = 'bygone'`);
 		text: "'sapphire' end\n\treturn 'amber'\nend\nold_label = nil" }]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
 	assert.equal(valuePayload(describeFirst()), f.guest.stringIndex.find('sapphire'));
-	assert.equal(cpu.getGlobalByKey(label), retained, 'live state still refers to the removed literal');
+	assert.equal(readStockGlobalValue(cpu.memory, label), retained, 'live state still refers to the removed literal');
 	assert.equal(valuePayload(retained), f.guest.stringIndex.find('bygone'));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
@@ -352,7 +353,7 @@ test('Hot Resume rebinds retained closures without replacing their captures or i
 function make_retained() return function(x) return x + retained_value + 3 end end
 retained_function = make_retained()`);
 	const key = nativeHeapReference(f.cpu).stringPool.intern('retained_function');
-	const reference = f.cpu.getGlobalByKey(key);
+	const reference = readStockGlobalValue(f.cpu.memory, key);
 	const retained = valuePayload(reference);
 	assert.equal(valueTag(reference), ValueTag.Closure);
 	assert.equal(ClosureRecord.captureCount(f.cpu.memory, retained), 1);
@@ -373,7 +374,7 @@ retained_function = make_retained()`);
 		{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' },
 	]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
-	assert.equal(f.cpu.getGlobalByKey(key), reference);
+	assert.equal(readStockGlobalValue(f.cpu.memory, key), reference);
 	assert.equal(ClosureRecord.captureAddress(f.cpu.memory, retained, 0), upvalue);
 	assert.notEqual(f.cpu.captureClosureBinding(retained).codeAddress, oldCodeAddress, 'the retained closure must follow relocated code');
 	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
@@ -386,7 +387,7 @@ test('Hot Resume rejects an unmapped live closure before changing guest state', 
 function make_retained() return function(x) return x + retained_value end end
 retained_function = make_retained()`);
 	const key = nativeHeapReference(f.cpu).stringPool.intern('retained_function');
-	const reference = f.cpu.getGlobalByKey(key);
+	const reference = readStockGlobalValue(f.cpu.memory, key);
 	const retained = valuePayload(reference);
 	const image = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout;
 	const revision = identityHotResumeRevision(image);
@@ -395,7 +396,7 @@ retained_function = make_retained()`);
 	revision.revision.functionAddresses[index] = 0;
 	const oldCodeAddress = f.cpu.captureClosureBinding(retained).codeAddress;
 	assert.throws(() => buildHotResumeRelocation(f.cpu, [null, revision, null], f.cpu.getFrameDepth()), /closure/);
-	assert.equal(f.cpu.getGlobalByKey(key), reference);
+	assert.equal(readStockGlobalValue(f.cpu.memory, key), reference);
 	assert.equal(f.cpu.captureClosureBinding(retained).codeAddress, oldCodeAddress);
 });
 
@@ -412,7 +413,7 @@ function forget_result() end`);
 	const gc = nativeHeapReference(cpu).gc;
 	const depth = cpu.getFrameDepth();
 	const call = (name: string) => {
-		cpu.beginCompletionCall(valuePayload(cpu.getGlobalByKey(f.guest.stringIndex.find(name)!)));
+		cpu.beginCompletionCall(valuePayload(readStockGlobalValue(cpu.memory, f.guest.stringIndex.find(name)!)));
 		assert.equal(cpu.runUntilDepth(depth, 250_000), RunResult.Halted);
 		assert.equal(runtime.admitExternalCpuMutation(), true);
 		return runtime.readCompletionValues();
@@ -466,8 +467,8 @@ local function put_weak()
  weak_values[1] = function(x) return x + retained_value + 3 end
 end
 put_weak()`);
-	const weakValues = valuePayload(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('weak_values')));
-	nativeHeapReference(f.cpu).gc.tables.setMetatableAddress(weakValues, valuePayload(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('weak_meta'))));
+	const weakValues = valuePayload(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('weak_values')));
+	nativeHeapReference(f.cpu).gc.tables.setMetatableAddress(weakValues, valuePayload(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('weak_meta'))));
 	const reference = f.cpu.tables.getInteger(weakValues, 1);
 	assert.equal(valueTag(reference), ValueTag.Closure);
 	const retained = valuePayload(reference);
@@ -611,7 +612,7 @@ test('workbench Hot Resume runs init to its physical return without continuing t
 	f.target.advanceGame(10000);
 	didExecuteRuntimeDebuggerPlan(f.debuggerState);
 	assert.deepEqual(await first.completion, { status: 'completed', applied: true });
-	assert.equal(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('refreshed')), valueInteger(1));
+	assert.equal(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.intern('refreshed')), valueInteger(1));
 	assert.deepEqual(Array.from({ length: f.cpu.getFrameDepth() }, (_, index) => f.cpu.readFramePc(index)), pcs,
 		'retained caller frames and PCs have not advanced');
 	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, false);
@@ -629,7 +630,7 @@ test('Hot Resume reserves backing for an initializer above an already-full calle
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 	const beforeValues = thread.stackRegisters.capacity(), beforeFrames = thread.frameBackingBytes;
 	const key = f.guest.stringIndex.find('refreshed')!;
-	assert.equal(cpu.getGlobalByKey(key), valueNil(), 'pending initializers have not run');
+	assert.equal(readStockGlobalValue(cpu.memory, key), valueNil(), 'pending initializers have not run');
 	const operation = f.service.resume('workbench');
 	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
 	assert.equal(f.sources.currentBlua32Media, oldMedia, 'preparation executes against the installed ROM');
@@ -644,7 +645,7 @@ test('Hot Resume reserves backing for an initializer above an already-full calle
 	assert.equal(cpu.getFrameDepth(), depth);
 	assert.equal(cpu.readFramePc(depth - 1), pc);
 	assert.ok(thread.stackRegisters.capacity() > beforeValues || thread.frameBackingBytes > beforeFrames);
-	assert.equal(cpu.getGlobalByKey(key), valueInteger(1), 'only the requested initializer ran');
+	assert.equal(readStockGlobalValue(cpu.memory, key), valueInteger(1), 'only the requested initializer ran');
 });
 
 for (const reason of ['machine-reset', 'shutdown'] as const) test(`${reason} cancels queued admission before any media write`, async t => {

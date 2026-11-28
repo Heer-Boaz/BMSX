@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -54,7 +55,7 @@ for (const optLevel of [3] as const) test(`Float POW folding and runtime match r
 	const source = `function dynamic_pow(x, y) return x ^ y end\nreturn ${vectors.map(([x, y]) => `(${x}) ^ (${y})`).join(', ')}`;
 	const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'pow.lua'), 100000);
 	const folded = materializeCpuCompletionValues(cpu);
-	const fn = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('dynamic_pow')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('dynamic_pow')!), nativeHeapReference(cpu).gc);
 	for (let i = 0; i < vectors.length; ++i) {
 		const [x, y, left, right, word] = vectors[i];
 		runCompletionClosure(cpu, fn, [left, right]);

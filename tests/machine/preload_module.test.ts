@@ -1,3 +1,5 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
+import { SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valueInteger, valueBool, valueIsTable, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -56,7 +58,7 @@ for (const optLevel of [3] as const) test(`preloads use the existing dependency/
 	const { cpu } = createTestSystemCpu(image);
 	runGuestToHalt(cpu, 100_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(213), valueInteger(0), valueBool(true)]);
-	const exported = cpu.getSystemGlobalByKey(nativeHeapReference(cpu).stringPool.find(buildModuleExportSlotName('common', []))!);
+	const exported = readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(buildModuleExportSlotName('common', []))!, SYSTEM_GLOBAL_BANK_OFFSET);
 	const common = valuePayload(exported);
 	// Read the retained exported object through the compiler-owned module slot.
 	assert.ok(valueIsTable(exported));

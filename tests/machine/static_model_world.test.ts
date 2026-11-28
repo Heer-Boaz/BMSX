@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { numberToHost, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -133,7 +134,7 @@ probe = {
 for (const optLevel of [3] as const) test(`static model pass consumes World membership and retained affine/resource generations (O${optLevel})`, t => {
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')));
 	const method = (name: string) => asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, method('check'), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
@@ -163,8 +164,8 @@ return {model=function(id) return record end,
 	const { cpu } = createCartlibProgramHarness(source, { optLevel,
 		modules: [...modules, { path: 'cartlib/rom_dir', source: ramDirectory }] });
 	runGuestToHalt(cpu, 10_000_000);
-	const address = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('test_model_address')));
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const address = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('test_model_address')));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')));
 	const packet = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('packet')), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, packet, []);
 	const before = materializeCpuCompletionValues(cpu);

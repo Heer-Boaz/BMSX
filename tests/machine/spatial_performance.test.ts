@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -170,7 +171,7 @@ for (const optLevel of [3] as const) {
 		runGuestToHalt(cpu, 20_000_000);
 		const bootCycles = 20_000_000 - cpu.instructionBudgetRemaining;
 		const bootAllocatedBytes = nativeHeapReference(cpu).luaHeap.usedBytes() - initialHeap;
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		const before = collectReferenceHeapBytes(cpu);
 		const beforeObjects = heapObjects(cpu);
 		const admissionCycles = runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
@@ -223,7 +224,7 @@ for (const optLevel of [3] as const) {
 	test(`spatial CPU: World churn retires identities and reuses bounded retained storage (O${optLevel})`, t => {
 		const { cpu, images } = newWorldCpu();
 		runGuestToHalt(cpu, 20_000_000);
-		const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+		const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('admit')!), nativeHeapReference(cpu).gc), []);
 		const churn = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('churn')!), nativeHeapReference(cpu).gc);
 		const graph = valuePayload(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('graph')!));
@@ -337,7 +338,7 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 			const allocatedBytes = nativeHeapReference(cpu).luaHeap.usedBytes() - initialHeap;
 			const retainedBytes = collectReferenceHeapBytes(cpu) - initialHeap;
 			const objects = heapObjects(cpu);
-			const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+			const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 			const kernels = [];
 			for (const name of ['clean', 'motion', 'compose', 'traverse']) {
 				const kernel = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc);

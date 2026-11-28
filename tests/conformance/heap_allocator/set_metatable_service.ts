@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -69,7 +70,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		const global = (name: string) => cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!);
+		const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
 		const addr = (name: string) => valuePayload(global(name));
 		const normal = asClosure(global('normal_call'), nativeHeapReference(cpu).gc), invalid = asClosure(global('invalid_call'), nativeHeapReference(cpu).gc), clear = asClosure(global('clear_call'), nativeHeapReference(cpu).gc);
 		const operation = global('setmetatable'), receiver = global('receiver'), replacement = global('replacement');

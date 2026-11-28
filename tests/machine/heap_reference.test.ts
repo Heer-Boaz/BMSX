@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -208,7 +209,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	restoreCpuCheckpoint(cpu, open);
 	cpu.rootThread.currentFrame!.registers.setInteger(0, 44);
 	restoreCpuCheckpoint(cpu, checkpoint);
-	const restored = asClosure(cpu.getGlobalByKey(key), nativeHeapReference(cpu).gc);
+	const restored = asClosure(readStockGlobalValue(cpu.memory, key), nativeHeapReference(cpu).gc);
 	assert.equal(ClosureRecord.captureAddress(cpu.memory, restored, 0), address);
 	assert.equal(cpu.readClosureUpvalue(restored, 0), valueFloatBits(0xffa12345));
 	nativeHeapReference(cpu).gc.collect();

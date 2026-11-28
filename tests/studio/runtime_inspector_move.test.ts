@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -104,7 +105,7 @@ return true`;
 	const history = new RuntimeGteHistory(f.host.runtime, f.sources, 2);
 	const source = new GteDebuggerInput(history), receiver = new GteDebuggerInput(history);
 	afterTest(t, () => history.dispose());
-	const issueFunction = asClosure(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.find('issue')!), nativeHeapReference(f.cpu).gc);
+	const issueFunction = asClosure(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.find('issue')!), nativeHeapReference(f.cpu).gc);
 	const issue = (word: number) => {
 		f.cpu.beginCompletionCall(issueFunction, [valueInteger(word)]);
 		assert.equal(f.host.runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
@@ -140,7 +141,7 @@ return true`;
 
 test('Events move retains actual selected evidence and reading position in a fresh pane until history clears', t => {
 	const f = inspectorWorkbench(t, compileEventHistoryFixture()), history = f.editor.events;
-	const emit = asClosure(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(f.cpu).gc);
+	const emit = asClosure(readStockGlobalValue(f.cpu.memory, nativeHeapReference(f.cpu).stringPool.find('emit_for_viewer')!), nativeHeapReference(f.cpu).gc);
 	f.cpu.beginCompletionCall(emit, [valueInteger(80)]); runGuestToHalt(f.cpu, 10_000_000);
 	const source = new EventViewerInput(history), receiver = new EventViewerInput(history);
 	f.firstGroup.openEditor(source); f.secondGroup.openEditor(receiver); f.firstGroup.activate(source.id); f.update();

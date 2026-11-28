@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
@@ -39,7 +40,7 @@ test('PLUS history retains accepted operands separately from later writable inpu
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const invoke = (name: string) => {
 		const start = runtime.machine.scheduler.nowCycles;
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc), []);
+		cpu.beginCompletionCall(asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!), nativeHeapReference(cpu).gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 		runtime.machine.scheduler.advanceTo(start + BUDGET - cpu.instructionBudgetRemaining);
 	};

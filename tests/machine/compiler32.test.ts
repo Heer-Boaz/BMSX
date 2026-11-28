@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileHeapServiceSystem, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_execution';
@@ -142,7 +143,7 @@ for (const opt of [3] as const) test(`O${opt}: loop unrolling follows wrapping I
 		const image = linkTestSystemBlua32(compileHeapServiceSystem(`ticks=0;for i=${range} do ticks=ticks+1 end;return ticks`, opt));
 		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 		assert.equal(runCpuWithinBudget(cpu, 20000), RunResult.Yielded);
-		assert.ok(v.asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('ticks')!)) > 3);
+		assert.ok(v.asInteger(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('ticks')!)) > 3);
 	}
 });
 

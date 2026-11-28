@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -88,7 +89,7 @@ for (const optLevel of [0, 3] as const) {
 			activeCycles += grant - cpu.instructionBudgetRemaining;
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			assert.equal(cpu.isHaltedUntilIrq(), phase !== 8);
-			if (phase !== 8) assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fsm_phase')!), valueInteger(phase));
+			if (phase !== 8) assert.equal(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fsm_phase')!), valueInteger(phase));
 			else assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 			const reference = observations[0][phase];
 			assert.equal(activeCycles, reference.activeCycles, `${name} O${optLevel} ${phases[phase]}: exact guest cycles`);
@@ -97,7 +98,7 @@ for (const optLevel of [0, 3] as const) {
 				const image = cpu.rootThread.currentFrame!.executionImage;
 				const cartEnd = CART_ROM_BASE + images.cartRomBytes.length;
 				for (let evaluator = 0; evaluator < (phase >= 5 ? 2 : 1); evaluator++) {
-					const closure = asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), nativeHeapReference(cpu).gc);
+					const closure = asClosure(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), nativeHeapReference(cpu).gc);
 					const binding = cpu.captureClosureBinding(closure);
 					assert.equal(binding.executionDomainId, image.executionDomainId);
 					const address = binding.functionAddress;
@@ -120,7 +121,7 @@ for (const optLevel of [0, 3] as const) {
 					}
 				}
 				if (phase >= 4) {
-					const bindings = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('fsm_bindings')!));
+					const bindings = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('fsm_bindings')!));
 					for (let index = 1; index <= 3; index++)
 						assert.equal(cpu.captureClosureBinding(asClosure(cpu.tables.getInteger(bindings, index), nativeHeapReference(cpu).gc)).functionAddress, primaryFunction);
 				}

@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
@@ -114,7 +115,7 @@ for (const optLevel of [3] as const) test(`model geometry binds ROM streams once
 	const initial = modelCartridge(1.25, 0x100);
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
 	runGuestToHalt(cpu, 10_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')));
 	const read = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('read')), nativeHeapReference(cpu).gc);
 	const observe = () => {
 		runCompletionClosure(cpu, read, []);

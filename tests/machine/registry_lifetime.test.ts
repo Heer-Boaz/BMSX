@@ -1,3 +1,4 @@
+import { readStockGlobalValue } from '../../toolchain/ts/firmware/stock_global_bank';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
@@ -39,7 +40,7 @@ function probe.churn(count)
 end
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 20_000_000);
-	const probe = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.find('probe')!));
+	const probe = valuePayload(readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find('probe')!));
 	const churn = asClosure(cpu.tables.getStringKey(probe, nativeHeapReference(cpu).stringPool.find('churn')!), nativeHeapReference(cpu).gc);
 	let warmed = 0;
 	for (let cycle = 0; cycle < 3; cycle++) {
