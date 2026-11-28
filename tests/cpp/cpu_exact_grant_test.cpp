@@ -436,53 +436,69 @@ void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32>
 
 void exactRegisterJumpGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	test::Blua32TestImage image;
-	image.mappedCode = false;
-	image.text.resize(6u * INSTRUCTION_BYTES);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 3}};
-	// The direct branch gives the receiver an independent published entry.
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 2, 0, 3);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JREG), 0, 0, 1);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 3, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 1, 0, 59);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 3, 0);
-	Machine native(image, false), scalar(image, true);
-	auto& cpu = native.cpu;
-	cpu.prepareSystemNativeCode();
-	const u32 start = native.rom.textAddress;
-	const u32 issue = start + INSTRUCTION_BYTES, link = start + 3u * INSTRUCTION_BYTES;
-	const u32 target = start + 4u * INSTRUCTION_BYTES;
-	const auto& lookup = *cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
-	const auto* page = lookup.find(issue, 0);
-	const auto* source = page && page->nativeBlocks ? page->nativeBlocks->entries[(issue & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get() : nullptr;
-	const auto* entry = lookup.findEntryCellInRoot(lookup.root(0), target);
-	require(source && source->terminal.exit == NativeBlockExit::RegisterJump && entry && *entry,
-		"native register jump has a separately admitted receiver");
-	const auto jump = [&](int cycles) {
-		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], issue);
-			auto& frame = *machine->cpu.activeThread()->currentFrame;
-			frame.registers.set(0, valueFromTag(ValueTag::Float, target)); // A raw payload, not a number conversion.
-			frame.setTop(1);
-		}
-		return test::runCpuParity(cpu, scalar.cpu, cycles);
-	};
-	const int base = BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
-	require(jump(1) == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - base
-		&& cpu.readCurrentInstructionPc() == issue && cpu.lastPc == issue + INSTRUCTION_BYTES
-		&& cpu.readFramePc(0) == target && cpu.readFrameRegister(0, 0) == valueInteger(link),
-		"JREG retires its widened link and target before the expired grant returns");
-	require(jump(base + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + 1) == RunResult::Halted,
-		"a register jump reaches its receiving body in the same grant");
-	const auto result = cpu.readCompletionValues();
-	require(result.size() == 2 && result.get(0) == valueInteger(link) && result.get(1) == valueInteger(59),
-		"the alias reads the target before writing the link, without a new frame");
+	for (const u8 mode : std::array<u8, 2>{0, 1}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(6u * INSTRUCTION_BYTES);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 3}};
+		// The direct branch gives the receiver an independent published entry.
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 2, 0, 3);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::JREG), 0, 0, mode);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::K0), 1, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 1, 0, 59);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 3, 0);
+		Machine native(image, false), scalar(image, true);
+		auto& cpu = native.cpu;
+		cpu.prepareSystemNativeCode();
+		const u32 start = native.rom.textAddress;
+		const u32 issue = start + INSTRUCTION_BYTES, link = start + 3u * INSTRUCTION_BYTES;
+		const u32 target = start + 4u * INSTRUCTION_BYTES;
+		const auto& lookup = *cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
+		const auto* page = lookup.find(issue, 0);
+		const auto* source = page && page->nativeBlocks ? page->nativeBlocks->entries[(issue & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get() : nullptr;
+		const auto* entry = lookup.findEntryCellInRoot(lookup.root(0), target);
+		require(source && source->terminal.exit == NativeBlockExit::RegisterJump && entry && *entry,
+			"native register jump has a separately admitted receiver");
+		const auto jump = [&](int cycles, u32 rawTarget) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], issue);
+				auto& frame = *machine->cpu.activeThread()->currentFrame;
+				frame.registers.set(0, valueFromTag(ValueTag::Float, rawTarget)); // A raw payload, not a number conversion.
+				frame.setTop(0); // Top does not limit access to an admitted register.
+			}
+			return test::runCpuParity(cpu, scalar.cpu, cycles);
+		};
+		const int base = BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
+		const Value r0 = mode == 0 ? valueFromTag(ValueTag::Float, target) : valueInteger(link);
+		require(jump(1, target) == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - base
+			&& cpu.readCurrentInstructionPc() == issue && cpu.lastPc == issue + INSTRUCTION_BYTES
+			&& cpu.readFramePc(0) == target && cpu.readFrameRegister(0, 0) == r0
+			&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == mode,
+			"JREG retires its raw target and any optional link before the expired grant returns");
+		require(jump(base + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)], target) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == target + INSTRUCTION_BYTES,
+			"a register jump reaches its receiving body in the same grant");
+		require(cpu.readFrameRegister(0, 0) == r0 && cpu.readFrameRegister(0, 1) == valueInteger(59),
+			"the target is sampled before the optional aliased link, without a new frame");
+		const auto* cold = lookup.findEntryCellInRoot(lookup.root(0), link);
+		require(!cold || !*cold, "the indirect fallthrough has no resident native cell");
+		require(jump(base + BASE_CYCLES[static_cast<u8>(OpCode::K0)], link) == RunResult::Yielded
+			&& cpu.readFramePc(0) == target && cpu.readFrameRegister(0, 1) == valueInteger(0),
+			"a missing receiver cell still retires the jump and runs the receiving instruction");
+		jump(base + 1, target + 1u);
+		const auto fault = cpu.captureRuntimeState();
+		require((fault.causeWord & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD
+			&& fault.badAddressWord == target + 1u && fault.epcWord == issue,
+			"an unaligned raw target is a precise fault even when its aligned entry is resident");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto& profile = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::RegisterJump)];
-	require(profile.entries == 2 && profile.resumes == 1 && profile.returns == 1,
-		"the positive grant resumes published machine code; the expired one does not");
+		const auto& gate = cpu.nativeGateProfile();
+		const auto& profile = gate.exits[static_cast<size_t>(NativeBlockExit::RegisterJump)];
+		require(profile.entries == 4 && profile.resumes == 1 && profile.returns == 3 && profile.exceptions == 1
+			&& gate.directRegisterJumpResumes == 1,
+			"the positive grant jumps directly to published machine code without the cold helper");
 #endif
+	}
 #endif
 }
 

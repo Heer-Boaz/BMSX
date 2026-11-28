@@ -403,7 +403,7 @@ private:
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
-	static void* dispatchNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 target) noexcept;
+	static void retireNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 target) noexcept;
 	static NativeBuiltinCallOutcome runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	static void* tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 builtinWord) noexcept;
 	void compileNativeRoot(Blua32ExecutionImage&, u32 functionAddress, DecodedInstructionPage&, u32 pc, MappedBusSignals);

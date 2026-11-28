@@ -30,6 +30,9 @@ enum class NativeBuiltinCallOutcome : u32 {
 // shared with the standalone block ABI; only the CPU dispatcher uses the tail.
 struct NativeCpuRunState {
 	NativeCpuRunState(CPU& cpu, int targetDepth);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	~NativeCpuRunState();
+#endif
 	void enterFrame(CallFrame& frame, int budget);
 	struct Replay {
 		u32 pc;
@@ -39,6 +42,7 @@ struct NativeCpuRunState {
 	CPU* cpu;
 	int targetDepth;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
+	u32 registerJumpLimit;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;
 	size_t nativeStackCapacity = 0;
@@ -53,6 +57,9 @@ struct NativeCpuRunState {
 	std::exception_ptr error;
 	std::optional<Replay> replay{};
 	std::optional<u32> hotSidePc{};
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	u32 directRegisterJumpResumes = 0;
+#endif
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

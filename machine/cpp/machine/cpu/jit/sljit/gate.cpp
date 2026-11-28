@@ -5,6 +5,7 @@
 #include <new>
 #include "common/scope_exit.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/jit/runtime/execution.h"
 #if defined(BMSX_NATIVE_PERF_MAP)
 #include "machine/cpu/jit/runtime/perf_map.h"
 #endif
@@ -13,6 +14,68 @@ namespace bmsx {
 namespace {
 // Valid only when NativeBlockAbi::pinnedRam; on ARMv7 S4 is a cached word register.
 constexpr sljit_s32 PINNED_RAM = SLJIT_S4;
+
+sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, sljit_uw retire) {
+	constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
+	constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
+	constexpr auto ptrShift = std::countr_zero(sizeof(void*));
+	constexpr auto instructionShift = std::countr_zero(static_cast<u32>(INSTRUCTION_BYTES));
+	constexpr auto wordShift = std::countr_zero(sizeof(u32));
+	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+	constexpr auto link = offsetof(NativeBlockExitSite, operands) + offsetof(NativeExitOperands::RegisterJump, link);
+	static_assert(offsetof(NativeCodeLookup::Group, pages) == 0 && offsetof(NativeCodeLookup::DispatchPage, code) == 0);
+
+	// R0 is the exit descriptor and R2 the sampled raw target until the
+	// installed receiving cell admits transfer within the same native grant.
+	auto* entry = sljit_emit_label(c);
+	auto* expired = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, INSTRUCTION_BYTES - 1u);
+	auto* unaligned = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
+	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R2, 0,
+		SLJIT_MEM1(state), offsetof(NativeCpuRunState, registerJumpLimit));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(state), offsetof(NativeCpuRunState, codeRoot));
+	sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, NativeCodeLookup::ROOT_SHIFT);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), ptrShift);
+	auto* noGroup = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, NativeCodeLookup::GROUP_PAGES - 1u);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), ptrShift);
+	auto* noPage = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_MASK);
+	sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, instructionShift);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), ptrShift);
+	auto* noCode = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
+
+	sljit_emit_op1(c, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), link);
+	auto* jumpOnly = sljit_emit_cmp(c, SLJIT_SIG_LESS, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, nextPc));
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM2(words, SLJIT_R1), wordShift, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM2(tags, SLJIT_R1), 0, SLJIT_IMM, static_cast<int>(ValueTag::Integer));
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	auto* retainedTop = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32,
+		SLJIT_MEM1(state), top, SLJIT_R1, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R1, 0);
+	auto* resume = sljit_emit_label(c);
+	sljit_set_label(jumpOnly, resume);
+	sljit_set_label(retainedTop, resume);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	constexpr auto count = offsetof(NativeCpuRunState, directRegisterJumpResumes);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(state), count, SLJIT_MEM1(state), count, SLJIT_IMM, 1);
+#endif
+	sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_R3, 0);
+
+	auto* cold = sljit_emit_label(c);
+	for (auto* miss : {expired, unaligned, outside, noGroup, noPage, noCode}) sljit_set_label(miss, cold);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, remainingCycles), budget, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, state, 0);
+	sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, P, 32), SLJIT_IMM, retire);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), returned);
+	return entry;
+}
 } // namespace
 
 void NativeBlockAbi::emitRamAddress(sljit_compiler* compiler, sljit_s32 destination, sljit_s32 offset) {
@@ -114,16 +177,7 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
-	auto* registerJumpEntry = sljit_emit_label(compiler);
-	// R2 carries the sampled raw target. A receiving entry retains the same
-	// window, bank, and budget, so it need not pass through bindWindow.
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_R0, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, NativeBlockAbi::state, 0);
-	sljit_emit_icall(compiler, SLJIT_CALL, SLJIT_ARGS3(P, P, P, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::dispatchNativeRegisterJump));
-	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), returned);
-	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R0, 0);
+	auto* registerJumpEntry = emitRegisterJumpGate(compiler, returned, SLJIT_FUNC_ADDR(&CPU::retireNativeRegisterJump));
 	auto* stringProbe = emitStringReadProbe(compiler);
 	auto* ownSlot = emitOwnStringSlotProbe(compiler);
 	auto* indexProbe = emitIndexReadProbe(compiler);

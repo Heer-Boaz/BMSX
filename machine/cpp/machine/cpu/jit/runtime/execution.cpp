@@ -14,6 +14,16 @@ NativeCpuRunState::NativeCpuRunState(CPU& owner, int depth)
 	state.ram = owner.m_memory.ramData();
 }
 
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+NativeCpuRunState::~NativeCpuRunState() {
+	auto& profile = cpu->m_nativeGateProfile;
+	auto& jumps = profile.exits[static_cast<size_t>(NativeBlockExit::RegisterJump)];
+	jumps.entries += directRegisterJumpResumes;
+	jumps.resumes += directRegisterJumpResumes;
+	profile.directRegisterJumpResumes += directRegisterJumpResumes;
+}
+#endif
+
 // Entry from scalar execution. A native-to-native edge already has the
 // grant and transfers only the activation state affected by that edge.
 void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
@@ -27,6 +37,9 @@ void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
 	haltedCallDepth = cpu->m_haltedUntilIrqThreadAddress == thread.address ? cpu->m_haltedUntilIrqFrameDepth : -1;
 	cartridgeSlot = cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
 	codeRoot = image.nativeCodeLookup->root(cartridgeSlot);
+	static_assert(SYSTEM_ROM_BASE == 0u);
+	// With aligned destinations, all 32-bit PCs are below UINT32_MAX.
+	registerJumpLimit = thread.address == CPU_RESET_BANK_ADDRESS ? SYSTEM_ROM_SIZE : UINT32_MAX;
 	state.constants = image.constPool;
 	state.frame = &frame;
 	state.remainingCycles = budget;
