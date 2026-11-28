@@ -66,7 +66,7 @@ test('fixed stack follows both linked register returns without allocating anothe
 	writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
 	const { image } = linkRawTestSystemBlua32({
 		text, verifiedControlFlow: true, constants: [integerConstant(0)],
-		functions: [{ firstWord: 0, wordCount: 9, numParams: 1, maxStack: 3 }, { firstWord: 9, wordCount: 1 }],
+		functions: [{ firstWord: 0, wordCount: 9, numParams: 1, maxStack: 3 }, { firstWord: 9, wordCount: 1, maxStack: 2 }],
 	});
 	const address = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
 	writeLE32(image.bytes, address, image.functions[0].codeAddress + 7 * INSTRUCTION_BYTES);
@@ -80,6 +80,83 @@ test('fixed stack follows both linked register returns without allocating anothe
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
 	writeInstruction(image.textBytes, 7, OpCode.MOV, 2, 1, ValueMoveKind.Copy);
 	writeLE32(image.bytes, address, image.functions[1].codeAddress);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /register link has not returned to the owning frame/);
+});
+
+test('linked TEXT uses one physical frame across nested register bases', () => {
+	const text = new Uint8Array(10 * INSTRUCTION_BYTES);
+	// The parent link remains in physical R2 while the nested leaf borrows R3 onward.
+	writeInstruction(text, 0, OpCode.MOV, 63, 2, ValueMoveKind.AddBase);
+	writeInstruction(text, 1, OpCode.JAL, 0, 0, 2);
+	writeInstruction(text, 2, OpCode.MOV, 63, 62, ValueMoveKind.AddBase, 56);
+	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.MOV, 63, 1, ValueMoveKind.AddBase);
+	writeInstruction(text, 5, OpCode.JAL, 0, 0, 2);
+	writeInstruction(text, 6, OpCode.MOV, 63, 63, ValueMoveKind.AddBase, 56);
+	writeInstruction(text, 7, OpCode.JREG, 0, 0, RegisterJumpMode.Jump);
+	writeInstruction(text, 8, OpCode.MOV, 2, 0, ValueMoveKind.Copy);
+	writeInstruction(text, 9, OpCode.JREG, 2, 0, RegisterJumpMode.Jump);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 6 },
+			{ firstWord: 4, wordCount: 4, maxStack: 4 },
+			{ firstWord: 8, wordCount: 2, maxStack: 3 },
+		] });
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 6, frames: 1 });
+	writeInstruction(image.textBytes, 8, OpCode.MOV, 3, 0, ValueMoveKind.Copy);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /destination exceeds the function record/);
+	writeInstruction(image.textBytes, 8, OpCode.MOV, 2, 0, ValueMoveKind.Copy);
+	writeInstruction(image.textBytes, 2, OpCode.MOV, 0, 61, ValueMoveKind.AddBase, 56);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /basis exceeds the admitted frame/);
+});
+
+test('fixed TEXT uses high link slots without changing the basis or clobbering the caller link', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JAL, 1, 0, 1);
+	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 2, OpCode.JAL, 3, 0, 1);
+	writeInstruction(text, 3, OpCode.JREG, 1, 0, RegisterJumpMode.Jump);
+	writeInstruction(text, 4, OpCode.K1, 4, 0, 0);
+	writeInstruction(text, 5, OpCode.JREG, 3, 0, RegisterJumpMode.Jump);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [
+			{ firstWord: 0, wordCount: 2, maxStack: 5 },
+			{ firstWord: 2, wordCount: 2, maxStack: 5 },
+			{ firstWord: 4, wordCount: 2, maxStack: 5 },
+		] });
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 5, frames: 1 });
+	writeInstruction(image.textBytes, 4, OpCode.K1, 1, 0, 0);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
+	writeInstruction(image.textBytes, 4, OpCode.MOV, 1, 0, ValueMoveKind.SetTopImmediate);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
+});
+
+test('a finite linked register jump uses the same extent for each TEXT target', () => {
+	const text = new Uint8Array(12 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JMPIF, 0, 0, 2);
+	writeInstruction(text, 1, OpCode.LOADK, 2, 0, 0);
+	writeInstruction(text, 2, OpCode.JMP, 0, 0, 1);
+	writeInstruction(text, 3, OpCode.LOADK, 2, 0, 1);
+	writeInstruction(text, 4, OpCode.MOV, 0, 2, ValueMoveKind.AddBase);
+	writeInstruction(text, 5, OpCode.JREG, 0, 0, RegisterJumpMode.Link);
+	writeInstruction(text, 6, OpCode.MOV, 0, 62, ValueMoveKind.AddBase, 56);
+	writeInstruction(text, 7, OpCode.RET, 0, 1, 0);
+	for (const entry of [8, 10]) {
+		writeInstruction(text, entry, OpCode.MOV, 1, 0, ValueMoveKind.Copy);
+		writeInstruction(text, entry + 1, OpCode.JREG, 1, 0, RegisterJumpMode.Jump);
+	}
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		constants: [integerConstant(0), integerConstant(0)],
+		functions: [
+			{ firstWord: 0, wordCount: 8, numParams: 1, maxStack: 4 },
+			{ firstWord: 8, wordCount: 2, maxStack: 2 },
+			{ firstWord: 10, wordCount: 2, maxStack: 2 },
+		] });
+	const constants = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
+	for (let i = 0; i < 2; ++i)
+		writeLE32(image.bytes, constants + i * BLUA32_CONSTANT_RECORD_SIZE, image.functions[i + 1].codeAddress);
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 4, frames: 1 });
+	writeInstruction(image.textBytes, 5, OpCode.JREG, 0, 0, RegisterJumpMode.Jump);
 	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
 });
 
@@ -242,6 +319,20 @@ test('fixed stack permits a zero-register borrowed window at the parent boundary
 		functions: [{ firstWord: 0, wordCount: 6, maxStack: 4 }, { firstWord: 6, wordCount: 1, maxStack: 0 }] });
 	writeLE32(image.bytes, image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET, image.functions[1].codeAddress);
 	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 4, frames: 2 });
+});
+
+test('fixed stack admits a WIDE immediate frontier at exactly the full window width', () => {
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.WIDE, 1, 0, 0);
+	// B decodes as 511, outside the window; this mode does not read it.
+	writeInstruction(text, 1, OpCode.MOV, 0, 63, ValueMoveKind.SetTopImmediate, 7 << 3);
+	writeInstruction(text, 2, OpCode.RET, 0, 1, 0);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 3, maxStack: 256 }] });
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 256, frames: 1 });
+
+	writeInstruction(image.textBytes, 1, OpCode.MOV, 1, 63, ValueMoveKind.SetTopImmediate, 7 << 3);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /frontier exceeds the owning register window/);
 });
 
 test('an ordinary vector inspecting a tag does not retain a callable proof', () => {

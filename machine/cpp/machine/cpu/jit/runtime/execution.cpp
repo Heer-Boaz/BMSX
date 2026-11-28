@@ -5,6 +5,20 @@
 
 namespace bmsx {
 
+void NativeBlockRunState::readWindow(const CallFrame& frame) noexcept {
+	physicalTop = frame.readAdmittedWindow(FrameField::Top);
+	registerBase = frame.registerBase();
+	stackOrigin = frame.readAdmittedWindow(FrameField::StackBase);
+	windowWidth = frame.readAdmittedWindow(FrameField::StackCapacity);
+}
+
+void NativeBlockRunState::publishRegisterBase() const noexcept {
+	if (registerBase == frame->registerBase()) return;
+	frame->m_registerBase = registerBase;
+	frame->registers = frame->thread->stack.linearSubspan(stackOrigin + registerBase, windowWidth - static_cast<size_t>(registerBase));
+	if (!frame->pendingNativeCall) frame->writeAdmittedControl(FrameField::RegisterBase, registerBase);
+}
+
 NativeCpuRunState::NativeCpuRunState(CPU& owner, int depth)
 	: cpu(&owner), targetDepth(depth) {
 	state.memory = &owner.m_memory;
@@ -47,9 +61,8 @@ void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
 	state.constants = image.constPool;
 	state.frame = &frame;
 	state.remainingCycles = budget;
-	state.registerTop = frame.readWindow(FrameField::Top);
+	state.readWindow(frame);
 	state.closure = frame.closureAddress();
-	state.stackBase = frame.stackBase();
 	state.frameDepth = thread.frameDepth();
 	state.exitCode = nativeBlockGate().dispatch;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

@@ -39,6 +39,10 @@ struct OperationName {
 		case ValueMoveKind::ReadIndexed: return "read-indexed-slot";
 		case ValueMoveKind::WriteIndexed: return "write-indexed-slot";
 		case ValueMoveKind::SetTop: return "set-top";
+		case ValueMoveKind::SetTopImmediate: return "set-top-immediate";
+		case ValueMoveKind::ReadBase: return "read-basis";
+		case ValueMoveKind::SetBase: return "set-basis";
+		case ValueMoveKind::AddBase: return "add-basis";
 		default: BMSX_UNREACHABLE();
 		}
 	}

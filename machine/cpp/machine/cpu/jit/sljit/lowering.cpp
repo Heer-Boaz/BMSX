@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <new>
+#include "machine/cpu/call_state.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/instruction_format.h"
 
@@ -194,12 +195,53 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 void NativeLowering::lowerOperation(const NativeWindowMove& move, const NativeInstruction& row) {
 	auto* c = m_compiler;
 	constexpr auto state = NativeBlockAbi::state, words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
-	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
-	constexpr auto capacity = offsetof(NativeBlockRunState, registerCapacity);
+	constexpr auto top = offsetof(NativeBlockRunState, physicalTop);
+	constexpr auto width = offsetof(NativeBlockRunState, windowWidth);
+	constexpr auto basis = offsetof(NativeBlockRunState, registerBase);
 	if (move.kind == ValueMoveKind::ReadTop) {
 		emitTop(move.prefixTop);
 		const auto result = m_cache.write(move.a, ValueTag::Integer);
-		sljit_emit_op1(c, SLJIT_MOV32, result.reg, 0, SLJIT_MEM1(state), top);
+		sljit_emit_op2(c, SLJIT_SUB32, result.reg, 0, SLJIT_MEM1(state), top, SLJIT_MEM1(state), basis);
+		auto* nonnegative = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, result.reg, 0, SLJIT_IMM, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, result.reg, 0, SLJIT_IMM, 0);
+		sljit_set_label(nonnegative, sljit_emit_label(c));
+		return;
+	}
+	if (move.kind == ValueMoveKind::ReadBase) {
+		const auto result = m_cache.write(move.a, ValueTag::Integer);
+		sljit_emit_op1(c, SLJIT_MOV32, result.reg, 0, SLJIT_MEM1(state), basis);
+		return;
+	}
+	if (move.kind == ValueMoveKind::SetBase || move.kind == ValueMoveKind::AddBase) {
+		const bool relative = move.kind == ValueMoveKind::AddBase;
+		const int displacement = static_cast<i16>(move.b);
+		emitTop(move.prefixTop);
+		if (!relative) emitPayload(move.b, SLJIT_R2);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(state), basis);
+		if (relative)
+			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, displacement);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(state), width), *sideExit(row.slow), m_cache.state());
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), basis, SLJIT_R2, 0);
+		if (!relative) {
+			m_cache.publish();
+			m_cache.discardRange(0, std::numeric_limits<int>::max());
+			sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_R1, 0);
+			sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R2, 0, SLJIT_R2, 0);
+		} else {
+			m_cache.rebase(displacement);
+		}
+		const auto delta = relative ? SLJIT_IMM : SLJIT_R2;
+		const auto offset = relative ? displacement : 0;
+		sljit_emit_op2(c, SLJIT_ADD, tags, 0, tags, 0, delta, offset);
+		if (!relative) sljit_emit_op2(c, SLJIT_SHL, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
+		sljit_emit_op2(c, SLJIT_ADD, words, 0, words, 0, delta, 4 * offset);
+		return;
+	}
+	if (move.kind == ValueMoveKind::SetTopImmediate) {
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(state), basis, SLJIT_IMM, move.a);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(state), width),
+			*sideExit(row.slow), m_cache.state());
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R1, 0);
 		return;
 	}
 	const bool indexedWrite = move.kind == ValueMoveKind::WriteIndexed;
@@ -208,16 +250,18 @@ void NativeLowering::lowerOperation(const NativeWindowMove& move, const NativeIn
 	// the physical identity of any cached destination after sampling both inputs.
 	if (!setsTop) m_cache.publish();
 	emitPayload(indexedWrite ? move.a : move.b, SLJIT_R2);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(state), width, SLJIT_MEM1(state), basis);
 	fault(sljit_emit_cmp(c, (setsTop ? SLJIT_GREATER : SLJIT_GREATER_EQUAL) | SLJIT_32,
-		SLJIT_R2, 0, SLJIT_MEM1(state), capacity), *sideExit(row.slow), m_cache.state());
+		SLJIT_R2, 0, SLJIT_R1, 0), *sideExit(row.slow), m_cache.state());
 	if (setsTop) {
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R2, 0);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(state), top, SLJIT_MEM1(state), basis, SLJIT_R2, 0);
 	} else if (indexedWrite) {
 		emitRawLoad(move.b, SLJIT_R0, SLJIT_R1);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM2(words, SLJIT_R2), 2, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM2(tags, SLJIT_R2), 0, SLJIT_R1, 0);
 		m_cache.discardRange(0, std::numeric_limits<int>::max());
 		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_MEM1(state), basis);
 		auto* retained = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32,
 			SLJIT_MEM1(state), top, SLJIT_R2, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R2, 0);

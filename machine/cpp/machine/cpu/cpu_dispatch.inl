@@ -22,9 +22,29 @@ DISPATCH_LABEL(MOV) {
 	} else {
 		const auto& registers = FRAME.registers;
 		if (kind == ValueMoveKind::ReadTop && registers.containsRange(a, 1)) {
-			const int before = Instrumented ? FRAME.readWindow(FrameField::Top) : registerTop;
-			SET_REGISTER_FAST(a, valueInteger(before));
+			const int before = Instrumented ? FRAME.registerTop() : registerTop;
+			SET_REGISTER_FAST(a, valueInteger(std::max(before, 0)));
 			DISPATCH_NEXT();
+		}
+		if (kind == ValueMoveKind::ReadBase && registers.containsRange(a, 1)) {
+			SET_REGISTER_FAST(a, valueInteger(FRAME.registerBase()));
+			DISPATCH_NEXT();
+		}
+		if ((kind == ValueMoveKind::SetBase && registers.containsRange(b, 1)) || kind == ValueMoveKind::AddBase) {
+			const int oldBase = FRAME.registerBase();
+			const u32 base = kind == ValueMoveKind::SetBase ? registers.payload(b)
+				: static_cast<u32>(oldBase + b);
+			const int width = FRAME.readWindow(FrameField::StackCapacity);
+			if (base <= static_cast<u32>(width)) {
+				const int selected = static_cast<int>(base);
+				FRAME.setRegisterBase(selected, width);
+				if constexpr (!Instrumented) {
+					// Both frontiers still denote the same physical slot.
+					registerTop += oldBase - selected;
+					publishedTop += oldBase - selected;
+				}
+				DISPATCH_NEXT();
+			}
 		}
 		if (kind == ValueMoveKind::ReadIndexed && registers.containsRange(a, 1) && registers.containsRange(b, 1)) {
 			const u32 source = registers.payload(b);
@@ -40,8 +60,8 @@ DISPATCH_LABEL(MOV) {
 				DISPATCH_NEXT();
 			}
 		}
-		if (kind == ValueMoveKind::SetTop && registers.containsRange(b, 1)) {
-			const u32 top = registers.payload(b);
+		if (kind == ValueMoveKind::SetTopImmediate || (kind == ValueMoveKind::SetTop && registers.containsRange(b, 1))) {
+			const u32 top = kind == ValueMoveKind::SetTopImmediate ? static_cast<u32>(a) : registers.payload(b);
 			if (top <= registers.size()) {
 				if constexpr (Instrumented) FRAME.setTop(static_cast<int>(top));
 				else registerTop = static_cast<int>(top);

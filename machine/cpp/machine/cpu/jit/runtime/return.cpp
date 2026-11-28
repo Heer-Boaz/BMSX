@@ -9,6 +9,7 @@ namespace bmsx {
 
 void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& state = run->state;
+	state.publishRegisterBase();
 	auto& leaving = *state.frame;
 	auto* caller = leaving.previous;
 	const auto* pending = leaving.pendingNativeCall;
@@ -32,7 +33,7 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 
 	const auto& returned = exit->operands.returned;
 	const int source = returned.first;
-	const int produced = returned.produced < 0 ? std::max(state.registerTop - source, 0) : returned.produced;
+	const int produced = returned.produced < 0 ? std::max(state.physicalTop - state.registerBase - source, 0) : returned.produced;
 	const auto result = pending
 		? CallResultPlacement::call(pending->operands.call.callee, pending->operands.call.requested)
 		: CallResultPlacement::frame(leaving.readAdmittedWindow(FrameField::ReturnBase),
@@ -54,22 +55,25 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	// Place the return once even if the caller's next instruction needs
 	// scalar dispatch. The admitted stack needs no growth or bus access.
 	caller->registers.placeAdmitted(result.base, leaving.registers, source, placement.copied, placement.padded);
+	const int resultTop = caller->registerBase() + extent;
 	const int nextTop = result.extendsTop()
-		? result.topAfter(caller->readAdmittedWindow(FrameField::Top), count) : extent;
+		? std::max(caller->readAdmittedWindow(FrameField::Top), resultTop) : resultTop;
 	if (pending) {
-		run->writePendingFrame(leaving, exit->nextPc, state.registerTop);
+		run->writePendingFrame(leaving, exit->nextPc, state.physicalTop);
 		if (run->firstPendingFrame == &leaving) run->firstPendingFrame = nullptr;
 		thread.discardPendingFrame(leaving);
 	} else {
 		leaving.writeAdmittedControl(FrameField::Pc, exit->nextPc);
-		leaving.setAdmittedTop(state.registerTop);
+		leaving.setAdmittedPhysicalTop(state.physicalTop);
 		thread.retireAdmittedFrame(leaving, *caller, receivingDepth);
 	}
 	state.frame = caller;
 	state.frameDepth = receivingDepth;
-	state.registerTop = nextTop;
+	state.physicalTop = nextTop;
 	state.closure = caller->pendingNativeCall ? caller->pendingNativeClosure : caller->readAdmittedControl(FrameField::Closure);
-	state.stackBase = caller->pendingNativeCall ? caller->pendingNativeStackBase : caller->readAdmittedWindow(FrameField::StackBase);
+	state.registerBase = caller->registerBase();
+	state.stackOrigin = caller->pendingNativeCall ? caller->pendingNativeStackBase : caller->readAdmittedWindow(FrameField::StackBase);
+	state.windowWidth = static_cast<u32>(caller->registers.size()) + static_cast<u32>(state.registerBase);
 	state.remainingCycles -= count;
 	if (target) return target;
 	void* const scalar = resumeScalarAfterNativeTransfer(*run, *exit, pc);

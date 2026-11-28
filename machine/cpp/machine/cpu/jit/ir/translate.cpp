@@ -16,6 +16,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 		case ValueMoveKind::Tag: case ValueMoveKind::Payload:
 			return NativeMove{a, b, static_cast<ValueMoveKind>(c)};
 		case ValueMoveKind::ReadTop: case ValueMoveKind::ReadIndexed: case ValueMoveKind::WriteIndexed: case ValueMoveKind::SetTop:
+		case ValueMoveKind::ReadBase: case ValueMoveKind::SetBase: case ValueMoveKind::AddBase: case ValueMoveKind::SetTopImmediate:
 			return NativeWindowMove{a, static_cast<u16>(b), static_cast<ValueMoveKind>(c)};
 		}
 		return NativeReplay{};

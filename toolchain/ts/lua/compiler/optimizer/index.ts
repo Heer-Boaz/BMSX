@@ -64,6 +64,8 @@ export type Instruction = {
 	/** Static capture descriptors read by a firmware binding on this frame. */
 	boundFunctionProto?: number;
 	symbolicReloc?: ProgramCodeFunctionTarget;
+	/** Same-image JAL target selected after register allocation. */
+	jumpProtoIndex?: number;
 	statementRange?: SourceRange;
 	resumeRange?: SourceRange;
 	/** Stable continuation role for compiler-generated code without authored statements. */

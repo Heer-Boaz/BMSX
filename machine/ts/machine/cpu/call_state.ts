@@ -9,7 +9,7 @@ import type { Memory } from '../memory/memory';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { decodeValueCount, encodeFixedValueCount } from '../../spec/blua32/opcode';
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, RegisterBase = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export const FRAME_CONTROL_BYTES = 56;
 export const FRAME_WINDOW_MASK = (MAIN_RAM_SIZE >>> 2) - 1;
 export const CALL_RESULT_EXTEND_TOP = 0x80000000;
@@ -44,6 +44,7 @@ export function writeFrameEntryControl(memory: Memory, offset: number, fn: numbe
 	writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 	writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
 	writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
+	writeLE32(ram, (offset + FrameField.RegisterBase) & RAM_RECORD_WORD_MASK, 0);
 	const bank = frameBankWord(domain);
 	const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
 	writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
@@ -75,6 +76,9 @@ export class CallFrame {
 	public compilationEntry = true;
 	public get stackBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackBase) & FRAME_WINDOW_MASK; }
 	public get stackCapacity(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackCapacity) & FRAME_WINDOW_MASK; }
+	private activeRegisterBase = 0;
+	public get registerBase(): number { return this.activeRegisterBase; }
+	public get registerStackBase(): number { return this.stackBase + this.activeRegisterBase; }
 	public controlOffset = 0;
 
 	public constructor(public readonly thread: Thread, public previous: CallFrame | null, public readonly controlMemory: Memory) {}
@@ -94,13 +98,24 @@ export class CallFrame {
 		varargBase: number, argumentCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
 		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, argumentCount,
 			returnBase, returnCount, top, closureAddress, base, capacity);
+		this.activeRegisterBase = 0;
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
+	}
+	public rebindRegisters(): void {
+		const base = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.RegisterBase) & FRAME_WINDOW_MASK;
+		this.activeRegisterBase = base;
+		this.registers.rebind(this.thread.stackRegisters, this.stackBase + base, this.stackCapacity - base);
+	}
+	public setRegisterBase(base: number, capacity: number): void {
+		this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.RegisterBase, base);
+		this.activeRegisterBase = base;
+		this.registers.rebind(this.thread.stackRegisters, this.stackBase + base, capacity - base);
 	}
 	public growRegisterWindow(capacity: number): void {
 		const memory = this.controlMemory, address = (this.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK;
 		writeLE32(memory.ramData(), address, (memory.readRamRecordWord(address) & ~FRAME_WINDOW_MASK) | capacity);
 		const base = this.stackBase;
-		this.registers.rebind(this.thread.stackRegisters, base, capacity);
+		this.registers.rebind(this.thread.stackRegisters, base + this.activeRegisterBase, capacity - this.activeRegisterBase);
 		if (this === this.thread.currentFrame) this.thread.stackTop = base + capacity;
 		memory.invalidateRamWrite(address, 4);
 	}
@@ -123,10 +138,11 @@ export class CallFrame {
 	public setCallResultTop(end: number, word: number): void {
 		if ((word & CALL_RESULT_EXTEND_TOP) === 0 || end > this.top) this.top = end;
 	}
-	public get top(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Top) & FRAME_WINDOW_MASK; }
+	// Top is stored relative to the enclosing span, not to its selected register base.
+	public get top(): number { return (this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Top) & FRAME_WINDOW_MASK) - this.activeRegisterBase; }
 	public set top(word: number) {
 		const address = this.controlOffset + FrameField.Top;
-		this.controlMemory.writeRamRecordWord(address, (this.controlMemory.readRamRecordWord(address) & ~FRAME_WINDOW_MASK) | word);
+		this.controlMemory.writeRamRecordWord(address, (this.controlMemory.readRamRecordWord(address) & ~FRAME_WINDOW_MASK) | (this.activeRegisterBase + word));
 	}
 	public get pc(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Pc); }
 	public set pc(word: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Pc, word); }

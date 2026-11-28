@@ -116,7 +116,8 @@ void CPU::decodeInstructionWords(
 		decoded.baseCycles = BASE_CYCLES[op];
 		decoded.a = static_cast<uint16_t>((wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow);
 		const u8 rkOperands = OPCODE_RK_OPERANDS[op];
-		decoded.b = static_cast<int16_t>((rkOperands & RK_OPERAND_B) != 0u
+		const bool signedBase = op == static_cast<u8>(OpCode::MOV) && rawC == static_cast<u32>(ValueMoveKind::AddBase);
+		decoded.b = static_cast<int16_t>(((rkOperands & RK_OPERAND_B) != 0u || signedBase)
 			? signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS))
 			: static_cast<int32_t>(rawB));
 		decoded.c = static_cast<int16_t>((rkOperands & RK_OPERAND_C) != 0u

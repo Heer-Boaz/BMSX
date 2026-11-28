@@ -2,7 +2,7 @@
 // dispatcher without duplicating their semantic owner.
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requested) {
-	const int argCount = supplied < 0 ? std::max(frame.readWindow(FrameField::Top) - a - 1, 0) : supplied;
+	const int argCount = supplied < 0 ? std::max(frame.registerTop() - a - 1, 0) : supplied;
 	if (static_cast<size_t>(a) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const auto result = CallResultPlacement::call(a, requested);
 	const Value callee = frame.registers.get(a);
@@ -43,7 +43,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		const int skip = static_cast<int>(std::min(static_cast<u32>(extras), valuePayload(start)));
 		first = argumentBase + skip - stackBase;
 		available = extras - skip;
-	} else available = std::max(frame.readWindow(FrameField::Top) - a, 0);
+	} else available = std::max(frame.registerTop() - a, 0);
 	const int count = produced < 0 ? available : fromArguments ? std::min(produced, available) : produced;
 	const auto admitSource = [&](int copied) {
 		if (!fromArguments && !frame.registers.containsRange(a, copied)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -77,7 +77,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		}
 		if (capacity != 0) caller.growRegisterWindow(capacity);
 		const int source = stackBase + first;
-		const int top = !result.extendsTop() || end > caller.readWindow(FrameField::Top) ? end : -1;
+		const int top = !result.extendsTop() || end > caller.registerTop() ? end : -1;
 		placeRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top);
 	}
 	m_activeThread->leaveFrame();
@@ -89,7 +89,7 @@ inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {
 	const int available = frame.varargCount();
 	const auto placement = ValuePlacement::fit(available, requested < 0 ? available : requested);
 	const int count = placement.count(), end = a + count;
-	const int top = requested < 0 || (count != 0 && end > frame.readWindow(FrameField::Top)) ? end : -1;
+	const int top = requested < 0 || (count != 0 && end > frame.registerTop()) ? end : -1;
 	if (count == 0) {
 		if (top >= 0) frame.setTop(top);
 		return false;

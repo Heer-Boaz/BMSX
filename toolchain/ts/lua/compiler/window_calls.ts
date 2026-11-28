@@ -18,15 +18,17 @@ import { lowerWindowVararg, WINDOW_VARARG_SCRATCH_WORDS } from './window_varargs
 const RAW_WINDOW_CONTROL_WORDS = 3;
 
 type Body = { proto: Proto; instructions: readonly Instruction[] };
-type CallSite = { caller: number; instruction: number; producer: number; targets: readonly number[] };
+type CallSite = { caller: number; instruction: number; producer: number; targets: readonly number[]; targetLive: readonly number[] };
 type ResultRange = { min: number; max: number };
 type BodyReturns = ResultRange & {
-	forwarded: number[]; suffixes: Map<number, number>; observesCount: boolean; variadic: boolean; varargScratch: boolean;
+	forwarded: number[]; suffixes: Map<number, number>; observesCount: boolean; variadic: boolean; hasOpenVararg: boolean;
 };
 type WindowLayout = ResultRange & {
 	top: number; width: number; sealed: boolean; bias: number; parameters: number; observesCount: boolean; extras: ResultRange; scratch: number;
+	direct: boolean; discardResults: boolean; publishesCount: boolean; placement: number;
 };
-type WindowCall = { callee: WindowLayout; supplied: ResultRange };
+type WindowCall = { callee: WindowLayout; supplied: ResultRange; directTarget?: number };
+type WindowCallSite = WindowCall & { targets: readonly number[]; targetLive: readonly number[] };
 type CallEdge = { targets: readonly WindowCandidate[]; site: CallSite };
 type WindowCandidate = StronglyConnectedNode<WindowCandidate> & {
 	protoIndex: number;
@@ -41,6 +43,12 @@ export type WindowBodyLowering = {
 	starts: number[];
 	maxStack: number;
 	registerBias: number;
+	softwareEntry: boolean;
+	softwareCalls: readonly {
+		origin: number; start: number; jump: number; end: number; baseDelta: number;
+		targets: readonly number[]; targetLive: readonly number[];
+	}[];
+	linkSlots: readonly { instruction: number; slot: number }[];
 };
 
 export type WindowCallLowering = {
@@ -52,7 +60,7 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 	if (proto.upvalueDescs.length !== 0 || !proto.staticClosure || proto.maxStack > MAX_EXT_REGISTER_A) return;
 	const forwarded: number[] = [];
 	const suffixes = new Map<number, number>();
-	let observesCount = false, variadic = false, varargScratch = false;
+	let observesCount = false, variadic = false, hasOpenVararg = false;
 	let min = Infinity, max = -1;
 	for (let i = 0; i < instructions.length; ++i) {
 		const instruction = instructions[i];
@@ -69,7 +77,6 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 						: previous.op === OpCode.KSMI ? previous.b >>> 0 : -1;
 					if (skip === -1) return;
 					suffixes.set(i, skip);
-					observesCount = variadic = varargScratch = true;
 					break;
 				}
 				if (instruction.c !== ReturnSource.Registers) return;
@@ -95,7 +102,7 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 						|| (next.op === OpCode.CALL && next.a < instruction.a))) return;
 				}
 				observesCount = variadic = true;
-				if (instruction.b === 0) varargScratch = true;
+				if (instruction.b === 0) hasOpenVararg = true;
 				break;
 			case OpCode.ARGC:
 				observesCount = true;
@@ -125,7 +132,7 @@ function boundedBodyReturns({ proto, instructions }: Body): BodyReturns | undefi
 		if (forwarded.some(pc => targets.has(pc))) return;
 		for (const pc of suffixes.keys()) if (targets.has(pc)) return;
 	} else if (max === -1) return;
-	return { min, max, forwarded, suffixes, observesCount, variadic, varargScratch };
+	return { min, max, forwarded, suffixes, observesCount, variadic, hasOpenVararg };
 }
 
 function markRegister(registers: Set<number>, register: number): void {
@@ -169,42 +176,54 @@ function controlPacketBase(base: number, { callee, supplied }: WindowCall): numb
 	return end + (callee.observesCount ? supplied.min !== supplied.max && end === base + supplied.max + 1 ? 2 : 1 : 0);
 }
 
-function fixedTopRegister(wanted: number, callee: WindowLayout): number {
-	if (wanted === -1 || wanted > callee.max || (wanted === callee.max && wanted === callee.min)) return -1;
-	// Every path has initialized this first discarded register or has Top
-	// at it. A padded receiver instead uses a register past all results.
-	return wanted <= callee.min ? wanted : callee.max;
+function needsFixedTop(wanted: number, callee: WindowLayout): boolean {
+	return wanted >= 0 && wanted <= callee.max && (wanted !== callee.max || wanted !== callee.min);
 }
 
 function callWindowEnd(base: number, wanted: number, call: WindowCall): number {
 	const { callee } = call;
-	const adaptedEnd = Math.max(fixedTopRegister(wanted, callee) + 1, wanted);
+	const resultEnd = base + Math.max(callee.max, wanted);
+	if (callee.direct) return Math.max(base + callee.width, resultEnd);
 	// The child owns its local capacity after entry. The caller includes
 	// only the outgoing initialized prefix, controls and returned values.
-	return Math.max(base + Math.max(callee.max, adaptedEnd), controlPacketBase(base, call) + RAW_WINDOW_CONTROL_WORDS);
+	return Math.max(resultEnd, controlPacketBase(base, call) + RAW_WINDOW_CONTROL_WORDS);
 }
 
 function windowFitsAt(base: number, wanted: number, call: WindowCall): boolean {
+	const { callee } = call;
+	if (callWindowEnd(base, wanted, call) > MAX_EXT_REGISTER_A + 1) return false;
+	if (callee.direct) return base + (wanted === -1 ? callee.max : wanted) <= MAX_EXT_REGISTER_A;
 	return controlPacketBase(base, call) + RAW_WINDOW_CONTROL_WORDS - 1 <= MAX_ABX_REGISTER_A
-		&& base + fixedTopRegister(wanted, call.callee) <= MAX_ABX_REGISTER_A
-		&& callWindowEnd(base, wanted, call) <= MAX_EXT_REGISTER_A + 1;
+		&& (!needsFixedTop(wanted, callee) || base + wanted <= MAX_EXT_REGISTER_A);
 }
 
 const FORWARD_CONTROL_WORDS = 5;
 
-function lowerOpenReturn(instructions: Instruction[], origin: Instruction, sourceEnd: number, entry: WindowLayout): void {
+function fixedReturnLink(entry: WindowLayout, sourceEnd: number, count: number): number {
+	const published = entry.sealed ? entry.max : count;
+	return entry.direct && published !== 0 ? Math.max(sourceEnd, published + +entry.publishesCount) : 0;
+}
+
+function lowerOpenReturn(instructions: Instruction[], origin: Instruction, sourceEnd: number, entry: WindowLayout,
+	linkSlots: WindowBodyLowering['linkSlots'][number][]): void {
 	// The child's bounded suffix is initialized even when its actual result
 	// is shorter. Materializing an index above Top must not expose stale tags.
 	const end = Math.max(sourceEnd, entry.sealed ? entry.max : 0);
-	const index = end + 1, count = end + 2, one = end + 3, value = end + 4;
+	const index = end + 1, count = end + 2, one = end + 3;
+	const link = entry.direct ? end + 4 : 0, value = end + (entry.direct ? 5 : 4);
+	instructions.push(controlInstruction(origin, OpCode.MOV, sourceEnd, 0, ValueMoveKind.ReadTop));
 	if (end !== sourceEnd) {
-		instructions.push(controlInstruction(origin, OpCode.MOV, 0, 0, ValueMoveKind.ReadTop));
-		instructions.push(controlInstruction(origin, OpCode.LOADNIL, sourceEnd, end - sourceEnd));
-		instructions.push(controlInstruction(origin, OpCode.MOV, end, 0));
-	} else instructions.push(controlInstruction(origin, OpCode.MOV, end, 0, ValueMoveKind.ReadTop));
+		if (end !== sourceEnd + 1)
+			instructions.push(controlInstruction(origin, OpCode.LOADNIL, sourceEnd + 1, end - sourceEnd - 1));
+		instructions.push(controlInstruction(origin, OpCode.MOV, end, sourceEnd));
+	}
 	instructions.push(controlInstruction(origin, OpCode.KSMI, index, origin.a + entry.bias));
 	instructions.push(controlInstruction(origin, OpCode.K0, count, 0));
 	instructions.push(controlInstruction(origin, OpCode.K1, one, 0));
+	if (entry.direct) {
+		instructions.push(controlInstruction(origin, OpCode.MOV, link, 0));
+		linkSlots.push({ instruction: instructions.length, slot: link });
+	}
 
 	const loop = instructions.length;
 	instructions.push(controlInstruction(origin, OpCode.LT, 0, index, end));
@@ -230,13 +249,29 @@ function lowerOpenReturn(instructions: Instruction[], origin: Instruction, sourc
 		instructions.push({ ...exit, target: clear });
 		done.target = instructions.length;
 	}
-	instructions.push(controlInstruction(origin, OpCode.JREG, 0, count, RegisterJumpMode.LeaveWindowFromRegister));
+	if (entry.direct) {
+		if (entry.publishesCount) instructions.push(controlInstruction(origin, OpCode.MOV, entry.max, count));
+		instructions.push(controlInstruction(origin, OpCode.JREG, link, 0, RegisterJumpMode.Jump));
+		linkSlots.push({ instruction: instructions.length, slot: 0 });
+	} else instructions.push(controlInstruction(origin, OpCode.JREG, 0, count, RegisterJumpMode.LeaveWindowFromRegister));
 }
 
-function prepareWindowCall(instructions: Instruction[], origin: Instruction, base: number, call: WindowCall): void {
+function prepareWindowCall(instructions: Instruction[], origin: Instruction, base: number, call: WindowCall): number {
 	const { callee, supplied } = call;
-	const initialized = base + supplied.max + 1, packet = controlPacketBase(base, call);
+	const initialized = base + supplied.max + 1;
 	const admittedTop = base + callee.top;
+	if (callee.direct) {
+		if (initialized < admittedTop)
+			instructions.push(controlInstruction(origin, OpCode.LOADNIL, initialized, admittedTop - initialized));
+		const displacement = base - callee.placement;
+		if (displacement !== 0) instructions.push(controlInstruction(origin, OpCode.MOV, 0, displacement, ValueMoveKind.AddBase));
+		const jump = instructions.length;
+		if (call.directTarget === undefined)
+			instructions.push(controlInstruction(origin, OpCode.JREG, 0, 0, RegisterJumpMode.Link));
+		else instructions.push({ ...controlInstruction(origin, OpCode.JAL, callee.placement, 0), format: 'AsBx', jumpProtoIndex: call.directTarget });
+		return jump;
+	}
+	const packet = controlPacketBase(base, call);
 	let target = base;
 	if (callee.observesCount) {
 		target = packet - 1;
@@ -272,18 +307,27 @@ function prepareWindowCall(instructions: Instruction[], origin: Instruction, bas
 	instructions.push(controlInstruction(origin, OpCode.KSMI, packet + 1, callee.width));
 	instructions.push(controlInstruction(origin, OpCode.KSMI, packet + 2, callee.top));
 	instructions.push(controlInstruction(origin, OpCode.JREG, target, packet, RegisterJumpMode.EnterWindow));
+	return instructions.length - 1;
 }
 
-function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: ReadonlyMap<number, WindowCall> | undefined,
+function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: ReadonlyMap<number, WindowCallSite> | undefined,
 	returns: BodyReturns | undefined): WindowBodyLowering {
 	const instructions: Instruction[] = [], origins: number[] = [], starts = new Array<number>(body.instructions.length + 1);
 	const branches: Instruction[] = [];
-	const registerBias = entry === undefined ? 0 : entry.bias;
-	let maxStack = entry === undefined ? body.proto.maxStack : entry.width;
+	const softwareCalls: WindowBodyLowering['softwareCalls'][number][] = [];
+	const linkSlots: WindowBodyLowering['linkSlots'][number][] = [];
+	const placement = entry?.placement ?? 0;
+	const registerBias = entry === undefined ? 0 : entry.bias + placement;
+	let maxStack = entry === undefined ? body.proto.maxStack : entry.width + placement;
+	if (placement !== 0) linkSlots.push({ instruction: 0, slot: placement });
 	for (let i = 0; i < body.instructions.length; ++i) {
 		const instruction = body.instructions[i];
 		starts[i] = instructions.length;
-		if (entry !== undefined && (instruction.op === OpCode.ARGC || instruction.op === OpCode.VARARG
+		if (entry !== undefined && entry.discardResults && instruction.op === OpCode.RET) {
+			// Keep every expression producer without overwriting the link.
+			instructions.push(controlInstruction(instruction, OpCode.JREG, placement, 0,
+				entry.direct ? RegisterJumpMode.Jump : RegisterJumpMode.LeaveWindow));
+		} else if (entry !== undefined && (instruction.op === OpCode.ARGC || instruction.op === OpCode.VARARG
 			|| (instruction.op === OpCode.RET && instruction.c === ReturnSource.ExtraArguments))) {
 			lowerWindowVararg(instructions, instruction, {
 				bias: entry.bias, parameters: entry.parameters, extras: entry.extras, maxResults: entry.max,
@@ -293,17 +337,31 @@ function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: R
 			const producer = body.instructions[i - 1];
 			const child = instruction.b !== 0 ? undefined : producer.op === OpCode.VARARG ? entry.extras : callees!.get(i - 1)!.callee;
 			if (child !== undefined && child.min !== child.max) {
-				lowerOpenReturn(instructions, instruction, producer.a + entry.bias + child.max, entry);
+				lowerOpenReturn(instructions, instruction, producer.a + entry.bias + child.max, entry, linkSlots);
 			} else {
 				const count = child === undefined ? decodeValueCount(instruction.b, 0)
 					: producer.a - instruction.a + child.max;
+				const source = instruction.a + registerBias;
+				const sourceEnd = source + count;
+				const link = placement + fixedReturnLink(entry, sourceEnd - placement, count);
+				if (link !== placement) {
+					if (sourceEnd < link) instructions.push(controlInstruction(instruction, OpCode.LOADNIL, sourceEnd, link - sourceEnd));
+					instructions.push(controlInstruction(instruction, OpCode.MOV, link, placement));
+					linkSlots.push({ instruction: instructions.length, slot: link });
+				}
 				// Both ranges are contiguous and the destination is lower. A forward
 				// register transfer keeps still-unread produced values intact.
 				for (let result = 0; result < count; ++result)
-					instructions.push(controlInstruction(instruction, OpCode.MOV, result, instruction.a + entry.bias + result));
-				if (entry.sealed && count < entry.max)
-					instructions.push(controlInstruction(instruction, OpCode.LOADNIL, count, entry.max - count));
-				instructions.push(controlInstruction(instruction, OpCode.JREG, 0, count, RegisterJumpMode.LeaveWindow));
+					instructions.push(controlInstruction(instruction, OpCode.MOV, placement + result, source + result));
+				const resultEnd = placement + count, maxEnd = placement + entry.max;
+				const padEnd = link === placement ? maxEnd : Math.min(maxEnd, sourceEnd);
+				if (entry.sealed && resultEnd < padEnd)
+					instructions.push(controlInstruction(instruction, OpCode.LOADNIL, resultEnd, padEnd - resultEnd));
+				if (entry.publishesCount) instructions.push(controlInstruction(instruction, OpCode.KSMI, entry.max, count));
+				instructions.push(entry.direct
+					? controlInstruction(instruction, OpCode.JREG, link, 0, RegisterJumpMode.Jump)
+					: controlInstruction(instruction, OpCode.JREG, 0, count, RegisterJumpMode.LeaveWindow));
+				if (link !== placement) linkSlots.push({ instruction: instructions.length, slot: placement });
 			}
 		} else {
 			const call = callees?.get(i);
@@ -315,13 +373,27 @@ function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: R
 				const { callee } = call;
 				const base = instruction.a + registerBias;
 				const wanted = decodeValueCount(instruction.c, -1);
-				prepareWindowCall(instructions, instruction, base, call);
-				const topRegister = fixedTopRegister(wanted, callee);
-				if (wanted > callee.max) {
+				const jump = prepareWindowCall(instructions, instruction, base, call);
+				if (callee.direct) {
+					const placement = callee.placement;
+					// The count and link must remain below Top until the raw
+					// jump retires: firmware can clear the dead suffix on IRQ.
+					if (wanted === -1 && callee.publishesCount)
+						instructions.push(controlInstruction(instruction, OpCode.MOV, 0, callee.max, ValueMoveKind.SetTop));
+					else {
+						const results = wanted === -1 ? callee.max : wanted;
+						if (results > callee.max)
+							instructions.push(controlInstruction(instruction, OpCode.LOADNIL, placement + callee.max, results - callee.max));
+						instructions.push(controlInstruction(instruction, OpCode.MOV, placement + results, 0, ValueMoveKind.SetTopImmediate));
+					}
+					const displacement = base - placement;
+					if (displacement !== 0) instructions.push(controlInstruction(instruction, OpCode.MOV, 0, -displacement, ValueMoveKind.AddBase));
+					softwareCalls.push({ origin: i, start: starts[i], jump, end: instructions.length,
+						baseDelta: displacement, targets: call.targets, targetLive: call.targetLive });
+				} else if (wanted > callee.max) {
 					instructions.push(controlInstruction(instruction, OpCode.LOADNIL, base + callee.max, wanted - callee.max));
-				} else if (topRegister !== -1) {
-					instructions.push(controlInstruction(instruction, OpCode.KSMI, base + topRegister, base + wanted));
-					instructions.push(controlInstruction(instruction, OpCode.MOV, 0, base + topRegister, ValueMoveKind.SetTop));
+				} else if (needsFixedTop(wanted, callee)) {
+					instructions.push(controlInstruction(instruction, OpCode.MOV, base + wanted, 0, ValueMoveKind.SetTopImmediate));
 				}
 				if (entry === undefined) maxStack = Math.max(maxStack, callWindowEnd(base, wanted, call));
 			}
@@ -334,7 +406,7 @@ function lowerWindowBody(body: Body, entry: WindowLayout | undefined, callees: R
 	}
 	starts[body.instructions.length] = instructions.length;
 	for (const instruction of branches) rewriteBranchTargets(instruction, index => starts[index]);
-	return { instructions, origins, starts, maxStack, registerBias };
+	return { instructions, origins, starts, maxStack, registerBias, softwareEntry: entry?.direct === true, softwareCalls, linkSlots };
 }
 
 /**
@@ -367,6 +439,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 			}
 			let call = opensCaptures ? -1 : directCallAfterLoad(instructions, proto.maxStack, i, entries, resolveClosure);
 			let targets: readonly number[] = [callee];
+			let targetLive: readonly number[] = [];
 			if (call === -1 && !opensCaptures) {
 				proveFiniteCall ??= createWindowCallTargetProof(instructions, proto.maxStack, resolveClosure);
 				const choice = proveFiniteCall(i);
@@ -375,6 +448,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 					if (symbols.every(symbol => symbol !== undefined)) {
 						call = choice.instruction;
 						targets = [...new Set(symbols)];
+						if (targets.length > 1) targetLive = choice.live;
 					}
 				}
 			}
@@ -397,7 +471,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				}
 				producer = call - 1;
 			}
-			const site = { caller, instruction: call, producer, targets };
+			const site = { caller, instruction: call, producer, targets, targetLive };
 			allSites.push(site);
 			for (const target of targets) {
 				const uses = sites.get(target);
@@ -405,6 +479,17 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				else uses.push(site);
 			}
 		}
+	}
+	// A finite indirect call has only one physical ABI. If one arm needs
+	// results at any of its uses, every connected arm keeps the result ABI.
+	const observedResults = new Set<number>();
+	for (const site of allSites) {
+		if (bodies[site.caller].instructions[site.instruction].c !== 1)
+			for (const target of site.targets) observedResults.add(target);
+	}
+	for (const target of observedResults) {
+		for (const site of sites.get(target)!)
+			for (const other of site.targets) observedResults.add(other);
 	}
 	const candidates = new Map<number, WindowCandidate>();
 	const edges = new Map<number, Map<number, CallEdge>>();
@@ -488,6 +573,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		return bounds;
 	}
 	function boundResults({ protoIndex, returns }: WindowCandidate): ResultRange | null {
+		if (!observedResults.has(protoIndex)) return { min: 0, max: 0 };
 		const prior = resultBounds.get(protoIndex);
 		if (prior !== undefined) return prior;
 		resultBounds.set(protoIndex, null);
@@ -536,7 +622,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		for (let index = 1; index < edge.targets.length; ++index) {
 			const other = windows.get(edge.targets[index].protoIndex);
 			if (other === undefined || other.min !== first.min || other.max !== first.max || other.bias !== first.bias
-				|| other.top !== first.top || other.observesCount !== first.observesCount) return;
+				|| other.top !== first.top || other.observesCount !== first.observesCount || other.direct !== first.direct) return;
 			width = Math.max(width, other.width);
 		}
 		return width === first.width ? first : { ...first, width };
@@ -549,44 +635,79 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		if (inputs === null || results === null) continue;
 		const parameters = proto.numParams, { min, max } = results;
 		const extras = extraBounds(inputs, parameters);
-		const inputPrefix = returns.variadic ? Math.max(parameters, inputs.max) + 1 : 1;
-		const scratch = returns.varargScratch ? Math.max(inputPrefix, returns.suffixes.size === 0 ? 0 : max) : 0;
-		const bias = returns.varargScratch ? scratch + WINDOW_VARARG_SCRATCH_WORDS : inputPrefix;
-		if (scratch + WINDOW_VARARG_SCRATCH_WORDS - 1 > MAX_ABX_REGISTER_A
+		const discardResults = !observedResults.has(protoIndex);
+		const returnsSuffix = !discardResults && returns.suffixes.size !== 0;
+		const observesCount = returns.observesCount || returnsSuffix;
+		const inputPrefix = returns.variadic || returnsSuffix ? Math.max(parameters, inputs.max) + 1 : 1;
+		let dynamicSuffix = false;
+		if (returnsSuffix && extras.min !== extras.max) {
+			for (const skip of returns.suffixes.values()) {
+				if (skip < extras.max) { dynamicSuffix = true; break; }
+			}
+		}
+		const needsVarargScratch = dynamicSuffix || (extras.min !== extras.max && returns.hasOpenVararg);
+		const scratch = needsVarargScratch ? Math.max(inputPrefix, dynamicSuffix ? max : 0) : 0;
+		const bias = needsVarargScratch ? scratch + WINDOW_VARARG_SCRATCH_WORDS : inputPrefix;
+		if ((needsVarargScratch && bias - 1 > MAX_ABX_REGISTER_A)
 			|| instructions.some(instruction => instruction.format !== 'ABC' && instruction.a + bias > MAX_ABX_REGISTER_A)) continue;
 		let width = Math.max(proto.maxStack, parameters) + bias;
-		for (const instruction of instructions)
-			if (instruction.op === OpCode.VARARG && instruction.b === 0)
-				width = Math.max(width, instruction.a + bias + extras.max);
+		for (const instruction of instructions) {
+			if (instruction.op === OpCode.VARARG && instruction.b === 0) {
+				const end = instruction.a + bias + extras.max;
+				if (extras.min === extras.max && end > MAX_EXT_REGISTER_A) continue components;
+				width = Math.max(width, end);
+			}
+		}
 		let forwardEnd = -1;
 		const callees = edges.get(protoIndex);
+		let direct = !observesCount;
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
 				const { a, c } = instructions[pc], base = a + bias, wanted = decodeValueCount(c, -1);
 				const callee = sharedWindow(edge), supplied = boundCall(edge.site);
 				if (callee === undefined || supplied === null) continue components;
+				direct &&= callee.direct;
 				const call = { callee, supplied };
 				if (!windowFitsAt(base, wanted, call)) continue components;
 				width = Math.max(width, callWindowEnd(base, wanted, call));
 			}
 		}
-		for (const pc of returns.forwarded) {
-			const producer = instructions[pc - 1];
-			const child = producer.op === OpCode.VARARG ? extras : sharedWindow(callees!.get(pc - 1)!)!;
-			if (child.min !== child.max) forwardEnd = Math.max(forwardEnd, producer.a + bias + child.max);
+		if (!discardResults) {
+			for (const pc of returns.forwarded) {
+				const producer = instructions[pc - 1];
+				const child = producer.op === OpCode.VARARG ? extras : sharedWindow(callees!.get(pc - 1)!)!;
+				if (child.min !== child.max) forwardEnd = Math.max(forwardEnd, producer.a + bias + child.max);
+			}
 		}
 		if (forwardEnd !== -1) {
-			const end = Math.max(forwardEnd, max) + FORWARD_CONTROL_WORDS;
+			const end = Math.max(forwardEnd, max) + FORWARD_CONTROL_WORDS + +direct;
 			if (end - 1 > MAX_ABX_REGISTER_A) continue;
 			width = Math.max(width, end);
 		}
+		const uses = sites.get(protoIndex)!;
+		const publishesCount = direct && min !== max && uses.some(site => bodies[site.caller].instructions[site.instruction].c === 0);
+		if (publishesCount && max > MAX_ABX_REGISTER_A) continue;
+		const sealed = min !== max && (publishesCount
+			|| uses.some(site => decodeValueCount(bodies[site.caller].instructions[site.instruction].c, -1) > min));
+		const window = { min, max, width, top: parameters + bias, sealed, bias, parameters, extras, scratch,
+			observesCount, direct, discardResults, publishesCount, placement: 0 };
+		if (direct && max !== 0) {
+			for (let pc = 0; pc < instructions.length; ++pc) {
+				const instruction = instructions[pc];
+				if (instruction.op !== OpCode.RET) continue;
+				const producer = instructions[pc - 1];
+				const child = instruction.b !== 0 ? undefined : sharedWindow(callees!.get(pc - 1)!);
+				if (child !== undefined && child.min !== child.max) continue;
+				const count = child === undefined ? decodeValueCount(instruction.b, 0)
+					: producer.a - instruction.a + child.max;
+				width = Math.max(width, fixedReturnLink(window, instruction.a + bias + count, count) + 1);
+			}
+		}
 		if (width > MAX_EXT_REGISTER_A + 1) continue;
-		const window = { min, max, width, top: parameters + bias, sealed: false, bias, parameters, extras, scratch,
-			observesCount: returns.observesCount };
-		for (const site of sites.get(protoIndex)!) {
+		window.width = width;
+		for (const site of uses) {
 			const { a, c } = bodies[site.caller].instructions[site.instruction], wanted = decodeValueCount(c, -1);
 			if (!windowFitsAt(a, wanted, { callee: window, supplied: argumentBounds.get(site)! })) continue components;
-			if (min !== max && wanted > min) window.sealed = true;
 		}
 		windows.set(protoIndex, window);
 	}
@@ -628,7 +749,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		for (const owner of applications) if (windows.delete(owner)) unavailable.push(owner);
 	}
 
-	for (const [protoIndex] of windows) {
+	for (const [protoIndex, window] of windows) {
 		for (const site of sites.get(protoIndex)!) {
 			if (site.producer === -1 || bodies[site.caller].instructions[site.producer].op === OpCode.VARARG) continue;
 			for (const target of edges.get(site.caller)!.get(site.producer)!.targets) {
@@ -636,6 +757,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 				if (producer.min !== producer.max) producer.sealed = true;
 			}
 		}
+		if (window.discardResults) continue;
 		const { forwarded } = candidates.get(protoIndex)!.returns;
 		const instructions = bodies[protoIndex].instructions, callees = edges.get(protoIndex);
 		for (const pc of forwarded) {
@@ -647,14 +769,30 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		}
 	}
 
+	// When every direct caller already supplies the same slots, a leaf can
+	// name them directly. No register shuffling, window switch or code clone.
+	for (const [index, window] of windows) {
+		if (!window.direct || window.min !== window.max || candidates.get(index)!.dependencies.length !== 0) continue;
+		const uses = sites.get(index)!;
+		const { caller, instruction } = uses[0];
+		const placement = bodies[caller].instructions[instruction].a + (windows.get(caller)?.bias ?? 0);
+		if (placement === 0 || placement > MAX_ABX_REGISTER_A || placement + window.width > MAX_EXT_REGISTER_A + 1) continue;
+		if (uses.some(site => site.targets.length !== 1
+			|| bodies[site.caller].instructions[site.instruction].a + (windows.get(site.caller)?.bias ?? 0) !== placement)) continue;
+		if (bodies[index].instructions.some(row => row.format !== 'ABC' && row.a + window.bias + placement > MAX_ABX_REGISTER_A)) continue;
+		window.placement = placement;
+	}
+
 	const rewrites = new Map<number, WindowBodyLowering>();
 	for (let protoIndex = 0; protoIndex < bodies.length; ++protoIndex) {
 		const window = windows.get(protoIndex), callees = edges.get(protoIndex);
-		let lowered: Map<number, WindowCall> | undefined;
+		let lowered: Map<number, WindowCallSite> | undefined;
 		if (callees !== undefined) {
 			for (const [pc, edge] of callees) {
 				const callee = sharedWindow(edge);
-				if (callee !== undefined) (lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)! });
+				if (callee !== undefined) (lowered ??= new Map()).set(pc, { callee, supplied: argumentBounds.get(edge.site)!, targets: edge.site.targets,
+					targetLive: edge.site.targetLive,
+					directTarget: edge.targets.length === 1 ? edge.targets[0].protoIndex : undefined });
 			}
 		}
 		if (window !== undefined || lowered !== undefined)

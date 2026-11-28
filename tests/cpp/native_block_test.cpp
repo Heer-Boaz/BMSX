@@ -91,11 +91,11 @@ void independentEntriesBindTheirOwnValueBanks() {
 		auto registersA = test::valueBank(std::array{valueInteger(1), valueNil(), valueNil(), valueNil(), valueBool(true)});
 		auto registersB = test::valueBank(std::array{valueInteger(2), valueNil(), valueNil(), valueNil(), valueBool(false)});
 		for (int iteration = 0; iteration < 256; ++iteration) {
-			NativeBlockRunState a{.constants = constantsABank.view(), .remainingCycles = 97, .registerTop = 1};
-			NativeBlockRunState b{.constants = constantsBBank.view(), .remainingCycles = 53, .registerTop = 5};
+			NativeBlockRunState a{.constants = constantsABank.view(), .remainingCycles = 97, .physicalTop = 1};
+			NativeBlockRunState b{.constants = constantsBBank.view(), .remainingCycles = 53, .physicalTop = 5};
 			require(helper->run(registersA.view(), a) == &helper->terminal && leaf->run(registersB.view(), b) == &leaf->terminal,
 				"independent helper and leaf bodies return through the native entry ABI");
-			require(a.remainingCycles == 93 && b.remainingCycles == 49 && a.registerTop == 4 && b.registerTop == 5,
+			require(a.remainingCycles == 93 && b.remainingCycles == 49 && a.physicalTop == 4 && b.physicalTop == 5,
 				"alternating entries preserve each caller's cycle grant and register top");
 			require(registersA.get(3) == valueFloat(5.5) && registersB.get(3) == valueInteger(14)
 				&& registersA.get(4) == valueBool(true) && registersB.get(4) == valueBool(false),
@@ -122,15 +122,15 @@ void standaloneIteratorAdmitsItsFullWindow() {
 		auto registers = test::valueBank(initial);
 		NativeBlockRunState state{};
 		state.remainingCycles = 1;
-		state.registerTop = 3;
+		state.physicalTop = 3;
 		const auto* exit = block.run(registers.view().subspan(0, capacity), state);
 		if (capacity < initial.size())
 			require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == pc
-				&& state.remainingCycles == 1 && state.registerTop == 3 && test::matchesValues(registers.view(), initial),
+				&& state.remainingCycles == 1 && state.physicalTop == 3 && test::matchesValues(registers.view(), initial),
 				"short standalone iterator windows admit neither its input reads nor its result writes");
 		else
 			require(exit->exit == NativeBlockExit::Continue && exit->nextPc == pc + 2u * INSTRUCTION_BYTES
-				&& state.remainingCycles == 1 - BASE_CYCLES[itern] - 2 && state.registerTop == 6
+				&& state.remainingCycles == 1 - BASE_CYCLES[itern] - 2 && state.physicalTop == 6
 				&& isNil(registers.get(2)) && valuePayload(registers.get(2)) == 1
 				&& registers.get(4) == valueInteger(1) && registers.get(5) == valueBool(false),
 				"the same standalone entry executes directly with a complete window");
@@ -166,19 +166,19 @@ void entryAdmitsOnlyReachableSlots() {
 		ValueSlots bank(8);
 		bank.set(7, valueFloatBits(0x7fc00019u));
 		constexpr int grant = 32;
-		NativeBlockRunState state{.remainingCycles = grant, .registerTop = 1};
+		NativeBlockRunState state{.remainingCycles = grant, .physicalTop = 1};
 		const auto& entry = linked ? *predecessor : *blocks[0];
 		const auto& exit = *entry.run(bank.view().subspan(0, capacity), state);
 		const int paid = linked ? predecessor->terminal.cycles : 0;
 		if (capacity == 7) {
 			require(exit.exit == NativeBlockExit::ScalarBoundary && exit.nextPc == firstPc
 				&& !exit.operands.replay.hasCompletedInstruction && state.remainingCycles == grant - paid
-				&& state.registerTop == (linked ? 2 : 1) && bank.get(0) == valueNil() && bank.get(2) == valueNil(),
+				&& state.physicalTop == (linked ? 2 : 1) && bank.get(0) == valueNil() && bank.get(2) == valueNil(),
 				"an undersized public or linked entry retires no part of the receiving region");
 		} else {
 			require(&exit == &blocks[1]->terminal && exit.nextPc == exitPc
 				&& state.remainingCycles == grant - paid - blocks[0]->terminal.cycles - blocks[1]->terminal.cycles
-				&& state.registerTop == 3 && bank.get(0) == valueInteger(1) && bank.get(2) == bank.get(7),
+				&& state.physicalTop == 3 && bank.get(0) == valueInteger(1) && bank.get(2) == bank.get(7),
 				"an exact reserved window admits the local successor despite a wider independent sibling and lower live top");
 		}
 		require(bank.get(1) == (linked ? valueInteger(1) : valueNil()) && bank.get(7) == valueFloatBits(0x7fc00019u),
@@ -187,7 +187,7 @@ void entryAdmitsOnlyReachableSlots() {
 	ValueSlots wideBank(16);
 	NativeBlockRunState wideState{.remainingCycles = 32};
 	require(blocks[2]->run(wideBank.view(), wideState) == &blocks[2]->terminal && wideBank.get(15) == valueInteger(1)
-		&& wideState.registerTop == 16, "the independently published entry retains its own larger window");
+		&& wideState.physicalTop == 16, "the independently published entry retains its own larger window");
 }
 
 void helperContinuationsReloadTheCurrentRegisterMap() {
@@ -229,11 +229,11 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 				"a fully funded suffix reaches its terminal without a mid-span host exit");
 			if (entry == 0) require(registers.get(0) == valueInteger(17) && registers.get(4) == valueInteger(1)
 				&& registers.get(5) == valueInteger(17) && registers.get(8) == valueInteger(1)
-				&& memory.readMappedWord(target) == 1u && state.registerTop == 9,
+				&& memory.readMappedWord(target) == 1u && state.physicalTop == 9,
 				"fast helper fallthrough preserves dirty live native registers");
 			else require(registers.get(0) == payload && registers.get(5) == payload && registers.get(8) == incoming
 				&& registers.get(4) == (entry == 1 ? incoming : valueNil())
-				&& memory.readMappedWord(target) == (entry == 1 ? valuePayload(incoming) : 17u) && state.registerTop == 6,
+				&& memory.readMappedWord(target) == (entry == 1 ? valuePayload(incoming) : 17u) && state.physicalTop == 6,
 				"admitted cold entries reload current payloads, not predecessor values or register top");
 		}
 		for (size_t entry = 0; entry < blocks.size(); ++entry) {
@@ -259,12 +259,12 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 				if (grant <= predecessorCycles) {
 					const bool beforeJump = grant <= prefix[0].baseCycles;
 					require((beforeJump ? exit->exit == NativeBlockExit::ScalarBoundary : exit == &predecessor->terminal)
-						&& state.remainingCycles == (beforeJump ? grant : grant - predecessorCycles) && state.registerTop == (beforeJump ? 0 : 9)
+						&& state.remainingCycles == (beforeJump ? grant : grant - predecessorCycles) && state.physicalTop == (beforeJump ? 0 : 9)
 						&& registers.get(8) == (beforeJump ? valueNil() : incoming) && registers.get(5) == valueNil() && memory.readMappedWord(target) == 17u,
 						"a patched target guard preserves the source descriptor and never admits an exhausted successor");
 				} else {
 					require(exit == &blocks[2]->terminal && state.remainingCycles == grant - predecessorCycles - suffixCycles
-						&& state.registerTop == 9 && registers.get(5) == (entry == 0 ? valueInteger(17) : payload)
+						&& state.physicalTop == 9 && registers.get(5) == (entry == 0 ? valueInteger(17) : payload)
 						&& registers.get(8) == (entry == 0 ? valueInteger(1) : incoming)
 						&& memory.readMappedWord(target) == (entry == 0 ? 1u : entry == 1 ? valuePayload(incoming) : 17u),
 						"patched edges enter inherited helper continuations with current values and the target's payload map");
@@ -318,7 +318,7 @@ void residentValuesCrossInternalComparisonBranches() {
 				const bool beforeCompare = grant <= decoded[0].baseCycles;
 				const int charged = beforeCompare ? 0 : throughCompare + (op == OpCode::EQ ? 0 : 5);
 				require(registers.get(7) == (beforeCompare ? valueNil() : value) && registers.get(8) == value && registers.get(6) == valueNil()
-					&& run.remainingCycles == grant - charged && run.registerTop == (beforeCompare ? 0 : 8),
+					&& run.remainingCycles == grant - charged && run.physicalTop == (beforeCompare ? 0 : 8),
 					"both comparison expectations publish live cached raw values at the exact instruction boundary");
 				continue;
 			}
@@ -329,7 +329,7 @@ void residentValuesCrossInternalComparisonBranches() {
 			}
 			require(registers.get(7) == value && registers.get(6) == value && asInteger(registers.get(4)) > 0
 				&& registers.get(5) == registers.get(4)
-				&& run.registerTop == 11,
+				&& run.physicalTop == 11,
 				"shared equality and string-order branches preserve resident definitions at each instruction boundary");
 			require(registers.get(8) == value && registers.get(10) == value
 				&& registers.get(3) == (predicate != expected ? value : valueInteger(73))
@@ -430,7 +430,7 @@ void admissionReplayPublishesOnlyThePaidPrefix() {
 	const int targetPrefix = decoded[2].baseCycles;
 	const auto stop = [&](size_t entry, int grant, int charge, u32 predecessorPc) {
 		auto registers = test::valueBank(std::array{valueNil(), valueNil(), valueFloat(-0.0f), valueInteger(71), valueInteger(72)});
-		NativeBlockRunState run{.remainingCycles = grant, .registerTop = 2};
+		NativeBlockRunState run{.remainingCycles = grant, .physicalTop = 2};
 		const auto* replay = blocks[entry]->run(registers.view(), run);
 		const auto expectedInput = entry == 0 ? valueInteger(1) : entry == 2 ? valueBool(false) : valueFloat(-0.0f);
 		require(replay->exit == NativeBlockExit::ScalarBoundary && replay->nextPc == targetPc
@@ -438,7 +438,7 @@ void admissionReplayPublishesOnlyThePaidPrefix() {
 			&& replay->currentPc == (entry == 1 ? 0u : predecessorPc + 4)
 			&& replay->lastPc == (entry == 1 ? 0u : predecessorPc + 8),
 			"admission resumes the target and attributes only the paid WIDE predecessor, if any");
-		require(run.remainingCycles == grant - charge && run.registerTop == (entry == 1 ? 2 : 3)
+		require(run.remainingCycles == grant - charge && run.physicalTop == (entry == 1 ? 2 : 3)
 			&& registers.get(2) == expectedInput && registers.get(3) == valueInteger(71) && registers.get(4) == valueInteger(72),
 			"grant and type misses retain the current target inputs and exactly the completed register/top changes");
 	};
@@ -452,7 +452,7 @@ void admissionReplayPublishesOnlyThePaidPrefix() {
 	NativeBlockRunState run{.remainingCycles = predecessorCharge + targetPrefix + 1};
 	require(blocks[0]->run(registers.view(), run) == &blocks[1]->terminal
 		&& registers.get(3) == valueInteger(1) && registers.get(4) == valueInteger(2)
-		&& run.remainingCycles == 1 - decoded[3].baseCycles && run.registerTop == 5,
+		&& run.remainingCycles == 1 - decoded[3].baseCycles && run.physicalTop == 5,
 		"one cycle beyond the admission threshold lets the final instruction exhaust a running grant");
 }
 
@@ -501,7 +501,7 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 				require((expected ? exit == expected : exit->exit == NativeBlockExit::ScalarBoundary) && run.remainingCycles == grant - charged,
 					"indexed successors preserve branch identity and exact instruction admission");
 				require(registers.get(1) == value && registers.get(2) == (started ? value : valueInteger(19)) && registers.get(3) == (last ? value : valueInteger(29))
-					&& run.registerTop == (!started ? 0 : last ? 4 : 3),
+					&& run.physicalTop == (!started ? 0 : last ? 4 : 3),
 					"transitive live-in planning preserves raw resident values across sparse reordered entries");
 			}
 		}
@@ -593,9 +593,9 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 				for (segment = 0; segment < plans.size(); ++segment) if (plans[segment].instructions.front().pc == nextPc) break;
 				if (segment == plans.size()) break;
 			}
-			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -5};
+			NativeBlockRunState run{.constants = constantsBank.view(), .remainingCycles = grant, .physicalTop = -5};
 			const auto* exit = blocks[entry]->run(actual.view(), run);
-			if (!test::matchesValues(actual.view(), expected) || (expectedExit ? exit != expectedExit : exit->exit != NativeBlockExit::ScalarBoundary) || run.remainingCycles != remaining || run.registerTop != top) {
+			if (!test::matchesValues(actual.view(), expected) || (expectedExit ? exit != expectedExit : exit->exit != NativeBlockExit::ScalarBoundary) || run.remainingCycles != remaining || run.physicalTop != top) {
 				std::cerr << "register graph helper=" << helper << " bypass=" << bypassHelper << " entry=" << entry << " arm=" << arm
 					<< " loop=" << loop << " grant=" << grant << '\n';
 				throw std::runtime_error("diamond/backedge allocation must preserve the full raw bank, exit, debt and top");
@@ -647,7 +647,7 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 			if (remaining <= 0) break;
 		}
 		const auto result = first->run(registers.view(), nativeRunState = {.constants = constantsBank.view(), .remainingCycles = budget});
-		require((expectedExit ? result == expectedExit : result->exit == NativeBlockExit::ScalarBoundary) && nativeRunState.remainingCycles == remaining && nativeRunState.registerTop == 8 && test::matchesValues(registers.view(), expected),
+		require((expectedExit ? result == expectedExit : result->exit == NativeBlockExit::ScalarBoundary) && nativeRunState.remainingCycles == remaining && nativeRunState.physicalTop == 8 && test::matchesValues(registers.view(), expected),
 			"linked leaf/calling bodies share one frame, bounded stack, complete segment charges and the maximum live-register extent");
 	}
 	second->linkFrom(first->terminal);
@@ -703,7 +703,7 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 		const int charge = prefixCycles + (prefixOnly ? 0 : spanCycles) + (successorRuns ? decoded[3].baseCycles : 0);
 		require(exit == expected && state.remainingCycles == budget - charge
 			&& registers.get(6) == valueInteger(1) && registers.get(7) == valueInteger(successorRuns ? 1 : 99)
-			&& state.registerTop == (successorRuns ? 8 : 7),
+			&& state.physicalTop == (successorRuns ? 8 : 7),
 			"linked native bodies finish the counted store but never start a successor without positive budget");
 		for (u32 i = 0; i < 5; ++i) require(memory.readMappedWord(target + i * 4u) == (prefixOnly ? 0u : 73u + i),
 			"a short positive grant commits the complete ordered RAM span");
@@ -733,7 +733,7 @@ void linkedSlowExitPublishesTheWholeExecutedChain() {
 	const auto result = first->run(registers.view(), nativeRunState = {.remainingCycles = 100});
 	require(result->exit == NativeBlockExit::ReadMemory
 		&& result->currentPc == 0x1084 && result->nextPc == 0x1088 && nativeRunState.remainingCycles == 95
-		&& nativeRunState.registerTop == 8 && registers.get(5) == valueInteger(2) && registers.get(6) == valueInteger(73) && registers.get(4) == valueNil(),
+		&& nativeRunState.physicalTop == 8 && registers.get(5) == valueInteger(2) && registers.get(6) == valueInteger(73) && registers.get(4) == valueNil(),
 		"a target's slow exit materializes the complete chain prefix without executing its load or later arithmetic");
 	first.reset();
 	// The surviving target must not retain an incoming node in the freed source.
@@ -855,7 +855,7 @@ void arithmeticAndWordDatapaths() {
 						"native arithmetic retains exact number/word semantics and register aliases");
 				} catch (const LuaExecutionError& error) {
 					require(error.reason == LUA_FAULT_REASON_INVALID_ARGUMENT && exit->exit == NativeBlockExit::InvalidOperand
-						&& exit->currentPc == 0x1000u && nativeRunState.remainingCycles == 1 && nativeRunState.registerTop == 0
+						&& exit->currentPc == 0x1000u && nativeRunState.remainingCycles == 1 && nativeRunState.physicalTop == 0
 						&& test::matchesValues(registers.view(), std::array{left, right, valueNil(), valueNil()}),
 						"an invalid operand charges only the attempted operation and commits neither destination");
 				}
@@ -894,7 +894,7 @@ void provenOperandFaultNeedsOnlyItsOwnGrant() {
 		const auto* fault = block->run(registers.view(), state);
 		require(fault == &block->terminal && fault->exit == NativeBlockExit::InvalidOperand
 			&& fault->currentPc == pc + 4 && fault->lastPc == pc + 8 && fault->nextPc == pc + 12
-			&& state.remainingCycles == 1 - decoded[1].baseCycles && state.registerTop == 2
+			&& state.remainingCycles == 1 - decoded[1].baseCycles && state.physicalTop == 2
 			&& registers.get(1) == valueBool(false) && registers.get(5) == valueInteger(5)
 			&& registers.get(6) == valueInteger(6),
 			"the positive grant at a proven WIDE fault charges only the attempted instruction and publishes its prefix");
@@ -957,7 +957,7 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant};
 			const auto* exit = block->run(actual.view(), state);
 			require((faultPc ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == faultPc
-				: expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && test::matchesValues(actual.view(), expected) && state.registerTop == top
+				: expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && test::matchesValues(actual.view(), expected) && state.physicalTop == top
 				&& state.remainingCycles == remaining,
 				"word producer facts preserve full raw state through MOV aliases, signed chains, arithmetic/unknown overwrites and nil ranges");
 		}
@@ -999,9 +999,9 @@ void movesAndLiteralsPreserveRawValues() {
 		for (const Value source : {valueFloatBits(0x7fa12345), valueFromTag(ValueTag::Nil, 91),
 			valueFromTag(static_cast<ValueTag>(255), 0x12345678)}) {
 			auto regs = test::valueBank(std::array{source, valueNil()});
-			const auto* exit = block->run(regs.view(), nativeRunState = {.remainingCycles = BASE_CYCLES[opcode], .registerTop = 1});
+			const auto* exit = block->run(regs.view(), nativeRunState = {.remainingCycles = BASE_CYCLES[opcode], .physicalTop = 1});
 			require(exit == &block->terminal && regs.get(target) == valueInteger(static_cast<u8>(valueTag(source)))
-				&& nativeRunState.remainingCycles == 0 && nativeRunState.registerTop == target + 1,
+				&& nativeRunState.remainingCycles == 0 && nativeRunState.physicalTop == target + 1,
 				"generated MOV Tag reads the current tag lane before any aliased write");
 		}
 	}
@@ -1064,7 +1064,7 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 				NativeBlockRunState state{.constants = poolBank.view(), .remainingCycles = block->terminal.cycles};
 				const auto* exit = block->run(registers.view(), state);
 				require((invalid ? exit->exit == NativeBlockExit::InvalidOperand && exit->currentPc == source[4].pc
-					&& state.registerTop == 4 && state.remainingCycles == decoded[5].baseCycles + decoded[6].baseCycles
+					&& state.physicalTop == 4 && state.remainingCycles == decoded[5].baseCycles + decoded[6].baseCycles
 					: exit == &block->terminal && state.remainingCycles == 0) && test::matchesValues(registers.view(), expected),
 					"cold inputs cannot clobber pinned operands, aliased destinations or live values across a helper ABI call");
 			}
@@ -1133,18 +1133,18 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 				for (const int grant : {cycles, cycles + 7}) {
 					auto actual = test::valueBank(initial);
 					NativeBlockRunState state{.constants = constantsBank.view(),
-						.remainingCycles = grant, .registerTop = -7};
+						.remainingCycles = grant, .physicalTop = -7};
 					require(block->run(actual.view(), state) == &block->terminal && test::matchesValues(actual.view(), expected)
-						&& state.remainingCycles == grant - cycles && state.registerTop == top,
+						&& state.remainingCycles == grant - cycles && state.physicalTop == top,
 						"next-access eviction preserves every raw WIDE register, alias, empty/ranged write and helper prefix");
 				}
 				if (prefix > 1) {
 					auto actual = test::valueBank(initial);
 					NativeBlockRunState state{.constants = constantsBank.view(),
-						.remainingCycles = 1, .registerTop = -7};
+						.remainingCycles = 1, .physicalTop = -7};
 					const auto* exit = block->run(actual.view(), state);
 					require(exit->exit == NativeBlockExit::ScalarBoundary && test::matchesValues(actual.view(), initial)
-						&& state.remainingCycles == 1 && state.registerTop == -7,
+						&& state.remainingCycles == 1 && state.physicalTop == -7,
 						"a short pressure grant exits before its first definition for scalar admission");
 				}
 			}
@@ -1301,7 +1301,7 @@ void typedCallExitPublishesPrefix() {
 		&& exit->operands.call.supplied == 0 && exit->operands.call.requested == 1,
 		"a generated CALL gives the CPU its typed arguments and result count");
 	require(registers.get(0) == valueInteger(1) && registers.get(1) == valueInteger(2)
-		&& state.registerTop == 2 && state.remainingCycles == 0
+		&& state.physicalTop == 2 && state.remainingCycles == 0
 		&& exit->currentPc == 0x1008u && exit->lastPc == 0x100cu && exit->nextPc == 0x1010u,
 		"CALL publishes the completed prefix but does not extend top, and preserves both WIDE PCs");
 }
@@ -1339,14 +1339,14 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 			}
 			auto block = test::compileNative(std::span(source).first(count), memory, cpu.stringPool());
 			const int grant = block->terminal.cycles;
-			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant, .registerTop = -3};
+			NativeBlockRunState state{.constants = constantsBank.view(), .remainingCycles = grant, .physicalTop = -3};
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == (terminal == OpCode::JMP ? NativeBlockExit::Continue
 				: terminal == OpCode::GETFIELD ? NativeBlockExit::ReadField : NativeBlockExit::ReadMemory),
 				"normal, typed-table and bus exits reach the shared gate with the actual descriptor");
 			require(test::matchesValues(registers.view(), expected), "shared exit maps preserve raw payloads and publish no unwritten register");
 			require(state.remainingCycles == grant - exit->cycles
-				&& state.registerTop == (calling ? 16 : definitions == 0 ? -3 : definitions),
+				&& state.physicalTop == (calling ? 16 : definitions == 0 ? -3 : definitions),
 				"the shared gate charges a segment once and preserves an unchanged register top");
 		}
 	}
@@ -1389,12 +1389,12 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 		NativeBlockRunState state{};
 		state.constants = constants.view();
 		state.remainingCycles = grant;
-		state.registerTop = 1;
+		state.physicalTop = 1;
 		const auto* exit = block->run(registers.view(), state);
 		if (failure < 0) {
 			require(exit == &block->terminal && registers.get(3) == valueFloat(3.5f)
 				&& registers.get(1) == valueInteger(2) && registers.get(2) == valueFloat(1.5f)
-				&& state.remainingCycles == 0 && state.registerTop == 4,
+				&& state.remainingCycles == 0 && state.physicalTop == 4,
 				"native sum consumes both proved values without confusing the reused guest slot");
 			continue;
 		}

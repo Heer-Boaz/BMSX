@@ -10,14 +10,14 @@ import type { JavaScriptRegisterCache } from './compiled_block_registers';
 
 /** Physical accesses see the register bank, including values held in the region. */
 export function emitWindowMove(kind: ValueMoveKind, a: number, b: number, registers: JavaScriptRegisterCache, exit: number): string {
-	if (kind === ValueMoveKind.ReadTop) return registers.writeInteger(a, 'T');
+	if (kind === ValueMoveKind.ReadTop) return registers.writeInteger(a, 'Math.max(T,0)');
 	const failure = registers.exit(exit);
 	if (kind === ValueMoveKind.SetTop) {
-		return `{const i=${registers.wordOperand(b)};if(i>F.stackCapacity) ${failure} T=i;}`;
+		return `{const i=${registers.wordOperand(b)};if(i>r.capacity()) ${failure} T=i;}`;
 	}
 	const index = registers.wordOperand(kind === ValueMoveKind.ReadIndexed ? b : a);
 	const published = registers.publishRange(0, Infinity);
-	const check = `const i=${index};if(i>=F.stackCapacity) ${failure}${published}`;
+	const check = `const i=${index};if(i>=r.capacity()) ${failure}${published}`;
 	if (kind === ValueMoveKind.ReadIndexed) return `{${check}${registers.copyFrom(a, 'r', 'i')}}`;
 	const write = `r.s(i,${registers.tagOperand(b)},${registers.wordOperand(b)});`;
 	registers.discardRange(0, Infinity);
@@ -88,7 +88,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			else registers.discardRange(a, a + b - 1);
 			return `{const n=${b === 0 ? 'F.varargCount' : b - 1};
 				const copied=${b === 0 ? 'n' : 'Math.min(n,F.varargCount)'},v=F.varargBase;
-				if(${b === 0 ? `(n>0 && ${a}+n>F.stackCapacity) || ` : ''}(copied>0 && v+copied>F.stackBase)) ${failure}
+				if(${b === 0 ? `(n>0 && ${a}+n>r.capacity()) || ` : ''}(copied>0 && v+copied>F.stackBase)) ${failure}
 				${b === 0 ? 'B-=n;' : ''}${published}
 				r.copyRangeFrom(F.thread.stackRegisters,${a},v,copied);
 				r.clear(n-copied,${a}+copied);

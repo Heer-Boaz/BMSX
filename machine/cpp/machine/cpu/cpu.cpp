@@ -1593,7 +1593,7 @@ RunResult CPU::runLoop(
 #define RESUME_SCALAR_FRONTIER() do { \
 	if constexpr (!Instrumented) { \
 		nextPc = frame->readControl(FrameField::Pc); \
-		publishedTop = registerTop = frame->readWindow(FrameField::Top); \
+		publishedTop = registerTop = frame->registerTop(); \
 		scalarFrame = frame; \
 	} \
 } while (0)
@@ -1697,7 +1697,7 @@ dispatch_fetch:
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				continue;
 			}
-			if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
+			if constexpr (!Instrumented) publishedTop = registerTop = frame->registerTop();
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 			decodedPage = &decodedPageForFrame(*frame, pc);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1731,7 +1731,7 @@ dispatch_decode:
 				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) continue;
 				if constexpr (!Instrumented) {
 					canReuseFrame = !(decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE);
-					publishedTop = registerTop = frame->readWindow(FrameField::Top);
+					publishedTop = registerTop = frame->registerTop();
 				}
 			}
 			m_currentInstructionPc = pc;
@@ -1900,7 +1900,7 @@ dispatch_instruction:
 					const bool replay = nativeState.replay && nativeState.replay->pc == pc;
 					if (!replay || !nativeState.replay->arithmetic) nativeState.replay.reset();
 					if (replay || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
-						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, decoded->c);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
@@ -2092,7 +2092,7 @@ dispatch_rebind_frame:
 					}
 					// The receiving frame and its aligned fetch page are already
 					// bound, even when this entry has no native body.
-					publishedTop = registerTop = FRAME.readWindow(FrameField::Top);
+					publishedTop = registerTop = FRAME.registerTop();
 					goto dispatch_bound_page;
 				}
 #endif
@@ -2104,7 +2104,7 @@ dispatch_observe:
 			PUBLISH_SCALAR_FRONTIER();
 			canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, decoded->c);
 #endif
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;
@@ -2302,12 +2302,17 @@ bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	return static_cast<int>(ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Top) & FRAME_WINDOW_MASK);
+	const u32 thread = m_activeThread->address, index = static_cast<u32>(frameIndex);
+	const auto top = static_cast<int>(ThreadRecord::readFrameWord(m_memory, thread, index, FrameField::Top) & FRAME_WINDOW_MASK);
+	const auto base = static_cast<int>(ThreadRecord::readFrameWord(m_memory, thread, index, FrameField::RegisterBase) & FRAME_WINDOW_MASK);
+	return std::max(top - base, 0);
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 	const u32 thread = m_activeThread->address;
-	const u32 base = ThreadRecord::readFrameWord(m_memory, thread, static_cast<u32>(frameIndex), FrameField::StackBase) & FRAME_WINDOW_MASK;
+	const auto index = static_cast<u32>(frameIndex);
+	const u32 origin = ThreadRecord::readFrameWord(m_memory, thread, index, FrameField::StackBase) & FRAME_WINDOW_MASK;
+	const u32 base = origin + (ThreadRecord::readFrameWord(m_memory, thread, index, FrameField::RegisterBase) & FRAME_WINDOW_MASK);
 	const auto layout = ThreadRecord::storageLayout(m_memory, thread);
 	return layout.slots(m_memory, base + static_cast<u32>(registerIndex) >= layout.valueCapacity).get(base + static_cast<u32>(registerIndex));
 }
@@ -2597,7 +2602,7 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 				// the otherwise unplaced Values and the caller's next PC.
 				const std::array operands{
 					valueInteger(static_cast<i32>(extent)),
-					valueInteger(result.topAfter(frame.readWindow(FrameField::Top), count)),
+					valueInteger(result.topAfter(frame.registerTop(), count)),
 					valueInteger(-1), valueInteger(remainingDeviceCycles()),
 					valueInteger(base), valueInteger(count),
 				};

@@ -13,6 +13,8 @@ import {
 	MAX_LOW_BX,
 	MAX_LOW_OPERAND,
 	MAX_OPERAND_BITS,
+	MAX_SIGNED_BX,
+	MIN_SIGNED_BX,
 	readInstructionWord,
 	writeInstruction,
 } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -509,10 +511,19 @@ function localFunctionSlotsBySymbol(
 function rewriteImageRelocations(
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramImageConstReloc>,
+	protos: ReadonlyArray<Proto>,
 	globalSlotByObjectSlot: Uint32Array,
 	systemGlobalSlotByObjectSlot: Uint32Array,
 ): void {
 	for (const reloc of relocs) {
+		if (reloc.kind === 'jal') {
+			const target = protos[reloc.protoIndex].entryPC / INSTRUCTION_BYTES;
+			const displacement = target - (reloc.wordIndex + 1);
+			if (displacement < MIN_SIGNED_BX || displacement > MAX_SIGNED_BX)
+				throw new Error(`Relocated BLua32 JAL displacement exceeds the instruction word: ${displacement}.`);
+			rewriteResolvedABx(code, reloc.wordIndex, OpCode.JAL, displacement & MAX_EXT_BX);
+			continue;
+		}
 		if (reloc.kind !== 'gl' && reloc.kind !== 'sys') continue;
 		const word = readInstructionWord(code, reloc.wordIndex);
 		rewriteResolvedABx(code, reloc.wordIndex, ((word >>> 18) & 0x3f) as OpCode,
@@ -690,7 +701,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		writeInstruction(code, word + 1, OpCode.JMP, 0,
 			(back & MAX_LOW_BX) >>> MAX_OPERAND_BITS, back & MAX_LOW_OPERAND, back >>> MAX_BX_BITS);
 	}
-	rewriteImageRelocations(code, object.link.constRelocs, globalNameLayout.slotByObjectSlot, systemGlobalNameLayout.slotByObjectSlot);
+	rewriteImageRelocations(code, object.link.constRelocs, text.protos, globalNameLayout.slotByObjectSlot, systemGlobalNameLayout.slotByObjectSlot);
 
 	const rodataAddress = input.loadAddress + rodataOffset;
 	const dataLoadAddress = input.loadAddress + dataLoadOffset;
@@ -855,6 +866,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	}
 	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
+	const softwareFramesByFunction = new Array<Blua32DebugMetadata['softwareFramesByFunction'][number]>(functionCount).fill(undefined);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
 	const outerBindingsByFunction = new Array<Blua32DebugMetadata['outerBindingsByFunction'][number]>(functionCount);
 	const staticBindingsByFunction = new Array<Blua32DebugMetadata['staticScopes']['bindingsByFunction'][number]>(functionCount);
@@ -886,6 +898,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		const resumePoints = input.metadata.resumePointsByProto[protoIndex];
 		resumePointsByFunction[slot] = resumePoints;
+		const softwareFrame = input.metadata.softwareFramesByProto[protoIndex];
+		if (softwareFrame !== undefined) softwareFramesByFunction[slot] = {
+			entry: softwareFrame.entry,
+			calls: softwareFrame.calls.map(({ targetProtos, ...call }) => ({
+				...call, targetFunctions: targetProtos.map(target => functionSlotByProtoIndex[target]),
+			})),
+			linkSlots: softwareFrame.linkSlots,
+		};
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];
 		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
@@ -931,6 +951,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			: debugInlineCallSiteTable.debugInlineCallSiteChainIds,
 		statementPointsByFunction,
 		resumePointsByFunction,
+		softwareFramesByFunction,
 		localSlotsByFunction,
 		outerBindingsByFunction,
 		lexicalDeclarations,

@@ -4,8 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { FRAME_WINDOW_MASK } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
+import { THREAD_CONTROL_COUNT_MASK } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -13,11 +15,13 @@ import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import { COP0_EVENT_CYCLES, CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, RegisterJumpMode, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { IO_CART_SELECT, IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
+import { IO_CART_SELECT, IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
+import type { Blua32SymbolsImage } from '../../../toolchain/ts/rompack/blua32_symbols';
 import { createTestSystemCpu, linkTestCartBlua32, writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
@@ -73,40 +77,67 @@ function mixInt(value: number): number {
 const report = [29, 51].map(seed => mixInt(mixInt(mixInt(seed))));
 const expected = [report[0], 41, report[1], 33, 18];
 
-function assertPhysicalCallChain(layout: ReturnType<typeof linkManagedTestSystem>['layout'], functionIds: readonly string[]) {
+function assertPhysicalCallChain(layout: ReturnType<typeof linkManagedTestSystem>['layout'], { metadata }: Blua32SymbolsImage) {
 	for (const name of ['leaf', 'middle', 'outer', 'consume']) {
-		const matching = layout.functions.filter((_fn, i) => functionIds[i].endsWith(`__${name}`));
-		assert.equal(matching.length, 1, `one executable body for ${name}`);
-		const fn = matching[0];
+		const index = metadata.functionIds.findIndex(id => id.endsWith(`__${name}`));
+		assert.notEqual(index, -1, name);
+		assert.equal(metadata.functionIds.findLastIndex(id => id.endsWith(`__${name}`)), index, `one executable body for ${name}`);
+		const fn = layout.functions[index];
 		let enter = 0, leave = 0;
 		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
 			const instruction = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
 			assert.notEqual(instruction.op, OpCode.CALL, `no language CALL inside ${name}`);
 			assert.notEqual(instruction.op, OpCode.RET, `no language RET inside ${name}`);
-			if (instruction.op === OpCode.JREG && instruction.c === RegisterJumpMode.EnterWindow) ++enter;
-			if (instruction.op === OpCode.JREG && instruction.c === RegisterJumpMode.LeaveWindow) {
-				assert.equal(instruction.b, name === 'consume' ? 0 : 2);
+			if (instruction.op === OpCode.JAL) ++enter;
+			if (instruction.op === OpCode.JREG) {
+				assert.equal(instruction.c, RegisterJumpMode.Jump, `ordinary return jump in ${name}`);
 				++leave;
 			}
 			pc = instruction.pc + INSTRUCTION_BYTES;
 		}
 		assert.equal(enter, name === 'middle' || name === 'outer' ? 1 : 0);
 		assert.equal(leave, 1);
+		const { calls } = metadata.softwareFramesByFunction[index]!;
+		assert.equal(calls.length, enter);
+		for (const call of calls) {
+			const jump = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress,
+				fn.codeAddress + call.wordOffset * INSTRUCTION_BYTES);
+			const continuation = fn.codeAddress + call.continuationWordOffset * INSTRUCTION_BYTES;
+			const end = fn.codeAddress + call.endWordOffset * INSTRUCTION_BYTES;
+			const top = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, continuation);
+			assert.equal(jump.op, OpCode.JAL);
+			assert.equal(top.op, OpCode.MOV);
+			assert.equal(top.c, ValueMoveKind.SetTopImmediate);
+			assert.equal(top.a, jump.a + 2, 'the caller publishes the two-result frontier in the selected register bank');
+			if (call.baseDelta !== 0) {
+				const restore = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, top.pc + INSTRUCTION_BYTES);
+				assert.equal(restore.op, OpCode.MOV);
+				assert.equal(restore.c, ValueMoveKind.AddBase);
+				assert.equal(restore.pc + INSTRUCTION_BYTES, end);
+			} else {
+				const leaf = metadata.functionIds.findIndex(id => id.endsWith('__leaf'));
+				assert.equal(name, 'middle');
+				assert.deepEqual(call.targetFunctions, [leaf]);
+				assert.ok(jump.a > 0, 'the direct link goes to the outgoing slot with no register-basis transfer');
+				assert.deepEqual(metadata.softwareFramesByFunction[leaf]!.linkSlots[0], { wordOffset: 0, slot: jump.a });
+				assert.equal(top.pc + INSTRUCTION_BYTES, end, 'no scratch Integer materialization or base restore');
+			}
+		}
 	}
 }
 
-test('the linked System passes fixed arguments and results through three physical windows', () => {
+test('the linked System passes fixed arguments and results through ordinary jumps', () => {
 	const main = exercise + 'return a, padded, c, d, tree.count()';
 	for (const optLevel of [0, 3] as const) {
 		const linked = linkManagedTestSystem(main, optLevel, [{ path: modulePath, source }]);
-		if (optLevel === 3) assertPhysicalCallChain(linked.layout, linked.symbols.metadata.functionIds);
+		if (optLevel === 3) assertPhysicalCallChain(linked.layout, linked.symbols);
 		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
 		runGuestToHalt(cpu, 4_194_304);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), expected.map(valueInteger));
 	}
 });
 
-test('a software callee reads the device horizon in its borrowed register window', () => {
+test('a frame-free software callee reads the device horizon', () => {
 	const path = 'window/deadline';
 	const source = `module<const>
 local remaining<const> = function(x)
@@ -138,7 +169,7 @@ return deadline.remaining(71)
 	}
 });
 
-test('both cartridge sockets run the same closed software ABI with exact TS/native grants', t => {
+test('both cartridge sockets run the same frame-free ABI with exact TS/native grants', t => {
 	const bios = linkManagedTestSystem(TEST_CART_TRANSFER_SOURCE, 3);
 	const systemRomBytes = writeTestBlua32Rom(bios);
 	const cartSource = `bss result: word[5]
@@ -155,7 +186,7 @@ halt_until_irq
 		[{ path: modulePath, source, chunk: parseLuaChunk(source, modulePath).chunk }],
 		{ entrySource: cartSource, optLevel: 3 });
 	const { cartImage, cartSymbols, cartRomBytes } = linkTestCartBlua32(bios.biosImports, cart);
-	assertPhysicalCallChain(cartImage, cartSymbols.metadata.functionIds);
+	assertPhysicalCallChain(cartImage, cartSymbols);
 	const resultBase = cartSymbols.metadata.staticScopes.declarations.find(symbol => symbol.name === 'result')!.address!;
 	const leaf = cartImage.functions[cartSymbols.metadata.functionIds.findIndex(id => id.endsWith('__leaf'))];
 	const folder = mkdtempSync(join(tmpdir(), 'bmsx-software-call-'));
@@ -181,7 +212,8 @@ halt_until_irq
 				const depth = cpu.getFrameDepth();
 				const pc = cpu.readFramePc(depth - 1);
 				if (pc >= leaf.codeAddress && pc < leaf.codeAddress + leaf.codeByteCount) {
-					for (let index = depth - 3; index < depth; ++index) assert.equal(cpu.readFrameFunctionAddress(index), 0);
+					assert.notEqual(cpu.readFrameFunctionAddress(depth - 1), 0, 'an ordinary enclosing activation remains selected');
+					assert.notEqual(cpu.readFrameFunctionAddress(depth - 1), leaf.address, 'entering the leaf did not install a frame');
 					continuation = commands.length;
 					writeFileSync(state, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 					commands.push('P');
@@ -204,7 +236,7 @@ halt_until_irq
 		const traceNative = () => execFileSync(native, [rom, trace, state, cartridge, cartridge], { encoding: 'utf8' }).trim().split('\n');
 		assert.deepEqual(traceNative(), observations);
 		writeFileSync(trace, ['X', ...commands.slice(continuation)].join('\n'));
-		assert.deepEqual(traceNative(), observations.slice(continuation - 1), 'TS to C++ resume inside the three physical windows');
+		assert.deepEqual(traceNative(), observations.slice(continuation - 1), 'TS to C++ resume inside a frame-free call');
 	}
 });
 
@@ -252,49 +284,88 @@ return sum, a, b, c, d, e, f, g, h, i, j, k, trial.count(), trial.relay(1, 8)
 	const { cpu: oracle } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(original) });
 	runGuestToHalt(oracle, 4_194_304);
 	assert.deepEqual(materializeCpuCompletionValues(oracle), output);
-	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }]);
+	const irqSource = `
+local trace<const> = require('kernel/gc_thread_trace').internal
+bss cleared_suffix: word
+local interrupted<const>: *addr = ${CPU_INTERRUPTED_CONTEXT_ADDRESS}
+local owner<const>: *stopped_thread = *interrupted
+local depth<const> = owner.frame_depth & ${THREAD_CONTROL_COUNT_MASK}
+local frame<const>: *stopped_frame = ${RAM_BASE} + ((owner.frame_block + (depth - 1) * sizeof(stopped_frame)) & ${RAM_RECORD_WORD_MASK})
+local first<const> = (frame.top + frame.stack_base) & ${FRAME_WINDOW_MASK}
+trace.clear_stack_range(owner.stack_block & ${RAM_RECORD_WORD_MASK}, owner.stack_capacity, first, owner.stack_capacity)
+*cleared_suffix = 1
+mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+mem[${IO_IRQ_MASK}] = 0
+`;
+	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }], [], 'main', { irqSource });
 	const modes = new Set<number>();
-	const indirectLeaves = new Set<number>();
+	const forwardedLeaves = new Map<number, number>();
 	for (const name of ['choose', 'relay']) {
 		const fnIndex = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(`__${name}`));
 		assert.notEqual(fnIndex, -1);
 		const fn = linked.layout.functions[fnIndex];
+		assert.equal(linked.symbols.metadata.softwareFramesByFunction[fnIndex]?.entry, true);
 		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
 			const op = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, pc);
 			assert.notEqual(op.op, OpCode.CALL, name);
 			assert.notEqual(op.op, OpCode.RET, name);
 			if (op.op === OpCode.MOV) modes.add(op.c);
-			if (op.op === OpCode.JREG && op.c === RegisterJumpMode.LeaveWindowFromRegister) indirectLeaves.add(pc);
+			if (op.op === OpCode.JREG) {
+				assert.equal(op.c, RegisterJumpMode.Jump, name);
+				if (name === 'relay') forwardedLeaves.set(pc, op.a);
+			}
 			pc = op.pc + INSTRUCTION_BYTES;
 		}
 	}
 	assert.ok(modes.has(ValueMoveKind.ReadIndexed) && modes.has(ValueMoveKind.WriteIndexed));
-	assert.ok(indirectLeaves.size > 0, 'an open result is forwarded through a computed physical frontier');
+	assert.ok(modes.has(ValueMoveKind.SetTop));
+	assert.ok(forwardedLeaves.size > 0, 'an open result is forwarded through an ordinary jump');
 	const systemRomBytes = writeTestBlua32Rom(linked);
 	const folder = mkdtempSync(join(tmpdir(), 'bmsx-open-software-call-'));
 	t.after(() => rmSync(folder, { recursive: true, force: true }));
 	const rom = join(folder, 'system.rom'), trace = join(folder, 'trace'), state = join(folder, 'state');
 	writeFileSync(rom, systemRomBytes);
-	const cpuExecutionBackend = CpuExecutionBackend.JavaScript;
+	const cpuExecutionBackend = CpuExecutionBackend.Interpreter;
 	const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend },
 		{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
 	runtime.boot();
-	const { cpu, scheduler, memory } = runtime.machine;
+	const { cpu, scheduler, memory, irqController } = runtime.machine;
 	const commands: string[] = [], observations: string[] = [];
-	let continuation = -1;
+	const relay = linked.layout.functions[linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('__relay'))];
+	let continuation = -1, grantSize = 31;
 	for (let grant = 0; grant < 8192; ++grant) {
-		const outcome = scheduler.runCpuSlice(0, 31, 0, CpuRunKind.Scheduled);
-		commands.push('E 31');
-		observations.push(`${outcome} ${31 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		const cycles = grantSize;
+		const outcome = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+		commands.push(`E ${cycles}`);
+		observations.push(`${outcome} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		if (outcome === RunResult.Halted) break;
 		const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
-		if (continuation === -1 && indirectLeaves.has(pc)) {
+		if (continuation === -1 && pc >= relay.codeAddress && pc < relay.codeAddress + relay.codeByteCount) grantSize = 1;
+		const link = forwardedLeaves.get(pc);
+		if (continuation === -1 && link !== undefined) {
+			const frame = cpu.activeThread.currentFrame!;
+			assert.ok(Math.max(link, 4) < frame.top, 'firmware can clear the dead suffix without losing the link or count');
+			assert.ok([1, 2, 4].map(valueInteger).includes(frame.registers.get(4)), 'prefix plus actual return suffix count');
+			const caller = linked.symbols.metadata.functionIds.indexOf('module:main/entry');
+			assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), linked.layout.functions[caller].address,
+				'neither the variable producer nor the forwarder installs a frame');
 			continuation = commands.length;
 			writeFileSync(state, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+			memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+			irqController.raise(IRQ_VBLANK);
+			assert.equal(cpu.enterPendingInterrupt(), true);
+			assert.equal(cpu.fixedInterruptActive(), true);
+			commands.push(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`, `i ${IRQ_VBLANK}`, 'I');
+			observations.push('1');
+			grantSize = 31;
 		}
 	}
 	assert.notEqual(continuation, -1, 'a grant stops immediately before the computed return');
 	assert.deepEqual(runtime.readCompletionValues(), output);
+	const cleared = linked.symbols.metadata.staticScopes.declarations.find(symbol => symbol.name === 'cleared_suffix')!.address!;
+	assert.equal(memory.readMappedU32LE(cleared), 1);
+	commands.push(`M ${cleared}`);
+	observations.push('1 0');
 	commands.push('c');
 	observations.push([output.length, ...output.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
@@ -329,11 +400,15 @@ end
 local relay<const> = function(prefix, ...)
 	return actual(prefix, ...)
 end
+local relay_exact<const> = function(prefix, ...)
+	return actual(prefix, ...)
+end
 local suffix<const> = function(prefix, ...)
 	return blua32.argument_suffix(1)
 end
 local count<const> = function() return *evaluations end
-return { produce = produce, collect = collect, actual = actual, forward = forward, relay = relay, suffix = suffix, count = count }
+return { produce = produce, collect = collect, actual = actual, forward = forward, relay = relay,
+	relay_exact = relay_exact, suffix = suffix, count = count }
 `;
 	const main = `
 local probe<const> = require('${path}')
@@ -346,10 +421,12 @@ local nf, af, bf, df, ef = probe.actual(probe.forward(5, false, nil, 9))
 local fs, gs, hs = probe.forward(7)
 local nr, ar, br, dr, er = probe.relay(8, false, nil, 4)
 local nt, at, bt, dt, et = probe.relay(11)
+local nx, ax, bx, dx, ex = probe.relay_exact(81, false, nil, 7)
 local ss, ts, us = probe.suffix(22, false, nil, 9)
 local os, ps = probe.suffix(93)
 return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d1, e1,
-	n3, a3, b3, d3, e3, nf, af, bf, df, ef, fs, gs, hs, nr, ar, br, dr, er, nt, at, bt, dt, et, ss, ts, us, os, ps, probe.count(),
+	n3, a3, b3, d3, e3, nf, af, bf, df, ef, fs, gs, hs, nr, ar, br, dr, er, nt, at, bt, dt, et,
+	nx, ax, bx, dx, ex, ss, ts, us, os, ps, probe.count(),
 	probe.forward(38, false, nil)
 `;
 	const z = valueNil(), f = valueBool(false), v = valueInteger;
@@ -363,6 +440,7 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 		v(7), z, z,
 		v(4), v(8), f, z, v(4),
 		v(1), v(11), z, z, z,
+		v(4), v(81), f, z, v(7),
 		z, v(9), z, z, z, v(5), v(38), f, z,
 	];
 	const original = linkManagedTestSystem(main, 0, [{ path, source: program }]);
@@ -372,11 +450,11 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 
 	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }]);
 	const { layout, symbols } = linked;
-	for (const name of ['__produce', '__collect', '__actual', '__forward', '__relay', '__suffix', '/entry']) {
+	for (const name of ['__produce', '__collect', '__actual', '__forward', '__relay', '__relay_exact', '__suffix', '/entry']) {
 		const idx = symbols.metadata.functionIds.findIndex(id => id.endsWith(name) && (name !== '/entry' || id === 'module:main/entry'));
 		assert.notEqual(idx, -1, name);
 		const fn = layout.functions[idx];
-		let transfers = 0;
+		let transfers = 0, immediateTop = 0, registerTop = 0;
 		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
 			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
 			assert.notEqual(row.op, OpCode.CALL, name);
@@ -384,9 +462,16 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 			assert.notEqual(row.op, OpCode.ARGC, name);
 			if (name !== '/entry') assert.notEqual(row.op, OpCode.RET, name);
 			if (row.op === OpCode.JREG) ++transfers;
+			if (row.op === OpCode.MOV && row.c === ValueMoveKind.SetTopImmediate) ++immediateTop;
+			if (row.op === OpCode.MOV && row.c === ValueMoveKind.SetTop) ++registerTop;
 			pc = row.pc + INSTRUCTION_BYTES;
 		}
 		assert.ok(transfers > 0, name);
+		if (name === '__relay') assert.equal(registerTop, 1, 'the forwarded tuple has a runtime count');
+		if (name === '__relay_exact') {
+			assert.equal(immediateTop, 1, 'the proven count uses one immediate frontier update');
+			assert.equal(registerTop, 0);
+		}
 	}
 	const systemRomBytes = writeTestBlua32Rom(linked);
 	const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
@@ -413,7 +498,7 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 	assert.deepEqual(execFileSync(native, [rom, trace, trace], { encoding: 'utf8' }).trim().split('\n'), observations);
 });
 
-test('a software call grows the thread backing without widening the caller', () => {
+test('a wide software callee uses backing admitted at entry without growing it on the call', () => {
 	const path = 'window/footprint';
 	const locals = Array.from({ length: 180 }, (_, i) => `term${i}`);
 	const linked = linkManagedTestSystem(`
@@ -430,32 +515,38 @@ return { wide = wide }
 	const { layout, symbols } = linked;
 	const caller = layout.functions[symbols.metadata.functionIds.indexOf('module:main/entry')];
 	const callee = layout.functions[symbols.metadata.functionIds.findIndex(id => id.endsWith('__wide'))];
-	assert.ok(callee.maxStack > caller.maxStack, 'the caller reserves only its local lanes and outgoing live values');
+	assert.ok(caller.maxStack >= callee.maxStack, 'the linked caller reserves the transitive physical footprint');
 	let issue = caller.codeAddress;
 	while (issue < caller.codeAddress + caller.codeByteCount) {
 		const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, issue);
-		if (row.op === OpCode.JREG && row.c === RegisterJumpMode.EnterWindow) break;
+		if (row.op === OpCode.JAL) break;
 		issue = row.pc + INSTRUCTION_BYTES;
 	}
 	assert.ok(issue < caller.codeAddress + caller.codeByteCount);
 	const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(linked), cartridgeSlots: cartridgeSlots(),
-		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: CpuExecutionBackend.JavaScript },
+		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: CpuExecutionBackend.Interpreter },
 	{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
 	runtime.boot();
 	const { cpu, scheduler } = runtime.machine;
 	const thread = cpu.rootThread;
-	let fault = false, completed = false;
+	let completed = false, visited = false;
+	let callerContext: { depth: number; frame: number; capacity: number } | undefined;
 	for (let grant = 0; grant < 100_000; ++grant) {
-		const outcome = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-		if (cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW && cpu.readEpcWord() === issue) {
-			if (!fault) assert.ok(thread.stackRegisters.capacity() < callee.maxStack);
-			assert.equal(thread.currentFrame!.stackCapacity, caller.maxStack);
-			fault = true;
+		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		if (pc === issue) {
+			callerContext = { depth, frame: cpu.readThreadFrameAddress(thread.address, depth - 1), capacity: thread.stackRegisters.capacity() };
+			assert.ok(callerContext.capacity >= caller.maxStack);
 		}
+		if (pc >= callee.codeAddress && pc < callee.codeAddress + callee.codeByteCount) {
+			assert.ok(callerContext);
+			assert.deepEqual({ depth, frame: cpu.readThreadFrameAddress(thread.address, depth - 1), capacity: thread.stackRegisters.capacity() }, callerContext);
+			visited = true;
+		}
+		const outcome = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		assert.ok(!(cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW && cpu.readEpcWord() === issue));
 		if (outcome === RunResult.Halted) { completed = true; break; }
 	}
-	assert.ok(fault, 'the ordinary firmware exception grew the physical backing and retried the same register jump');
-	assert.ok(completed);
+	assert.ok(visited && completed);
 	assert.ok(thread.stackRegisters.capacity() >= callee.maxStack);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(180 * 31 + ((179 * 180) >> 1) + 1)]);
 });

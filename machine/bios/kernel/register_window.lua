@@ -112,6 +112,7 @@ local land_call<const> = function(values, depth, deadline, count,
 	local block<const>: *stopped_frame = layout.ram_base + (thread.frame_block & word_mask)
 	local callee<const>: *stopped_frame = &block[size]
 	callee.fn, callee.call_site, callee.head, callee.flags = fn, cop0.epc, 0, flags
+	callee.register_base = 0
 	callee.pc, callee.vararg_base, callee.argument_count = pc, variadic, count
 	callee.return_base, callee.return_count = return_base, return_count
 	callee.top, callee.closure = formals, closure

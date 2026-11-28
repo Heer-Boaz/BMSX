@@ -229,6 +229,21 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	record.vector(metadata.staticScopes.bindingsByFunction, [&](const auto& bindings) { record.vector(bindings, [&](const auto& binding) {
 		words.insert(words.end(), {binding.declarationIndex, binding.inlineDepth, tables.wordRanges(binding.visibleWordRanges)});
 	}); });
+	const size_t frameCountWord = words.size();
+	words.push_back(0u);
+	for (u32 slot = 0; slot < metadata.softwareFramesByFunction.size(); ++slot) {
+		const auto& frame = metadata.softwareFramesByFunction[slot];
+		if (!frame) continue;
+		++words[frameCountWord];
+		words.insert(words.end(), {slot, frame->entry});
+		record.vector(frame->calls, [&](const auto& call) {
+			words.insert(words.end(), {call.startWordOffset, call.wordOffset, call.continuationWordOffset, call.endWordOffset, call.baseDelta});
+			record.numbers(call.targetFunctions);
+			record.numbers(call.liveAfter);
+			words.push_back(tables.wordRanges(call.targetLiveWordRanges));
+		});
+		record.vector(frame->linkSlots, [&](const auto& link) { words.insert(words.end(), {link.wordOffset, link.slot}); });
+	}
 	BinObject payload;
 	payload["strings"] = BinValue(std::move(tables.strings));
 	payload["ranges"] = BinValue(writeLE32Array(tables.ranges.words));
@@ -368,6 +383,17 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 	metadata.staticScopes.bindingsByFunction = record.vector([&] { return record.vector([&] {
 		return Blua32StaticBindingDebug{record.word(), record.word(), intervals[record.word()]};
 	}); });
+	metadata.softwareFramesByFunction.resize(metadata.functionIds.size());
+	for (u32 count = record.word(); count != 0u; --count) {
+		const u32 slot = record.word();
+		metadata.softwareFramesByFunction[slot] = Blua32SoftwareFrameDebug{
+			record.word() != 0u,
+			record.vector([&] { return Blua32SoftwareCallDebug{
+				record.word(), record.word(), record.word(), record.word(), record.word(), record.numbers(), record.numbers(),
+				intervals[record.word()]}; }),
+			record.vector([&] { return Blua32SoftwareLinkSlotDebug{record.word(), record.word()}; }),
+		};
+	}
 	return symbols;
 }
 

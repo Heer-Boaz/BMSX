@@ -109,7 +109,7 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 		if (exit.exit === CompiledBlockExit.Continue) {
 			const target = entries.get(exit.nextPc);
 			if (target !== undefined) {
-				const top = exit.resetsRegisterTop ? `T=Math.max(F.top,${exit.registerTop});`
+				const top = exit.resetsRegisterTop ? (exit.registerTop === 0 ? 'T=F.top;' : `T=Math.max(F.top,${exit.registerTop});`)
 					: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
 				const required = admissionVarargs[target] === 0 ? `${admissionCycles[target]}`
 					: `${admissionCycles[target]}+${admissionVarargs[target]}*F.varargCount`;
@@ -122,7 +122,7 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 		const block = blocks[index];
 		if (plans[index].fallthrough) {
 			const exit = block.terminal;
-			const top = exit.resetsRegisterTop ? `T=Math.max(F.top,${exit.registerTop});`
+			const top = exit.resetsRegisterTop ? (exit.registerTop === 0 ? 'T=F.top;' : `T=Math.max(F.top,${exit.registerTop});`)
 				: exit.registerTop === 0 ? '' : `if(T<${exit.registerTop})T=${exit.registerTop};`;
 			// Settle memory-format charges before the next fixed prefix.
 			const required = admissionVarargs[index + 1] === 0 ? `${admissionCycles[index + 1]}`
@@ -133,7 +133,7 @@ fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.a
 		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(plans[index].page, block, index => transfer(block, index))}}`);
 	}
 	source.push('}}', writeBacks.epilogue(), 'const e=x[X];S.remainingCycles=B-e.cycles;',
-		'S.registerTop=Math.max(e.resetsRegisterTop?F.top:T,e.registerTop);return X;}');
+		'const t=e.resetsRegisterTop?F.top:T;S.registerTop=e.registerTop===0?t:Math.max(t,e.registerTop);return X;}');
 	// The admitted frame has one contiguous view per lane. Keep those
 	// same views through the region; normal exits still publish via r.s.
 	if (blocks.some(block => block.registers.readsTagPlane)) source[1] += 'const RT=r.tagPlane,TB=r.tagRamOffset();';

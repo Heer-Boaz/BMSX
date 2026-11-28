@@ -11,10 +11,10 @@ constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
 constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
 constexpr auto receiving = NativeBlockAbi::transitionExit;
 constexpr auto active = offsetof(NativeBlockRunState, frame);
-constexpr auto capacity = offsetof(NativeBlockRunState, registerCapacity);
+constexpr auto capacity = offsetof(NativeBlockRunState, windowWidth);
 constexpr auto depth = offsetof(NativeBlockRunState, frameDepth);
-constexpr auto base = offsetof(NativeBlockRunState, stackBase);
-constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+constexpr auto base = offsetof(NativeBlockRunState, stackOrigin);
+constexpr auto top = offsetof(NativeBlockRunState, physicalTop);
 constexpr auto closure = offsetof(NativeBlockRunState, closure);
 constexpr auto window = offsetof(CallFrame, registers);
 constexpr auto operands = offsetof(NativeBlockExitSite, operands);
@@ -37,6 +37,11 @@ void admitPhysicalTransfer(sljit_compiler* c, sljit_label* cold) {
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0, SLJIT_IMM, 0), cold);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM1(state),
 		offsetof(NativeCpuRunState, firstPendingFrame), SLJIT_IMM, 0), cold);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(state),
+		offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, 0), cold);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), active);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R1),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), cold);
 }
 
 // R1 points at the outgoing RAM record; R0 is still the issuing site.
@@ -60,6 +65,8 @@ void publishReceiving(sljit_compiler* c, sljit_label* bindWindow) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), depth, SLJIT_MEM1(SLJIT_SP), scratchDepth);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), base, SLJIT_MEM1(SLJIT_SP), scratchBase);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_MEM1(SLJIT_SP), scratchTop);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(receiving), window + ValueSpan::sizeOffset());
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), capacity, SLJIT_R3, 0);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	constexpr auto direct = offsetof(NativeCpuRunState, directWindowTransferResumes);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(state), direct, SLJIT_MEM1(state), direct, SLJIT_IMM, 1);
@@ -110,6 +117,8 @@ sljit_label* emitWindowEnter(sljit_compiler* c, sljit_label* bindWindow, sljit_l
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(state), active);
 	sljit_emit_op1(c, SLJIT_MOV_P, receiving, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, next));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, receiving, 0, SLJIT_IMM, 0), cold);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(receiving),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), cold);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(receiving), offsetof(CallFrame, nativeControl));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0), cold);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_MEM1(state), depth, SLJIT_IMM, 1);
@@ -138,9 +147,10 @@ sljit_label* emitWindowEnter(sljit_compiler* c, sljit_label* bindWindow, sljit_l
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_SP), scratchWidth);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(receiving), window + ValueSpan::sizeOffset(), SLJIT_R3, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(receiving), window + ValueSpan::mirroredOffset(), SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(receiving), offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0);
 
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(receiving), offsetof(CallFrame, nativeControl));
-	for (const auto field : {FrameField::Function, FrameField::OpenHead, FrameField::Closure, FrameField::ArgumentCount,
+	for (const auto field : {FrameField::Function, FrameField::OpenHead, FrameField::RegisterBase, FrameField::Closure, FrameField::ArgumentCount,
 		FrameField::ReturnBase, FrameField::ReturnCount})
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R1), static_cast<int>(field), SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R1), static_cast<int>(FrameField::CallSite),

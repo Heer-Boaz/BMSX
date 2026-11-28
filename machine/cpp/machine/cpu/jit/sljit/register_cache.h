@@ -63,6 +63,7 @@ public:
 	void discardRange(int first, int end);
 	void publishRange(int first, int end);
 	void publish();
+	void rebase(int displacement);
 	enum class FrameSlots { MayChange, Unchanged };
 	void spillCall(bool reload, sljit_sw stackOffset, FrameSlots slots) const;
 

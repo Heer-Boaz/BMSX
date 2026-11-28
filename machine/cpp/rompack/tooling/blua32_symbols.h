@@ -90,6 +90,28 @@ struct Blua32ResumePoint {
 	std::optional<std::string> resumeId;
 };
 
+struct Blua32SoftwareCallDebug {
+	u32 startWordOffset;
+	u32 wordOffset;
+	u32 continuationWordOffset;
+	u32 endWordOffset;
+	u32 baseDelta;
+	std::vector<u32> targetFunctions;
+	std::vector<u32> liveAfter;
+	Blua32WordRanges targetLiveWordRanges;
+};
+
+struct Blua32SoftwareLinkSlotDebug {
+	u32 wordOffset;
+	u32 slot;
+};
+
+struct Blua32SoftwareFrameDebug {
+	bool entry;
+	std::vector<Blua32SoftwareCallDebug> calls;
+	std::vector<Blua32SoftwareLinkSlotDebug> linkSlots;
+};
+
 struct Blua32StatementPoint {
 	i32 wordOffset = 0;
 	Blua32SourceRange range;
@@ -113,6 +135,7 @@ struct Blua32DebugMetadata {
 	std::vector<u32> debugInlineCallSiteChainIds;
 	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
+	std::vector<std::optional<Blua32SoftwareFrameDebug>> softwareFramesByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
 	std::vector<std::vector<Blua32OuterBindingDebug>> outerBindingsByFunction;
 	std::vector<Blua32LexicalDeclarationDebug> lexicalDeclarations;

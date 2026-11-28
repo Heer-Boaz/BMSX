@@ -75,6 +75,25 @@ export type Blua32ResumePoint = {
 	inlineCallSites: Blua32InlineCallSites;
 };
 
+export type Blua32SoftwareCallDebug = {
+	readonly startWordOffset: number;
+	readonly wordOffset: number;
+	readonly continuationWordOffset: number;
+	readonly endWordOffset: number;
+	readonly baseDelta: number;
+	readonly targetFunctions: readonly number[];
+	/** Physical slots live at the original CALL successor. */
+	readonly liveAfter: readonly number[];
+	/** Encoded word ranges where this indirect call's target register holds its destination. */
+	readonly targetLiveWordRanges: Blua32WordRanges;
+};
+
+export type Blua32SoftwareFrameDebug = {
+	readonly entry: boolean;
+	readonly calls: readonly Blua32SoftwareCallDebug[];
+	readonly linkSlots: readonly { readonly wordOffset: number; readonly slot: number }[];
+};
+
 export type Blua32StatementPoint = {
 	wordOffset: number;
 	range: SourceRange;
@@ -111,6 +130,7 @@ export type Blua32DebugMetadata = {
 	debugInlineCallSiteChainIds: ReadonlyArray<number>;
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
+	softwareFramesByFunction: readonly (Blua32SoftwareFrameDebug | undefined)[];
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
 	outerBindingsByFunction: ReadonlyArray<ReadonlyArray<Blua32OuterBindingDebug>>;
 	lexicalDeclarations: ReadonlyArray<Blua32LexicalDeclarationDebug>;

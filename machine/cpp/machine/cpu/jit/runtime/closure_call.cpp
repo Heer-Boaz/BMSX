@@ -14,19 +14,22 @@ inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitS
 	u32 prototype, u32 closure, int stackBase, int varargBase, size_t capacity, int top, int cycles) noexcept {
 	auto& state = run.state;
 	callee.executionImage = state.frame->executionImage;
+	callee.m_registerBase = 0;
 	callee.registers = callee.thread->stack.linearSubspan(stackBase, capacity);
 	callee.pendingNativeFunction = prototype;
 	callee.pendingNativeClosure = closure;
 	callee.pendingNativeStackBase = stackBase;
 	callee.pendingNativeVarargBase = varargBase;
-	callee.pendingNativeCallerTop = state.registerTop;
+	callee.pendingNativeCallerPhysicalTop = state.physicalTop;
 	callee.pendingNativeCall = &exit;
 	if (!run.firstPendingFrame) run.firstPendingFrame = &callee;
 	state.frame = &callee;
 	++state.frameDepth;
 	state.closure = closure;
-	state.stackBase = stackBase;
-	state.registerTop = top;
+	state.stackOrigin = stackBase;
+	state.windowWidth = static_cast<u32>(capacity);
+	state.physicalTop = top;
+	state.registerBase = 0;
 	state.remainingCycles -= cycles;
 }
 
@@ -35,21 +38,23 @@ inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitS
 void NativeCpuRunState::writePendingFrame(CallFrame& frame, u32 pc, i32 top) const noexcept {
 	const auto& site = *frame.pendingNativeCall;
 	const auto& call = site.operands.call;
-	const int supplied = call.supplied < 0 ? std::max(frame.pendingNativeCallerTop - call.callee - 1, 0) : call.supplied;
+	const int supplied = call.supplied < 0 ? std::max(frame.pendingNativeCallerPhysicalTop - frame.previous->registerBase() - call.callee - 1, 0) : call.supplied;
 	const auto base = frame.pendingNativeStackBase;
 	const auto varargBase = frame.pendingNativeVarargBase;
 	const auto closure = frame.pendingNativeClosure;
 	const auto prototype = frame.pendingNativeFunction;
+	const auto registerBase = frame.registerBase();
 	const FrameEntryControl entry{prototype, pc, site.lastPc, frameBank,
 		varargBase, supplied, CallResultPlacement::call(call.callee, call.requested),
-		top, closure, base, static_cast<i32>(frame.registers.size())};
+		top, closure, base, static_cast<i32>(frame.registers.size()) + registerBase, registerBase};
 	entry.writeWords([&frame](FrameField field, u32 word) { frame.writeAdmittedControl(field, word); });
 }
 
 void NativeCpuRunState::publishActivation(u32 pc) noexcept {
+	state.publishRegisterBase();
 	if (!firstPendingFrame) {
 		state.frame->writeAdmittedControl(FrameField::Pc, pc);
-		state.frame->setAdmittedTop(state.registerTop);
+		state.frame->setAdmittedPhysicalTop(state.physicalTop);
 		return;
 	}
 
@@ -58,16 +63,15 @@ void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 	auto& thread = *parent.thread;
 	const auto& firstCall = *callee->pendingNativeCall;
 	parent.writeAdmittedControl(FrameField::Pc, firstCall.nextPc);
-	parent.setAdmittedTop(callee->pendingNativeCallerTop);
+	parent.setAdmittedPhysicalTop(callee->pendingNativeCallerPhysicalTop);
 	parent.nativeContinuationCells = firstCall.continuationCells;
 	parent.nativeContinuationPc = firstCall.nextPc;
 	parent.compilationEntry = true;
 	for (;;) {
-		const auto& site = *callee->pendingNativeCall;
 		const bool current = callee == state.frame;
 		const auto* nextCall = current ? nullptr : callee->next->pendingNativeCall;
 		const auto resume = current ? pc : nextCall->nextPc;
-		const auto top = current ? state.registerTop : callee->next->pendingNativeCallerTop;
+		const auto top = current ? state.physicalTop : callee->next->pendingNativeCallerPhysicalTop;
 		writePendingFrame(*callee, resume, top);
 		callee->pendingNativeCall = nullptr;
 		callee->compilationEntry = true;
@@ -76,7 +80,7 @@ void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 		if (current) break;
 		callee = callee->next;
 	}
-	thread.publishAdmittedFrame(*callee, state.frameDepth, state.stackBase + static_cast<i32>(callee->registers.size()));
+	thread.publishAdmittedFrame(*callee, state.frameDepth, state.stackOrigin + static_cast<i32>(state.windowWidth));
 	firstPendingFrame = nullptr;
 }
 
@@ -143,6 +147,7 @@ void* CPU::resumeScalarAfterNativeTransfer(NativeCpuRunState& run, const NativeB
 void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
+	state.publishRegisterBase();
 	auto& caller = *state.frame;
 	const auto& call = exit->operands.call;
 	if (exit->callStrategy == NativeCallStrategy::Fixed) return tryCallNativeFixedFrame(run, exit);
@@ -211,8 +216,8 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 	const u32 depth = state.frameDepth + 1u;
 	auto* callee = thread.retainedFrameForEntry(caller, depth);
 	if (!callee || cpu.retargetsHaltedFrame(thread, depth)) return nullptr;
-	const int supplied = call.supplied < 0 ? std::max(state.registerTop - base - 1, 0) : call.supplied;
-	const auto admitted = ArgumentPlacement::forEntry(state.stackBase + base + 1, supplied, *function);
+	const int supplied = call.supplied < 0 ? std::max(state.physicalTop - state.registerBase - base - 1, 0) : call.supplied;
+	const auto admitted = ArgumentPlacement::forEntry(state.stackOrigin + state.registerBase + base + 1, supplied, *function);
 	if (!admitted) return nullptr;
 	const auto& placement = *admitted;
 	const size_t stackBase = placement.stackBase;
@@ -282,7 +287,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	const u32 depth = state.frameDepth + 1u;
 	auto* callee = thread.retainedFrameForEntry(caller, depth);
 	if (!callee || cpu.retargetsHaltedFrame(thread, depth)) return nullptr;
-	const i32 stackBase = state.stackBase + base + 1;
+	const i32 stackBase = state.stackOrigin + state.registerBase + base + 1;
 	if (static_cast<size_t>(stackBase) + plan.capacity > thread.stackCapacity) return nullptr;
 
 	const int top = plan.copied + plan.padded;
@@ -292,25 +297,25 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 }
 
 int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {
+	state->publishRegisterBase();
 	auto& frame = *state->frame;
 	const bool pending = frame.pendingNativeCall != nullptr;
 	const int varargBase = pending ? frame.pendingNativeVarargBase : frame.readAdmittedWindow(FrameField::VarargBase);
-	const int available = std::max(state->stackBase - varargBase, 0);
+	const int origin = state->stackOrigin;
+	const int available = std::max(origin - varargBase, 0);
 	const bool open = requested < 0;
 	const auto placement = ValuePlacement::fit(available, open ? available : requested);
 	const int count = placement.count();
-	const int top = first + count;
-	const int capacity = pending ? static_cast<int>(frame.registers.size())
-		: frame.readAdmittedWindow(FrameField::StackCapacity);
-	if (count != 0 && top > capacity) return -1;
+	const int top = state->registerBase + first + count;
+	if (count != 0 && static_cast<size_t>(top) > state->windowWidth) return -1;
 
 	const int source = placement.copied == 0 ? 0 : varargBase;
 	// The caller has not published cached registers below the destination.
 	// Only a source wholly below this frame is safe to read in place.
-	if (placement.copied != 0 && source + placement.copied > state->stackBase)
+	if (placement.copied != 0 && source + placement.copied > origin)
 		return -1;
 	frame.registers.placeAdmitted(first, frame.thread->stack, source, placement.copied, placement.padded);
-	if (open) state->registerTop = top;
+	if (open) state->physicalTop = top;
 	return count;
 }
 

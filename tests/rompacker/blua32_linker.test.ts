@@ -19,6 +19,7 @@ import { replaceWithJump, replaceWithMov } from '../../toolchain/ts/lua/compiler
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type {
 	ProgramConstant,
@@ -34,6 +35,7 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	INSTRUCTION_BYTES,
+	RegisterJumpMode,
 	instructionBranchTarget,
 	instructionBx,
 	instructionOpcode,
@@ -51,15 +53,16 @@ import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import {
 	buildBlua32ExecutionRevision,
 	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, loadHeapServiceTestModules } from '../helpers/heap_service_system';
 import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
-import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 
@@ -128,6 +131,7 @@ function makeMetadata(
 		protoDisplayNames: protoIds.slice(),
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
+		softwareFramesByProto: [],
 		localSlotsByProto: protoIds.map(() => []),
 		outerBindingsByProto: protoIds.map(() => []),
 		staticScopes: { declarations: [], globals: [], bindingsByProto: protoIds.map(() => []) },
@@ -201,6 +205,59 @@ function makeCartObject(
 		metadata: system.metadata,
 	};
 }
+
+test('BLua32 text relocation links WIDE JAL both ways without changing the active frame', () => {
+	const link = 70;
+	const linkLow = link & 0x3f, linkHigh = link >>> 6;
+	const returnToLink = { op: OpCode.JREG, a: linkLow, b: 0, c: RegisterJumpMode.Jump, ext: linkHigh << 6 };
+	const wide = { op: OpCode.WIDE, a: linkHigh, b: 0, c: 0 };
+	const jal = { op: OpCode.JAL, a: linkLow, b: 0, c: 0 };
+	const image = linkRawTestSystemBlua32({
+		verifiedControlFlow: true,
+		startupFunctionIndex: 1,
+		text: buildCode([
+			{ op: OpCode.ADD, a: 0, b: 0, c: 0 },
+			returnToLink,
+			{ op: OpCode.KSMI, a: 0, b: 0, c: 4 },
+			wide, jal,
+			{ op: OpCode.KSMI, a: 1, b: 0, c: 3 },
+			wide, jal,
+			{ op: OpCode.RET, a: 0, b: 2, c: 0 },
+			{ op: OpCode.ADD, a: 0, b: 0, c: 1 },
+			returnToLink,
+		]),
+		functions: [
+			{ firstWord: 0, wordCount: 2, maxStack: link + 1 },
+			{ firstWord: 2, wordCount: 7, maxStack: link + 1 },
+			{ firstWord: 9, wordCount: 2, maxStack: link + 1 },
+		],
+		constRelocs: [
+			{ wordIndex: 4, kind: 'jal', protoIndex: 0 },
+			{ wordIndex: 7, kind: 'jal', protoIndex: 2 },
+		],
+	});
+	const [earlier, caller, later] = image.image.functions;
+	const { textAddress } = image.image.header;
+	const first = decodeBlua32InstructionAtPc(image.image.textBytes, textAddress, caller.codeAddress + INSTRUCTION_BYTES);
+	const second = decodeBlua32InstructionAtPc(image.image.textBytes, textAddress, caller.codeAddress + 4 * INSTRUCTION_BYTES);
+	assert.deepEqual([first.op, first.a, first.sbx, first.pc + (1 + first.sbx) * INSTRUCTION_BYTES],
+		[OpCode.JAL, link, -5, earlier.codeAddress]);
+	assert.deepEqual([second.op, second.a, second.sbx, second.pc + (1 + second.sbx) * INSTRUCTION_BYTES],
+		[OpCode.JAL, link, 1, later.codeAddress]);
+
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const depth = cpu.getFrameDepth();
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.JAL]);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), earlier.codeAddress);
+	assert.equal(cpu.readFrameRegister(depth - 1, link), valueInteger(first.pc + INSTRUCTION_BYTES));
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JREG] + BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.JAL]);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), later.codeAddress);
+	assert.equal(cpu.readFrameRegister(depth - 1, link), valueInteger(second.pc + INSTRUCTION_BYTES));
+	runGuestToHalt(cpu, 200);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11)]);
+});
 
 function setFunctionIds(
 	object: ProgramObjectImage,

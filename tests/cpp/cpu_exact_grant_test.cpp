@@ -26,6 +26,7 @@
 #include <thread>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -543,6 +544,185 @@ void compileRegisterJumpReceiver() {
 #endif
 }
 
+void exactFramelessLeafGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	constexpr int width = 11, marker = 10;
+	const int jal = BASE_CYCLES[static_cast<u8>(OpCode::JAL)];
+	const int leafCycles = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
+	const int successorCycles = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	for (const auto [left, right, result, link] : {std::array<u8, 4>{2, 3, 6, 5}, {7, 1, 0, 8}}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(5u * INSTRUCTION_BYTES);
+		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = width},
+			{.firstWord = 1, .wordCount = 2, .maxStack = width},
+			{.firstWord = 3, .wordCount = 2, .maxStack = width}};
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::JAL), link, 0, 2);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), marker, 0, 31);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255); // Stay in the continuation.
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), result, left, right);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JREG), link, 0, static_cast<u8>(RegisterJumpMode::Jump));
+		Machine native(image, false), scalar(image, true);
+		auto& cpu = native.cpu;
+		const u32 start = native.rom.textAddress, successor = start + INSTRUCTION_BYTES;
+		const u32 leaf = start + 3u * INSTRUCTION_BYTES;
+		cpu.prepareSystemNativeCode();
+		auto& thread = *cpu.activeThread();
+		auto& frame = *thread.currentFrame;
+		const auto& lookup = *frame.executionImage->nativeCodeLookup;
+		for (const u32 pc : {start, leaf, successor}) {
+			const auto* entry = lookup.findEntryCellInRoot(lookup.root(0), pc);
+			require(entry && *entry, "the frameless caller, leaf and continuation all have generated bodies");
+		}
+		const auto layout = ThreadRecord::storageLayout(native.memory, thread.address);
+		const auto* controls = native.memory.ramData() + layout.frameAddress(0u);
+		std::array<u8, THREAD_HEAP_BYTES> contextBefore;
+		std::copy_n(thread.nativeRecord, contextBefore.size(), contextBefore.begin());
+		std::vector<u8> expectedControls(controls, controls + layout.frameBytes());
+		std::array<Value, width> expectedValues;
+		const int initialTop = std::max(left, right) + 1;
+		const auto prepareInputs = [&] {
+			for (int slot = 0; slot < width; ++slot) expectedValues[slot] = valueInteger(60 + slot);
+			expectedValues[left] = valueInteger(17);
+			expectedValues[right] = valueInteger(25);
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+				auto& active = *machine->cpu.activeThread()->currentFrame;
+				for (int slot = 0; slot < width; ++slot) active.registers.set(slot, expectedValues[slot]);
+				active.setTop(initialTop);
+			}
+		};
+		const auto checkFrontier = [&](u32 pc, int top) {
+			writeLE32(expectedControls.data() + static_cast<u32>(FrameField::Pc), pc);
+			writeLE32(expectedControls.data() + static_cast<u32>(FrameField::Top), top);
+			require(cpu.getFrameDepth() == 1 && thread.currentFrame == &frame
+				&& std::equal(contextBefore.begin(), contextBefore.end(), thread.nativeRecord)
+				&& std::equal(expectedControls.begin(), expectedControls.end(), controls),
+				"JAL and JREG change only the expected PC/top, not the thread or any nested frame record");
+			for (int slot = 0; slot < width; ++slot)
+				require(frame.registers.get(slot) == expectedValues[slot], "the leaf uses exactly its chosen registers");
+			require(test::sameLanguageRam(cpu, scalar.cpu), "generated and scalar frameless execution expose the same RAM");
+		};
+		prepareInputs();
+		require(test::runCpuParity(cpu, scalar.cpu, jal) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+			"the first cut retires the link and parks inside the leaf");
+		expectedValues[link] = valueInteger(successor);
+		checkFrontier(leaf, std::max(initialTop, link + 1));
+		require(test::runCpuParity(cpu, scalar.cpu, leafCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+			"the second cut retires the leaf and parks at the caller's continuation");
+		expectedValues[result] = valueInteger(42);
+		checkFrontier(successor, std::max({initialTop, link + 1, result + 1}));
+
+		// Let the direct static edge link before sampling the fully warm grant.
+		const int grant = jal + leafCycles + successorCycles;
+		prepareInputs();
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "the leaf and continuation warm together");
+		prepareInputs();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto before = cpu.nativeGateProfile();
+#endif
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0,
+			"the complete warmed frameless round trip and continuation consume exactly one grant");
+		expectedValues[link] = valueInteger(successor);
+		expectedValues[result] = valueInteger(42);
+		expectedValues[marker] = valueInteger(31);
+		checkFrontier(successor, width);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& after = cpu.nativeGateProfile();
+		const auto indirect = static_cast<size_t>(NativeBlockExit::RegisterJump);
+		const auto terminal = static_cast<size_t>(NativeBlockExit::Continue);
+		require(after.directRegisterJumpResumes == before.directRegisterJumpResumes + 1u
+			&& after.exits[indirect].entries == before.exits[indirect].entries + 1u,
+			"the warm return jumps directly into the generated continuation");
+		require(after.exits[terminal].resumes == before.exits[terminal].resumes
+			&& after.exits[terminal].entries == before.exits[terminal].entries + 1u,
+			"only exhaustion of the grant reaches the dispatcher, not the warm JAL edge");
+		for (size_t kind = 0; kind < after.exits.size(); ++kind) {
+			if (kind != indirect && kind != terminal)
+				require(after.exits[kind].entries == before.exits[kind].entries,
+					"the warm leaf needs no scalar, CALL, RET, or activation dispatcher");
+		}
+#endif
+	}
+#endif
+}
+
+void exactRebasedLeafGrant() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	constexpr int width = 8, basis = 4;
+	constexpr auto mov = static_cast<u8>(OpCode::MOV), add = static_cast<u8>(ValueMoveKind::AddBase);
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(6u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = width},
+		{.firstWord = 2, .wordCount = 2, .maxStack = width}, {.firstWord = 4, .wordCount = 2, .maxStack = width - basis}};
+	writeInstruction(image.text, 0, mov, 0, basis, add);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JAL), 0, 0, 2);
+	writeInstruction(image.text, 2, mov, 0, 64 - basis, add, 56);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::ADD), 3, 1, 2);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JREG), 0, 0, static_cast<u8>(RegisterJumpMode::Jump));
+	Machine native(image, false), scalar(image, true);
+	auto& cpu = native.cpu;
+	const auto start = native.rom.textAddress;
+	const auto successor = start + 2u * INSTRUCTION_BYTES;
+	auto& frame = *cpu.activeThread()->currentFrame;
+	cpu.prepareSystemNativeCode();
+	const auto& lookup = *frame.executionImage->nativeCodeLookup;
+	for (auto pc : {start, start + INSTRUCTION_BYTES, successor, start + 4u * INSTRUCTION_BYTES}) {
+		const auto* entry = lookup.findEntryCellInRoot(lookup.root(0), pc);
+		require(entry && *entry, "the basis change and both jump destinations have native code");
+	}
+	const auto prepare = [&] {
+		for (auto* machine : {&native, &scalar}) {
+			auto& lane = machine->cpu;
+			lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+			auto& frame = *lane.activeThread()->currentFrame;
+			frame.registers.set(5, valueInteger(19));
+			frame.registers.set(6, valueInteger(23));
+			frame.setTop(7);
+		}
+	};
+	prepare();
+	require(test::runCpuParity(cpu, scalar.cpu, BASE_CYCLES[mov]) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && frame.registerBase() == basis
+		&& frame.readWindow(FrameField::Top) == 7 && frame.registers.size() == 4
+		&& test::sameLanguageRam(cpu, scalar.cpu), "base selection preserves the enclosing live prefix");
+	const int rest = BASE_CYCLES[static_cast<u8>(OpCode::JAL)] + BASE_CYCLES[static_cast<u8>(OpCode::JREG)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[mov];
+	require(test::runCpuParity(cpu, scalar.cpu, rest) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && frame.registerBase() == 0 && frame.registers.size() == width
+		&& frame.registers.get(4) == valueInteger(successor) && frame.registers.get(7) == valueInteger(42)
+		&& test::sameLanguageRam(cpu, scalar.cpu), "the caller explicitly regains its original view after the leaf");
+	const int grant = rest + BASE_CYCLES[mov] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	prepare();
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded,
+		"the basis edges link when the caller and continuation run together");
+	prepare();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto before = cpu.nativeGateProfile();
+#endif
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+		&& cpu.getFrameDepth() == 1 && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFramePc(0) == successor + INSTRUCTION_BYTES && test::sameLanguageRam(cpu, scalar.cpu),
+		"the fully warm basis and jump round trip needs just one exact grant");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto& after = cpu.nativeGateProfile();
+	const auto indirect = static_cast<size_t>(NativeBlockExit::RegisterJump);
+	const auto terminal = static_cast<size_t>(NativeBlockExit::Continue);
+	require(after.directRegisterJumpResumes == before.directRegisterJumpResumes + 1,
+		"the warm return jumps directly to the basis-restoring continuation");
+	for (size_t kind = 0; kind < after.exits.size(); ++kind) {
+		if (after.exits[kind].entries != before.exits[kind].entries + (kind == indirect || kind == terminal))
+			std::fprintf(stderr, "%s: %llu entries\n", NATIVE_GATE_EXIT_NAMES[kind],
+				static_cast<unsigned long long>(after.exits[kind].entries - before.exits[kind].entries));
+		require(after.exits[kind].entries == before.exits[kind].entries + (kind == indirect || kind == terminal),
+			"only the spent grant reaches the dispatcher; no basis or call helper runs");
+	}
+#endif
+#endif
+}
+
 void exactBorrowedWindowGrant(bool registerFrontier, bool extended) {
 	constexpr auto open = static_cast<u8>(RegisterJumpMode::EnterWindow);
 	const auto close = static_cast<u8>(registerFrontier ? RegisterJumpMode::LeaveWindowFromRegister : RegisterJumpMode::LeaveWindow);
@@ -738,6 +918,175 @@ void exactPhysicalWindowMoves() {
 	require(cpu.nativeGateProfile().exits[reserved].entries == beforeFault + 1u,
 		"the generated bounds guard delivers the precise instruction exception");
 #endif
+
+	test::Blua32TestImage immediate;
+	immediate.mappedCode = false;
+	immediate.text.resize(11u * INSTRUCTION_BYTES);
+	immediate.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 321}, {.firstWord = 9, .wordCount = 2}};
+	immediate.exceptionFunctionIndex = 1;
+	const auto setImmediate = static_cast<u8>(ValueMoveKind::SetTopImmediate);
+	writeInstruction(immediate.text, 0, static_cast<u8>(OpCode::KSMI), 4, 0, 42);
+	writeInstruction(immediate.text, 1, static_cast<u8>(OpCode::WIDE), 1, 63, 0);
+	writeInstruction(immediate.text, 2, mov, 1, 63, setImmediate, 64); // A = 321, regardless of B.
+	writeInstruction(immediate.text, 3, mov, 0, 63, static_cast<u8>(ValueMoveKind::ReadTop));
+	writeInstruction(immediate.text, 4, mov, 1, 63, setImmediate);
+	writeInstruction(immediate.text, 5, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(immediate.text, 6, static_cast<u8>(OpCode::WIDE), 63, 0, 0);
+	writeInstruction(immediate.text, 7, mov, 63, 63, setImmediate, 192); // A = 16383, outside the enclosure.
+	writeInstruction(immediate.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(immediate.text, 9, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(immediate.text, 10, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	Machine immediateNative(immediate, false), immediateScalar(immediate, true);
+	auto& immediateCpu = immediateNative.cpu;
+	auto& immediateFrame = *immediateCpu.rootThread()->frameAtDepth(0);
+	const auto immediateStart = immediateNative.rom.textAddress;
+	const auto immediateFault = immediateStart + 6u * INSTRUCTION_BYTES;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	immediateCpu.prepareSystemNativeCode();
+	const auto& immediateCode = *immediateFrame.executionImage->nativeCodeLookup;
+	const auto& immediateEntry = *immediateCode.find(immediateStart, 0)->nativeBlocks->entries[(immediateStart & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(immediateEntry.terminal.currentPc == immediateStart + 5u * INSTRUCTION_BYTES
+		&& std::ranges::count(immediateEntry.sideExits, NativeBlockExit::ReservedInstruction, &NativeBlockExitSite::exit) == 2,
+		"both immediate top writes lower inside a single generated block");
+#endif
+	require(test::runCpuParity(immediateCpu, immediateScalar.cpu, loadCycles + 3 * movCycles + jumpCycles) == RunResult::Yielded
+		&& immediateCpu.instructionBudgetRemaining == 0 && immediateCpu.readFramePc(0) == immediateFault
+		&& immediateFrame.readWindow(FrameField::Top) == 1 && immediateFrame.registers.get(0) == valueInteger(321)
+		&& immediateFrame.registers.get(4) == valueInteger(42) && test::sameLanguageRam(immediateCpu, immediateScalar.cpu),
+		"immediate top grows and shrinks the frontier without writing a Value or reading B");
+	require(test::runCpuParity(immediateCpu, immediateScalar.cpu, 1) == RunResult::Yielded
+		&& immediateCpu.instructionBudgetRemaining == 1 - movCycles && immediateFrame.readWindow(FrameField::Top) == 1
+		&& immediateCpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
+		&& immediateCpu.readEpcWord() == immediateFault && test::sameLanguageRam(immediateCpu, immediateScalar.cpu),
+		"an invalid immediate faults at its WIDE prefix without changing the selected top");
+
+	// Both the old and rebased register views have dirty lanes at the
+	// semantic jump exit. A valid link writes a third rebased lane, while
+	// a precise target fault must preserve the destination untouched.
+	test::Blua32TestImage edgeImage;
+	edgeImage.mappedCode = false;
+	edgeImage.text.resize(9u * INSTRUCTION_BYTES);
+	edgeImage.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 2}};
+	edgeImage.exceptionFunctionIndex = 1;
+	writeInstruction(edgeImage.text, 0, static_cast<u8>(OpCode::KSMI), 3, 0, 31);
+	writeInstruction(edgeImage.text, 1, mov, 0, 2, static_cast<u8>(ValueMoveKind::AddBase));
+	writeInstruction(edgeImage.text, 2, mov, 4, 1, static_cast<u8>(ValueMoveKind::Copy));
+	writeInstruction(edgeImage.text, 3, static_cast<u8>(OpCode::JREG), 2, 1, static_cast<u8>(RegisterJumpMode::Link));
+	writeInstruction(edgeImage.text, 4, static_cast<u8>(OpCode::K0), 0, 0, 0);
+	writeInstruction(edgeImage.text, 5, static_cast<u8>(OpCode::KSMI), 0, 0, 17);
+	writeInstruction(edgeImage.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(edgeImage.text, 7, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(edgeImage.text, 8, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	for (const bool invalid : {false, true}) {
+		Machine generated(edgeImage, false), interpreted(edgeImage, true);
+		auto& active = generated.cpu;
+		auto& frame = *active.rootThread()->frameAtDepth(0);
+		const u32 start = generated.rom.textAddress, issue = start + 3u * INSTRUCTION_BYTES;
+		const u32 target = start + 5u * INSTRUCTION_BYTES;
+		for (auto* machine : {&generated, &interpreted}) {
+			auto& thread = *machine->cpu.rootThread();
+			auto& unbased = *thread.frameAtDepth(0);
+			unbased.registers.set(1, valueInteger(80));
+			unbased.registers.set(4, valueInteger(target + invalid));
+			unbased.setTop(5);
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		active.prepareSystemNativeCode();
+		const auto& code = *frame.executionImage->nativeCodeLookup;
+		const auto* previous = code.findEntryCellInRoot(code.root(0), start);
+		const auto* receiver = code.findEntryCellInRoot(code.root(0), target);
+		require(previous && *previous && (!receiver || !*receiver),
+			"the dirty rebased prefix is generated, but its indirect target must leave the native gate");
+#endif
+		const int grant = loadCycles + 2 * movCycles + BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
+		require(test::runCpuParity(active, interpreted.cpu, grant) == RunResult::Yielded
+			&& active.instructionBudgetRemaining == 0 && frame.registerBase() == 2
+			&& frame.readWindow(FrameField::Top) == 7 && frame.registers.size() == 6
+			&& frame.registers.get(4) == valueInteger(31)
+			&& active.rootThread()->stack.get(frame.stackBase() - 1) == valueInteger(80)
+			&& test::sameLanguageRam(active, interpreted.cpu),
+			"one exact grant retires the dirty prefix in the correct physical lanes across a cold jump");
+		if (invalid) {
+			const auto stopped = active.captureRuntimeState();
+			require((stopped.causeWord & CPU_CAUSE_CODE_MASK) == CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD
+				&& stopped.badAddressWord == target + 1u && stopped.epcWord == issue
+				&& frame.registers.get(1) == valueInteger(31),
+				"the cold fault publishes the new basis without overwriting the not-yet-retired link");
+		} else {
+			require(active.readFramePc(0) == target && frame.registers.get(1) == valueInteger(issue + INSTRUCTION_BYTES),
+				"the cold valid jump links into the actual rebased destination, not the overlapping old cache lane");
+		}
+	}
+
+	// A real legacy CALL can park a rebased caller. Test both publication
+	// midway through the callee and a return with no scalar grant break.
+	test::Blua32TestImage callImage;
+	callImage.mappedCode = false;
+	callImage.text.resize(10u * INSTRUCTION_BYTES);
+	callImage.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8},
+		{.firstWord = 7, .wordCount = 3, .numParams = 1, .maxStack = 2, .codeFunction = true}};
+	callImage.constants.emplace_back(Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System, 1)});
+	writeInstruction(callImage.text, 0, static_cast<u8>(OpCode::LOADK), 2, 0, 0);
+	writeInstruction(callImage.text, 1, static_cast<u8>(OpCode::KSMI), 3, 0, 31);
+	writeInstruction(callImage.text, 2, mov, 0, 2, static_cast<u8>(ValueMoveKind::AddBase));
+	writeInstruction(callImage.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(callImage.text, 4, mov, 2, 0, static_cast<u8>(ValueMoveKind::Copy));
+	writeInstruction(callImage.text, 5, mov, 0, 62, static_cast<u8>(ValueMoveKind::AddBase), 56);
+	writeInstruction(callImage.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(callImage.text, 7, static_cast<u8>(OpCode::KSMI), 1, 0, 11);
+	writeInstruction(callImage.text, 8, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+	writeInstruction(callImage.text, 9, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	Machine caller(callImage, false), callerScalar(callImage, true);
+	for (auto* machine : {&caller, &callerScalar}) {
+		auto& context = *machine->cpu.activeThread();
+		test::reserveReferenceThreadFrame(test::GcHeap(machine->cpu), context, context.stackCapacity);
+	}
+	auto& callCpu = caller.cpu;
+	auto& parent = *callCpu.rootThread()->frameAtDepth(0);
+	const u32 callStart = caller.rom.textAddress, continuation = callStart + 4u * INSTRUCTION_BYTES;
+	const auto seedCall = [&] {
+		for (auto* machine : {&caller, &callerScalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], callStart);
+			auto& root = *machine->cpu.rootThread()->frameAtDepth(0);
+			root.registers.set(0, valueInteger(70));
+			root.registers.set(1, valueInteger(80));
+			root.setTop(2);
+		}
+	};
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	callCpu.prepareSystemNativeCode();
+	const auto& callCode = *parent.executionImage->nativeCodeLookup;
+	const auto* entryCall = callCode.findEntryCellInRoot(callCode.root(0), callStart);
+	require(entryCall && *entryCall, "the legacy CALL fixture executes its rebasing prefix as native code");
+#endif
+	const int toChild = BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + 2 * loadCycles + movCycles
+		+ BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
+	const int fromChild = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1
+		+ 2 * movCycles + jumpCycles;
+	seedCall();
+	require(test::runCpuParity(callCpu, callerScalar.cpu, toChild) == RunResult::Yielded
+		&& callCpu.instructionBudgetRemaining == 0 && callCpu.getFrameDepth() == 2
+		&& callCpu.readFramePc(0) == continuation && parent.registerBase() == 2
+		&& callCpu.readFrameRegister(1, 0) == valueInteger(31)
+		&& callCpu.readFrameRegister(1, 1) == valueInteger(11)
+		&& test::sameLanguageRam(callCpu, callerScalar.cpu),
+		"legacy CALL parks the actual nonzero caller basis without altering its argument placement");
+	const auto checkCaller = [&] {
+		require(callCpu.instructionBudgetRemaining == 0 && callCpu.getFrameDepth() == 1
+			&& callCpu.readFramePc(0) == continuation + 2u * INSTRUCTION_BYTES && parent.registerBase() == 0
+			&& parent.registers.get(0) == valueInteger(70) && parent.registers.get(1) == valueInteger(80)
+			&& parent.registers.get(2) == valueInteger(42) && parent.registers.get(4) == valueInteger(42)
+			&& parent.readWindow(FrameField::Top) == 5 && test::sameActiveLanguageRam(callCpu, callerScalar.cpu),
+			"legacy RET places the result relative to the parked basis and preserves the enclosing prefix");
+	};
+	require(test::runCpuParity(callCpu, callerScalar.cpu, fromChild) == RunResult::Yielded,
+		"the framed call resumes from its published child bank");
+	checkCaller();
+	seedCall();
+	require(test::runCpuParity(callCpu, callerScalar.cpu, toChild + fromChild) == RunResult::Yielded,
+		"the legacy call and its rebased return complete in the same grant");
+	checkCaller();
+
 }
 
 void exactImmutableCodeConstantGrant() {
@@ -1412,7 +1761,7 @@ int main(int argc, char** argv) {
 		const std::string_view scenario(argv[1]);
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
-		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); }
+		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); }
 		else if (scenario == "borrowed-window") {
 			for (const bool extended : {false, true})
 				for (const bool registerFrontier : {false, true}) exactBorrowedWindowGrant(registerFrontier, extended);

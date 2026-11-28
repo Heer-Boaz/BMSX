@@ -138,10 +138,11 @@ struct NativeWindowMove {
 		constexpr auto none = NATIVE_NO_OPERAND;
 		const auto left = static_cast<NativeValueRef>(a), right = static_cast<NativeValueRef>(b);
 		switch (kind) {
-		case ValueMoveKind::ReadTop: return {.writes = {a, 1}};
+		case ValueMoveKind::ReadTop: case ValueMoveKind::ReadBase: return {.writes = {a, 1}};
 		case ValueMoveKind::ReadIndexed: return {{right, none, none}, {a, 1}, {.open = true}};
 		case ValueMoveKind::WriteIndexed: return {{left, right, none}, {.open = true}};
-		case ValueMoveKind::SetTop: return {{right, none, none}};
+		case ValueMoveKind::SetTop: case ValueMoveKind::SetBase: return {{right, none, none}};
+		case ValueMoveKind::AddBase: case ValueMoveKind::SetTopImmediate: return {};
 		default: BMSX_UNREACHABLE();
 		}
 	}

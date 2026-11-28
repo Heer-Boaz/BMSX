@@ -140,6 +140,7 @@ emitters[OpCode.MOV] = (p, w, r) => {
 	switch (p.c[w]) {
 		case ValueMoveKind.Tag: return r.writeInteger(p.a[w], r.tagOperand(p.b[w]));
 		case ValueMoveKind.Payload: return r.writeInteger(p.a[w], r.wordOperand(p.b[w]));
+		case ValueMoveKind.ReadBase: return r.writeInteger(p.a[w], 'F.registerBase');
 		default: return r.copy(p.a[w], p.b[w]);
 	}
 };
@@ -168,7 +169,7 @@ emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.Payload || op === OpCode.JMP && a !== 0
+	if (op === OpCode.MOV && c > ValueMoveKind.ReadBase || op === OpCode.JMP && a !== 0
 		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.EnterBankWindow) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
@@ -283,7 +284,7 @@ export function emitJavaScriptBlock(
 		const windowMove = op === OpCode.MOV && moveKind >= ValueMoveKind.ReadTop && moveKind <= ValueMoveKind.SetTop;
 		if (windowMove) {
 			// These moves observe or set the exact frontier before the instruction.
-			if (resetsRegisterTop) source.push(`T=Math.max(F.top,${registerTop});`);
+			if (resetsRegisterTop) source.push(registerTop === 0 ? 'T=F.top;' : `T=Math.max(F.top,${registerTop});`);
 			else if (registerTop !== 0) source.push(`if(T<${registerTop})T=${registerTop};`);
 			registerTop = 0;
 			resetsRegisterTop = false;

@@ -63,6 +63,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 				{ wordOffset: 3, range: innerCallRange, op: OpCode.MOV, liveRegisters: [0, 1], uses: [0], defs: [1], inlineCallSites },
 				{ wordOffset: 4, range: innerCallRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [], resumeId: 'startup.entry.return' },
 			]],
+			softwareFramesByFunction: [undefined],
 			localSlotsByFunction: [[{ argumentIndex: 2, name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
 			outerBindingsByFunction: [[
@@ -150,4 +151,23 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		},
 	};
 	assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(removed)), removed);
+	const softwareFrames = {
+		...symbols,
+		metadata: {
+			...symbols.metadata,
+			softwareFramesByFunction: [{ entry: true,
+				calls: [
+					{ startWordOffset: 2, wordOffset: 7, continuationWordOffset: 9, endWordOffset: 11, baseDelta: 4,
+						targetFunctions: [0], liveAfter: [1, 4, 8], targetLiveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] },
+					{ startWordOffset: 12, wordOffset: 13, continuationWordOffset: 14, endWordOffset: 15, baseDelta: 4,
+						targetFunctions: [0], liveAfter: [], targetLiveWordRanges: [] },
+				],
+				linkSlots: [{ wordOffset: 0, slot: 0 }, { wordOffset: 7, slot: 11 }],
+			}],
+		},
+	};
+	const decodedFrames = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(softwareFrames));
+	assert.deepEqual(decodedFrames, softwareFrames);
+	assert.equal(decodedFrames.metadata.softwareFramesByFunction[0]!.calls[0].targetLiveWordRanges,
+		decodedFrames.metadata.localSlotsByFunction[0][0].liveWordRanges);
 });

@@ -43,16 +43,17 @@ i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Valu
 }
 
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
+	state->publishRegisterBase();
 	const auto& call = exit->operands.call;
 	const int base = call.callee;
-	const int count = call.supplied < 0 ? std::max(state->registerTop - base - 1, 0) : call.supplied;
+	const int count = call.supplied < 0 ? std::max(state->physicalTop - state->registerBase - base - 1, 0) : call.supplied;
 	auto& frame = *state->frame;
 	auto& registers = frame.registers;
 	ConstValueSpan args;
 	if (registers.containsRange(base + 1, count)) {
 		args = registers.subspan(base + 1, count);
 	} else {
-		const int first = state->stackBase + base + 1;
+		const int first = state->stackOrigin + state->registerBase + base + 1;
 		if (!frame.thread->stack.containsRange(first, count)) return NativeBuiltinCallOutcome::Declined;
 		args = frame.thread->stack.subspan(first, count);
 	}
@@ -62,7 +63,7 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState
 	Value result;
 	if (!cpu->executeBuiltinLeaf(function.id, BuiltinArgsView(args), result)) return NativeBuiltinCallOutcome::Declined;
 	if (receiving) registers.set(base, result);
-	state->registerTop = base + receiving;
+	state->physicalTop = state->registerBase + base + receiving;
 	state->remainingCycles -= static_cast<int>(function.cycleBase) + receiving;
 	if (state->remainingCycles <= 0 || cpu->m_runSignals || cpu->canAcceptMaskableInterruptLine()
 		|| cpu->retargetsHaltedFrame(*frame.thread, static_cast<int>(state->frameDepth)))
@@ -134,8 +135,9 @@ void CPU::retireNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExit
 	}
 	const int link = exit->operands.registerJump.link;
 	if (link >= 0) {
+		state.publishRegisterBase();
 		frame.registers.setAdmitted(link, valueInteger(toSignedWord(exit->nextPc)));
-		state.registerTop = std::max(state.registerTop, link + 1);
+		state.physicalTop = std::max(state.physicalTop, state.registerBase + link + 1);
 	}
 	cpu.instructionBudgetRemaining = state.remainingCycles;
 	run->publishActivation(target);
@@ -196,6 +198,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 				++gateProfile.resumes;
 #endif
+				state.publishRegisterBase();
 				return target->m_body;
 			}
 		}
@@ -214,6 +217,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	if (!liveFrontier) {
 		cpu.instructionBudgetRemaining = state.remainingCycles;
 		run->publishActivation(exit->nextPc);
+	} else {
+		state.publishRegisterBase();
 	}
 	if (continuing) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -281,7 +286,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::IterateTable: {
 			const auto iterator = exit->operands.iterator;
 			if (cpu.stepTableIterator(frame->registers, iterator.base, iterator.first, iterator.count)) {
-				state.registerTop = std::max(state.registerTop, static_cast<int>(iterator.first) + iterator.count);
+				state.physicalTop = std::max(state.physicalTop, state.registerBase + static_cast<int>(iterator.first) + iterator.count);
 				state.remainingCycles -= iterator.count;
 				// Only a skip without a compiled following word reaches
 				// this path. The instruction fetch owner resolves it.
@@ -387,7 +392,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			}
 			if (resolved && !contradicts && !reuse) {
 				frame->registers.setAdmitted(access.value, result.value);
-				state.registerTop = std::max(state.registerTop, access.value + 1);
+				state.physicalTop = std::max(state.physicalTop, state.registerBase + access.value + 1);
 				state.remainingCycles -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
 				// This cell belongs to the installed image and no operation
 				// above can change its bank, stack window or interrupt state.
@@ -507,7 +512,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			void* target = *continuation;
 			if (target) {
 				state.remainingCycles = cpu.instructionBudgetRemaining;
-				state.registerTop = frame->readWindow(FrameField::Top);
+				state.readWindow(*frame);
 			}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			if (target) ++gateProfile.resumes;
@@ -562,10 +567,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
 			state.closure = frame->closureAddress();
-			state.stackBase = frame->stackBase();
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
-		state.registerTop = frame->readWindow(FrameField::Top);
+		state.readWindow(*frame);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		++gateProfile.resumes;
 #endif

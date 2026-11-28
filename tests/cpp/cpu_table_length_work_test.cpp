@@ -172,7 +172,7 @@ void oneGateFrontier() {
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
 	state.constants = frame->executionImage->constPool;
-	state.frame = frame; state.memory = &m.cpu.memory(); state.remainingCycles = 5; state.registerTop = static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top));
+	state.frame = frame; state.memory = &m.cpu.memory(); state.remainingCycles = 5; state.physicalTop = static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top));
 	const auto* exit=block->run(r, state);
 	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-2,
 		"one actual gate invocation returns the completed fixed-cost LEN before any outer CPU loop can intervene");

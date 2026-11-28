@@ -20,6 +20,11 @@ struct OperationFlow {
 	Flow operator()(const NativeTruthBranch&) const { return Flow::Terminal; }
 	Flow operator()(const NativeComparison&) const { return Flow::Terminal; }
 	Flow operator()(const NativeReplay&) const { return Flow::LeavesNative; }
+	Flow operator()(const NativeWindowMove& move) const {
+		// A new basis starts a new register analysis. The published native
+		// entry can still be directly linked after the address change.
+		return move.kind == ValueMoveKind::AddBase || move.kind == ValueMoveKind::SetBase ? Flow::LeavesNative : Flow::Linear;
+	}
 
 	Flow operator()(const NativeTableAccess& op) const { return op.readPlan == NativeTableReadPlan::OwnSlot ? Flow::Linear : Flow::Checkpoint; }
 	Flow operator()(const NativeVararg& op) const { return op.requested == 0 ? Flow::Linear : Flow::Checkpoint; }
@@ -80,6 +85,9 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
 			auto operation = translateNativeOperation(*inst.decoded);
+			if (const auto* move = std::get_if<NativeWindowMove>(&operation); !cpuOwned && move
+				&& (move->kind == ValueMoveKind::ReadBase || move->kind == ValueMoveKind::SetBase || move->kind == ValueMoveKind::AddBase))
+				operation = NativeReplay{};
 			if (auto* field = std::get_if<NativeTableAccess>(&operation); field && field->keyKind == NativeTableKey::Field) {
 				if (field->readsFixedField()) ++fixedFieldReads;
 				else if (field->mode == NativeTableMode::Write) {

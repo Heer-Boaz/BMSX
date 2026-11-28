@@ -43,10 +43,13 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterWindow), true);
 	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindow), true);
 	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindowFromRegister), true);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindowFromRegister + 1), false);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterBankWindow), true);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterBankWindow + 1), false);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.SetTop), true);
 	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.Payload), true);
-	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.Payload + 1), false);
+	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.ReadBase), true);
+	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.SetBase), false);
+	assert.equal(compiledBlockSupports(OpCode.MOV, 0, ValueMoveKind.AddBase), false);
 });
 
 test('generated JREG samples an aliased target and faults before writing its link', () => {

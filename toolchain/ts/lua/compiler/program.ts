@@ -94,6 +94,21 @@ export type LocatedOuterBindingDebug = OuterBindingDebug & {
 	readonly liveWordRanges: readonly ProgramWordRange[];
 };
 
+export type ProgramSoftwareFrameDebug = {
+	readonly entry: boolean;
+	readonly calls: readonly {
+		startWordOffset: number;
+		wordOffset: number;
+		continuationWordOffset: number;
+		endWordOffset: number;
+		baseDelta: number;
+		targetProtos: readonly number[];
+		liveAfter: readonly number[];
+		targetLiveWordRanges: readonly ProgramWordRange[];
+	}[];
+	readonly linkSlots: readonly { wordOffset: number; slot: number }[];
+};
+
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	optLevel: OptimizationLevel;
 	staticScopes: ProgramStaticScopes;
@@ -107,6 +122,7 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	debugInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>;
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
+	softwareFramesByProto: readonly (ProgramSoftwareFrameDebug | undefined)[];
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedLocalSlotDebug>>;
 	outerBindingsByProto: ReadonlyArray<ReadonlyArray<LocatedOuterBindingDebug>>;
 	lexicalDeclarations: ReadonlyArray<LexicalDeclarationDebug>;

@@ -60,7 +60,8 @@ export type ProgramConstantIndexRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' |
 export type ProgramGlobalSlotRelocKind = 'gl' | 'sys';
 export type ProgramImageConstReloc =
 	| { wordIndex: number; kind: ProgramConstantIndexRelocKind; constIndex: number }
-	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number };
+	| { wordIndex: number; kind: ProgramGlobalSlotRelocKind; objectSlot: number }
+	| { wordIndex: number; kind: 'jal'; protoIndex: number };
 
 export type ProgramCodeFunctionTarget =
 	| ({ kind: 'export_proto' } & ProgramFunctionSymbol)

@@ -4,6 +4,13 @@ import type { Instruction } from './optimizer';
 import { visitInstructionDefs, visitInstructionUses, type ClosureUpvalueResolver } from './optimizer/liveness';
 
 type Match = { register: number; found: boolean };
+type WindowCallTargetProof = {
+	instruction: number;
+	loads: readonly number[];
+	// Instruction entries reached with a defined PC that can still
+	// arrive at this call without an intervening write to its register.
+	live: readonly number[];
+};
 function matchRegister(match: Match, register: number): void {
 	if (match.register === register) match.found = true;
 }
@@ -12,7 +19,7 @@ function matchRegister(match: Match, register: number): void {
  * Value and every possible definition at its sole CALL can become raw. */
 export function createWindowCallTargetProof(
 	instructions: readonly Instruction[], maxStack: number, resolveClosure: ClosureUpvalueResolver,
-): (load: number) => { instruction: number; loads: readonly number[] } | undefined {
+): (load: number) => WindowCallTargetProof | undefined {
 	if (instructions.some(row => row.op === OpCode.JAL || row.op === OpCode.JREG)) return () => undefined;
 	const count = instructions.length;
 	const successors: number[][] = Array.from({ length: count }, () => []);
@@ -80,15 +87,15 @@ export function createWindowCallTargetProof(
 		return consumer;
 	}
 
-	const definitions = new Map<number, readonly number[]>();
+	const definitions = new Map<number, WindowCallTargetProof>();
 	return (load: number) => {
 		const instruction = findConsumer(load);
 		if (instruction === -1) return;
-		let loads = definitions.get(instruction);
-		if (loads === undefined) {
+		let proof = definitions.get(instruction);
+		if (proof === undefined) {
 			match.register = instructions[instruction].a;
 			const pending = predecessors[instruction].slice(), visited = new Set<number>();
-			const found: number[] = [];
+			const found: number[] = [], live: number[] = [instruction];
 			while (pending.length !== 0) {
 				const pc = pending.pop()!;
 				if (visited.has(pc)) continue;
@@ -103,11 +110,14 @@ export function createWindowCallTargetProof(
 				} else if (pc === 0 || opaque(row)) {
 					found.length = 0;
 					break;
-				} else for (const predecessor of predecessors[pc]) pending.push(predecessor);
+				} else {
+					live.push(pc);
+					for (const predecessor of predecessors[pc]) pending.push(predecessor);
+				}
 			}
-			loads = found;
-			definitions.set(instruction, loads);
+			proof = { instruction, loads: found, live: live.sort((a, b) => a - b) };
+			definitions.set(instruction, proof);
 		}
-		if (loads.includes(load)) return { instruction, loads };
+		if (proof.loads.includes(load)) return proof;
 	};
 }

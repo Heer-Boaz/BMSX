@@ -69,6 +69,7 @@ import type {
 	ProgramModuleExport,
 	ProgramModuleProto,
 	ProgramResumePoint,
+	ProgramSoftwareFrameDebug,
 	ProgramStatementPoint,
 	Proto,
 	UpvalueDesc,
@@ -80,6 +81,7 @@ import { optimizeInstructions, type Instruction, type InstructionSet, type Optim
 import { computeMaxRegister } from './compiler/optimizer/instructions';
 import { allocateFrameSlots, type FrameSlotAllocation } from './compiler/optimizer/frame_slots';
 import { lowerWindowCalls, type WindowBodyLowering } from './compiler/window_calls';
+import { appendProgramWordRange, type ProgramWordRange } from './compiler/word_range';
 import { isSkipInstruction } from './compiler/control_flow';
 import { encodeWideIntegerLoad, MAX_ABX_REGISTER_A } from './compiler/wide_integer';
 import { staticLuaTableFieldName } from './syntax/table_fields';
@@ -502,6 +504,7 @@ class ProgramBuilder {
 	public readonly protoConstRelocs: ReadonlyArray<ProgramImageConstReloc>[] = [];
 	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
+	private readonly protoSoftwareFrames: Array<ProgramSoftwareFrameDebug | undefined> = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocatedLocalSlotDebug>[] = [];
 	public readonly protoOuterBindings: ReadonlyArray<LocatedOuterBindingDebug>[] = [];
 	public readonly lexicalDeclarations: LexicalDeclarationDebug[] = [];
@@ -1132,7 +1135,7 @@ class ProgramBuilder {
 			target => this.resolveLocalCodeSymbol(target), proto => this.protos[proto].upvalueDescs);
 		for (const [index, transformed] of lowered.bodies) {
 			const owner = this.physicalCodeOwners[index]!;
-			owner.encodeWindowBody(transformed);
+			this.protoSoftwareFrames[index] = owner.encodeWindowBody(transformed);
 			this.protos[index].maxStack = owner.getMaxStack();
 			this.protoCode[index] = owner.getCode();
 			this.protos[index].codeLen = this.protoCode[index].length;
@@ -1201,23 +1204,7 @@ class ProgramBuilder {
 			const relocs = this.protoConstRelocs[i];
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
-				switch (reloc.kind) {
-					case 'gl':
-					case 'sys':
-						imageConstRelocs.push({
-							wordIndex: targetOffsetWords + reloc.wordIndex,
-							kind: reloc.kind,
-							objectSlot: reloc.objectSlot,
-						});
-						continue;
-					default:
-						imageConstRelocs.push({
-							wordIndex: targetOffsetWords + reloc.wordIndex,
-							kind: reloc.kind,
-							constIndex: reloc.constIndex,
-						});
-						continue;
-				}
+				imageConstRelocs.push({ ...reloc, wordIndex: targetOffsetWords + reloc.wordIndex });
 			}
 			appendOffsetBytes += chunk.length;
 		}
@@ -1237,6 +1224,7 @@ class ProgramBuilder {
 			protoDisplayNames: this.protoDisplayNames,
 			statementPointsByProto: this.protoStatementPoints,
 			resumePointsByProto: this.protoResumePoints,
+			softwareFramesByProto: this.protoSoftwareFrames,
 			localSlotsByProto: this.protoLocalSlots,
 			outerBindingsByProto: this.protoOuterBindings,
 			lexicalDeclarations: this.lexicalDeclarations,
@@ -1919,10 +1907,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return this.allocatedFrame?.instructions ?? this.code;
 	}
 
-	public encodeWindowBody(lowered: WindowBodyLowering): void {
+	public encodeWindowBody(lowered: WindowBodyLowering): ProgramSoftwareFrameDebug | undefined {
 		this.maxStack = lowered.maxStack;
 		const ranges = lowered.origins.map(index => this.ranges[index]);
-		this.encodePhysicalCode(lowered.instructions, ranges, lowered);
+		return this.encodePhysicalCode(lowered.instructions, ranges, lowered);
 	}
 
 	private finalizeCode(): void {
@@ -2022,7 +2010,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.encodePhysicalCode(allocation === undefined ? this.code : allocation.instructions, this.ranges);
 	}
 
-	private encodePhysicalCode(instructions: Instruction[], ranges: ReadonlyArray<SourceRange | null>, lowered?: WindowBodyLowering): void {
+	private encodePhysicalCode(instructions: Instruction[], ranges: ReadonlyArray<SourceRange | null>,
+		lowered?: WindowBodyLowering): ProgramSoftwareFrameDebug | undefined {
 		const wordWidths = new Uint8Array(instructions.length);
 		let wideIntegers: Map<number, Uint8Array> | undefined;
 		const sbxValues: number[] = new Array(instructions.length).fill(0);
@@ -2058,7 +2047,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					|| ((instr.rkMask & RK_C) !== 0 && instr.c < 0);
 				const forceFieldWide = isFieldConstOp(instr.op);
 				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
-				const bWide = (instr.rkMask & RK_B) !== 0
+				const signedB = (instr.rkMask & RK_B) !== 0 || (instr.op === OpCode.MOV && instr.c === ValueMoveKind.AddBase);
+				const bWide = signedB
 					? needsWideSigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS)
 					: needsWideUnsigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS);
 				const cWide = (instr.rkMask & RK_C) !== 0
@@ -2078,11 +2068,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				wordWidths[index] = forceWide || aWide || bxWide ? 2 : 1;
 				continue;
 			}
-			wordWidths[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0) ? 2 : 1;
+			wordWidths[index] = instr.jumpProtoIndex !== undefined || needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0) ? 2 : 1;
 		}
 
 		let changed = true;
-		const instrStartIndex: number[] = new Array(instructions.length);
+		const instrStartIndex: number[] = new Array(instructions.length + 1);
 		const instrWordIndex: number[] = new Array(instructions.length);
 		let endIndex = 0;
 		while (changed) {
@@ -2095,9 +2085,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				cursor += width;
 			}
 			endIndex = cursor;
+			instrStartIndex[instructions.length] = endIndex;
 			for (let index = 0; index < instructions.length; index += 1) {
 				const instr = instructions[index];
-				if (instr.format !== 'AsBx') {
+				if (instr.format !== 'AsBx' || instr.jumpProtoIndex !== undefined) {
 					continue;
 				}
 				const targetIndex = instr.target;
@@ -2161,7 +2152,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					continue;
 				}
 				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, EXT_A_BITS, hasWide);
-				const bSplit = (instr.rkMask & RK_B)
+				const bSplit = (instr.rkMask & RK_B) !== 0 || (instr.op === OpCode.MOV && instr.c === ValueMoveKind.AddBase)
 					? splitSignedOperand(instr.b, 'B', MAX_OPERAND_BITS, EXT_B_BITS, hasWide)
 					: splitUnsignedOperand(instr.b, 'B', MAX_OPERAND_BITS, EXT_B_BITS, hasWide);
 				const cSplit = (instr.rkMask & RK_C)
@@ -2232,6 +2223,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 			writeInstruction(code, cursor, instr.op,
 				aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+			if (instr.jumpProtoIndex !== undefined)
+				constRelocs.push({ wordIndex: cursor, kind: 'jal', protoIndex: instr.jumpProtoIndex });
 			finalRanges[cursor] = range;
 			cursor += 1;
 		}
@@ -2249,6 +2242,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			instructions,
 			instrStartIndex,
 		);
+		const softwareCallLiveness = lowered !== undefined && lowered.softwareCalls.length !== 0
+			? new Map<number, readonly number[]>(lowered.softwareCalls.map(call => [call.origin + 1, []])) : undefined;
 		const debugPoints = buildProgramDebugPoints(
 			this.code,
 			this.ranges,
@@ -2260,10 +2255,34 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.debugOuterBindings,
 			this.allocatedFrame,
 			lowered?.registerBias,
+			softwareCallLiveness,
 		);
 		this.finalizedResumePoints = debugPoints.resumePoints;
 		this.finalizedLocalSlots = debugPoints.localSlots;
 		this.finalizedOuterBindings = debugPoints.outerBindings;
+		if (lowered === undefined || (!lowered.softwareEntry && lowered.softwareCalls.length === 0)) return;
+		return {
+			entry: lowered.softwareEntry,
+			calls: lowered.softwareCalls.map(({ origin, start, jump, end, baseDelta, targets, targetLive }) => {
+				const continuationWordOffset = instrStartIndex[jump + 1];
+				const targetLiveWordRanges: ProgramWordRange[] = [];
+				for (const pc of targetLive) {
+					const first = instrStartIndex[lowered.starts[pc]];
+					// JREG consumes the raw target at the same retirement
+					// that writes the link into its slot.
+					const last = pc === origin ? continuationWordOffset : instrStartIndex[lowered.starts[pc + 1]];
+					appendProgramWordRange(targetLiveWordRanges, first, last);
+				}
+				return {
+					startWordOffset: instrStartIndex[start], wordOffset: instrStartIndex[jump], continuationWordOffset,
+					endWordOffset: instrStartIndex[end],
+					baseDelta, targetProtos: targets,
+					liveAfter: softwareCallLiveness!.get(origin + 1)!, targetLiveWordRanges,
+				};
+			}),
+			linkSlots: lowered.linkSlots.filter(({ instruction }) => instruction < instructions.length)
+				.map(({ instruction, slot }) => ({ wordOffset: instrStartIndex[instruction], slot })),
+		};
 	}
 
 	public getUpvalueDescs(): UpvalueDesc[] {

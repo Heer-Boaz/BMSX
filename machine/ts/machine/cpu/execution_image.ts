@@ -74,7 +74,7 @@ for (const opcode of [
 	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.ARGC, OpCode.NOT,
 	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
-	OpCode.GETFIELD, OpCode.SELF,
+	OpCode.GETFIELD, OpCode.SELF, OpCode.JAL, OpCode.JMPIF, OpCode.JMPIFNOT,
 ]) SCALAR_LOCAL_PC[opcode] = 1;
 
 export const enum RomFunctionLane {
@@ -334,8 +334,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 			// Source values are consumed only after the bus admits the write.
 			return Math.max(0, b + 1);
 		case OpCode.MOV:
-			if (c === ValueMoveKind.ReadTop) return a + 1;
-			if (c === ValueMoveKind.SetTop) return b + 1;
+			if (c === ValueMoveKind.ReadTop || c === ValueMoveKind.ReadBase) return a + 1;
+			if (c === ValueMoveKind.SetTop || c === ValueMoveKind.SetBase) return b + 1;
 			if (c > ValueMoveKind.Payload) return 0;
 			break;
 		case OpCode.MFC0:

@@ -209,10 +209,13 @@ const buildInstructionOperands = (
 	switch (op) {
 		case OpCode.MOV:
 			switch (c) {
-				case ValueMoveKind.ReadTop: return [registerOperand('a', 'dst', a)];
+				case ValueMoveKind.ReadTop: case ValueMoveKind.ReadBase: return [registerOperand('a', 'dst', a)];
 				case ValueMoveKind.ReadIndexed: return [registerOperand('a', 'dst', a), registerOperand('b', 'index', b)];
 				case ValueMoveKind.WriteIndexed: return [registerOperand('a', 'index', a), registerOperand('b', 'src', b)];
 				case ValueMoveKind.SetTop: return [registerOperand('b', 'frontier', b)];
+				case ValueMoveKind.SetTopImmediate: return [plainOperand('a', 'frontier', formatInteger(a))];
+				case ValueMoveKind.SetBase: return [registerOperand('b', 'basis', b)];
+				case ValueMoveKind.AddBase: return [plainOperand('b', 'basis offset', formatInteger(signExtend(b, decoded.rkBitsB)))];
 				default: return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b), plainOperand('c', 'move kind', formatInteger(c))];
 			}
 		case OpCode.KNIL:
@@ -428,7 +431,11 @@ const formatInstruction = (
 				case ValueMoveKind.ReadIndexed: return `MOV r${a}, r[r${b}]`;
 				case ValueMoveKind.WriteIndexed: return `MOV r[r${a}], r${b}`;
 				case ValueMoveKind.SetTop: return `MOV top, r${b}`;
+				case ValueMoveKind.SetTopImmediate: return `MOV top, ${formatInteger(a)}`;
 				case ValueMoveKind.Payload: return `MOV r${a}, payload(r${b})`;
+				case ValueMoveKind.ReadBase: return `MOV r${a}, basis`;
+				case ValueMoveKind.SetBase: return `MOV basis, r${b}`;
+				case ValueMoveKind.AddBase: return `MOV basis, basis + ${signExtend(b, decoded.rkBitsB)}`;
 				default: return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
 			}
 		case OpCode.KNIL:

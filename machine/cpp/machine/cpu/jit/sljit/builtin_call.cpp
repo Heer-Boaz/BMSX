@@ -76,8 +76,8 @@ void NativeLowering::lowerOperation(const NativeCallSite& site, const NativeInst
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Integer));
 			emitRawStore(base, SLJIT_R0, SLJIT_R1);
 		}
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop),
-			SLJIT_IMM, base + receiving);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, physicalTop),
+			SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, base + receiving);
 		constexpr int primitiveCycles = BUILTIN_FUNCTION_COSTS[static_cast<size_t>(BuiltinFunctionId::StringByte)].base;
 		sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_SIG_LESS_EQUAL, NativeBlockAbi::budget, 0,
 			NativeBlockAbi::budget, 0, SLJIT_IMM, call.cycles + primitiveCycles + receiving);

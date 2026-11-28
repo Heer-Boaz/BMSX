@@ -277,6 +277,21 @@ void NativeRegisterCache::publish() {
 	publishRange(0, std::numeric_limits<int>::max());
 }
 
+void NativeRegisterCache::rebase(int displacement) {
+	// Identical physical lanes keep their bindings. Lanes hidden below the
+	// new base retain their contents in RAM, not under another logical key.
+	for (int slot = 0; slot < static_cast<int>(m_integers.size() + m_floats.size()); ++slot) {
+		auto& binding = m_state[slot];
+		if (binding.guest < 0) continue;
+		if (binding.guest < displacement) {
+			store(slot, binding, binding.dirty, binding.immediateTagDirty);
+			binding = {};
+		} else {
+			binding.guest -= displacement;
+		}
+	}
+}
+
 void NativeRegisterCache::emitState(const State& state) const {
 	for (int slot = 0; slot < static_cast<int>(m_integers.size() + m_floats.size()); ++slot) {
 		const auto& binding = state[slot];

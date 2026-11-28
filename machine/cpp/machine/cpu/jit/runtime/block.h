@@ -55,14 +55,20 @@ struct NativeBlockRunState {
 	const ValueSpan* systemGlobalValues = nullptr;
 	u32* cop0Words = nullptr;
 	int remainingCycles = 0;
-	int registerTop = 0;
+	// Exclusive live extent relative to the unshifted frame origin.
+	i32 physicalTop = 0;
+	// Owns the selector during the grant. CallFrame is rebound only when
+	// its physical projection is needed outside the generated code.
+	i32 registerBase = 0;
 	u32 closure = 0;
-	i32 stackBase = 0;
+	i32 stackOrigin = 0;
 	u32 frameDepth = 0;
 	void* exitCode = nullptr;
 	// Host base of guest main RAM; the gate pins it for the whole native frame.
 	u8* ram = nullptr;
-	size_t registerCapacity = 0;
+	u32 windowWidth = 0;
+	void readWindow(const CallFrame& frame) noexcept;
+	void publishRegisterBase() const noexcept;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
 #endif

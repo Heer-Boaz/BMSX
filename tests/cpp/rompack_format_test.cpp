@@ -109,6 +109,12 @@ int main() {
 		{0, std::nullopt, inlineCallSites, noWordRanges},
 		{1, std::nullopt, noInlineCalls, noWordRanges},
 	}};
+	symbols.metadata.softwareFramesByFunction = {bmsx::Blua32SoftwareFrameDebug{
+		true, {
+			{2, 7, 9, 11, 4, {0u}, {1u, 4u, 8u}, std::make_shared<const std::vector<bmsx::ProgramWordRange>>(*ranges2468)},
+			{12, 13, 14, 15, 4, {0u}, {}, noWordRanges},
+		}, {{0, 0}, {7, 11}},
+	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.lexicalDeclarations = {
 		{"module:cart/module", "value", bmsx::LexicalDeclarationKind::Local, true, innerCallRange},
@@ -133,6 +139,19 @@ int main() {
 	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
 	const auto& metadata = decodedSymbols.metadata;
+	const auto& software = metadata.softwareFramesByFunction[0];
+	if (!software || !software->entry || software->calls.size() != 2 || software->linkSlots.size() != 2)
+		throw std::runtime_error("BLua32 software frame metadata did not round-trip");
+	const auto& call = software->calls[0];
+	if (call.startWordOffset != 2 || call.wordOffset != 7 || call.continuationWordOffset != 9 || call.endWordOffset != 11
+		|| call.baseDelta != 4 || call.targetFunctions != std::vector<bmsx::u32>{0u}
+		|| call.liveAfter != std::vector<bmsx::u32>{1u, 4u, 8u}
+		|| software->linkSlots[0].wordOffset != 0 || software->linkSlots[0].slot != 0
+		|| software->linkSlots[1].wordOffset != 7 || software->linkSlots[1].slot != 11)
+		throw std::runtime_error("BLua32 software call offsets and register locations did not round-trip");
+	if (call.targetLiveWordRanges != metadata.localSlotsByFunction[0][0].liveWordRanges
+		|| !software->calls[1].targetLiveWordRanges->empty())
+		throw std::runtime_error("BLua32 software call target ranges must share the word range pool");
 	if (metadata.compiledModulePaths != symbols.metadata.compiledModulePaths) {
 		throw std::runtime_error("BLua32 symbols lost complete compilation input membership");
 	}

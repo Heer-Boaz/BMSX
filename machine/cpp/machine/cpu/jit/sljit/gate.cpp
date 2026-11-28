@@ -45,7 +45,7 @@ sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, slji
 	constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
 	constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
 	constexpr auto wordShift = std::countr_zero(sizeof(u32));
-	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+	constexpr auto top = offsetof(NativeBlockRunState, physicalTop);
 	constexpr auto link = offsetof(NativeBlockExitSite, operands) + offsetof(NativeExitOperands::RegisterJump, link);
 
 	// R0 is the exit descriptor and R2 the sampled raw PC.
@@ -61,6 +61,8 @@ sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, slji
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM2(words, SLJIT_R1), wordShift, SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM2(tags, SLJIT_R1), 0, SLJIT_IMM, static_cast<int>(ValueTag::Integer));
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerBase));
 	auto* retainedTop = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32,
 		SLJIT_MEM1(state), top, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R1, 0);
@@ -123,8 +125,6 @@ NativeBlockGate::NativeBlockGate() {
 	auto* bindWindow = sljit_emit_label(compiler);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::words, 0, SLJIT_MEM1(SLJIT_R1), ValueSpan::wordsOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV_P, NativeBlockAbi::tags, 0, SLJIT_MEM1(SLJIT_R1), ValueSpan::tagsOffset());
-	sljit_emit_op1(compiler, SLJIT_MOV, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerCapacity),
-		SLJIT_MEM1(SLJIT_R1), ValueSpan::sizeOffset());
 	sljit_emit_op1(compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, remainingCycles));
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R0, 0);
@@ -176,9 +176,11 @@ NativeBlockGate::NativeBlockGate() {
 		SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, cycles));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, registerTop));
 	auto* noTop = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerBase));
 	auto* retained = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop));
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, registerTop), SLJIT_R1, 0);
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, physicalTop));
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, physicalTop), SLJIT_R1, 0);
 	auto* leave = sljit_emit_label(compiler);
 	sljit_set_label(noTop, leave);
 	sljit_set_label(retained, leave);

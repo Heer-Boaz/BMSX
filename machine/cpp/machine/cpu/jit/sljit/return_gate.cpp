@@ -35,7 +35,7 @@ void emitReturnResults(sljit_compiler* c, sljit_label* semanticReturn) {
 	sljit_emit_op1(c, SLJIT_MOV32_S16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), produced);
 	auto* fixed = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), first);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop), SLJIT_R1, 0);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, physicalTop), SLJIT_R1, 0);
 	auto* nonnegative = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	auto* supplied = sljit_emit_label(c);
@@ -67,8 +67,8 @@ void emitReturnResults(sljit_compiler* c, sljit_label* semanticReturn) {
 	auto* padOnly = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), first);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R1, 0, SLJIT_MEM1(state),
-		offsetof(NativeBlockRunState, registerCapacity)), semanticReturn);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(state),
+		offsetof(NativeBlockRunState, windowWidth)), semanticReturn);
 
 	// The pending callee's shared argument window starts above the caller's
 	// result base (also for varargs). Forward movement preserves overlap.
@@ -137,10 +137,16 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	// The existing gate owns an already published register cache. Until
 	// every guard succeeds R0 is the original RET and the grant is unchanged.
 	auto* label = sljit_emit_label(c);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(state),
+		offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R1),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), pending);
 	auto* physical = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, target, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, previous));
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(target),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticReturn);
 	// A transient caller already passed admission in this grant. Crossing
 	// its materialized frontier also admits the physical bank and stop depth.
 	auto* nested = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM1(target), pending, SLJIT_IMM, 0);
@@ -181,7 +187,7 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), pending);
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), callOperands + offsetof(NativeExitOperands::Call, callee));
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeCallerTop), SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeCallerPhysicalTop), SLJIT_R0, 0);
 	auto* nonnegative = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	auto* writeCount = sljit_emit_label(c);
@@ -202,20 +208,23 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Function),
 		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeFunction));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::OpenHead), SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::RegisterBase), SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Flags),
 		SLJIT_MEM1(state), offsetof(NativeCpuRunState, frameBank));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Pc), SLJIT_MEM1(SLJIT_SP), nextPc);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Top),
-		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop));
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, physicalTop));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::StackBase),
-		SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase));
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackOrigin));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::StackCapacity),
-		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerCapacity));
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, windowWidth));
 	auto* retire = sljit_emit_jump(c, SLJIT_JUMP);
 
 	sljit_set_label(physical, sljit_emit_label(c));
 	sljit_emit_op1(c, SLJIT_MOV_P, target, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, previous));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, target, 0, SLJIT_IMM, 0), semanticReturn);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(target),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(target), offsetof(CallFrame, executionImage));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage)), semanticReturn);
 	admitCaller();
@@ -241,7 +250,7 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, nativeControl));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Pc), SLJIT_MEM1(SLJIT_SP), nextPc);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Top), SLJIT_IMM, ~FRAME_WINDOW_MASK);
-	sljit_emit_op2(c, SLJIT_OR32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Top), SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop));
+	sljit_emit_op2(c, SLJIT_OR32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Top), SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, physicalTop));
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Flags), SLJIT_IMM, FRAME_EXTEND_RESULT_TOP);
 	auto* exactTop = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(target), offsetof(CallFrame, nativeControl));
@@ -270,13 +279,13 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R1), window + ValueSpan::mirroredOffset(), SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, remainingCycles), budget, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(state), frame, target, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop), SLJIT_R3, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, physicalTop), SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, frameDepth),
 		SLJIT_MEM1(state), offsetof(NativeBlockRunState, frameDepth), SLJIT_IMM, 1);
 	auto* materialized = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM1(target), pending, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, closure),
 		SLJIT_MEM1(target), offsetof(CallFrame, pendingNativeClosure));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase),
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackOrigin),
 		SLJIT_MEM1(target), offsetof(CallFrame, pendingNativeStackBase));
 	auto* rebind = sljit_emit_jump(c, SLJIT_JUMP);
 	sljit_set_label(materialized, sljit_emit_label(c));
@@ -284,9 +293,11 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(target), offsetof(CallFrame, nativeControl));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, closure),
 		SLJIT_MEM1(SLJIT_R1), static_cast<int>(FrameField::Closure));
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase),
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackOrigin),
 		SLJIT_MEM1(SLJIT_R1), static_cast<int>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
 	sljit_set_label(rebind, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(target), window + ValueSpan::sizeOffset());
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, windowWidth), SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), returnContinuation);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, target, 0, SLJIT_IMM, window);
 	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), bindWindow);

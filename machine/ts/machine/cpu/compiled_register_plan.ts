@@ -17,7 +17,8 @@ function generatedRegisterReads(op: OpCode, b: number, c: number): number {
 		case OpCode.CALL: case OpCode.ITERN: case OpCode.SVC: return 0;
 		case OpCode.JREG: return c > RegisterJumpMode.Link ? 0 : REGISTER_OPERAND_A;
 		case OpCode.MOV:
-			return c === ValueMoveKind.ReadTop ? 0 : c === ValueMoveKind.WriteIndexed ? REGISTER_OPERAND_A | REGISTER_OPERAND_B : REGISTER_OPERAND_B;
+			return c === ValueMoveKind.ReadTop || c === ValueMoveKind.ReadBase ? 0
+				: c === ValueMoveKind.WriteIndexed ? REGISTER_OPERAND_A | REGISTER_OPERAND_B : REGISTER_OPERAND_B;
 		case OpCode.MTC0: return (b !== COP0_STATUS && cop0WriteRetiresControl(b)) ? 0 : REGISTER_OPERAND_A;
 		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}

@@ -1,6 +1,6 @@
 import { ThreadField, ThreadStatus, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from './call_state';
 import type { Memory } from '../memory/memory';
 import { valueFromTag, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
@@ -87,13 +87,14 @@ export class Thread {
 		if (frame === null) return depth === 0;
 		if (depth === 0 || (this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK) !== this.boundFrameOffset
 			|| frame.controlOffset !== (this.frameControlAddress(depth - 1) & RAM_RECORD_WORD_MASK)) return false;
-		return frame.registers.capacity() === frame.stackCapacity
-			&& frame.registers.ramOffset() === this.stackOffset() + 4 * frame.stackBase;
+		const basis = this.memory.readRamRecordWord(frame.controlOffset + FrameField.RegisterBase) & FRAME_WINDOW_MASK;
+		return frame.registerBase === basis && frame.registers.capacity() === frame.stackCapacity - basis
+			&& frame.registers.ramOffset() === this.stackOffset() + 4 * (frame.stackBase + basis);
 	}
 
 	private rebindFrames(): void {
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
-			frame.registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);
+			frame.rebindRegisters();
 	}
 
 	private bindFrameControls(start: number): void {

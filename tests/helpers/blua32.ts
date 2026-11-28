@@ -248,6 +248,7 @@ function createRawTestBlua32Object(
 		debugInlineCallSites: debugRanges.map(() => []),
 		statementPointsByProto: functions.map(() => []),
 		resumePointsByProto: functions.map(() => []),
+		softwareFramesByProto: [],
 		localSlotsByProto: functions.map(() => []),
 		outerBindingsByProto: functions.map(() => []),
 		staticScopes: { declarations: [], globals: [], bindingsByProto: functions.map(() => []) },

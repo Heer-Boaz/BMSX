@@ -49,8 +49,8 @@ import {
 	ROM_GENERATED_MODULE_PATHS,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
-	SYSTEM_STARTUP_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
+import { SYSTEM_STARTUP_MODULE_PATH } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import type {
 	Blua32DiagnosticSource,
 	Blua32DiagnosticSourceMap,

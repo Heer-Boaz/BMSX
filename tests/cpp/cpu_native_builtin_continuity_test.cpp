@@ -132,7 +132,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	auto* caller = preparedCaller(machine);
 	machine.cpu.instructionBudgetRemaining = 12345;
-	NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+	NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	const auto* exit = caller->run(frame->registers, state);
 	// Base NativeBlock::run deliberately has no NativeCpuRunState tail or C++
 	// dispatcher. Only a real body-internal completed CALL can reach this HALT.
@@ -156,7 +156,7 @@ void rawDeclines() {
 		const auto rom = image(results, variant == 4 ? 0 : 3); Machine machine(rom, false); machine.seed(variant == 1 ? BuiltinFunctionId::CoroutineRunning : BuiltinFunctionId::StringByte, variant == 2 ? 3 : 0);
 		if (variant == 3) machine.selectClosure();
 		auto* frame = machine.cpu.rootThread()->currentFrame;
-		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit = preparedCaller(machine)->run(frame->registers, state);
 		require(exit->exit == NativeBlockExit::Call && state.remainingCycles == 64 - 4 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 			"padding, unsupported primitive, bad arguments and a real Closure preserve the ordinary unexecuted CALL boundary");
@@ -172,11 +172,11 @@ void completedDebtDoesNotRunTheSuccessor() {
 		auto* frame=machine.cpu.rootThread()->currentFrame;
 		frame->registers.set(14, valueInteger(3));
 		const int prefix=4*BASE_CYCLES[static_cast<u8>(OpCode::MOV)]+BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
-		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=prefix,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=prefix,.physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* caller=preparedCaller(machine);const auto* exit=caller->run(frame->registers, state);const int receiving=results==1?0:1;
 		require(exit->exit==NativeBlockExit::CompletedCall && exit->cycles==0 && exit->nextPc==caller->terminal.nextPc,
 			"an exhausting successful leaf returns its completed successor frontier, never the original CALL");
-		require(state.remainingCycles==-2-receiving && state.registerTop==receiving,
+		require(state.remainingCycles==-2-receiving && state.physicalTop==receiving,
 			"the complete primitive/result charge commits even when CALL exhausted the grant");
 		require(frame->registers.get(8)==valueInteger(-8) && frame->registers.get(9)==valueInteger(-9),
 			"no successor executes after the completed CALL debt");
@@ -189,7 +189,7 @@ void mutableCalleesUseTheirCurrentIdentity() {
 	const auto rom=image(2,3);Machine machine(rom,false);auto* caller=preparedCaller(machine);
 	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::CoroutineRunning}) {
 		machine.seed(id);auto* frame=machine.cpu.rootThread()->currentFrame;
-		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit=caller->run(frame->registers, state);
 		if(id==BuiltinFunctionId::CoroutineRunning)
 			require(exit==&caller->terminal && frame->registers.get(0)==frame->registers.get(12) && frame->registers.get(8)==valueInteger(-8),
@@ -197,7 +197,7 @@ void mutableCalleesUseTheirCurrentIdentity() {
 		else require(exit->exit==NativeBlockExit::Halt && frame->registers.get(8)==machine.expected,"one published callsite observes each actual supported primitive ID");
 	}
 	machine.seed(BuiltinFunctionId::StringByte);machine.selectClosure();auto* frame=machine.cpu.rootThread()->currentFrame;
-	NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+	NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(caller->run(frame->registers, state)->exit==NativeBlockExit::Call && valueIsClosure(frame->registers.get(0)),
 		"a real Closure replacing a formerly hot primitive retains normal activation semantics");
 }
@@ -246,7 +246,7 @@ void unboundStandaloneStillReturnsCall() {
 	const std::array plans{NativeBlockSource{std::span(source.data(),2)}, NativeBlockSource{std::span(source.data()+2,1)}};
 	auto blocks=NativeCompiler{}.compile(plans,NativeCodeBindings(machine.memory,machine.cpu.stringPool()));
 	auto* frame=machine.cpu.rootThread()->currentFrame;
-	NativeBlockRunState state{.remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
+	NativeBlockRunState state{.remainingCycles=64,.physicalTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 	require(blocks.front()->run(frame->registers, state)==&blocks.front()->terminal && state.remainingCycles==64-BASE_CYCLES[static_cast<u8>(OpCode::MOV)]-BASE_CYCLES[static_cast<u8>(OpCode::CALL)],
 		"default standalone bindings do not acquire a CPU or execute builtin CALLs");
 }

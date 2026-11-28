@@ -20,7 +20,7 @@ struct initial_frame
 	fn: addr -- S:118
 	call_site: addr -- S:119
 	open_head: addr -- S:120
-	_padding: u32 -- S:121
+	register_base: u32 -- S:121
 	flags: u32 -- S:122
 	pc: addr -- S:123
 	vararg_base: u32 -- S:124
@@ -60,6 +60,7 @@ local publish_system_root<const> = function(address, fn) -- C:1893-1912 T:2224-2
 	frame.fn = fn -- S:118 Q:64 C:1905 T:2234
 	frame.call_site = code -- S:119 Q:65 C:1905 T:2234
 	frame.open_head = 0 -- S:120 Q:66
+	frame.register_base = 0
 	frame.flags = 0 -- S:122 Q:57-58,68-70 C:1905 T:2234; System bank, no result placement or exception
 	frame.pc = code -- S:123 Q:71 C:1905 T:2234
 	frame.vararg_base = formals -- S:124 Q:72 C:1906 T:2235; empty argument sequence at base zero

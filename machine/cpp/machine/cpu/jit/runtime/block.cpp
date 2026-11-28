@@ -56,8 +56,10 @@ const NativeBlockExitSite* NativeBlock::run(const ValueSpan& registers, NativeBl
 	state.ram = region->ram;
 	if (state.frame) {
 		state.closure = state.frame->closureAddress();
-		state.stackBase = state.frame->stackBase();
+		state.stackOrigin = state.frame->readWindow(FrameField::StackBase);
+		state.registerBase = state.frame->registerBase();
 	}
+	state.windowWidth = static_cast<u32>(registers.size()) + static_cast<u32>(state.registerBase);
 	return reinterpret_cast<NativeBlockGate::Entry>(m_gate->entry)(&state, m_body, &registers);
 }
 

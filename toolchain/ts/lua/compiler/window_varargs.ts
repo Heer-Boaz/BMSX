@@ -43,10 +43,8 @@ export function lowerWindowVararg(
 		if (copied < initialized)
 			instructions.push(controlInstruction(origin, OpCode.LOADNIL, destination + copied, initialized - copied));
 		if (returning) instructions.push(controlInstruction(origin, OpCode.JREG, 0, count, RegisterJumpMode.LeaveWindow));
-		else if (requested === -1) {
-			instructions.push(controlInstruction(origin, OpCode.KSMI, scratch, destination + count));
-			instructions.push(controlInstruction(origin, OpCode.MOV, 0, scratch, ValueMoveKind.SetTop));
-		}
+		else if (requested === -1)
+			instructions.push(controlInstruction(origin, OpCode.MOV, destination + count, 0, ValueMoveKind.SetTopImmediate));
 		return;
 	}
 

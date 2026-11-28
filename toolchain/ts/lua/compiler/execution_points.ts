@@ -88,6 +88,7 @@ export function buildProgramDebugPoints(
 	outerBindings: ReadonlyArray<OuterBindingDebug>,
 	allocation?: FrameSlotAllocation,
 	physicalRegisterBase = 0,
+	selectedLiveRegisters?: Map<number, readonly number[]>,
 ): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; outerBindings: LocatedOuterBindingDebug[] } {
 	// Liveness before slot assignment supplies the intervals. When a slot has several
 	// lexical owners, intersect it with each owner's source/inline scope.
@@ -148,7 +149,17 @@ export function buildProgramDebugPoints(
 		candidateIndices,
 		resolveClosureUpvalues,
 		'in',
-		registers.length === 0 ? undefined : (instructionIndex, live) => {
+		registers.length === 0 && selectedLiveRegisters === undefined ? undefined : (instructionIndex, live) => {
+			if (selectedLiveRegisters?.has(instructionIndex)) {
+				const selected: number[] = [];
+				for (let register = 0; register < live.length; ++register) {
+					if (live[register] !== 0)
+						selected.push((allocation === undefined ? register : allocation.slots[register]) + physicalRegisterBase);
+				}
+				selected.sort((a, b) => a - b);
+				selectedLiveRegisters.set(instructionIndex, selected);
+			}
+			if (registers.length === 0) return;
 			const start = instructionWordOffsets[instructionIndex];
 			const end = instructionIndex + 1 < instructions.length ? instructionWordOffsets[instructionIndex + 1] : wordCount;
 			const range = sourceRanges[instructionIndex];

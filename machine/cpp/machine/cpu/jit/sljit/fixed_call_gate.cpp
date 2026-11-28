@@ -13,9 +13,9 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	constexpr auto words = NativeBlockAbi::words;
 	constexpr auto tags = NativeBlockAbi::tags;
 	constexpr auto frame = offsetof(NativeBlockRunState, frame);
-	constexpr auto stack = offsetof(NativeBlockRunState, stackBase);
+	constexpr auto stack = offsetof(NativeBlockRunState, stackOrigin);
 	constexpr auto depth = offsetof(NativeBlockRunState, frameDepth);
-	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+	constexpr auto top = offsetof(NativeBlockRunState, physicalTop);
 	constexpr auto closure = offsetof(NativeBlockRunState, closure);
 	constexpr auto window = offsetof(CallFrame, registers);
 	constexpr auto operands = offsetof(NativeBlockExitSite, operands);
@@ -33,6 +33,13 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	static_assert(callDepth + sizeof(u32) <= NativeBlockAbi::stackBytes);
 
 	auto* label = sljit_emit_label(c);
+	// The fixed gate keeps an unmaterialized frame chain. The generic
+	// transfer binds a rebased caller before putting it in that chain.
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(state),
+		offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, 0), semanticCall);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R1),
+		offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0), semanticCall);
 	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
 		offsetof(NativeBlockExitSite, callStrategy));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
@@ -106,8 +113,10 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 
 	// Commit the exact pending activation. Neither RAM frame control nor
 	// the physical thread frontier is published on this continued route.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(saved), offsetof(CallFrame, m_registerBase), SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(saved), offsetof(CallFrame, pendingNativeCall), SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(saved), window + ValueSpan::sizeOffset(), SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, windowWidth), SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(state), frame);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(saved), offsetof(CallFrame, executionImage),
 		SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, executionImage));
@@ -117,7 +126,7 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(saved), window + ValueSpan::tagsOffset(), tags, 0, SLJIT_R1, 0);
 	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_MEM1(saved), window + ValueSpan::wordsOffset(), words, 0, SLJIT_R1, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(saved), offsetof(CallFrame, pendingNativeCallerTop), SLJIT_MEM1(state), top);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(saved), offsetof(CallFrame, pendingNativeCallerPhysicalTop), SLJIT_MEM1(state), top);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), plan + offsetof(NativeFixedCallPlan, copied));
 	// Initialize only missing formal parameters, in the admitted argument
 	// window. The shared entry reloads the paid grant from the run state.

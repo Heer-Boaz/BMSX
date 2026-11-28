@@ -241,7 +241,11 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 				case ValueMoveKind::ReadIndexed: return "MOV r" + std::to_string(decoded.a) + ", r[r" + std::to_string(decoded.b) + "]";
 				case ValueMoveKind::WriteIndexed: return "MOV r[r" + std::to_string(decoded.a) + "], r" + std::to_string(decoded.b);
 				case ValueMoveKind::SetTop: return "MOV top, r" + std::to_string(decoded.b);
+				case ValueMoveKind::SetTopImmediate: return "MOV top, " + formatInteger(decoded.a);
 				case ValueMoveKind::Payload: return "MOV r" + std::to_string(decoded.a) + ", payload(r" + std::to_string(decoded.b) + ")";
+				case ValueMoveKind::ReadBase: return "MOV r" + std::to_string(decoded.a) + ", basis";
+				case ValueMoveKind::SetBase: return "MOV basis, r" + std::to_string(decoded.b);
+				case ValueMoveKind::AddBase: return "MOV basis, basis + " + std::to_string(signExtend(decoded.b, decoded.rkBitsB));
 				default: return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
 					+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
 			}
@@ -378,10 +382,13 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 	switch (decoded.op) {
 		case OpCode::MOV:
 			switch (static_cast<ValueMoveKind>(decoded.c)) {
-				case ValueMoveKind::ReadTop: return {registerOperand("dst", decoded.a)};
+				case ValueMoveKind::ReadTop: case ValueMoveKind::ReadBase: return {registerOperand("dst", decoded.a)};
 				case ValueMoveKind::ReadIndexed: return {registerOperand("dst", decoded.a), registerOperand("index", decoded.b)};
 				case ValueMoveKind::WriteIndexed: return {registerOperand("index", decoded.a), registerOperand("src", decoded.b)};
 				case ValueMoveKind::SetTop: return {registerOperand("frontier", decoded.b)};
+				case ValueMoveKind::SetTopImmediate: return {plainOperand("frontier", formatInteger(decoded.a))};
+				case ValueMoveKind::SetBase: return {registerOperand("basis", decoded.b)};
+				case ValueMoveKind::AddBase: return {plainOperand("basis offset", std::to_string(signExtend(decoded.b, decoded.rkBitsB)))};
 				default: return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
 			}
 		case OpCode::KNIL:

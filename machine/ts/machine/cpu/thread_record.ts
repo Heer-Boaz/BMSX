@@ -65,9 +65,10 @@ export function invokeThreadDiagnostic(memory: Memory, values: ValueSlots, id: B
 	if (length < (writing ? 4 : 3)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const operand = integerOperand(registers.get(base + 2)) >>> 0;
 	if (id === BuiltinFunctionId.GetFrameRegister || id === BuiltinFunctionId.SetFrameRegister) {
-		const capacity = memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+		const base = memory.readRamRecordWord(frame + FrameField.RegisterBase) & FRAME_WINDOW_MASK;
+		const capacity = (memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK) - base;
 		if (operand >= capacity) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const slot = (memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK) + operand;
+		const slot = (memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK) + base + operand;
 		const block = memory.readRamRecordWord(thread + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
 		const slots = memory.readRamRecordWord(thread + ThreadField.StackCapacity);
 		values.bindRam(memory, block, slots);

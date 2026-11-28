@@ -71,7 +71,7 @@ void Thread::bindStack(bool ifRelocated) {
 	bindFrameControls();
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		extent = std::max(extent, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
+		extent = std::max(extent, static_cast<size_t>(frame->readWindow(FrameField::StackBase) + frame->readWindow(FrameField::StackCapacity)));
 	stack = layout.slots(memory, extent > stackCapacity);
 	rebindRegisters();
 }
@@ -82,6 +82,7 @@ bool Thread::currentFrameViewMatches() const {
 	if (!frame) return depth == 0u;
 	if (depth == 0u || (read(ThreadField::FrameBlock) & RAM_RECORD_WORD_MASK) != boundFrameOffset
 		|| frame->controlOffset != (frameControlAddress(depth - 1u) & RAM_RECORD_WORD_MASK)) return false;
+	if (frame->registerBase() != frame->readWindow(FrameField::RegisterBase)) return false;
 	const u32 wordStart = stackOffset() + static_cast<u32>(frame->stackBase()) * sizeof(u32);
 	return frame->registers.size() == static_cast<size_t>(frame->stackCapacity())
 		&& frame->registers.wordAddress() == (wordStart & RAM_RECORD_WORD_MASK);
@@ -89,7 +90,7 @@ bool Thread::currentFrameViewMatches() const {
 
 void Thread::rebindRegisters() {
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
-		frame->registers = stack.subspan(frame->stackBase(), frame->stackCapacity());
+		frame->rebindRegisters();
 }
 
 void Thread::bindFrameControls() {
@@ -126,6 +127,7 @@ CallFrame* Thread::frameNode(CallFrame* previous) {
 		frame->thread = this;
 	}
 	frame->previous = previous;
+	frame->m_registerBase = 0;
 	m_lastBoundFrame = frame;
 	return frame;
 }

@@ -177,7 +177,7 @@ struct NativeTypePropagation::Transfer {
 
 	void operator()(const NativeLiteral& op) const { result(valueTag(op.value)); }
 	void operator()(const NativeWindowMove& op) const {
-		if (op.kind == ValueMoveKind::ReadTop) result(ValueTag::Integer);
+		if (op.kind == ValueMoveKind::ReadTop || op.kind == ValueMoveKind::ReadBase) result(ValueTag::Integer);
 	}
 	void operator()(const NativeJump& op) const {
 		if (op.link >= 0) result(ValueTag::Integer);

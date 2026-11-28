@@ -33,9 +33,12 @@ void NativeLowering::emitPublicEntry(size_t index) {
 	// Public entries admit their reachable slot window and their own types
 	// before moving registers. Local edges inherit slot admission.
 	auto& replay = m_admissionReplays[ir.entryReplay];
-	if (ir.requiredSlots != 0)
-		fault(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_MEM1(NativeBlockAbi::state),
-			offsetof(NativeBlockRunState, registerCapacity), SLJIT_IMM, ir.requiredSlots), replay, m_cache.state());
+	if (ir.requiredSlots != 0) {
+		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, ir.requiredSlots);
+		fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeBlockRunState, windowWidth), SLJIT_R2, 0), replay, m_cache.state());
+	}
 	if (ir.requiredCaptures != 0) {
 		auto* c = m_compiler;
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, closure));
@@ -63,11 +66,12 @@ void NativeLowering::emitPublicEntry(size_t index) {
 void NativeLowering::emitTop(int extent) {
 	if (extent == 0)
 		return;
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, registerTop));
-	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, extent);
+	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, extent);
+	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32,
+		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, physicalTop), SLJIT_R1, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(NativeBlockAbi::state),
-		offsetof(NativeBlockRunState, registerTop), SLJIT_IMM, extent);
+		offsetof(NativeBlockRunState, physicalTop), SLJIT_R1, 0);
 	sljit_set_label(retained, sljit_emit_label(m_compiler));
 }
 void NativeLowering::emitLeave(NativeBlockExitSite& exit, Charge charge) {

@@ -7,9 +7,13 @@ import type {
 	Blua32InlineCallSite,
 	Blua32LocalSlotDebug,
 	Blua32ResumePoint,
+	Blua32SoftwareCallDebug,
+	Blua32SoftwareFrameDebug,
 	Blua32SymbolsImage,
 } from './blua32_symbols';
-import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
+import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc } from './blua32_symbols';
+import { INSTRUCTION_BYTES, instructionOpcode, readInstructionWord } from '../../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	sourcePositionInRange,
 	sourceRangeKey,
@@ -140,6 +144,10 @@ function functionCodeMatches(
 	previousFunction: Blua32FunctionRecord,
 	freshImage: Blua32ImageLayout,
 	freshFunction: Blua32FunctionRecord,
+	previousSymbols: Blua32SymbolsImage,
+	previousIndex: number,
+	freshSymbols: Blua32SymbolsImage,
+	freshIndex: number,
 ): boolean {
 	if (previousFunction.codeByteCount !== freshFunction.codeByteCount
 		|| previousFunction.numParams !== freshFunction.numParams
@@ -150,12 +158,87 @@ function functionCodeMatches(
 	}
 	const previousOffset = previousFunction.codeAddress - previousImage.address;
 	const freshOffset = freshFunction.codeAddress - freshImage.address;
-	for (let offset = 0; offset < previousFunction.codeByteCount; offset += 1) {
-		if (previousImage.bytes[previousOffset + offset] !== freshImage.bytes[freshOffset + offset]) {
-			return false;
+	const previousText = previousImage.bytes.subarray(previousOffset, previousOffset + previousFunction.codeByteCount);
+	const freshText = freshImage.bytes.subarray(freshOffset, freshOffset + freshFunction.codeByteCount);
+	const previousCalls = previousSymbols.metadata.softwareFramesByFunction[previousIndex]?.calls;
+	const freshCalls = freshSymbols.metadata.softwareFramesByFunction[freshIndex]?.calls;
+	let callIndex = 0;
+	for (let word = 0; word < previousFunction.codeByteCount / INSTRUCTION_BYTES; ++word) {
+		const call = previousCalls?.[callIndex];
+		if (call !== undefined && word === call.wordOffset) {
+			const freshCall = freshCalls?.[callIndex++];
+			// A linker displacement isn't a change to the stopped caller's
+			// ABI. Ignore precisely the encoded JAL of the same bound symbol.
+			const tail = call.continuationWordOffset - 1;
+			if (freshCall !== undefined && call.startWordOffset === freshCall.startWordOffset
+				&& call.wordOffset === freshCall.wordOffset && call.continuationWordOffset === freshCall.continuationWordOffset
+				&& call.endWordOffset === freshCall.endWordOffset && call.baseDelta === freshCall.baseDelta
+				&& call.targetFunctions.length === 1 && freshCall.targetFunctions.length === 1
+				&& previousSymbols.metadata.functionIds[call.targetFunctions[0]]
+					=== freshSymbols.metadata.functionIds[freshCall.targetFunctions[0]]
+				&& instructionOpcode(readInstructionWord(previousText, tail)) === OpCode.JAL
+				&& instructionOpcode(readInstructionWord(freshText, tail)) === OpCode.JAL) {
+				word = tail;
+				continue;
+			}
 		}
+		if (readInstructionWord(previousText, word) !== readInstructionWord(freshText, word)) return false;
 	}
 	return true;
+}
+
+function mapSoftwareContinuations(
+	pcAddresses: Int32Array,
+	previousImage: Blua32ImageLayout, previousSymbols: Blua32SymbolsImage, previousIndex: number,
+	freshImage: Blua32ImageLayout, freshSymbols: Blua32SymbolsImage, freshIndex: number,
+	correspondence: LuaSourceCorrespondence,
+): void {
+	const previousCalls = previousSymbols.metadata.softwareFramesByFunction[previousIndex]?.calls;
+	const freshCalls = freshSymbols.metadata.softwareFramesByFunction[freshIndex]?.calls;
+	if (previousCalls === undefined || freshCalls === undefined) return;
+	const previousBase = previousImage.functions[previousIndex].codeAddress;
+	const freshBase = freshImage.functions[freshIndex].codeAddress;
+	const freshBySource = new Map<string, Blua32SoftwareCallDebug[]>();
+	for (const call of freshCalls) {
+		const pc = freshBase + call.startWordOffset * INSTRUCTION_BYTES;
+		const range = blua32SourceRangeAtPc(freshSymbols, freshImage.header.textAddress, pc);
+		if (range === null) continue;
+		const inline = blua32InlineCallSitesAtPc(freshSymbols, freshImage.header.textAddress, pc);
+		const key = resumePointLocationKey(range, inline);
+		const atSource = freshBySource.get(key);
+		if (atSource === undefined) freshBySource.set(key, [call]);
+		else atSource.push(call);
+	}
+	for (const call of previousCalls) {
+		const pc = previousBase + call.startWordOffset * INSTRUCTION_BYTES;
+		const range = blua32SourceRangeAtPc(previousSymbols, previousImage.header.textAddress, pc);
+		if (range === null) continue;
+		const mappedRange = correspondence.unchangedRange(range);
+		if (mappedRange === undefined) continue;
+		const inline = blua32InlineCallSitesAtPc(previousSymbols, previousImage.header.textAddress, pc);
+		const mappedInline = translateInlineCallSites(inline, correspondence);
+		if (mappedInline === null) continue;
+		const candidates = freshBySource.get(resumePointLocationKey(mappedRange, mappedInline));
+		if (candidates === undefined || candidates.length !== 1) continue;
+		const fresh = candidates[0];
+		const count = call.endWordOffset - call.continuationWordOffset;
+		if (fresh.endWordOffset - fresh.continuationWordOffset !== count || call.baseDelta !== fresh.baseDelta
+			|| !numberArraysEqual(call.liveAfter, fresh.liveAfter)
+			|| call.targetFunctions.length !== fresh.targetFunctions.length
+			|| !call.targetFunctions.every((callee, index) => previousSymbols.metadata.functionIds[callee]
+				=== freshSymbols.metadata.functionIds[fresh.targetFunctions[index]])
+			|| !activeLocalLayoutMatches(previousSymbols.metadata.localSlotsByFunction[previousIndex],
+				freshSymbols.metadata.localSlotsByFunction[freshIndex], range, mappedRange, inline, mappedInline,
+				call.liveAfter, correspondence)) continue;
+		const oldWord = (previousBase - previousImage.header.textAddress) / INSTRUCTION_BYTES + call.continuationWordOffset;
+		const newWord = (freshBase - freshImage.header.textAddress) / INSTRUCTION_BYTES + fresh.continuationWordOffset;
+		let shared = 0;
+		while (shared < count && readInstructionWord(previousImage.textBytes, oldWord + shared)
+			=== readInstructionWord(freshImage.textBytes, newWord + shared)) ++shared;
+		if (shared !== count) continue;
+		for (let offset = 0; offset < count; ++offset)
+			pcAddresses[oldWord + offset] = freshImage.header.textAddress + (newWord + offset) * INSTRUCTION_BYTES;
+	}
 }
 
 function closureLayoutMatches(
@@ -251,6 +334,10 @@ function mapChangedFunctionProgramCounters(
 export type Blua32ExecutionImageRevision = {
 	functionAddresses: Uint32Array;
 	pcAddresses: Int32Array;
+	softwareFrames: readonly [
+		readonly (Blua32SoftwareFrameDebug | undefined)[],
+		readonly (Blua32SoftwareFrameDebug | undefined)[],
+	];
 };
 
 export function relocatedContinuationPc(
@@ -319,7 +406,8 @@ export function buildBlua32ExecutionRevision(
 			throw new Error(`Hot resume cannot change closure identity for '${functionId}'.`);
 		}
 		functionAddresses[previousIndex] = freshFunction.address;
-		if (functionCodeMatches(previousImage, previousFunction, linked.layout, freshFunction)) {
+		if (functionCodeMatches(previousImage, previousFunction, linked.layout, freshFunction,
+			previousSymbols, previousIndex, linked.symbols, freshIndex)) {
 			const wordCount = previousFunction.codeByteCount / INSTRUCTION_BYTES;
 			for (let word = 0; word < wordCount; word += 1) {
 				const previousPc = previousFunction.codeAddress + word * INSTRUCTION_BYTES;
@@ -337,7 +425,11 @@ export function buildBlua32ExecutionRevision(
 				freshIndex,
 				correspondence,
 			);
+			mapSoftwareContinuations(pcAddresses, previousImage, previousSymbols, previousIndex,
+				linked.layout, linked.symbols, freshIndex, correspondence);
 		}
 	}
-	return { functionAddresses, pcAddresses };
+	return { functionAddresses, pcAddresses, softwareFrames: [
+		previousSymbols.metadata.softwareFramesByFunction, linked.symbols.metadata.softwareFramesByFunction,
+	] };
 }

@@ -23,7 +23,7 @@ inline u32 frameCaptureCount(const Memory& memory, u32 closure) {
 	return closure == 0u ? 0u : ClosureRecord::captureCount(memory, closure);
 }
 
-enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, RegisterBase = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
 
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
@@ -81,11 +81,13 @@ struct FrameEntryControl {
 	i32 top;
 	u32 closure;
 	i32 stackBase, capacity;
+	i32 registerBase = 0;
 
 	template<typename Write> void writeWords(Write&& write) const {
 		write(FrameField::Function, function);
 		write(FrameField::CallSite, callSite);
 		write(FrameField::OpenHead, 0u);
+		write(FrameField::RegisterBase, static_cast<u32>(registerBase));
 		write(FrameField::Flags, flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u));
 		write(FrameField::Pc, pc);
 		write(FrameField::VarargBase, static_cast<u32>(varargBase));
@@ -116,10 +118,14 @@ struct CallFrame {
 	void writeControl(FrameField field, u32 word) {
 		controlMemory->writeRamRecordWord(controlOffset + static_cast<u32>(field), word);
 	}
+	i32 registerBase() const { return m_registerBase; }
+	i32 registerTop() const { return readWindow(FrameField::Top) - registerBase(); }
 	void setTop(i32 top) {
+		top += registerBase();
 		writeControl(FrameField::Top, (readControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
 	void extendTop(i32 extent) {
+		extent += registerBase();
 		const u32 top = readControl(FrameField::Top);
 		if (extent > static_cast<i32>(top & FRAME_WINDOW_MASK))
 			writeControl(FrameField::Top, (top & ~FRAME_WINDOW_MASK) | static_cast<u32>(extent));
@@ -143,6 +149,8 @@ struct CallFrame {
 	}
 	void initializeControl(const FrameEntryControl& entry);
 	void initializeWindow(u32 pc, u32 issuePc, ExecutionDomainId domain, u32 base, u32 width, u32 top);
+	void setRegisterBase(i32 base, i32 width);
+	void rebindRegisters();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Only used inside a grant that already admitted the linear frame/stack
 	// backing and recorded those ranges for history.
@@ -155,18 +163,18 @@ struct CallFrame {
 	void writeAdmittedControl(FrameField field, u32 word) {
 		writeLE32(nativeControl + static_cast<u32>(field), word);
 	}
-	void setAdmittedTop(i32 top) {
+	void setAdmittedPhysicalTop(i32 top) {
 		writeAdmittedControl(FrameField::Top,
 			(readAdmittedControl(FrameField::Top) & ~FRAME_WINDOW_MASK) | static_cast<u32>(top));
 	}
 #endif
-	i32 stackBase() const { return readWindow(FrameField::StackBase); }
+	i32 stackBase() const { return readWindow(FrameField::StackBase) + registerBase(); }
 	// A variadic CALL places its working slots after the actual arguments.
 	i32 varargCount() const {
-		const i32 count = stackBase() - readWindow(FrameField::VarargBase);
+		const i32 count = readWindow(FrameField::StackBase) - readWindow(FrameField::VarargBase);
 		return count > 0 ? count : 0;
 	}
-	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity); }
+	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity) - registerBase(); }
 	void growRegisterWindow(i32 capacity);
 	bool hasControlFlag(u32 mask) const;
 	void addControlFlags(u32 flags);
@@ -174,6 +182,7 @@ struct CallFrame {
 	DecodedInstructionPage* decodedPage = nullptr;
 	// Host translation admission for the next PC; not architectural state.
 	bool compilationEntry = true;
+	i32 m_registerBase = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// The native grant owns this activation until return or publication
 	// before an observer. Its call site stays live until publication.
@@ -184,7 +193,7 @@ struct CallFrame {
 	i32 pendingNativeStackBase;
 	// Excess arguments, if any, occupy [varargBase, stackBase).
 	i32 pendingNativeVarargBase;
-	i32 pendingNativeCallerTop;
+	i32 pendingNativeCallerPhysicalTop;
 	// Host translation binding for the suspended caller. Not guest/saved state.
 	std::array<void* const*, 2> nativeContinuationCells{};
 	u32 nativeContinuationPc = 0;

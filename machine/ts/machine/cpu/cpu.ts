@@ -247,6 +247,8 @@ export type ExecutionHook = (
 	pc: number,
 ) => boolean;
 
+const RESERVED_INSTRUCTION_SIGNAL = Symbol('Reserved instruction');
+const INSTRUCTION_ADDRESS_ERROR_SIGNAL = Symbol('Instruction address error');
 
 export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
@@ -272,7 +274,7 @@ export class CPU implements MappedPageInvalidator {
 	private stringComparison = new StringComparisonLatch();
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
-	private scalarRegisterTop = -1;
+	private scalarRegisterTop: number | null = null;
 	private lastExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private hardHalted = false;
 	private readonly cop0Words = new Uint32Array(COP0_STRING_INDEX_TABLE + 1);
@@ -992,7 +994,9 @@ export class CPU implements MappedPageInvalidator {
 		return this.memory.readRamRecordWord(this.readThreadFrameAddress(address, index) + field);
 	}
 	public readThreadRegister(address: number, frameIndex: number, registerIndex: number): Value {
-		const slot = (this.readThreadFrameWord(address, frameIndex, FrameField.StackBase) & FRAME_WINDOW_MASK) + registerIndex;
+		const frame = this.readThreadFrameAddress(address, frameIndex);
+		const slot = (this.memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK)
+			+ (this.memory.readRamRecordWord(frame + FrameField.RegisterBase) & FRAME_WINDOW_MASK) + registerIndex;
 		const block = this.memory.readRamRecordWord(address + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
 		const capacity = this.memory.readRamRecordWord(address + ThreadField.StackCapacity);
 		return valueFromTag(this.memory.readRamRecordByte(block + capacity * 4 + slot), this.memory.readRamRecordWord(block + slot * 4));
@@ -1182,6 +1186,8 @@ export class CPU implements MappedPageInvalidator {
 						page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
 					}
 				}
+				if (op === OpCode.MOV && rawC === ValueMoveKind.AddBase)
+					page.b[pageOffset] = signExtend(rawB, BASE_OPERAND_BC_BITS + (width - 1) * MAX_OPERAND_BITS);
 			}
 			page.requiredSlots[pageOffset] = fixedRegisterExtent(op, page.a[pageOffset], page.b[pageOffset], page.c[pageOffset]);
 		}
@@ -1918,7 +1924,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 			const offset = registers.getPayload(b), width = registers.getPayload(b + 1), top = registers.getPayload(b + 2);
-			const base = frame.stackBase + offset, end = base + width;
+			const base = frame.registerStackBase + offset, end = base + width;
 			if (offset > capacity || top > capacity - offset || top > width || end > MAX_THREAD_VALUE_SLOTS) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return false;
@@ -1949,7 +1955,7 @@ export class CPU implements MappedPageInvalidator {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
 		}
-		const top = (frame.stackBase + frontier - parent.stackBase) >>> 0;
+		const top = (frame.registerStackBase + frontier - parent.registerStackBase) >>> 0;
 		if (top > parent.registers.capacity()) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
@@ -2222,11 +2228,13 @@ export class CPU implements MappedPageInvalidator {
 						}
 						let pc = scalarFrame === null ? frame.pc : nextPc;
 						if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
+							if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.cop0Words[COP0_BAD_ADDRESS] = pc;
 							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 							continue;
 						}
 						if (image === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
+							if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.cop0Words[COP0_BAD_ADDRESS] = pc;
 							this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 							continue;
@@ -2247,7 +2255,10 @@ export class CPU implements MappedPageInvalidator {
 							this.currentInstructionPc = pc;
 							nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
 							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV
-								&& (page.c[pageOffset] <= ValueMoveKind.Tag || page.c[pageOffset] === ValueMoveKind.Payload))) {
+								&& (page.c[pageOffset] <= ValueMoveKind.ReadTop
+								|| (page.c[pageOffset] >= ValueMoveKind.SetTop && page.c[pageOffset] <= ValueMoveKind.SetTopImmediate)))
+								|| (dispatchOp === OpCode.JREG && page.c[pageOffset] <= RegisterJumpMode.Link)
+								|| (dispatchOp === OpCode.JMP && page.a[pageOffset] === 0)) {
 								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
 								scalarFrame = frame;
 							} else {
@@ -2258,7 +2269,7 @@ export class CPU implements MappedPageInvalidator {
 							this.lastExecutionDomainId = image.executionDomainId;
 							this.lastPc = (nextPc - INSTRUCTION_BYTES) >>> 0;
 							this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
-							const tableReceiver = this.executeInstruction(
+							const result = this.executeInstruction(
 								frame,
 								page,
 								pageOffset,
@@ -2266,12 +2277,15 @@ export class CPU implements MappedPageInvalidator {
 								targetDepth,
 								rewritten,
 							);
-							if (tableReceiver !== undefined) {
-								this.publishScalarFrontier(frame, nextPc);
-								scalarFrame = null;
-								this.finishTableRead(frame, page.a[pageOffset], tableReceiver, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
+							if (result !== undefined) {
+								const op = page.ops[pageOffset];
+								if (op === OpCode.GETFIELD || op === OpCode.SELF) {
+									this.publishScalarFrontier(frame, nextPc);
+									scalarFrame = null;
+									this.finishTableRead(frame, page.a[pageOffset], result as Value, valueString(image.constWords[page.c[pageOffset]]), this.tableLookupResult);
+								} else nextPc = result;
 							}
-							// Only straight-line scalar operations retain the local frontier.
+							// Remain local only within the selected cacheable page.
 							// An uncached bus fetch can itself raise a device edge.
 							if (scalarFrame === null || !cacheableFetch || this.instructionBudgetRemaining <= 0
 								|| ((pc ^ nextPc) & ~MAPPED_PAGE_BYTE_MASK) !== 0) break;
@@ -2291,8 +2305,8 @@ export class CPU implements MappedPageInvalidator {
 
 	private publishScalarFrontier(frame: CallFrame, pc: number): void {
 		frame.pc = pc;
-		if (this.scalarRegisterTop !== frame.top) frame.top = this.scalarRegisterTop;
-		this.scalarRegisterTop = -1;
+		if (this.scalarRegisterTop !== frame.top) frame.top = this.scalarRegisterTop!;
+		this.scalarRegisterTop = null;
 	}
 
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
@@ -2388,7 +2402,11 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private handleRunLoopError(error: unknown): void {
-		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
+		if (error === RESERVED_INSTRUCTION_SIGNAL) {
+			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		} else if (error === INSTRUCTION_ADDRESS_ERROR_SIGNAL) {
+			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD);
+		} else if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
 			this.retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 		} else if (error instanceof LuaThrownValueError) {
 			this.enterLuaFaultException(error.value);
@@ -2474,7 +2492,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public getFrameRegisterCount(frameIndex: number): number {
-		return this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Top) & FRAME_WINDOW_MASK;
+		const address = this.readThreadFrameAddress(this.activeThread.address, frameIndex);
+		const top = this.memory.readRamRecordWord(address + FrameField.Top) & FRAME_WINDOW_MASK;
+		const base = this.memory.readRamRecordWord(address + FrameField.RegisterBase) & FRAME_WINDOW_MASK;
+		return Math.max(top - base, 0);
 	}
 
 	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
@@ -2669,7 +2690,7 @@ export class CPU implements MappedPageInvalidator {
 				// Unlike closure placement, a primitive does not reserve a new
 				// argument window. Its shared source must already be backed.
 				const last = a + argCount;
-				if (last >= capacity && frame.stackBase + last >= frame.thread.stackRegisters.capacity()) {
+				if (last >= capacity && frame.registerStackBase + last >= frame.thread.stackRegisters.capacity()) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
 				this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
@@ -2718,10 +2739,10 @@ export class CPU implements MappedPageInvalidator {
 		const destination = frame.returnBase, result = frame.returnCount;
 		const selected = selectedCallResultCount(result, total), end = destination + selected;
 		const copied = Math.min(total, selected), padded = selected - copied;
-		const sourceSlot = mode === ReturnSource.Registers ? frame.stackBase + a : first;
+		const sourceSlot = mode === ReturnSource.Registers ? frame.registerStackBase + a : first;
 		const top = (result & CALL_RESULT_EXTEND_TOP) === 0 || end > caller.top ? end : -1;
 		let capacity = 0;
-		if (selected !== 0 && end > caller.stackCapacity) {
+		if (selected !== 0 && end > caller.registers.capacity()) {
 			capacity = this.admitRegisterWindow(frame, caller, end, OpCode.RET, a);
 			if (capacity === 0) return false;
 		}
@@ -2751,7 +2772,7 @@ export class CPU implements MappedPageInvalidator {
 			return false;
 		}
 		const source = frame.varargBase, copied = Math.min(count, available), padded = count - copied;
-		if (end > frame.stackCapacity) {
+		if (end > frame.registers.capacity()) {
 			const capacity = this.admitRegisterWindow(frame, frame, end, OpCode.VARARG, a);
 			if (capacity === 0) return true;
 			frame.growRegisterWindow(capacity);
@@ -2762,7 +2783,7 @@ export class CPU implements MappedPageInvalidator {
 
 	// A RET's issuing frame remains live until the receiving window fits.
 	private admitRegisterWindow(issuer: CallFrame, receiver: CallFrame, end: number, op: OpCode, operand: number): number {
-		const capacity = registerWindowBucket(end), extent = receiver.stackBase + capacity;
+		const capacity = registerWindowBucket(receiver.registerBase + end), extent = receiver.stackBase + capacity;
 		if (extent <= receiver.thread.stackRegisters.capacity()) return capacity;
 		if (this.resetBankSelected()) this.enterSynchronousException(issuer, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		else this.enterRegisterWindowException(issuer, extent, 0, op, operand);
@@ -3073,7 +3094,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): Value | undefined {
+	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): Value | number | undefined {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (cache.visits[word] < COMPILED_BLOCK_THRESHOLD) ++cache.visits[word];
@@ -3260,7 +3281,7 @@ export class CPU implements MappedPageInvalidator {
 		op: number,
 		targetDepth: number,
 		rewritten = false,
-	): Value | undefined {
+	): Value | number | undefined {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
@@ -3271,8 +3292,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.MOV:
 					if (page.c[pageOffset] <= ValueMoveKind.Tag || page.c[pageOffset] === ValueMoveKind.Payload)
 						throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-					return;
+					throw RESERVED_INSTRUCTION_SIGNAL;
 				// F64LE bills its format before it reads a register.
 				case OpCode.LOAD_MEM: case OpCode.STORE_MEM: case OpCode.LOAD_MEM_D: case OpCode.STORE_MEM_D:
 					if (page.c[pageOffset] === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
@@ -3316,15 +3336,27 @@ export class CPU implements MappedPageInvalidator {
 						const sourceTag = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
 						if (registers.getTag(b) !== sourceTag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 						this.setRegisterValueFast(frame, registers, a, valueFromTag(kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float, registers.getPayload(b)));
-					} else if (kind === ValueMoveKind.ReadTop) this.setRegisterIntegerFast(frame, registers, a, frame.top);
+					} else if (kind === ValueMoveKind.ReadTop)
+						this.setRegisterIntegerFast(frame, registers, a, Math.max(this.scalarRegisterTop ?? frame.top, 0));
+					else if (kind === ValueMoveKind.ReadBase) this.setRegisterIntegerFast(frame, registers, a, frame.registerBase);
 					else if (kind === ValueMoveKind.ReadIndexed || kind === ValueMoveKind.WriteIndexed) {
 						const reading = kind === ValueMoveKind.ReadIndexed, index = registers.getPayload(reading ? b : a);
 						if (index >= registers.capacity()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 						else this.copyRegisterFast(frame, registers, reading ? a : index, reading ? index : b);
-					} else if (kind === ValueMoveKind.SetTop) {
-						const top = registers.getPayload(b);
-						if (top > registers.capacity()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-						else frame.top = top;
+					} else if (kind === ValueMoveKind.SetBase || kind === ValueMoveKind.AddBase) {
+						const oldBase = frame.registerBase;
+						const base = kind === ValueMoveKind.SetBase ? registers.getPayload(b) : (oldBase + b) >>> 0;
+						const capacity = frame.stackCapacity;
+						if (base > capacity) throw RESERVED_INSTRUCTION_SIGNAL;
+						frame.setRegisterBase(base, capacity);
+						// The live prefix remains relative to the enclosing frame.
+						if (this.scalarRegisterTop !== null) this.scalarRegisterTop += oldBase - base;
+						frame.compilationEntry = true;
+					} else if (kind === ValueMoveKind.SetTopImmediate || kind === ValueMoveKind.SetTop) {
+						const top = kind === ValueMoveKind.SetTopImmediate ? a : registers.getPayload(b);
+						if (top > registers.capacity()) throw RESERVED_INSTRUCTION_SIGNAL;
+						if (this.scalarRegisterTop === null) frame.top = top;
+						else this.scalarRegisterTop = top;
 					} else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				}
@@ -3396,7 +3428,7 @@ export class CPU implements MappedPageInvalidator {
 						this.bumpRegisterTop(frame, a + 1);
 					}
 					const result = this.resolveTableFieldIndexCached(base, page, pageOffset, key);
-					if (result.status !== TableLookupStatus.Resolved && this.scalarRegisterTop >= 0) {
+					if (result.status !== TableLookupStatus.Resolved && this.scalarRegisterTop !== null) {
 						// The normal loop owns the PC and must publish before a
 						// metamethod or fault. Return the original SELF receiver.
 						return base;
@@ -3428,10 +3460,15 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const target = registers.getPayload(a);
 					if ((target & (INSTRUCTION_BYTES - 1)) !== 0) {
-						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
-						return;
+						this.cop0Words[COP0_BAD_ADDRESS] = target;
+						throw INSTRUCTION_ADDRESS_ERROR_SIGNAL;
 					}
-					if (mode === RegisterJumpMode.Link) this.setRegisterIntegerFast(frame, registers, page.b[pageOffset], frame.pc);
+					const local = this.scalarRegisterTop !== null;
+					if (mode === RegisterJumpMode.Link) {
+						const returnPc = local ? this.currentInstructionPc + page.widths[pageOffset] * INSTRUCTION_BYTES : frame.pc;
+						this.setRegisterIntegerFast(frame, registers, page.b[pageOffset], returnPc);
+					}
+					if (local) return target;
 					frame.pc = target;
 					return;
 				}
@@ -3568,27 +3605,29 @@ export class CPU implements MappedPageInvalidator {
 
 				case OpCode.JMP: {
 					const successor = page.bx[pageOffset];
+					if (this.scalarRegisterTop !== null) return successor;
 					if (a !== 0 && frame.openUpvalueHead !== 0)
 						this.enterRegisterWindowException(frame, 0, 0, OpCode.JMP, a, successor);
 					else frame.pc = successor;
 					return;
 				}
-				case OpCode.JMPIF: {
-					if (registers.isTruthy(a)) {
-						frame.pc = page.bx[pageOffset];
-					}
-					return;
-				}
+				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT: {
-					if (!registers.isTruthy(a)) {
-						frame.pc = page.bx[pageOffset];
-					}
+					if (registers.isTruthy(a) !== (op === OpCode.JMPIF)) return;
+					const target = page.bx[pageOffset];
+					if (this.scalarRegisterTop !== null) return target;
+					frame.pc = target;
 					return;
 				}
-				case OpCode.JAL:
-					this.setRegisterIntegerFast(frame, registers, a, frame.pc);
-					frame.pc = page.bx[pageOffset];
+				case OpCode.JAL: {
+					const local = this.scalarRegisterTop !== null;
+					const returnPc = local ? this.currentInstructionPc + page.widths[pageOffset] * INSTRUCTION_BYTES : frame.pc;
+					this.setRegisterIntegerFast(frame, registers, a, returnPc);
+					const target = page.bx[pageOffset];
+					if (local) return target;
+					frame.pc = target;
 					return;
+				}
 				case OpCode.GETUP: {
 					const index = page.b[pageOffset];
 					if (index >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -3657,7 +3696,7 @@ export class CPU implements MappedPageInvalidator {
 		const { codeAddress, numParams, maxStack, flags: functionFlags } = entry;
 		const thread = this.activeThread;
 		const shared = args instanceof CallFrame;
-		const first = shared ? args.stackBase + argBase : argBase;
+		const first = shared ? args.registerStackBase + argBase : argBase;
 		const argumentBase = shared ? first : thread.stackTop;
 		const vararg = (functionFlags & BLUA32_FUNCTION_VARARG) !== 0;
 		const extras = vararg ? Math.max(count - numParams, 0) : 0;
@@ -3767,8 +3806,8 @@ export class CPU implements MappedPageInvalidator {
 		const targetCount = selectedCallResultCount(count, sourceCount);
 		const end = base + targetCount;
 		if (targetCount > 0) {
-			if (end > frame.stackCapacity) {
-				const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
+			if (end > frame.registers.capacity()) {
+				const capacity = registerWindowBucket(frame.registerBase + end), extent = frame.stackBase + capacity;
 				if (extent > frame.thread.stackRegisters.capacity()) {
 					if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
 					const top = (count & CALL_RESULT_EXTEND_TOP) === 0 ? end : Math.max(end, frame.top);
@@ -3792,7 +3831,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private bumpRegisterTop(frame: CallFrame, index: number): void {
 		const nextTop = index + 1;
-		if (this.scalarRegisterTop >= 0) this.scalarRegisterTop = Math.max(this.scalarRegisterTop, nextTop);
+		if (this.scalarRegisterTop !== null) this.scalarRegisterTop = Math.max(this.scalarRegisterTop, nextTop);
 		else if (nextTop > frame.top) {
 			frame.top = nextTop;
 		}

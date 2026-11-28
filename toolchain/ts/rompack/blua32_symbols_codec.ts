@@ -4,7 +4,7 @@ import { StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
 import { sourceRangeKey } from '../lua/semantic/source_range';
 import type { SourceRange } from '../lua/source_range';
-import type { Blua32InlineCallSite, Blua32SymbolsImage } from './blua32_symbols';
+import type { Blua32InlineCallSite, Blua32SoftwareFrameDebug, Blua32SymbolsImage } from './blua32_symbols';
 
 /** The private symbol graph has pooled values, not a serialized object tree.
  * See docs/blua32_symbols.md for the paired native record layout.
@@ -233,6 +233,22 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 	record.vector(metadata.staticScopes.bindingsByFunction, bindings => record.vector(bindings, binding => {
 		words.push(binding.declarationIndex, binding.inlineDepth, tables.wordRanges(binding.visibleWordRanges));
 	}));
+	const frameCountWord = words.length;
+	words.push(0);
+	const frames = metadata.softwareFramesByFunction;
+	for (let slot = 0; slot < frames.length; ++slot) {
+		const frame = frames[slot];
+		if (frame === undefined) continue;
+		++words[frameCountWord];
+		words.push(slot, +frame.entry);
+		record.vector(frame.calls, call => {
+			words.push(call.startWordOffset, call.wordOffset, call.continuationWordOffset, call.endWordOffset, call.baseDelta);
+			record.numbers(call.targetFunctions);
+			record.numbers(call.liveAfter);
+			words.push(tables.wordRanges(call.targetLiveWordRanges));
+		});
+		record.vector(frame.linkSlots, link => words.push(link.wordOffset, link.slot));
+	}
 	return encodeBinary(tables.payload(record));
 }
 
@@ -339,10 +355,23 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 	const bindingsByFunction = record.vector(() => record.vector(() => ({
 		declarationIndex: record.word(), inlineDepth: record.word(), visibleWordRanges: intervals[record.word()],
 	})));
+	const softwareFramesByFunction = new Array<Blua32SoftwareFrameDebug | undefined>(functionIds.length).fill(undefined);
+	for (let count = record.word(); count > 0; --count) {
+		const slot = record.word();
+		softwareFramesByFunction[slot] = {
+			entry: record.word() !== 0,
+			calls: record.vector(() => ({
+				startWordOffset: record.word(), wordOffset: record.word(), continuationWordOffset: record.word(),
+				endWordOffset: record.word(), baseDelta: record.word(), targetFunctions: record.numbers(), liveAfter: record.numbers(),
+				targetLiveWordRanges: intervals[record.word()],
+			})),
+			linkSlots: record.vector(() => ({ wordOffset: record.word(), slot: record.word() })),
+		};
+	}
 	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants, systemRecipe,
 		metadata: { optLevel, traceStatements, preloadModules, compiledModulePaths, functionIds, functionDisplayNames, functionDefinitions,
 			globalNames, systemGlobalNames, staticFunctionIdBySlot, debugRanges, debugInlineCallSiteChains,
-			debugInlineCallSiteChainIds, statementPointsByFunction, resumePointsByFunction, localSlotsByFunction,
+			debugInlineCallSiteChainIds, statementPointsByFunction, resumePointsByFunction, softwareFramesByFunction, localSlotsByFunction,
 			outerBindingsByFunction, lexicalDeclarations, upvalueBindingsByFunction,
 			staticScopes: { declarations, globals, bindingsByFunction } } };
 }

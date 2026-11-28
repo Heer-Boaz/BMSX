@@ -12,6 +12,7 @@ import {
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { visitRuntimeExecutionRecords } from './execution_records';
+import { planSoftwareCodeWords } from './hot_resume_software_frames';
 import {
 	relocatedCallSitePc,
 	relocatedContinuationPc,
@@ -30,11 +31,11 @@ export type HotResumeRevisions = readonly [
 	HotResumeRevision | null,
 ];
 
-type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number };
+type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number; rawPc: boolean };
 
 export type HotResumeRelocation = {
 	readonly frames: ReadonlyArray<FrameExecutionTarget | null>;
-	readonly suspendedFrameWords: ReadonlyMap<number, number>;
+	readonly ramWords: ReadonlyMap<number, number>;
 	readonly closures: ReadonlyMap<number, number>;
 	readonly observations: Uint32Array;
 	readonly valueEnd: number;
@@ -86,7 +87,7 @@ export function buildHotResumeRelocation(
 	const latchBase = frameCount * FRAME_CALL_SITE_WORDS;
 	const observations = new Uint32Array(latchBase + LATCH_WORDS);
 	const frames = new Array<FrameExecutionTarget | null>(frameCount).fill(null);
-	const suspendedFrameWords = new Map<number, number>();
+	const ramWords = new Map<number, number>();
 	const closures = new Map<number, number>();
 	const unmappedWords: string[] = [];
 	// A weak binding can be found again before the next sweep. The linker
@@ -144,7 +145,7 @@ export function buildHotResumeRelocation(
 				if ((flags & FRAME_EXCEPTION) !== 0 || nextCallSite < 0) {
 					unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} call site 0x${callSite.toString(16)}`);
 				} else if (nextCallSite !== callSite) {
-					suspendedFrameWords.set(frame + FrameField.CallSite, nextCallSite);
+				ramWords.set(frame + FrameField.CallSite, nextCallSite);
 				}
 			}
 			caller = null;
@@ -162,6 +163,10 @@ export function buildHotResumeRelocation(
 				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} continuation 0x${pc.toString(16)}`);
 				continue;
 			}
+			if (!planSoftwareCodeWords(cpu, target, thread, frame, borrowed ? -1 : oldIndex, pc, nextPc, ramWords)) {
+				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} software continuation`);
+				continue;
+			}
 			const previous = target.previousImage.functions[oldIndex];
 			const next = target.nextImage.functions[blua32FunctionIndexAtAddress(target.nextImage, nextAddress)];
 			const width = memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
@@ -174,8 +179,8 @@ export function buildHotResumeRelocation(
 				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} argument, capture or register layout`);
 				continue;
 			}
-			if (!borrowed && nextAddress !== address) suspendedFrameWords.set(frame + FrameField.Function, nextAddress);
-			if (nextPc !== pc) suspendedFrameWords.set(frame + FrameField.Pc, nextPc);
+			if (!borrowed && nextAddress !== address) ramWords.set(frame + FrameField.Function, nextAddress);
+			if (nextPc !== pc) ramWords.set(frame + FrameField.Pc, nextPc);
 			caller = target;
 			callerPc = pc;
 		}
@@ -216,6 +221,11 @@ export function buildHotResumeRelocation(
 			unmappedWords.push(`frame ${frameIndex} continuation 0x${cpu.readFramePc(frameIndex).toString(16)}`);
 			continue;
 		}
+		const frameAddress = cpu.readThreadFrameAddress(thread.address, frameIndex);
+		if (!planSoftwareCodeWords(cpu, target, thread.address, frameAddress, borrowed ? -1 : functionIndex, oldPc, pc, ramWords)) {
+			unmappedWords.push(`frame ${frameIndex} software continuation 0x${oldPc.toString(16)}`);
+			continue;
+		}
 		const previous = target.previousImage.functions[functionIndex];
 		const next = target.nextImage.functions[blua32FunctionIndexAtAddress(target.nextImage, functionAddress)];
 		const captures = cpu.getFrameUpvalueCount(frameIndex);
@@ -242,7 +252,8 @@ export function buildHotResumeRelocation(
 			windows[index + 2] = end;
 			valueEnd = Math.max(valueEnd, end);
 		}
-		frames[frameIndex] = { domain: executionDomain, functionAddress: borrowed ? 0 : functionAddress, pc };
+		frames[frameIndex] = { domain: executionDomain, functionAddress: borrowed ? 0 : functionAddress, pc,
+			rawPc: borrowed || blua32FunctionIndexAtPc(target.previousImage, oldPc) !== functionIndex };
 	}
 	for (let index = 0; index < windows.length; index += 3) {
 		const oldEnd = windows[index + 1], newEnd = windows[index + 2];
@@ -328,7 +339,7 @@ export function buildHotResumeRelocation(
 			`Hot Resume could not map: ${unmappedWords.join('; ')}.`,
 		);
 	}
-	return { closures, frames, suspendedFrameWords, observations, valueEnd };
+	return { closures, frames, ramWords, observations, valueEnd };
 }
 
 export function applyHotResumeObservations(cpu: CPU, relocation: HotResumeRelocation): void {
@@ -357,17 +368,19 @@ export function applyHotResumeObservations(cpu: CPU, relocation: HotResumeReloca
 export function applyHotResumeRelocation(cpu: CPU, relocation: HotResumeRelocation): void {
 	for (const [closure, record] of relocation.closures)
 		cpu.memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, record);
-	for (const [address, word] of relocation.suspendedFrameWords)
+	for (const [address, word] of relocation.ramWords)
 		cpu.memory.writeRamRecordWord(address, word);
 	for (let i = 0; i < relocation.frames.length; ++i) {
 		const frame = relocation.frames[i];
 		if (frame === null) continue;
-		if (frame.functionAddress !== 0) cpu.writeFrameExecution(i, frame.domain, frame.functionAddress, frame.pc);
+		if (!frame.rawPc) cpu.writeFrameExecution(i, frame.domain, frame.functionAddress, frame.pc);
 		else {
-			// Installation has already rebound the executable image views. A raw
-			// window owns only its retained RAM controls, not a Function record.
+			// Installation already rebound the executable image views. A
+			// software callee can execute outside the retained frame's Function.
 			if (i + 1 === cpu.getFrameDepth()) cpu.abortStalledMemoryWrite();
 			const address = cpu.readThreadFrameAddress(cpu.activeThread.address, i);
+			if (frame.functionAddress !== 0)
+				cpu.memory.writeRamRecordWord(address + FrameField.Function, frame.functionAddress);
 			cpu.memory.writeRamRecordWord(address + FrameField.Pc, frame.pc);
 		}
 	}

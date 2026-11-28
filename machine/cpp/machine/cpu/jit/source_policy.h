@@ -82,11 +82,12 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 
 // Source discovery already ends the run at these instructions. Feed their
 // successor if the ordinary CPU can return there.
-inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
+inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field, int format) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 		case OpCode::CALL: case OpCode::SVC:
 			return true;
+		case OpCode::MOV: return format == static_cast<int>(ValueMoveKind::SetBase) || format == static_cast<int>(ValueMoveKind::AddBase);
 		case OpCode::MTC0: return field == COP0_STATUS || field == COP0_RAM_END || field == COP0_CURRENT
 			|| (field >= COP0_TABLE_LOOKUP_KEY && field <= COP0_STRING_INDEX_TABLE);
 		default: return false;
@@ -114,14 +115,15 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	return boundaries;
 }();
 
-inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
+inline constexpr bool nativeBlockEndsBlock(u8 op, int field, int format) {
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
+		|| (op == static_cast<u8>(OpCode::MOV) && (format == static_cast<int>(ValueMoveKind::SetBase) || format == static_cast<int>(ValueMoveKind::AddBase)))
 		|| (op == static_cast<u8>(OpCode::MTC0) && (cop0WriteRetiresControl(field) || !cop0FieldImplemented(field)));
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row) {
-	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b)
+	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b, row.c)
 		? DecodedDispatchOp::NativeWarmBoundary : DecodedDispatchOp::NativeWarm);
 }
 
@@ -138,7 +140,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
 		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);
 		case OpCode::JMP: return instruction.a == 0;
 		case OpCode::JREG: return instruction.c <= static_cast<int>(RegisterJumpMode::EnterBankWindow);
-		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Payload);
+		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::SetTopImmediate);
 		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 		default: return nativeBlockSupports(instruction.op);
 	}

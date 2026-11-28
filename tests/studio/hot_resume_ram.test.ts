@@ -10,9 +10,12 @@ import { isOpen, load as readCapture } from '../../machine/ts/machine/cpu/upvalu
 import { type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
+import { IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
+import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_IRQ, CPU_CAUSE_NMI } from '../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
+import { decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
 import { createLuaSourceRegistry } from '../../ide/runtime/source_registry';
@@ -21,7 +24,7 @@ import { verifyHotResumeBinding } from '../../ide/runtime/hot_resume_binding';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { compileCoroutineTest } from '../helpers/coroutine';
-import { runGuestToHalt } from '../helpers/cpu_execution';
+import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { createTestSystemCpu, linkRawTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
@@ -32,6 +35,111 @@ import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/he
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
+
+for (const returnLinkMoved of [false, true]) test(
+	`Hot Resume relocates nested software return PCs ${returnLinkMoved ? 'after the leaf moves its link' : 'on leaf entry'} without rewriting equal Integer data`, () => {
+	const path = 'fixture/frame-free';
+	const mixing = Array.from({ length: 44 }, (_, i) => `x = (x + ${i + 1}) & 255`).join('\n');
+	const main = `bss alias_seed: word
+local calls<const> = require('${path}')
+local marker<const> = *alias_seed
+local result<const> = calls.outer(29)
+return result, marker`;
+	// Move a same-sized arithmetic statement across each pending call. The
+	// continuation PCs move, but the ordinary operand bindings stay installed.
+	const module = (edited: boolean) => `module<const>
+local leaf<const> = function(x)
+	${mixing}
+	return x + ${edited && !returnLinkMoved ? 1103 : 1101}
+end
+local middle<const> = function(x)
+	${mixing}
+	${edited ? 'x = (x + 35) & 255' : ''}
+	local value<const> = leaf(x)
+	${edited ? '' : 'x = (x + 35) & 255'}
+	return value + 13 + x
+end
+local outer<const> = function(x)
+	${mixing}
+	${edited ? 'x = (x + 41) & 255' : ''}
+	local value<const> = middle(x)
+	${edited ? '' : 'x = (x + 41) & 255'}
+	return value + 23 + x
+end
+return { leaf = leaf, middle = middle, outer = outer }`;
+	const initial = linkManagedTestSystem(main, 3, [{ path, source: module(false) }]);
+	const fresh = linkManagedTestSystem(main, 3, [{ path, source: module(true) }]);
+	const metadata = initial.symbols.metadata, next = fresh.symbols.metadata;
+	const entry = metadata.functionIds.indexOf('module:main/entry');
+	const chain = [entry, ...['outer', 'middle', 'leaf'].map(name => metadata.functionIds.findIndex(id => id.endsWith(`__${name}`)))];
+	const runtime = createTestRuntime(writeTestBlua32Rom(initial));
+	runtime.boot();
+	const { cpu, memory, executionAddressSpace } = runtime.machine;
+	const stopAt = (pc: number) => {
+		cpu.setExecutionHook((_domain, current) => current === pc, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_EXECUTION_DOMAIN_MASK);
+		assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.ExecutionStopped);
+		cpu.setExecutionHook(null, 0, 0);
+	};
+	stopAt(initial.layout.functions[entry].codeAddress);
+	const thread = cpu.activeThread, frame = thread.currentFrame!, depth = cpu.getFrameDepth();
+	let basis = 0;
+	const links = chain.slice(0, -1).map((index, i) => {
+		const [before] = metadata.softwareFramesByFunction[index]!.calls;
+		const [after] = next.softwareFramesByFunction[index]!.calls;
+		assert.deepEqual(before.targetFunctions, [chain[i + 1]]);
+		assert.deepEqual(after.targetFunctions, before.targetFunctions);
+		assert.equal(after.baseDelta, before.baseDelta);
+		basis += before.baseDelta;
+		const { textBytes, header, functions } = initial.layout;
+		const entryPc = functions[index].codeAddress;
+		const jump = decodeBlua32InstructionAtPc(textBytes, header.textAddress, entryPc + before.wordOffset * INSTRUCTION_BYTES);
+		assert.equal(jump.op, OpCode.JAL);
+		return { slot: frame.stackBase + basis + jump.a,
+			before: entryPc + before.continuationWordOffset * INSTRUCTION_BYTES,
+			after: fresh.layout.functions[index].codeAddress + after.continuationWordOffset * INSTRUCTION_BYTES };
+	});
+	assert.ok(links[1].before !== links[1].after && links[2].before !== links[2].after, 'both nested continuations must actually move');
+	const marker = valueInteger(links[1].before);
+	const seed = metadata.staticScopes.declarations.find(slot => slot.name === 'alias_seed')!;
+	memory.writeMappedU32LE(seed.address!, links[1].before);
+	const markerSlot = frame.stackBase + metadata.localSlotsByFunction[entry].find(slot => slot.name === 'marker')!.registerIndex;
+	const leaf = chain[chain.length - 1];
+	const leafLink = links[links.length - 1], initialLeafLink = leafLink.slot;
+	let leafWord = 0;
+	if (returnLinkMoved) {
+		const move = metadata.softwareFramesByFunction[leaf]!.linkSlots.find(point => point.wordOffset > 0)!;
+		leafWord = move.wordOffset;
+		leafLink.slot = frame.stackBase + basis + move.slot;
+	}
+	stopAt(initial.layout.functions[leaf].codeAddress + leafWord * INSTRUCTION_BYTES);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(thread.currentFrame, frame);
+	assert.equal(frame.functionAddress, initial.layout.functions[entry].address);
+	assert.equal(frame.registerBase, basis);
+	assert.equal(thread.stackRegisters.get(markerSlot), marker);
+	for (const link of links) assert.equal(thread.stackRegisters.get(link.slot), valueInteger(link.before));
+	if (returnLinkMoved) assert.equal(thread.stackRegisters.get(initialLeafLink), valueInteger(leafLink.before), 'the live link is now in the scratch');
+
+	const sources = (image: typeof initial) => new Map(Array.from(image.diagnosticSources, ([path, diagnostic]) => [path, diagnostic.source]));
+	const previousImage = initial.layout, nextImage = fresh.layout;
+	const revision = buildBlua32ExecutionRevision(previousImage, initial.symbols, sources(initial), fresh, sources(fresh));
+	assert.equal(verifyHotResumeBinding(cpu, SYSTEM_EXECUTION_DOMAIN_ID, previousImage, nextImage), false);
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage, nextImage, revision }, null, null], depth);
+	for (const link of links) assert.equal(thread.stackRegisters.get(link.slot), valueInteger(link.before), 'planning does not relocate in place');
+	memory.installSystemRom(writeTestBlua32Rom(fresh));
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(frame.pc, nextImage.functions[leaf].codeAddress + leafWord * INSTRUCTION_BYTES);
+	assert.equal(frame.registerBase, basis);
+	assert.equal(thread.stackRegisters.get(markerSlot), marker);
+	for (const link of links) assert.equal(thread.stackRegisters.get(link.slot), valueInteger(link.after));
+	if (returnLinkMoved) assert.equal(thread.stackRegisters.get(initialLeafLink), valueInteger(leafLink.before), 'the obsolete copy must not be relocated');
+	runGuestToHalt(cpu, 1_000_000);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueInteger(returnLinkMoved ? 1788 : 1790), marker]); // Retained inputs, revised continuations.
+});
 
 for (const mode of [RegisterJumpMode.EnterWindow, RegisterJumpMode.EnterBankWindow]) test(
 	`Hot Resume relocates linked borrowed code and its WIDE caller without creating a Function activation (mode ${mode})`, () => {
@@ -145,60 +253,110 @@ test('Hot Resume plans backing for a widened retained frame without mutating it'
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 });
 
-for (const optLevel of [3] as const) for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O${optLevel}: ROM relocation preserves RAM calls and ${stop} return words`, () => {
+for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O3: ROM relocation preserves RAM calls and ${stop} return words`, () => {
 	const image = compileFrameEvaluationTest(`
-function irq() end
-function exception() end
 ram_leaf = false
 ram_outer = false
 ram_leaf = assert(load('local result = 3; return result', '=ram-leaf'))
 ram_outer = assert(load('local result = ram_leaf(); return result + 3', '=ram-outer'))
-return ram_outer() == 6`, optLevel);
-	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
-	cpu.reset();
+return ram_outer() == 6`, 3);
+	const runtime = createTestRuntime(image.romBytes);
+	const { cpu, memory, executionAddressSpace } = runtime.machine;
+	runtime.boot();
+	const inRam = (index: number) => {
+		const address = cpu.readFrameFunctionAddress(index);
+		return address >= RAM_BASE && address < CART_ROM_BASE;
+	};
 	cpu.setExecutionHook(() => {
 		const depth = cpu.getFrameDepth();
-		return depth >= 2 && blua32FunctionIndexAtAddress(image.image, cpu.readFrameFunctionAddress(depth - 1)) === -1
-			&& blua32FunctionIndexAtAddress(image.image, cpu.readFrameFunctionAddress(depth - 2)) === -1;
+		return depth >= 2 && inRam(depth - 1) && inRam(depth - 2);
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_EXECUTION_DOMAIN_MASK);
-	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.ExecutionStopped);
+	assert.equal(runCpuWithinBudget(cpu, 30_000_000), RunResult.ExecutionStopped);
 	cpu.setExecutionHook(null, 0, 0);
-	const ramDepth = cpu.getFrameDepth();
-	assert.equal(blua32FunctionIndexAtAddress(image.image, cpu.readFrameFunctionAddress(ramDepth - 1)), -1);
-	assert.equal(blua32FunctionIndexAtAddress(image.image, cpu.readFrameFunctionAddress(ramDepth - 2)), -1);
+	const context = cpu.activeThread.address, ramDepth = cpu.getFrameDepth();
+	assert.equal(inRam(ramDepth - 1) && inRam(ramDepth - 2), true);
+	const ramReturn = cpu.readFramePc(ramDepth - 1);
+	const readRamContinuations = () => [ramDepth - 2, ramDepth - 1].map(index =>
+		[FrameField.Function, FrameField.Pc, FrameField.CallSite].map(field => cpu.readThreadFrameWord(context, index, field)));
+	const ramContinuations = readRamContinuations();
+	assert.ok(ramReturn >= RAM_BASE && ramReturn < CART_ROM_BASE);
+	assert.ok(ramContinuations[1][2] >= RAM_BASE && ramContinuations[1][2] < CART_ROM_BASE, 'the leaf call site is RAM too');
+	const assertFixedReturn = (cause: number) => {
+		assert.equal(cpu.fixedInterruptActive(), true);
+		assert.equal(cpu.readCauseWord(), cause);
+		assert.equal(cpu.readEpcWord(), ramReturn);
+		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), context);
+		assert.equal(runtime.admitExternalCpuMutation(), false, 'Hot Resume cannot install while the System vector is running');
+		assert.throws(() => cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]), /Fixed execution must retire/);
+		assert.deepEqual(readRamContinuations(), ramContinuations);
+	};
+	const retireFixedVector = () => {
+		for (let step = 0; step < 4096 && cpu.fixedInterruptActive(); ++step)
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.fixedInterruptActive(), false);
+		assert.equal(cpu.activeThread.address, context);
+		assert.equal(cpu.getFrameDepth(), ramDepth);
+		assert.equal(cpu.readFramePc(ramDepth - 1), ramReturn);
+		assert.deepEqual(readRamContinuations(), ramContinuations);
+	};
 	if (stop === 'irq-nmi') {
-		runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+		memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		assert.equal(cpu.enterPendingInterrupt(), true);
+		assertFixedReturn(CPU_CAUSE_IRQ);
+		cpu.requestNonMaskableInterrupt();
+		assert.equal(cpu.enterPendingInterrupt(), false, 'a second vector cannot borrow the occupied fixed bank');
+		assert.equal(cpu.captureRuntimeState().nonMaskableInterruptPending, true);
+		retireFixedVector();
+		assert.equal(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_VBLANK, 0, 'the real IRQ handler acknowledged VBlank');
+		assert.equal(cpu.captureRuntimeState().nonMaskableInterruptPending, true, 'the IRQ did not consume the queued NMI');
+	} else if (stop === 'nmi') {
+		cpu.requestNonMaskableInterrupt();
 	}
 	if (stop !== 'ram') {
-		cpu.requestNonMaskableInterrupt();
+		const previousEpc = cpu.readEpcWord();
 		assert.equal(cpu.enterPendingInterrupt(), true);
+		assertFixedReturn(CPU_CAUSE_NMI);
+		assert.equal(cpu.readNmiReturnEpcWord(), previousEpc);
+		retireFixedVector();
+		assert.equal(cpu.readEpcWord(), previousEpc, 'RFE restores the preceding exception latch');
 	}
+	assert.equal(runtime.admitExternalCpuMutation(), true);
 	const before = cpu.captureRuntimeState();
 	const revision = identityHotResumeRevision(image.image);
-	applyHotResumeRelocation(cpu, buildHotResumeRelocation(cpu, [revision, null, null], cpu.getFrameDepth()));
+	const plan = buildHotResumeRelocation(cpu, [revision, null, null], ramDepth);
+	memory.installSystemRom(image.romBytes);
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, plan);
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'RAM PCs/callsites and interrupted return latches are not ROM offsets');
+	assert.deepEqual(readRamContinuations(), ramContinuations);
+	runGuestToHalt(cpu, 1_000_000);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueBool(true), valueBool(true)]);
 });
 
-test('Hot Resume preserves a direct-entry record count independently of captured cells', () => {
+test('Hot Resume preserves a direct-entry Frame without a guest Closure', () => {
 	const text = new Uint8Array(4);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1,
-		staticClosure: true, upvalueDescs: [{ inStack: true, index: 0 }] }] });
+		staticClosure: true, numParams: 1, maxStack: 1 }] });
 	const { cpu, executionAddressSpace } = createTestSystemCpu(image);
-	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.vectors.startupFunctionAddress);
+	const fn = image.vectors.startupFunctionAddress, argument = valueInteger(41);
+	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fn, [argument]);
 	assert.equal(cpu.getFrameDepth(), 2);
-	const closure = cpu.activeThread.currentFrame!.closure;
-	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
-	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
+	const frame = cpu.activeThread.currentFrame!;
+	assert.equal(frame.closure, 0);
+	assert.equal(frame.functionAddress, fn);
+	assert.equal(frame.registers.get(0), argument);
 	const revisions = [identityHotResumeRevision(image.image), null, null] as const;
 	const relocation = buildHotResumeRelocation(cpu, revisions, cpu.getFrameDepth());
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	applyHotResumeRelocation(cpu, relocation);
-	assert.equal(cpu.activeThread.currentFrame!.closure, closure);
-	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
-	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
+	const resumed = cpu.activeThread.currentFrame!;
+	assert.equal(resumed.closure, 0);
+	assert.equal(resumed.functionAddress, fn);
+	assert.equal(resumed.registers.get(0), argument);
 });
 
 test('Hot Resume moves a suspended coroutine continuation and preserves its open capture', () => {

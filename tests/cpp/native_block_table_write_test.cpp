@@ -120,10 +120,10 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 		const auto before = valueInteger(73);
 		particle.setStringKey(x, before);
 		registers.set(1, right); registers.set(8, valueInteger(59)); registers.set(10, valueNil());
-		run.remainingCycles = 100; run.registerTop = 0;
+		run.remainingCycles = 100; run.physicalTop = 0;
 		const auto* exit = block->run(registers.view(), run);
 		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == instructions[2].pc
-			&& run.remainingCycles == 100 - ops[0].baseCycles - ops[1].baseCycles && run.registerTop == 11
+			&& run.remainingCycles == 100 - ops[0].baseCycles - ops[1].baseCycles && run.physicalTop == 11
 			&& registers.get(9) == before && registers.get(10) == valueInteger(1)
 			&& registers.get(8) == valueInteger(59) && particle.getStringKey(x) == before,
 			"a guard miss publishes only the executed prefix and leaves SUB and the store to the VM");
@@ -473,14 +473,14 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 			if (hops < 0) {
 				require(exit->exit == slow && exit->currentPc == source[0].pc && exit->nextPc == source[1].pc
 					&& state.remainingCycles == debt && registers.get(2) == valueInteger(31)
-					&& registers.get(4) == valueInteger(33) && state.registerTop == (op == OpCode::SELF ? 4 : 0),
+					&& registers.get(4) == valueInteger(33) && state.physicalTop == (op == OpCode::SELF ? 4 : 0),
 					"an unproved path performs no inherited work or destination write before the semantic owner");
 			} else {
 				const bool completedSuffix = debt > hops * TABLE_INDEX_VISIT_CYCLES;
 				require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[completedSuffix].pc
 					&& state.remainingCycles == debt - hops * TABLE_INDEX_VISIT_CYCLES - (completedSuffix ? suffix.baseCycles : 0)
 					&& registers.get(2) == result && registers.get(4) == valueInteger(completedSuffix ? 1 : 33)
-					&& state.registerTop == (completedSuffix ? 5 : op == OpCode::SELF ? 4 : 3),
+					&& state.physicalTop == (completedSuffix ? 5 : op == OpCode::SELF ? 4 : 3),
 					"one native hop preserves exact value bits and charges the extra visit before admitting its successor");
 			}
 		};
@@ -845,13 +845,13 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 			registers.set(5, valueNil());
 			registers.set(6, valueNil());
 			state.remainingCycles = shortGrant;
-			state.registerTop = 0;
+			state.physicalTop = 0;
 			const auto* boundary = block->run(registers.view(), state);
 			require(boundary->exit == NativeBlockExit::Continue && boundary->currentPc == source[1].pc
 				&& boundary->nextPc == source[2].pc && state.remainingCycles == shortGrant - prefixCycles,
 				"LEN may exhaust its grant, but its continuation cannot begin");
 			require(registers.get(0) == valueInteger(expected) && registers.get(6) == root && isNil(registers.get(5))
-				&& state.registerTop == 7, "an exhausted LEN publishes its result and prefix, not the following MOV");
+				&& state.physicalTop == 7, "an exhausted LEN publishes its result and prefix, not the following MOV");
 		}
 	}
 }

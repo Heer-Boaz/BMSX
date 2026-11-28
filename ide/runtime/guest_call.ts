@@ -1,11 +1,10 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FrameField, FRAME_COMPLETION } from '../../machine/ts/machine/cpu/call_state';
-import { MAX_THREAD_VALUE_SLOTS } from '../../machine/ts/machine/cpu/thread_record';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_VARARG } from '../../machine/ts/spec/blua32/image_format';
-import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, MAX_THREAD_VALUE_SLOTS } from '../../machine/ts/spec/bmsx/memory_map';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
 import { pushRuntimeDebuggerControlPlan, type SourceExecutionState } from './debugger_state';

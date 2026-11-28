@@ -49,7 +49,7 @@ struct stopped_frame
 	fn: addr -- F:19 G:41
 	call_site: addr -- F:19 G:41
 	head: addr -- F:19 G:41
-	_padding: u32 -- F:19 G:41
+	register_base: u32 -- F:19 G:41
 	flags: u32 -- F:19 G:41
 	pc: u32 -- F:19 G:41
 	vararg_base: u32 -- F:19 G:41
