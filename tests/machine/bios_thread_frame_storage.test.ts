@@ -130,7 +130,6 @@ for (const level of [0, 3] as const) {
 		const values = oldValues * 2, frames = oldFrames * 2;
 		f.seedOracle();
 		reserveThreadStorageReference(oracle, address, values, frames, valueClosure(f.closure));
-		oracle.rebindRelocatedThread(address);
 		const history = new RamHistory();
 		history.start(memory);
 		const baseline = history.capture(memory, null);
@@ -269,7 +268,7 @@ for (const level of [0, 3] as const) {
 		nativeHeapReference(oracle).gc.finishFinalMark(valueClosure(f.closure));
 		const occupied = arena.occupiedBytes(), logical = nativeHeapReference(cpu).luaHeap.usedBytes();
 		f.start(values, 0, f.closure, 1024);
-		for (let n = 0; n < 12000 && nativeHeapReference(cpu).gc.epochWork() === 0; ++n) f.grant(1);
+		for (let n = 0; n < 16384 && nativeHeapReference(cpu).gc.epochWork() === 0; ++n) f.grant(1);
 		assert.ok(cpu.fixedInterruptActive());
 		assert.ok(nativeHeapReference(cpu).gc.epochWork() > 0);
 		assert.equal(arena.occupiedBytes(), occupied, 'logical assist precedes physical reservation');

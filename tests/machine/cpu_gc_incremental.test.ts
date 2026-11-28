@@ -402,7 +402,7 @@ test('a suspended Thread scan follows closing JMP and RET of a large live captur
 	assert.deepEqual(finish(), expected);
 });
 
-test('sweeping a suspended Thread withdraws its borrowed view and rebinds only the needed prefix', () => {
+test('CURRENT selects the new frame window when a swept Thread address is reused', () => {
 	const depth = 8, width = 2;
 	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.MTC0, 1, COP0_CURRENT, 0);
@@ -415,24 +415,18 @@ test('sweeping a suspended Thread withdraws its borrowed view and rebinds only t
 	] });
 	const { cpu } = createTestHeapServiceCpu(rom);
 	const { memory } = cpu, { gc } = nativeHeapReference(cpu);
-	const observation: { bank?: typeof cpu.rootThread; head?: typeof cpu.rootThread.firstFrame; maxDepth: number; rebound: boolean } = {
-		maxDepth: 0, rebound: false,
-	};
+	const fn = rom.symbols.functionAddresses[1], pc = rom.image.functions[1].codeAddress;
+	const entry = seedTestRomClosure(cpu, fn);
+	let maxDepth = 0;
+	let selected = 0;
 	cpu.setExecutionHook(() => {
 		const thread = cpu.activeThread;
 		if (thread === cpu.rootThread) return false;
-		if (observation.bank === undefined) { observation.bank = thread; observation.head = thread.firstFrame; }
-		if (observation.rebound && thread.frameDepth === 1) {
-			assert.equal(thread, observation.bank);
-			assert.equal(thread.firstFrame, observation.head, 'the shallow selection reuses the head');
-			assert.equal(thread.firstFrame!.next, null, 'the old deep tail stays parked');
-		}
-		observation.maxDepth = Math.max(observation.maxDepth, thread.frameDepth);
+		selected = thread.address;
+		maxDepth = Math.max(maxDepth, thread.frameDepth);
 		return false;
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	const run = (count: number) => {
-		const fn = rom.symbols.functionAddresses[1], pc = rom.image.functions[1].codeAddress;
-		const entry = seedTestRomClosure(cpu, fn);
 		const address = allocateThreadRecordReference(cpu, entry);
 		if (count > 1) reserveThreadStorageReference(cpu, address, count * width, count + 1, valueThread(address));
 		const layout = new ThreadLayout();
@@ -454,23 +448,19 @@ test('sweeping a suspended Thread withdraws its borrowed view and rebinds only t
 		root.top = 2;
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		assert.equal(cpu.activeThread, cpu.rootThread);
-		assert.equal(observation.maxDepth, count);
-		assert.equal(observation.bank!.address, address);
-		assert.equal(observation.bank!.stackRegisters.get(first + 1), valueInteger(37), 'CURRENT used the authored frame window');
+		assert.equal(maxDepth, count);
+		assert.equal(selected, address);
+		assert.equal(cpu.readThreadRegister(address, count - 1, 1), valueInteger(37), 'CURRENT used the authored frame window');
 		return address;
 	};
 	const address = run(depth);
-	const bank = observation.bank!;
-	cpu.rootThread.currentFrame!.registers.setNil(0);
+	cpu.rootThread.currentFrame!.registers.setClosure(0, entry);
 	do { gc.step(); } while (gc.active());
 	assert.equal(gc.threadRecordAddress(address), 0);
-	assert.deepEqual([bank.address, bank.firstFrame, bank.currentFrame, bank.stackRegisters.capacity()], [0, null, null, 0]);
-	observation.rebound = true; observation.maxDepth = 0;
+	maxDepth = selected = 0;
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.symbols.functionAddresses[0], rom.image.functions[0].codeAddress);
-	run(1);
-	cpu.reset();
-	assert.deepEqual([bank.address, bank.firstFrame], [0, null], 'reset also withdraws cached transfers before replacing images');
+	assert.equal(run(1), address, 'the allocator reused the same context address without a cache notification');
 });
 
 test('primitive hash displacement withdraws a suspended Table mark cursor', () => {
@@ -1147,6 +1137,8 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	const before = nativeHeapReference(cpu).luaHeap.usedBytes(), physical = arena.occupiedBytes();
 	const oldStackBytes = arena.allocationBytes(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock));
 	nativeHeapReference(cpu).gc.collect();
+	assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), 512);
+	thread.bindStack(true);
 	assert.equal(thread.stackRegisters.capacity(), 512);
 	assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), before - 512 * THREAD_STACK_SLOT_BYTES);
 	const newStackBytes = arena.allocationBytes(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock));
@@ -1164,13 +1156,14 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	child.registers.rebind(thread.stackRegisters, 2, 8);
 	thread.enterFrame(child); thread.stackTop = 10;
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(thread.stackRegisters.capacity(), 512, 'the overlapping caller window, not just current stackTop, prevents shrinking');
+	assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), 512,
+		'the overlapping caller window, not just current stackTop, prevents shrinking');
 	thread.leaveFrame();
 	frame.controlMemory.writeRamRecordWord(frame.controlOffset + FrameField.StackCapacity, parentCapacity);
 	const grown = 2048;
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(0);
 	nativeHeapReference(cpu).luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread.address);
-	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
+	assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), 512, 'growth admission keeps its old allocation size stable');
 	resizeThreadStackReference(cpu, thread, grown);
 	assert.equal(frame.registers.getInteger(0), 456);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);

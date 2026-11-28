@@ -959,12 +959,6 @@ export class CPU implements MappedPageInvalidator {
 		this.bindPhysicalFrames(bank);
 		return bank;
 	}
-	public rebindRelocatedThread(address: number): void {
-		for (const bank of this.threadBanks) if (bank.address === address) bank.bindStack();
-	}
-	public retireThreadView(address: number): void {
-		for (const bank of this.threadBanks) if (bank.address === address) bank.bindAddress(0);
-	}
 	public readThreadStatus(address: number): ThreadStatus { return this.memory.readRamRecordWord(address + ThreadField.Status); }
 	public readThreadResumer(address: number): number { return this.memory.readRamRecordWord(address + ThreadField.Resumer); }
 	public readThreadError(address: number): Value {

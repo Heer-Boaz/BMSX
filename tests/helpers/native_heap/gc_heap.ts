@@ -783,7 +783,6 @@ export class GcHeap {
 		}
 		const layout = this.threadLayout;
 		this.threads.readLayout(address, layout);
-		this.cpu.retireThreadView(address);
 		this.budget.releaseRecord(layout.block, layout.capacity * THREAD_STACK_SLOT_BYTES);
 		this.budget.releaseRecord(layout.frameBlock, layout.frames * FRAME_CONTROL_BYTES);
 		this.budget.releaseObject(address, THREAD_HEAP_BYTES);
@@ -794,8 +793,6 @@ export class GcHeap {
 		const layout = this.threadLayout;
 		this.threads.readLayout(address, layout);
 		const retained = this.threads.shrinkStack(address, layout);
-		// Rebind the tag plane and reservations. Sweep charges retained extents, not host copies.
-		if (retained !== 0) this.cpu.rebindRelocatedThread(address);
 		return 2 * ceilDiv4(retained);
 	}
 
