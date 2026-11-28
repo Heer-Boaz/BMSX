@@ -265,7 +265,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
 	image->irqFunctionAddress = executionBoot.irqFunctionAddress;
-	image->staticEnd = executionBoot.staticEnd;
 	m_executionAddressSpace.bindReadOnlyView(
 		executionDomainId,
 		executionBoot.imageAddress,

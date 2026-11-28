@@ -784,7 +784,6 @@ export class CPU implements MappedPageInvalidator {
 		return {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
-			staticEnd: executionBoot.staticEnd,
 			constTags,
 			constWords,
 			constantRecordBytes: constantBytes,

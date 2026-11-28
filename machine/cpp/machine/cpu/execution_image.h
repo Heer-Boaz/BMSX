@@ -172,7 +172,6 @@ private:
 struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
-	u32 staticEnd = 0;
 	// Borrowed identity of the installed ROM extent. A remount drops the
 	// key without changing the values of the still-active image.
 	Span<const u8> constantSource;

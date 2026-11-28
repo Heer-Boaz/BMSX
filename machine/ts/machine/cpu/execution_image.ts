@@ -348,7 +348,6 @@ export type DecodedInstructionPage = MappedPageBinding & {
 export type Blua32ExecutionImage = {
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
-	staticEnd: number;
 	constTags: Uint8Array;
 	constWords: Uint32Array;
 	constantRecordBytes: Uint8Array | null;

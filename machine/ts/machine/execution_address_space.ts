@@ -13,13 +13,6 @@ import {
 	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
 } from '../spec/bmsx/rom_header';
-import {
-	BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
-	BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_DATA_ADDRESS_OFFSET,
-	BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_HEADER_SIZE,
-} from '../spec/blua32/image_format';
 
 export type Blua32ExecutionBoot = {
 	imageAddress: number;
@@ -27,19 +20,12 @@ export type Blua32ExecutionBoot = {
 	startupFunctionAddress: number;
 	irqFunctionAddress: number;
 	exceptionFunctionAddress: number;
-	// Exclusive end of the image's DATA run and BSS; the language-heap floor.
-	staticEnd: number;
 };
 
 const EMPTY_ROM_BYTES = new Uint8Array(0);
 
 export class ExecutionAddressSpace {
 	private readonly headerView: MemoryByteView = {
-		bytes: EMPTY_ROM_BYTES,
-		byteOffset: 0,
-		byteLength: 0,
-	};
-	private readonly programHeaderView: MemoryByteView = {
 		bytes: EMPTY_ROM_BYTES,
 		byteOffset: 0,
 		byteLength: 0,
@@ -105,17 +91,6 @@ export class ExecutionAddressSpace {
 			return null;
 		}
 		const imageAddress = (romBaseAddress + imageOffset) >>> 0;
-		// An unbacked program header leaves the failure to image activation.
-		let staticEnd = 0;
-		if (this.memory.bindRomByteView(imageAddress, BLUA32_IMAGE_HEADER_SIZE, cartridgeSlot, this.programHeaderView)) {
-			const program = this.programHeaderView.bytes;
-			const programOffset = this.programHeaderView.byteOffset;
-			const dataEnd = (readLE32(program, programOffset + BLUA32_IMAGE_DATA_ADDRESS_OFFSET)
-				+ readLE32(program, programOffset + BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET)) >>> 0;
-			const bssEnd = (readLE32(program, programOffset + BLUA32_IMAGE_BSS_ADDRESS_OFFSET)
-				+ readLE32(program, programOffset + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET)) >>> 0;
-			staticEnd = Math.max(dataEnd, bssEnd);
-		}
 		return {
 			imageAddress,
 			executionDomainId,
@@ -131,7 +106,6 @@ export class ExecutionAddressSpace {
 				bytes,
 				byteOffset + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
 			),
-			staticEnd,
 		};
 	}
 }

@@ -712,8 +712,9 @@ void testRuntimeSystemRebootBoundary() {
 	require(cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS
 		&& bmsx::HeapAllocator(cpu.memory()).occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
+	const auto staticEnd = bmsx::test::fixtureImageStaticEnd(machine.executionAddressSpace, boot);
 	auto controlled = cpu.captureRuntimeState();
-	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd, controlled);
+	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, staticEnd, controlled);
 	const bmsx::u32 warm = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	// Initial physical test data; neither context is selected by the host.
 	const bmsx::u32 pc = fixture.systemRom.textAddress;
@@ -1291,7 +1292,8 @@ void testGeoDmaSameCycleRuntimeRestore() {
 	auto& machine = runtime.machine;
 	auto& memory = machine.memory;
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
-	memory.setRamBusEnd(bmsx::RAM_BASE + bmsx::HeapAllocator(machine.cpu.memory()).floorOffset(boot.staticEnd));
+	const auto staticEnd = bmsx::test::fixtureImageStaticEnd(machine.executionAddressSpace, boot);
+	memory.setRamBusEnd(bmsx::RAM_BASE + bmsx::HeapAllocator(memory).floorOffset(staticEnd));
 	for (bmsx::u32 i = 0; i < 10u; ++i) {
 		const bmsx::u32 record = records + i * bmsx::GEO_XFORM2_RECORD_BYTES;
 		for (bmsx::u32 offset = 0; offset < bmsx::GEO_XFORM2_RECORD_BYTES; offset += 4u) memory.writeU32(record + offset, 0);

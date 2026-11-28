@@ -19,7 +19,9 @@ import { EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_STRING
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET, Blua32ConstantTag,
@@ -113,7 +115,12 @@ const fixtureFaultTexts = [
 export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: ExecutionAddressSpace): void {
 	const { memory } = cpu, { heapAllocator: arena, luaHeap, stringPool } = nativeHeapReference(cpu);
 	const boot = executionAddressSpace.resolveSystemDomain();
-	const management = arena.managementOffset(), floor = arena.floorOffset(boot.staticEnd);
+	const view = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0 };
+	executionAddressSpace.bindReadOnlyView(boot.executionDomainId, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, view);
+	const { bytes, byteOffset } = view;
+	const dataEnd = readLE32(bytes, byteOffset + BLUA32_IMAGE_DATA_ADDRESS_OFFSET) + readLE32(bytes, byteOffset + BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET);
+	const bssEnd = readLE32(bytes, byteOffset + BLUA32_IMAGE_BSS_ADDRESS_OFFSET) + readLE32(bytes, byteOffset + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET);
+	const management = arena.managementOffset(), floor = arena.floorOffset(Math.max(dataEnd >>> 0, bssEnd >>> 0));
 	bindReferenceDlmalloc(memory, arena.allocatorStateOffset()).reset(floor, management);
 	memory.setRamBusEnd(RAM_BASE + floor);
 	luaHeap.setCollectionTarget(1024 * 1024);

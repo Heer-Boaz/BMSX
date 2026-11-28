@@ -15,6 +15,15 @@
 
 namespace bmsx::test {
 
+inline u32 fixtureImageStaticEnd(const ExecutionAddressSpace& addresses, const Blua32ExecutionBoot& boot) {
+	Span<const u8> header;
+	addresses.bindReadOnlyView(boot.executionDomainId, boot.imageAddress, BLUA32_IMAGE_HEADER_SIZE, header);
+	const auto* bytes = header.data();
+	return std::max(
+		readLE32(bytes + BLUA32_IMAGE_DATA_ADDRESS_OFFSET) + readLE32(bytes + BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET),
+		readLE32(bytes + BLUA32_IMAGE_BSS_ADDRESS_OFFSET) + readLE32(bytes + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET));
+}
+
 // Independent native fixture for tests whose subject starts after firmware
 // admission. Reset semantics are tested separately with compiled BIOS ROMs.
 // The following allocator, diagnostic keys and Thread are test data; none
@@ -152,7 +161,7 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	const auto& rawFrame = *raw.currentFrame;
 	const auto boot = addresses.resolveSystemDomain();
 	auto& memory = cpu.memory();
-	const u32 root = provisionManagedFixture(cpu, boot.staticEnd, state);
+	const u32 root = provisionManagedFixture(cpu, fixtureImageStaticEnd(addresses, boot), state);
 	installFixtureOperands(cpu, addresses, boot);
 	Thread prepared(memory, root);
 	prepared.bindStack();

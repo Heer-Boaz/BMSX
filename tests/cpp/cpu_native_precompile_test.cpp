@@ -153,10 +153,10 @@ void replacementLeavesRetainedCoroutinesAndClosuresToThePublisher() {
 		const u32 continuation = machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc));
 		auto replacement = rom.bytes;
 		writeInstruction(replacement, rom.textAddress / INSTRUCTION_BYTES + 5u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeLE32(replacement.data() + rom.boot.imageOffset + BLUA32_IMAGE_BSS_ADDRESS_OFFSET, floor);
+		writeLE32(replacement.data() + rom.boot.imageOffset + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, MAPPED_PAGE_BYTE_SIZE);
 		machine.memory.installSystemRom(replacement);
-		auto boot = machine.executionAddressSpace.resolveSystemDomain();
-		boot.staticEnd = floor + MAPPED_PAGE_BYTE_SIZE;
-		cpu.replaceExecutionImage(boot);
+		cpu.replaceExecutionImage(machine.executionAddressSpace.resolveSystemDomain());
 		const auto* imageView = cpu.rootThread()->currentFrame->executionImage;
 		require(!imageView->admitsFunctionPc(rom.functionAddresses[1], continuation)
 			&& machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc)) == continuation

@@ -11,14 +11,13 @@ import {
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { linkTestCartBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { cartridgeSlots } from '../helpers/cartridge';
+import { createTestBlua32PairCpu, linkTestCartBlua32, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
+import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
 import { compileHeapServiceSystem, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
@@ -32,9 +31,18 @@ function bootPair() {
 	const bios = linkManagedTestSystem(TEST_CART_TRANSFER_SOURCE, 0);
 	const cart = compileLuaChunkToProgram(parseLuaChunk(CART_SOURCE, 'cart.lua').chunk, [], { entrySource: CART_SOURCE, optLevel: 0 });
 	const linkedCart = linkTestCartBlua32(bios.biosImports, cart);
-	const system = bootManagedTestSystem(bios, 'main', cartridgeSlots(linkedCart.cartRomBytes));
-	const systemEnd = system.executionAddressSpace.resolveSystemDomain().staticEnd;
-	const cartEnd = system.executionAddressSpace.resolveDomain(0)!.staticEnd;
+	const system = createTestBlua32PairCpu({ systemRomBytes: writeTestBlua32Rom(bios), cartRomBytes: linkedCart.cartRomBytes });
+	const { cpu } = system;
+	// CONTEXT yields once reset has published the System aperture, before the
+	// managed launcher can admit the cartridge and move that aperture again.
+	let budget = 1_000_000;
+	for (let grant = 0; grant < 32 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS && budget > 0; ++grant) {
+		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
+		budget = cpu.instructionBudgetRemaining;
+	}
+	assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'firmware selected its managed context');
+	const [systemEnd, cartEnd] = [bios.layout.header, linkedCart.cartImage.header].map(
+		({ dataAddress, dataByteCount, bssAddress, bssByteCount }) => Math.max(dataAddress + dataByteCount, bssAddress + bssByteCount));
 	assert.ok(cartEnd > systemEnd + HEAP_PAGE_SIZE, 'the cartridge statics extend past the system floor');
 	return { ...system, systemEnd, cartEnd };
 }

@@ -48,6 +48,8 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const imageAddress = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 			const imageBytes = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET);
 			const image = decodeBlua32Image(system.subarray(imageAddress, imageAddress + imageBytes), imageAddress);
+			const { dataAddress, dataByteCount, bssAddress: systemBssAddress, bssByteCount: systemBssByteCount } = image.header;
+			const systemStaticEnd = Math.max(dataAddress + dataByteCount, systemBssAddress + systemBssByteCount);
 			const payload = 'socket one cartridge literal';
 			const source = `bss report: word[0x2000]
 selected_payload = '${payload}'
@@ -115,7 +117,7 @@ halt_until_irq
 						&& beforeTransfer(runtime);
 				}, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
 				const frames = runtime.frameScheduler, commands: string[] = [], expected: string[] = [];
-				const systemEnd = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(runtime.machine.executionAddressSpace.resolveSystemDomain().staticEnd);
+				const systemEnd = RAM_BASE + nativeHeapReference(cpu).heapAllocator.floorOffset(systemStaticEnd);
 				const pulse = (grant: number) => {
 					if (gxGpu.backendCommandDrainPending()) {
 						gxGpu.retireExecutedCommands();
