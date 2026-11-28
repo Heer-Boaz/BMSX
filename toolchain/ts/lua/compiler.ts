@@ -91,7 +91,7 @@ import {
 	type ProgramModule,
 } from './compiler/passes/module_contract';
 import { extractAssignmentPath } from './compiler/passes/expression_paths';
-import { appendModuleExportPathKey, buildModuleInitializedSlotName } from './module_path';
+import { appendModuleExportPathKey, buildModuleExportSlotName, buildModuleInitializedSlotName } from './module_path';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
 import { validateInitParticipantPlacement } from './compiler/passes/init_participants';
@@ -121,7 +121,7 @@ import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFront
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
 import { resolveCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
-import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BUILTIN_BY_NAME, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
+import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BUILTIN_BY_NAME, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, SYSTEM_STARTUP_MODULE_PATH, type ProgramCompileDomain } from './compiler/system_boot_symbols';
 import { getLuaJumpBindings } from './analysis/jumps';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
@@ -553,6 +553,7 @@ class ProgramBuilder {
 		public readonly compiledModulePaths: readonly string[],
 		public readonly types: StructTypes,
 		public readonly tableShapes: TableShapes | undefined,
+		public readonly managedEntries: ReadonlyMap<string, ManagedEntry>,
 		public readonly captureLayout?: LuaCaptureLayout,
 		installedConstants?: readonly LinkedProgramConstant[],
 		public readonly installedBss?: CompileOptionsBase['installedBss'],
@@ -6007,9 +6008,22 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (expression.arguments.length !== 1) {
 			throw new Error('blua32.closure expects one function-record address.');
 		}
-		const addressRegister = this.allocTemp();
-		this.compileExpressionInto(expression.arguments[0], addressRegister, 1);
-		this.emitClosureAddressRegister(target, addressRegister);
+		const address = expression.arguments[0];
+		const linked = this.program.managedEntries.size === 0 ? undefined : evaluateStaticNumeric(this, undefined, address);
+		const entry = linked?.kind === 'link_value' && linked.modulePath === SYSTEM_STARTUP_MODULE_PATH && linked.expression.kind === 'export'
+			? this.program.managedEntries.get(linked.expression.exportPath) : undefined;
+		if (entry?.callable) {
+			// Preserve the raw Integer address where the startup symbol is used
+			// as data. This binding refers to the Function symbol itself.
+			const slotName = buildModuleExportSlotName(SYSTEM_STARTUP_MODULE_PATH, [entry.symbol]);
+			this.program.recordModuleExport(SYSTEM_STARTUP_MODULE_PATH, entry.symbol, slotName);
+			this.program.recordExportProto(slotName, buildModuleProtoId(entry.path));
+			this.emitModuleFunctionTargetLoad({ kind: 'export_proto', path: SYSTEM_STARTUP_MODULE_PATH, exportPathKey: entry.symbol }, target);
+		} else {
+			const addressRegister = this.allocTemp();
+			this.compileExpressionInto(address, addressRegister, 1);
+			this.emitClosureAddressRegister(target, addressRegister);
+		}
 		if (resultCount > 1) {
 			this.emitLoadNil(target + 1, resultCount - 1);
 		}
@@ -6474,15 +6488,15 @@ export function compileLuaChunkToProgram(
 	}
 	const managedEntries = options.programDomain === 'system' ? options.managedEntries : undefined;
 	const managedEntryByPath = new Map<string, ManagedEntry>();
+	const managedEntryBySymbol = new Map<string, ManagedEntry>();
 	const managedEntryProtos = new Map<string, number>();
 	if (managedEntries !== undefined) {
-		const symbols = new Set<string>();
 		for (const entry of managedEntries) {
 			const { path, symbol } = entry;
-			if (path === resetPath || path === irqPath || path === exceptionPath || managedEntryByPath.has(path) || symbols.has(symbol))
+			if (path === resetPath || path === irqPath || path === exceptionPath || managedEntryByPath.has(path) || managedEntryBySymbol.has(symbol))
 				throw new Error(`Managed System entry '${symbol}' must name a distinct source body and symbol.`);
 			managedEntryByPath.set(path, entry);
-			symbols.add(symbol);
+			managedEntryBySymbol.set(symbol, entry);
 		}
 	}
 	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
@@ -6538,6 +6552,7 @@ export function compileLuaChunkToProgram(
 		compiledModulePaths,
 		new StructTypes(frontend.snapshot, createCompilerStaticBindings(frontend.snapshot, moduleCompileContext)),
 		tableShapes,
+		managedEntryBySymbol,
 		options.captureLayout,
 		options.installedConstants,
 		options.installedBss,

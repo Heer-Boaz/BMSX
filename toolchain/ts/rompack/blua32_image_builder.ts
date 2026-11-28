@@ -1,5 +1,5 @@
 import { bindBlua32CodeFunctions, linkBlua32ResetCode, planBlua32CodeFunctionLoads } from './blua32_reset_code';
-import { SYSTEM_STARTUP_MODULE_PATH } from './generated_modules';
+import { SYSTEM_STARTUP_MODULE_PATH } from '../lua/compiler/system_boot_symbols';
 import {
 	utf8FatalDecoder,
 } from '../../../machine/ts/common/serializer/binencoder';

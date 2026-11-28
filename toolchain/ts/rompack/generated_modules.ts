@@ -1,8 +1,9 @@
+import { SYSTEM_STARTUP_MODULE_PATH } from '../lua/compiler/system_boot_symbols';
+
 export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
 export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
 export const SYSTEM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/system_assets';
 export const SYSTEM_ASSET_SYMBOL_SOURCE_PATH = `${SYSTEM_ASSET_SYMBOL_MODULE_PATH}.lua`;
-export const SYSTEM_STARTUP_MODULE_PATH = 'bmsx/startup';
 export const BLUA32_FIRMWARE_MODULE_PATH = 'bmsx/blua32';
 export const BLUA32_FIRMWARE_SOURCE_PATH = `${BLUA32_FIRMWARE_MODULE_PATH}.lua`;
 export const GX_DISPLAY_PRESET_MODULE_PATH = 'bmsx/gx_display_presets';

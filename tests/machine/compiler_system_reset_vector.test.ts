@@ -9,6 +9,7 @@ import { CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
@@ -139,6 +140,50 @@ for (const optLevel of [0, 3] as const) test('System ROM calls its linked code c
 	writeFileSync(commands, trace.join('\n'));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner', { buildDirectory: join(directory, 'native') });
 	assert.deepEqual(execFileSync(native, [system, commands, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
+});
+
+for (const optLevel of [0, 3] as const) test(`only an exact callable startup symbol materializes as a CodeFunction at O${optLevel}`, () => {
+	const entry = `module<entry>
+local entries<const> = require('bmsx/startup')
+local address<const> = entries.callable_entry
+local fn<const> = blua32.closure(address)
+return fn(7), fn, address, blua32.closure(entries.ordinary_entry), blua32.closure(address + 0)
+`;
+	const body = 'return function(value) return value + 1 end';
+	const managedEntries = [
+		{ symbol: 'callable_entry', path: 'fixture/callable-entry', callable: true },
+		{ symbol: 'ordinary_entry', path: 'fixture/ordinary-entry' },
+	] as const;
+	const modules = [
+		{ path: 'main', displayPath: 'main.lua', source: entry, chunk: parseLuaChunk(entry, 'main') },
+		...authored.slice(1),
+		...managedEntries.map(({ path }) => ({ path, displayPath: path + '.lua', source: body, chunk: parseLuaChunk(body, path) })),
+	];
+	const { linked, entryCodeAddress } = buildBlua32Image({
+		domain: 'system', luaModules: modules, generatedLuaModules: [], loadAddress: 0x100,
+		ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
+		resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, managedEntries, biosExports: [],
+	});
+	const { functions, constants, textBytes, header } = linked.layout;
+	const [callable, ordinary] = managedEntries.map(({ symbol }) =>
+		functions[linked.functionProtoIndices.indexOf(linked.symbols.metadata.functionDisplayNames.indexOf(symbol))]);
+	assert.equal(callable.flags & BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_CODE);
+	assert.equal(ordinary.flags & BLUA32_FUNCTION_CODE, 0);
+	const entryRecord = functions.find(fn => fn.codeAddress === entryCodeAddress)!;
+	const instructions = [];
+	for (let pc = entryCodeAddress; pc < entryCodeAddress + entryRecord.codeByteCount;) {
+		const instruction = decodeBlua32InstructionAtPc(textBytes, header.textAddress, pc);
+		instructions.push(instruction);
+		pc = instruction.pc + INSTRUCTION_BYTES;
+	}
+	const loads = instructions.filter(({ op }) => op === OpCode.LOADK).map(({ bx }) => constants[bx]);
+	assert.deepEqual(loads.filter(constant => constant !== null && typeof constant === 'object' && constant.kind === 'code_function'),
+		[{ kind: 'code_function', word: callable.address }]);
+	assert.ok(loads.some(constant => constant !== null && typeof constant === 'object'
+		&& constant.kind === 'integer' && constant.word === callable.address));
+	assert.ok(instructions.some(({ op }) => op === OpCode.CALL));
+	assert.deepEqual(instructions.filter(({ op }) => op === OpCode.CLOSURE).map(({ c }) => c & CLOSURE_ADDRESS_REGISTER_FLAG),
+		[CLOSURE_ADDRESS_REGISTER_FLAG, CLOSURE_ADDRESS_REGISTER_FLAG]);
 });
 
 test('a source selected as reset cannot also be initialized as an ordinary module', () => {

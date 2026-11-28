@@ -1,6 +1,7 @@
 import { BuiltinFunctionId } from '../../../../machine/ts/spec/blua32/builtin';
 
 export type ProgramCompileDomain = 'cart' | 'system';
+export const SYSTEM_STARTUP_MODULE_PATH = 'bmsx/startup';
 
 export interface LuaBootPrimitive {
 	readonly name: string;
