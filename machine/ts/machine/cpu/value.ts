@@ -18,7 +18,7 @@ export type Value = number & { readonly [valueBrand]: true };
 const TAG_SCALE = 0x1_0000_0000;
 export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 export function valueFromTag(tag: ValueTag, word = 0): Value { return (tag * TAG_SCALE + word) as Value; }
-export function valueTagHasGcEdge(tag: ValueTag): boolean {
+export function valueTagIsStorageReference(tag: ValueTag): boolean {
 	return tag >= ValueTag.String && tag <= ValueTag.Thread && tag !== ValueTag.BuiltinFunction;
 }
 export function valueTag(value: Value): ValueTag { return (value / TAG_SCALE) | 0; }

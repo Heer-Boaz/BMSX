@@ -10,7 +10,7 @@ namespace bmsx::test {
 inline void storeUpvalueReference(CPU& cpu, u32 address, Value value) {
 	GcHeap heap(cpu);
 	auto& memory = heap.memory;
-	const u32 cell = address & UPVALUE_ADDRESS_MASK;
+	const u32 cell = address & RAM_REFERENCE_MASK;
 	if (Upvalue::tryStoreDirect(memory, cell, value)) return;
 	if ((memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u) {
 		if (heap.phase() == GcPhase::MarkAgain) {

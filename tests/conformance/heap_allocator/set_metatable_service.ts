@@ -8,7 +8,7 @@ import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
-import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { asStringId, valueBool, valueBuiltinFunction, valueInteger, valuePayload, ValueTag, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';

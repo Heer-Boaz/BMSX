@@ -1,7 +1,6 @@
 #pragma once
 
 #include "machine/cpu/call_state.h"
-#include "machine/cpu/gc_object.h"
 
 namespace bmsx {
 
@@ -17,7 +16,7 @@ constexpr u32 THREAD_INITIAL_FRAMES = 2;
 constexpr u32 THREAD_RECORD_KIND = 4;
 
 enum class ThreadField : u32 {
-	Header = 0, Gray = GC_RECORD_LINK, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
+	Header = 0, Status = 8, Resumer = 12, Entry = 16, StackTop = 20, StackBlock = 24, StackCapacity = 28,
 	FrameCapacity = 32, ErrorWord = 40, ErrorKind = 44, CallBase = 48, ReturnCount = 52,
 	FrameDepth = 56, FrameBlock = 64,
 };

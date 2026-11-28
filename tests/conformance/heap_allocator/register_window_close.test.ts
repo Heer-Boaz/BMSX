@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField, FRAME_WINDOW_MASK } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
 import * as cell from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valuePayload, valueTag, type Value } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';

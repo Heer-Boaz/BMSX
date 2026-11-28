@@ -1,3 +1,4 @@
+import { CLOSURE_CANONICAL } from '../../toolchain/ts/firmware/stock_object_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -421,7 +422,7 @@ function forget_result() end`);
 	const cached = call('seed_cache')[0];
 	assert.equal(valueTag(cached), ValueTag.Closure);
 	const closure = valuePayload(cached);
-	assert.notEqual(memory.readRamRecordByte(closure + ClosureRecord.CLOSURE_BINDING_FLAGS) & ClosureRecord.CLOSURE_CANONICAL, 0);
+	assert.notEqual(memory.readRamRecordByte(closure + ClosureRecord.CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL, 0);
 	assert.deepEqual(call('forget_result'), []);
 	visitRuntimeExecutionRecords(cpu, address => assert.notEqual(address, closure, 'no graph path keeps the cached closure'));
 

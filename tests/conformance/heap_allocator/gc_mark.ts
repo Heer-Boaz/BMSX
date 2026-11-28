@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';

@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "support/lua_heap_reference.h"
 #include "machine/cpu/upvalue.h"
@@ -267,8 +268,8 @@ void closingSharedCaptureCycles() {
 		const auto prototype = machine.rom.functionAddresses[1];
 		const auto first = test::seedTestCapturedClosure(machine.cpu, prototype, cells);
 		const auto second = test::seedTestCapturedClosure(machine.cpu, prototype, {}, cells);
-		Upvalue::bindOpen(machine.cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
-		Upvalue::bindOpen(machine.cpu.memory(), cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
+		test::bindOpenUpvalueFixture(machine.cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
+		test::bindOpenUpvalueFixture(machine.cpu.memory(), cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
 		frame.writeControl(FrameField::OpenHead, cells[1]);
 		frame.registers.set(0, valueInteger(17));
 		frame.registers.set(2, valueClosure(first));
@@ -568,9 +569,9 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 		for (int slot : {1, 2}) {
 			std::array<u32, 1> cells{};
 			const auto closure = test::allocateClosureRecordReference(bmsx::test::GcHeap(cpu), 1u, false, cells);
-			ClosureRecord::initialize(machine->memory, closure, target, heap.white(), 1u, false, false);
+			test::initializeClosureFixture(machine->memory, closure, target, heap.white(), 1u, false, false);
 			bmsx::test::storeUpvalueReference(cpu, cells[0], valueInteger(slot == 1 ? 11 : 27));
-			ClosureRecord::setCaptureAddress(machine->memory, closure, 0u, cells[0]);
+			test::setClosureCaptureFixture(machine->memory, closure, 0u, cells[0]);
 			heap.publishObject(closure);
 			frame.registers.set(slot, valueClosure(closure));
 		}
@@ -1412,7 +1413,7 @@ void weakCanonicalClosuresAndStaticEntry() {
 				auto& probe = *static_cast<Probe*>(context);
 				if (probe.memory.readRamRecordByte(address) == static_cast<u8>(ValueTag::Closure)
 					&& probe.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == probe.function
-					&& (probe.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u)
+					&& (probe.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & bmsx::test::CLOSURE_CANONICAL) != 0u)
 					++probe.count;
 			});
 			return probe.count;

@@ -9,7 +9,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT, GC_OBJECT_PREFIX } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { isOpen, load as capture, UPVALUE_HEAP_BYTES, UPVALUE_NEXT } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';

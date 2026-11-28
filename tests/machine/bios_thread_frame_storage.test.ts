@@ -1,3 +1,4 @@
+import { initializeRecord } from '../helpers/native_heap/closure_record';
 import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -6,7 +7,7 @@ import { reserveThreadStorageReference } from '../helpers/thread_allocation_refe
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_PROTOTYPE_ADDRESS, initializeRecord } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread_record';
 import { valueClosure, valuePayload } from '../../machine/ts/machine/cpu/value';

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';

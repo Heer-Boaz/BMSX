@@ -1,3 +1,4 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -54,7 +55,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 			if (source === 'closed') {
 				if (Upvalue.isOpen(memory, upvalue)) closeUpvalueReference(cpu, upvalue);
 			} else {
-				Upvalue.bindOpen(memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+				bindOpen(memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 			}
 			storeUpvalueReference(cpu, upvalue, v.valueTag(value), v.valuePayload(value)); other.stackRegisters.set(8, value);
 			r.set(0, value);r.set(1, v.valueFloatBits(0xffa54321));

@@ -1,3 +1,5 @@
+import { bindOpen, initialize as initializeCell } from '../../helpers/native_heap/upvalue_record';
+import { initializeRecord as initializeClosure } from '../../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -8,11 +10,11 @@ import { join } from 'node:path';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { initializeRecord as initializeClosure } from '../../../machine/ts/machine/cpu/closure';
+
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
-import { bindOpen, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../../machine/ts/machine/cpu/upvalue';
+import { UPVALUE_HEAP_BYTES } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';

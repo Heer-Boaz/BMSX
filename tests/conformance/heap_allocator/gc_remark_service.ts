@@ -9,7 +9,7 @@ import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
-import { GC_GRAY_INDEX_BITS } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { GC_CHANGED_HEAD, GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank } from '../../helpers/native_heap/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';

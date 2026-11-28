@@ -1,8 +1,8 @@
 import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
 import { FRAME_COMPLETION, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameCaptureCount, frameExecutionBank, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
-import { GC_COLOR_MASK, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_COLOR_MASK, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_SHIFT } from '../../toolchain/ts/firmware/stock_object_layout';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,

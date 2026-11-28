@@ -62,7 +62,7 @@ bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
 	const u32 index = arraySlot(key);
-	const bool reference = valueTagHasGcEdge(valueTag(value));
+	const bool reference = valueTagIsStorageReference(valueTag(value));
 	if (index < arrayCapacity()) {
 		position = ARRAY_STORE_POSITION;
 		if (reference) return false;
@@ -105,7 +105,7 @@ bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
 
 template <TableRecord::HashStore Policy>
 int TableRecord::assignHash(Value key, Value value, const StringId& assignKey, int nodeIndex) noexcept {
-	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
+	if (valueTagIsStorageReference(valueTag(value))) return HASH_STORE_DECLINED;
 	if constexpr (Policy == HashStore::ReturningField) {
 		// Leave the own lookup to the ordinary assignment when a String
 		// erase may change the firmware's method proof.
@@ -162,7 +162,7 @@ int TableRecord::tryAssignStringField(StringId key, Value value, const StringId&
 }
 
 int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predicted, const StringId& assignKey) noexcept {
-	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
+	if (valueTagIsStorageReference(valueTag(value))) return HASH_STORE_DECLINED;
 	if (isNil(value) && m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE) != 1u) return HASH_STORE_DECLINED;
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
@@ -409,7 +409,7 @@ void TableRecord::resolveStringAssignment(StringId key, const StringId& assignKe
 }
 
 bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {
-	if (isNil(value) || valueTagHasGcEdge(valueTag(value)) || predicted < 0) return false;
+	if (isNil(value) || valueTagIsStorageReference(valueTag(value)) || predicted < 0) return false;
 	const u32 count = hashSlots();
 	if (static_cast<u32>(predicted) >= count) return false;
 	const auto body = hashBody(count);

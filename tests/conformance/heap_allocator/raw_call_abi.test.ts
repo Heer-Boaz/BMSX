@@ -7,10 +7,9 @@ import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS, CLOSURE_COUNT_SHIFT, CLOSURE_COUNT_WORD, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../../machine/ts/machine/cpu/gc_object';
 import { ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
@@ -153,8 +152,12 @@ test('bare System ROM enters closures from its own private arena, including a ca
 	store(values + 4 * slots + 6, ValueTag.Closure, MemoryAccessKind.U8);
 	store(plain, ValueTag.Closure);
 	bind(plain + CLOSURE_PROTOTYPE_ADDRESS, 2);
-	store(captured, ValueTag.Closure);
-	store(captured + GC_RECORD_LINK, 1 << GC_GRAY_INDEX_BITS);
+	// This firmware uses the non-architectural record bits for its own data.
+	// Neither scalar CALL/GETUP nor the warmed native edge interprets them.
+	const privateHeader = ValueTag.Closure | (0xb9 << 8) | (0xf0 << 16);
+	const privateCountWord = (1 << CLOSURE_COUNT_SHIFT) | 0x5d431;
+	store(captured, privateHeader);
+	store(captured + CLOSURE_COUNT_WORD, privateCountWord);
 	bind(captured + CLOSURE_PROTOTYPE_ADDRESS, 3);
 	store(captured + CLOSURE_CAPTURE_WORDS, cell);
 	store(cell, UPVALUE_RECORD_KIND | (ValueTag.Integer << (UPVALUE_VALUE_TAG * 8)));
@@ -213,11 +216,15 @@ test('bare System ROM enters closures from its own private arena, including a ca
 		assert.equal(cpu.readCauseWord(), 0);
 		assert.equal(plainVisits, 1);
 		assert.equal(capturedVisits, warmVisits);
+		assert.equal(memory.readRamRecordWord(captured), privateHeader);
+		assert.equal(memory.readRamRecordWord(captured + CLOSURE_COUNT_WORD), privateCountWord);
 		const output = [valueInteger(37), valueInteger(capturedValue)];
 		assert.deepEqual(runtime.readCompletionValues(), output);
 		assert.deepEqual(memory.ramData().subarray(first, end), empty);
-		commands.push('c', `H ${first} ${end}`);
-		rows.push([output.length, ...output.flatMap(v => [valueTag(v), valuePayload(v)])].join(' '), String(hashBytes(empty, 0, empty.length)));
+		const recordOffset = captured - RAM_BASE;
+		commands.push('c', `H ${first} ${end}`, `H ${recordOffset} ${recordOffset + 8}`);
+		rows.push([output.length, ...output.flatMap(v => [valueTag(v), valuePayload(v)])].join(' '), String(hashBytes(empty, 0, empty.length)),
+			String(hashBytes(memory.ramData(), recordOffset, 8)));
 		return { commands, rows };
 	}
 	const interpreter = exercise(CpuExecutionBackend.Interpreter);

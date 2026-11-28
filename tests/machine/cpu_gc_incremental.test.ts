@@ -1,3 +1,5 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
+import { initializeRecord, setCaptureAddress } from '../helpers/native_heap/closure_record';
 import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../helpers/native_heap/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
@@ -13,8 +15,8 @@ import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
-import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../toolchain/ts/firmware/stock_object_layout';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
@@ -92,8 +94,8 @@ test('the second mark traces new strong edges without revisiting the table or re
 	const prototype = cpu.captureClosureBinding(frame.closureAddress);
 	const cells = new Uint32Array(1);
 	const holder = allocateClosureRecordReference(cpu, 1, false, cells, 1);
-	Closure.initializeRecord(memory, holder, prototype, false, gc.white(), 1);
-	Closure.setCaptureAddress(memory, holder, 0, cells[0]);
+	initializeRecord(memory, holder, prototype, false, gc.white(), 1);
+	setCaptureAddress(memory, holder, 0, cells[0]);
 	gc.publishObject(holder);
 	frame.registers.setTable(0, strong);
 	frame.registers.setTable(1, weak);
@@ -107,7 +109,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(nativeHeapReference(cpu).luaHeap.capacity());
 	const onlyClosure = allocateClosureRecordReference(cpu, 0);
-	Closure.initializeRecord(memory, onlyClosure, prototype, false, gc.white(), 0);
+	initializeRecord(memory, onlyClosure, prototype, false, gc.white(), 0);
 	gc.publishObject(onlyClosure);
 	const fieldValue = createReferenceTable(cpu), key = createReferenceTable(cpu), cellValue = createReferenceTable(cpu), weakValue = createReferenceTable(cpu);
 	const resizedValue = createReferenceTable(cpu);
@@ -301,8 +303,8 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 	const references = new Uint32Array(captures).fill(cells[0]);
 	references[captures - 1] = cells[1];
 	frame.registers.set(3, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], new Uint32Array(0), references)));
-	Upvalue.bindOpen(memory, cells[0], frame.thread.address, frame.stackBase, 0);
-	Upvalue.bindOpen(memory, cells[1], frame.thread.address, frame.stackBase + 1, cells[0]);
+	bindOpen(memory, cells[0], frame.thread.address, frame.stackBase, 0);
+	bindOpen(memory, cells[1], frame.thread.address, frame.stackBase + 1, cells[0]);
 	frame.openUpvalueHead = cells[1];
 	frame.top = 4;
 	assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Halted);
@@ -365,9 +367,9 @@ test('a suspended Thread scan follows closing JMP and RET of a large live captur
 	const child = cpu.activeThread.currentFrame!, cells = new Uint32Array(captures);
 	child.registers.set(3, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], cells)));
 	let head = cells[captures - 1];
-	Upvalue.bindOpen(memory, head, child.thread.address, child.stackBase, 0);
+	bindOpen(memory, head, child.thread.address, child.stackBase, 0);
 	for (let i = 0; i < captures - 1; ++i) {
-		Upvalue.bindOpen(memory, cells[i], child.thread.address, child.stackBase + 1, head);
+		bindOpen(memory, cells[i], child.thread.address, child.stackBase + 1, head);
 		head = cells[i];
 	}
 	child.openUpvalueHead = head;

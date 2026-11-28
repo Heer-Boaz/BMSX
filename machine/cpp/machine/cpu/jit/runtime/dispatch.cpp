@@ -286,7 +286,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::WriteUpvalue: {
 			const auto access = exit->operands.upvalue;
-			const u32 cell = frame->captureAddress(access.capture) & UPVALUE_ADDRESS_MASK;
+			const u32 cell = frame->captureAddress(access.capture) & RAM_REFERENCE_MASK;
 			const Value value = frame->registers.get(access.slot);
 			if (!Upvalue::tryStoreDirect(cpu.m_memory, cell, value)) {
 				cpu.enterReferenceStore(*frame, RAM_BASE + cell, value);

@@ -1,3 +1,5 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
+import { initializeRecord, setCaptureAddress } from '../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
@@ -5,7 +7,6 @@ import assert from 'node:assert/strict';
 import { closeUpvalueReference, storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { ValueTag, valueTag, valuePayload, valueFloatBits, valueFromTag, valueInteger, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
@@ -33,9 +34,9 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const cells = new Uint32Array(1);
 	const replacement = allocateClosureRecordReference(cpu, 1, false, cells, cells.length);
 	const upvalue = cells[0];
-	Upvalue.bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
-	ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, nativeHeapReference(cpu).gc.white(), 1);
-	ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, upvalue);
+	bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
+	initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, nativeHeapReference(cpu).gc.white(), 1);
+	setCaptureAddress(cpu.memory, replacement, 0, upvalue);
 	frame.closureAddress = replacement;
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -48,7 +49,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 		if (source === 'closed') {
 			if (Upvalue.isOpen(cpu.memory, upvalue)) closeUpvalueReference(cpu, upvalue);
 		} else {
-			Upvalue.bindOpen(cpu.memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
+			bindOpen(cpu.memory, upvalue, source === 'own' ? frame.thread.address : other.address, source === 'own' ? frame.stackBase + 8 : 8, 0);
 		}
 		storeUpvalueReference(cpu, upvalue, valueTag(value), valuePayload(value));
 		for (const grant of [1, 64]) {

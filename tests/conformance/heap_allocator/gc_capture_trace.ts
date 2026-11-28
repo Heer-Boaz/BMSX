@@ -1,3 +1,5 @@
+import { initialize as initializeCell } from '../../helpers/native_heap/upvalue_record';
+import { initializeRecord, setCaptureAddress } from '../../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -6,10 +8,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { initializeRecord, setCaptureAddress } from '../../../machine/ts/machine/cpu/closure';
+
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
+import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
+import { UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';

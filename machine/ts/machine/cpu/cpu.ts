@@ -117,7 +117,7 @@ import {
 	ValueTag,
 	valueTable, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread,
-	isNil, valueTag, valueTagHasGcEdge, valueToInteger,
+	isNil, valueTag, valueTagIsStorageReference, valueToInteger,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
@@ -3666,7 +3666,7 @@ export class CPU implements MappedPageInvalidator {
 	private copyRegisterToGlobal(frame: CallFrame, slots: ValueSlots, slot: number, registerIndex: number): void {
 		const registers = frame.registers;
 		const tag = registers.getTag(registerIndex), word = registers.getPayload(registerIndex);
-		if (!valueTagHasGcEdge(tag)) {
+		if (!valueTagIsStorageReference(tag)) {
 			slots.setEncoded(slot, tag, word);
 			return;
 		}

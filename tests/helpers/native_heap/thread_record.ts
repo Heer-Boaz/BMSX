@@ -16,7 +16,7 @@ import { LuaExecutionError } from '../../../machine/ts/machine/cpu/errors';
 import { ValueTag, valueBool, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { integerOperand } from '../../../machine/ts/machine/cpu/value_arithmetic';
 
-import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../../toolchain/ts/firmware/stock_object_layout';
 export const THREAD_HEAP_BYTES = 80;
 export const THREAD_STACK_SLOT_BYTES = 5;
 export const MAX_THREAD_VALUE_SLOTS = (MAIN_RAM_SIZE / THREAD_STACK_SLOT_BYTES) | 0;

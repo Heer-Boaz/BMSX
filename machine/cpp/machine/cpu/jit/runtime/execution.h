@@ -10,8 +10,8 @@
 
 namespace bmsx {
 
-// A returning leaf must not write through the table/collector ports, which
-// can retire the source region before the native return address is used.
+// A returning leaf must not retire the source region before its native
+// return address is used.
 inline constexpr u32 NATIVE_BUILTIN_LEAF_LIMIT = static_cast<u32>(BuiltinFunctionId::Next);
 
 constexpr bool nativeBuiltinLeafId(u32 id) {

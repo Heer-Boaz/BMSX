@@ -2,7 +2,7 @@ import { TableHeader, TableLookupStatus } from '../../../machine/ts/machine/cpu/
 export { TableHeader, TableLookupStatus };
 import { TableRecords as PhysicalTableRecords } from '../../../machine/ts/machine/cpu/table';
 import { RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
-import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { ceilLog2, nextPowerOfTwo } from '../../../machine/ts/machine/common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL } from '../../../machine/ts/spec/blua32/cop0';
 import { LuaExecutionError } from '../../../machine/ts/machine/cpu/errors';
@@ -11,7 +11,7 @@ import { GcDiagnosticField, gcPacedPhase, type GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
-	valueIsNaN, valuePayload, valueString, valueTable, valueTag, valueTagHasGcEdge, type Value,
+	valueIsNaN, valuePayload, valueString, valueTable, valueTag, valueTagIsStorageReference, type Value,
 } from '../../../machine/ts/machine/cpu/value';
 
 const TABLE_HASH_NEXT_END = -1;
@@ -101,7 +101,7 @@ export class TableRecords extends PhysicalTableRecords {
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) {
 			const word = valuePayload(value);
-			if (valueTagHasGcEdge(tag)) {
+			if (valueTagIsStorageReference(tag)) {
 				if (directOnly) return TABLE_STORE_FIRMWARE + 2;
 				this.heap.writeTableAssignment(record, tag, word);
 			}
@@ -132,7 +132,7 @@ export class TableRecords extends PhysicalTableRecords {
 		if (index >= 0) {
 			const valueSlot = index + hash, prior = memory.readRamRecordByte(tags + valueSlot);
 			if (prior !== ValueTag.Nil && prior !== ValueTag.DeadKey) {
-				if (valueTagHasGcEdge(tag)) {
+				if (valueTagIsStorageReference(tag)) {
 					if (directOnly) return TABLE_STORE_FIRMWARE - index;
 					this.heap.writeTableAssignment(record, tag, word);
 				}

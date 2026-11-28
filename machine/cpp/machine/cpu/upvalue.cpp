@@ -19,28 +19,13 @@ CapturePorts openCapturePorts(const Memory& memory, u32 cell, u32 slot) {
 }
 }
 
-void Upvalue::initialize(Memory& memory, u32 address, u8 white) {
-	memory.writeRamRecordPair(address, UPVALUE_RECORD_KIND | (static_cast<u32>(white) << 8u), 0u);
-	memory.writeRamRecordPair(address + UPVALUE_OWNER, 0u, 0u);
-}
-
 bool Upvalue::isOpen(const Memory& memory, u32 address) {
-	return (memory.readRamRecordByte((address & UPVALUE_ADDRESS_MASK) + UPVALUE_FLAGS) & UPVALUE_OPEN) != 0;
-}
-
-void Upvalue::bindOpen(Memory& memory, u32 address, u32 owner, u32 slot, u32 next) {
-	const u32 offset = address & UPVALUE_ADDRESS_MASK;
-	auto* record = memory.ramData() + offset;
-	record[UPVALUE_FLAGS] = UPVALUE_OPEN;
-	writeLE32(record + UPVALUE_VALUE_WORD, slot);
-	writeLE32(record + UPVALUE_OWNER, owner);
-	writeLE32(record + UPVALUE_NEXT, next);
-	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
+	return (memory.readRamRecordByte((address & RAM_REFERENCE_MASK) + UPVALUE_FLAGS) & UPVALUE_OPEN) != 0;
 }
 
 void Upvalue::close(Memory& memory, u32 address) {
 	const Value captured = load(memory, address);
-	const u32 offset = address & UPVALUE_ADDRESS_MASK;
+	const u32 offset = address & RAM_REFERENCE_MASK;
 	auto* record = memory.ramData() + offset;
 	record[UPVALUE_FLAGS] &= ~UPVALUE_OPEN;
 	record[UPVALUE_VALUE_TAG] = static_cast<u8>(valueTag(captured));
@@ -51,7 +36,7 @@ void Upvalue::close(Memory& memory, u32 address) {
 }
 
 Value Upvalue::load(const Memory& memory, u32 address) {
-	const u32 cell = address & UPVALUE_ADDRESS_MASK;
+	const u32 cell = address & RAM_REFERENCE_MASK;
 	const u32 word = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
 	if (!isOpen(memory, cell))
 		return valueFromTag(static_cast<ValueTag>(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG)), word);
@@ -63,7 +48,7 @@ bool Upvalue::tryStoreDirect(Memory& memory, u32 cell, Value value) {
 	CapturePorts ports{cell + UPVALUE_VALUE_WORD, cell + UPVALUE_VALUE_TAG};
 	if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) != 0u) {
 		ports = openCapturePorts(memory, cell, memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD));
-	} else if (valueTagHasGcEdge(valueTag(value))) {
+	} else if (valueTagIsStorageReference(valueTag(value))) {
 		return false;
 	}
 	memory.writeRamRecordWord(ports.word, valuePayload(value));

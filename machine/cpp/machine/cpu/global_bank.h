@@ -12,7 +12,7 @@ class GlobalBank {
 public:
 	GlobalBank(Memory& memory, u32 descriptor) : m_memory(memory), m_descriptor(descriptor) {}
 	bool tryWriteSlot(u32 slot, Value value) {
-		if (valueTagHasGcEdge(valueTag(value))) return false;
+		if (valueTagIsStorageReference(valueTag(value))) return false;
 		m_values.set(slot, value);
 		return true;
 	}

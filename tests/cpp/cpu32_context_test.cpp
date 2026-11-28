@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
@@ -236,7 +237,7 @@ u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
 	auto& definition = *machine.cpu.activeThread()->currentFrame;
 	std::array<u32, 1> cells{};
 	const auto record = test::seedTestCapturedClosure(machine.cpu, machine.rom.functionAddresses[0], cells);
-	Upvalue::bindOpen(machine.memory, cells[0], definition.thread->address, definition.stackBase() + 8, 0u);
+	test::bindOpenUpvalueFixture(machine.memory, cells[0], definition.thread->address, definition.stackBase() + 8, 0u);
 	definition.writeControl(FrameField::OpenHead, cells[0]);
 	definition.registers.set(9, valueClosure(record));
 	require(machine.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the seeded defining frame returns or suspends");
@@ -267,7 +268,7 @@ void captures() {
 							// Redirect the live open cell into the injected frame, retaining
 							// actual thread/frame ownership and its matching open-cell chain.
 							parents[i]->writeControl(FrameField::OpenHead, 0);
-							Upvalue::bindOpen(m.cpu.memory(), cell, frame->thread->address, frame->stackBase() + 8, frame->readControl(FrameField::OpenHead));
+							test::bindOpenUpvalueFixture(m.cpu.memory(), cell, frame->thread->address, frame->stackBase() + 8, frame->readControl(FrameField::OpenHead));
 							frame->writeControl(FrameField::OpenHead, cell);
 						}
 					}
@@ -300,10 +301,10 @@ void nativeClosedBarrierOracleAfterHeapGrowth() {
 	auto child = bmsx::test::allocateTableReference(m.cpu, 1);
 	child.setInteger(1, valueInteger(123));
 	bmsx::test::GcHeap(m.cpu).step(valueNil(), valueNil(), valueNil());
-	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3,
+	require(m.cpu.memory().readRamRecordByte(cell + bmsx::test::GC_COLOR_OFFSET) == 3,
 		"collector has scanned the closed cell before mutation");
 	bmsx::test::storeUpvalueReference(m.cpu, cell, valueTable(child.address()));
-	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 2,
+	require(m.cpu.memory().readRamRecordByte(cell + bmsx::test::GC_COLOR_OFFSET) == 2,
 		"closed writes queue the scanned cell again");
 	bmsx::test::GcHeap(m.cpu).collect();
 	const auto retained = TableRecord(m.cpu.memory(), valuePayload(Upvalue::load(m.cpu.memory(), cell)));

@@ -10,7 +10,7 @@ import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { UPVALUE_NEXT, UPVALUE_RECORD_KIND } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';

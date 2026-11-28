@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { hashCanonicalTableKey, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';

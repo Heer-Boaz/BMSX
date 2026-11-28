@@ -160,8 +160,8 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	}
 	sljit_set_label(unchanged, sljit_emit_label(c));
 
-	if (plan.barrier == NativeGcBarrier::Dynamic) emitTag(value, SLJIT_R2);
-	emitReferenceStoreGate(plan.barrier, SLJIT_R2, SLJIT_R2, exit);
+	if (plan.referenceStore == NativeReferenceStore::Dynamic) emitTag(value, SLJIT_R2);
+	emitReferenceStoreGate(plan.referenceStore, SLJIT_R2, SLJIT_R2, exit);
 	emitTableValueWrite(value);
 	auto* keep = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_SP), arrayLength, SLJIT_IMM, -1);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Length),
@@ -357,8 +357,8 @@ void NativeLowering::emitStringSlot(bool load, int value, NativeBlockExitSite& e
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wordOffset, SLJIT_R1, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), tagOffset, SLJIT_R3, 0);
 	admitTableValueWrite(exit);
-	if (plan.barrier == NativeGcBarrier::Dynamic) emitTag(value, SLJIT_R2);
-	emitReferenceStoreGate(plan.barrier, SLJIT_R2, SLJIT_R2, exit);
+	if (plan.referenceStore == NativeReferenceStore::Dynamic) emitTag(value, SLJIT_R2);
+	emitReferenceStoreGate(plan.referenceStore, SLJIT_R2, SLJIT_R2, exit);
 	emitTableValueWrite(value);
 	if (returnMiss)
 		m_workspace.stringStoreMisses.push_back({{address[0], address[1], address[2], valueFailure, erase},

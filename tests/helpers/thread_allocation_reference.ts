@@ -3,7 +3,7 @@ import { writeLE32 } from '../../machine/ts/common/endian';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { gcPacedPhase } from './native_heap/gc_heap';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { LuaAllocationRecovery } from './native_heap/lua_heap';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';

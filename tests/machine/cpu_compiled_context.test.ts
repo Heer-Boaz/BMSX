@@ -1,3 +1,4 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -14,7 +15,7 @@ import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -350,7 +351,7 @@ test('a generated capture access admits the currently bound closure', () => {
 	for (const [index, cpu] of [js, ref].entries()) {
 		const frame = frames[index], cells = new Uint32Array(1);
 		const replacement = seedTestCapturedClosure(cpu, image.symbols.functionAddresses[0], cells);
-		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
+		bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
 		frame.closureAddress = replacement;
 	}
 	const loopCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.JMP];
@@ -388,7 +389,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const cells = new Uint32Array(2);
 		const replacement = seedTestCapturedClosure(cpu, image.symbols.functionAddresses[0], cells);
-		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
+		bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
 		frame.closureAddress = replacement;
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}

@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "support/heap_allocator_reference.h"
 #include "machine/cpu/upvalue.h"
@@ -438,7 +439,7 @@ void hotUpvalueAlias() {
 		auto heap = bmsx::test::GcHeap(m->cpu);
 		std::array<u32, 2> cells{};
 		const u32 closure = test::seedTestCapturedClosure(m->cpu, m->rom.functionAddresses[0], cells);
-		Upvalue::bindOpen(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);
+		test::bindOpenUpvalueFixture(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);
 		frame.writeControl(bmsx::FrameField::Closure, closure); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -575,7 +576,7 @@ void rawContextValues(CpuMachine& machine) {
 		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
 		NativeBlockRunState state{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
 		const auto& exit = *globals.blocks.front()->run(registers.view(), state);
-		if (valueTagHasGcEdge(valueTag(value))) {
+		if (valueTagIsStorageReference(valueTag(value))) {
 			require(exit.exit == NativeBlockExit::WriteGlobal && exit.currentPc == globals.source[0].pc
 				&& exit.nextPc == globals.source[1].pc && state.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
 				&& state.registerTop == 0 && registers.get(12) == value && registers.get(0) == valueNil()
@@ -620,11 +621,11 @@ void rawContextValues(CpuMachine& machine) {
 	std::array<u32, 2> cells{};
 	const u32 boundClosure = test::allocateClosureRecordReference(heap, 2, false, cells);
 	const u32 open = cells[0], closed = cells[1];
-	Upvalue::bindOpen(machine.memory, open, owner->address, 0, 0);
-	ClosureRecord::initialize(heap.memory, boundClosure, {}, heap.white(), 2, false, false);
+	test::bindOpenUpvalueFixture(machine.memory, open, owner->address, 0, 0);
+	test::initializeClosureFixture(heap.memory, boundClosure, {}, heap.white(), 2, false, false);
 	frame.writeControl(bmsx::FrameField::Closure, boundClosure);
-	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 0, open);
-	ClosureRecord::setCaptureAddress(heap.memory, boundClosure, 1, closed);
+	test::setClosureCaptureFixture(heap.memory, boundClosure, 0, open);
+	test::setClosureCaptureFixture(heap.memory, boundClosure, 1, closed);
 	ContextBlock captures(machine, {{OpCode::K1, 0}, {OpCode::GETUP, 1}, {OpCode::KSMI, 2, 0, 0, ContextBlock::Payload::sbx(9)},
 		{OpCode::SETUP, 2}, {OpCode::ADD, 3, 0, 1}, {OpCode::GETUP, 4}, {OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	captureRegisters.clear(0, captureRegisters.size());
@@ -634,14 +635,14 @@ void rawContextValues(CpuMachine& machine) {
 		&& aliasExit.nextPc == captures.source[4].pc && alias.registerTop == 3
 		&& captureRegisters.get(0) == valueInteger(1) && captureRegisters.get(1) == valueInteger(1) && captureRegisters.get(2) == valueInteger(9)
 		&& captureRegisters.get(3) == valueNil(), "the self-alias guard publishes the exact prefix before writing a captured register");
-	Upvalue::bindOpen(machine.memory, open, owner->address, 16, 0);
+	test::bindOpenUpvalueFixture(machine.memory, open, owner->address, 16, 0);
 	ContextBlock outerRead(machine, {{OpCode::GETUP, 1}, {OpCode::K1, 0}, {OpCode::ADD, 3, 0, 1},
 		{OpCode::SETUP, 12, 1}, {OpCode::GETUP, 6, 1}, {OpCode::JMP}});
 	for (const auto value : values) {
 		captureRegisters.clear(0, captureRegisters.size()); captureRegisters.set(12, value); outerRegisters.set(0, valueInteger(1));
 		NativeBlockRunState state{.frame = &frame, .memory = &machine.memory, .remainingCycles = 100, .ram = machine.memory.ramData()};
 		const auto& exit = *outerRead.blocks.front()->run(captureRegisters, state);
-		if (valueTagHasGcEdge(valueTag(value))) {
+		if (valueTagIsStorageReference(valueTag(value))) {
 			require(exit.exit == NativeBlockExit::WriteUpvalue && exit.currentPc == outerRead.source[3].pc
 				&& exit.nextPc == outerRead.source[4].pc && captureRegisters.get(3) == valueInteger(2)
 				&& captureRegisters.get(6) == valueNil(), "a closed reference leaves for firmware after the exact native prefix");
@@ -653,7 +654,7 @@ void rawContextValues(CpuMachine& machine) {
 			&& captureRegisters.get(6) == value && Upvalue::load(machine.memory, closed) == value && state.registerTop == 7,
 			"native outer and closed cells preserve raw values without invalidating unrelated register definitions");
 	}
-	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, heap.white());
+	machine.memory.writeRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET, heap.white());
 	const Value scalar = valueFloatBits(0xffa54321u);
 	captureRegisters.set(12, scalar);
 	NativeBlockRunState closedStore{.frame = &frame, .memory = &machine.memory,
@@ -661,7 +662,7 @@ void rawContextValues(CpuMachine& machine) {
 	const auto& scalarExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
 	require(scalarExit.exit == NativeBlockExit::Continue && scalarExit.currentPc == outerRead.source.back().pc && scalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == scalar
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (heap.white()),
+		&& machine.memory.readRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET) == (heap.white()),
 		"native scalar writes leave an unvisited closed cell unchanged");
 	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	captureRegisters.set(12, child);
@@ -669,16 +670,16 @@ void rawContextValues(CpuMachine& machine) {
 	const auto& whiteReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
 	require(whiteReferenceExit.exit == NativeBlockExit::WriteUpvalue && whiteReferenceExit.currentPc == outerRead.source[3].pc
 		&& whiteReferenceExit.nextPc == outerRead.source[4].pc
-		&& Upvalue::load(machine.memory, closed) == scalar && machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == heap.white(),
+		&& Upvalue::load(machine.memory, closed) == scalar && machine.memory.readRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET) == heap.white(),
 		"native SETUP does not read collector color or publish either lane of a closed reference");
 
 	const auto queued = bmsx::test::allocateTableReference(cpu).address();
-	machine.memory.writeRamRecordByte(queued + GC_COLOR_OFFSET, 3u);
-	heap.writeBarrier(queued, GC_RECORD_LINK);
-	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, 3u);
+	machine.memory.writeRamRecordByte(queued + bmsx::test::GC_COLOR_OFFSET, 3u);
+	heap.writeBarrier(queued, bmsx::test::GC_RECORD_LINK);
+	machine.memory.writeRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET, 3u);
 	const u32 head = heap.changedHeadOffset();
 	const u32 previousHead = machine.memory.readRamRecordWord(head);
-	require(previousHead == ((queued & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "the closed cell will link to an existing changed object");
+	require(previousHead == ((queued & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT), "the closed cell will link to an existing changed object");
 	const u32 previousLink = machine.memory.readRamRecordWord(closed + UPVALUE_NEXT);
 	auto& watches = machine.memory.ramWriteWatches();
 	const u32 cellLink = (closed + UPVALUE_NEXT) & RAM_RECORD_WORD_MASK;
@@ -689,7 +690,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(blackScalarExit.exit == NativeBlockExit::Continue && blackScalarExit.currentPc == outerRead.source.back().pc
 		&& blackScalarExit.nextPc == 0
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
+		&& machine.memory.readRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"a scalar write to a black cell does not touch its watched queue link");
 	captureRegisters.set(12, child);
@@ -699,7 +700,7 @@ void rawContextValues(CpuMachine& machine) {
 	require(watchedLinkExit.exit == NativeBlockExit::WriteUpvalue && watchedLinkExit.currentPc == outerRead.source[3].pc
 		&& watchedLinkExit.nextPc == outerRead.source[4].pc
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
+		&& machine.memory.readRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousLink
 		&& machine.memory.readRamRecordWord(head) == previousHead
 		&& captureRegisters.get(3) == valueInteger(2) && captureRegisters.get(6) == valueInteger(73),
@@ -713,7 +714,7 @@ void rawContextValues(CpuMachine& machine) {
 		&& blackReferenceExit.nextPc == outerRead.source[4].pc && closedStore.remainingCycles == 100 - issuedCycles
 		&& captureRegisters.get(3) == valueInteger(2) && captureRegisters.get(6) == valueInteger(73)
 		&& Upvalue::load(machine.memory, closed) == valueInteger(23)
-		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == 3u
+		&& machine.memory.readRamRecordByte(closed + bmsx::test::GC_COLOR_OFFSET) == 3u
 		&& machine.memory.readRamRecordWord(closed + UPVALUE_NEXT) == previousLink
 		&& machine.memory.readRamRecordWord(head) == previousHead,
 		"an unwatched edge also leaves before touching the closed cell or changed list");
@@ -746,13 +747,13 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	std::array<u32, 1> cells{};
 	const u32 closure = test::allocateClosureRecordReference(heap, 1, false, cells);
 	const u32 cell = cells[0];
-	ClosureRecord::initialize(memory, closure, {}, heap.white(), 1, false, false);
-	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);
+	test::initializeClosureFixture(memory, closure, {}, heap.white(), 1, false, false);
+	test::setClosureCaptureFixture(memory, closure, 0, cell);
 	frame.writeControl(FrameField::Closure, closure);
 	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	const auto control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
-	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
+	memory.writeRamRecordByte(cell + bmsx::test::GC_COLOR_OFFSET, 3u);
 
 	ContextBlock generated(machine, {{OpCode::SETUP, 0}, {OpCode::GETUP, 1}, {OpCode::JMP}});
 	ValueSlots registers(2);
@@ -767,10 +768,10 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 		"the native handoff precedes both the final-remark barrier and the next read");
 	bmsx::test::storeUpvalueReference(cpu, cell, child); // Original implementation, used as the firmware's differential oracle.
 	require(Upvalue::load(memory, cell) == child, "the reference commits the original Value");
-	require(memory.readRamRecordByte(cell + GC_COLOR_OFFSET) == 3u && memory.readRamRecordWord(cell + UPVALUE_NEXT) == 0u
+	require(memory.readRamRecordByte(cell + bmsx::test::GC_COLOR_OFFSET) == 3u && memory.readRamRecordWord(cell + UPVALUE_NEXT) == 0u
 		&& memory.readRamRecordWord(heap.changedHeadOffset()) == 0u
-		&& memory.readRamRecordByte(valuePayload(child) + GC_COLOR_OFFSET) == 2u
-		&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == (valuePayload(child) & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
+		&& memory.readRamRecordByte(valuePayload(child) + bmsx::test::GC_COLOR_OFFSET) == 2u
+		&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == (valuePayload(child) & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT,
 		"the closed capture keeps its white referent live through the current trace, not a later cell rescan");
 }
 

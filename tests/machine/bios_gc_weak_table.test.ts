@@ -3,7 +3,7 @@ import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../toolchain/ts/firmware/stock_object_layout';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

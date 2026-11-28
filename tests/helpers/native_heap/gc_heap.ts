@@ -5,14 +5,14 @@ import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
 import type { Memory } from '../../../machine/ts/machine/memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { HEAP_GC_CONTROL_OFFSET } from '../firmware_heap_layout';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../../toolchain/ts/firmware/stock_object_layout';
 import * as Closure from '../../../machine/ts/machine/cpu/closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import * as Upvalue from '../../../machine/ts/machine/cpu/upvalue';
 import { TableRecords, type TableStringProbe } from './table';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueTag, valueTagIsStorageReference, valuePayload, valueNil, valueFromTag, type Value } from '../../../machine/ts/machine/cpu/value';
 import type { ValueSlots } from '../../../machine/ts/machine/cpu/value_slots';
 import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
@@ -205,7 +205,7 @@ export class GcHeap {
 	// owner. Metatabled tables still need the collector to resolve weak lanes.
 	// Only an insertion installs the supplied key as a new edge.
 	public writeTableAssignment(address: number, tag: ValueTag, word: number, insertedKey?: Value): void {
-		if (!valueTagHasGcEdge(tag) && (insertedKey === undefined || !valueTagHasGcEdge(valueTag(insertedKey)))) return;
+		if (!valueTagIsStorageReference(tag) && (insertedKey === undefined || !valueTagIsStorageReference(valueTag(insertedKey)))) return;
 		if (this.markColor(address) !== 3) return;
 		if (this.phase() === GcPhase.MarkAgain && this.tables.metatableAddress(address) === 0) {
 			if (insertedKey !== undefined) this.markValue(insertedKey);

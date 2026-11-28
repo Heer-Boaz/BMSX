@@ -1,8 +1,9 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
+
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

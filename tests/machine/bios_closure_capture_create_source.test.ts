@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
-import { GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_RECORD_LINK } from '../../toolchain/ts/firmware/stock_object_layout';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
 import { FIRMWARE_DATA_OFFSET } from '../helpers/firmware_heap_layout';

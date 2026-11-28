@@ -746,9 +746,9 @@ void comparisonDatapathsRespectEveryValueKind() {
 	bmsx::test::StringPoolReference strings(cpu);
 	auto heap = bmsx::test::GcHeap(cpu);
 	const u32 firstClosure = test::allocateClosureRecordReference(heap, 0);
-	ClosureRecord::initialize(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
+	test::initializeClosureFixture(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
 	const u32 secondClosure = test::allocateClosureRecordReference(heap, 0);
-	ClosureRecord::initialize(heap.memory, secondClosure, {}, heap.white(), 0, false, false);
+	test::initializeClosureFixture(heap.memory, secondClosure, {}, heap.white(), 0, false, false);
 	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
 		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),
 		valueInteger(0), valueFloat(-0.0), valueInteger(1), valueInteger(-1), valueFloat(0.25),

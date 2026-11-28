@@ -1,7 +1,8 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
+import { isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueBool, valueBuiltinFunction, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';

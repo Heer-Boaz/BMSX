@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CLOSURE_PROTOTYPE_ADDRESS, closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { LuaAllocationMode } from '../helpers/native_heap/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';

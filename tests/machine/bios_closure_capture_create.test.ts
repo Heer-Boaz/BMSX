@@ -1,11 +1,12 @@
+import { initializeRecord } from '../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes, type FunctionPrototype, initializeRecord } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
 import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX, CLOSURE_CANONICAL } from '../../toolchain/ts/firmware/stock_object_layout';
 import { isOpen, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { type Value, ValueTag, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';

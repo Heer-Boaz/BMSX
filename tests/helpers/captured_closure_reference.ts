@@ -1,6 +1,8 @@
+import { bindOpen, initialize } from './native_heap/upvalue_record';
+import { initializeRecord, setCaptureAddress } from './native_heap/closure_record';
 import { nativeHeapReference } from './native_heap/reference';
 import { gcPacedPhase } from './native_heap/gc_heap';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
@@ -36,7 +38,7 @@ export function allocateClosureRecordReference(cpu: CPU, captures: number, latch
 				const white = gc.white();
 				for (let index = 0; index < newCount; ++index) {
 					const cell = cells[index];
-					Upvalue.initialize(memory, cell, white);
+					initialize(memory, cell, white);
 					gc.publishObject(cell);
 				}
 				budget.resizeRecordCharge(0, charged);
@@ -76,7 +78,7 @@ function linkOpenUpvalue(cpu: CPU, frame: CallFrame, cell: number, slot: number)
 		previous = current;
 		next = cpu.memory.readRamRecordWord(current + UPVALUE_NEXT);
 	}
-	Upvalue.bindOpen(cpu.memory, cell, frame.thread.address, slot, next);
+	bindOpen(cpu.memory, cell, frame.thread.address, slot, next);
 	if (previous === 0) frame.openUpvalueHead = cell;
 	else cpu.memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
 }
@@ -114,16 +116,16 @@ export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, funct
 	const cells = new Uint32Array(newUpvalueCount);
 	const address = allocateClosureRecordReference(cpu, count, latched, cells, newUpvalueCount);
 	const closure = address;
-	Closure.initializeRecord(cpu.memory, address, functionRecord, false, nativeHeapReference(cpu).gc.white(), count, latched);
+	initializeRecord(cpu.memory, address, functionRecord, false, nativeHeapReference(cpu).gc.white(), count, latched);
 	let nextCell = 0;
 	for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
 		if (upvalues[index] !== 0 || (upvalueWords[index] & BLUA32_UPVALUE_IN_STACK_MASK) === 0) {
-			Closure.setCaptureAddress(cpu.memory, closure, index, upvalues[index]);
+			setCaptureAddress(cpu.memory, closure, index, upvalues[index]);
 			continue;
 		}
 		const cell = cells[nextCell++];
 		linkOpenUpvalue(cpu, frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
-		Closure.setCaptureAddress(cpu.memory, closure, index, cell);
+		setCaptureAddress(cpu.memory, closure, index, cell);
 	}
 	nativeHeapReference(cpu).gc.publishObject(closure);
 	cpu['charge'](count);

@@ -4,7 +4,7 @@ import { nativeHeapReference } from './reference';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../firmware_heap_layout';
 import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
-import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../../toolchain/ts/firmware/stock_object_layout';
 import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
 import { valueNil, type Value } from '../../../machine/ts/machine/cpu/value';
 

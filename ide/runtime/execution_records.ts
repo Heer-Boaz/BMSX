@@ -1,14 +1,14 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
-import { GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
 import { GlobalBank } from '../../machine/ts/machine/cpu/global_bank';
 import { THREAD_RECORD_KIND, ThreadField, ThreadLayout, ThreadRecords } from '../../machine/ts/machine/cpu/thread_record';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
-import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, RAM_BASE, RAM_REFERENCE_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { isStockHeapIssuedObject } from './stock_heap_inspection';
 
 /** Inspect executable references on a stopped machine without deciding object liveness. */
@@ -24,7 +24,7 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 	// Stored weak edges can outlive the backings they name. Keep the stopped
 	// inspection's issued-record check, not the collector's marking policy.
 	const issuedRecord = (reference: number, kind: number) => {
-		const offset = reference & GC_RECORD_MASK;
+		const offset = reference & RAM_REFERENCE_MASK;
 		return memory.readRamRecordByte(offset) === kind
 			&& isStockHeapIssuedObject(memory, offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0;
 	};

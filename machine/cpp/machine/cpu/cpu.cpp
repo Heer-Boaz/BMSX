@@ -2364,7 +2364,7 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 int CPU::closeFixedWindow(CallFrame& frame, u32 address) {
 	int closed = 0;
 	while (address != 0 && closed < static_cast<int>(UPVALUE_CHAIN_LIMIT)) {
-		const u32 cell = address & UPVALUE_ADDRESS_MASK;
+		const u32 cell = address & RAM_REFERENCE_MASK;
 		if (m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(m_memory, cell)) break;
 		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
 		Upvalue::close(m_memory, cell);

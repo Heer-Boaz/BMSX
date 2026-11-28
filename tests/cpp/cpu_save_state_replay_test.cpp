@@ -183,7 +183,7 @@ void capturesUsePhysicalRecords() {
 	definition.registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<bmsx::u32, 1> cells{};
 	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
-	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
+	bmsx::test::bindOpenUpvalueFixture(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
 	definition.writeControl(bmsx::FrameField::OpenHead, cells[0]);
 	definition.registers.set(1, bmsx::valueClosure(seeded));
 	cpu.runUntilDepth(0, 1000);
@@ -210,7 +210,7 @@ void inspectOpenAndClosedClosure() {
 	definition.registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<bmsx::u32, 1> cells{};
 	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
-	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
+	bmsx::test::bindOpenUpvalueFixture(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
 	definition.writeControl(bmsx::FrameField::OpenHead, cells[0]);
 	definition.registers.set(1, bmsx::valueClosure(seeded));
 	auto stopPc = machine.rom.textAddress + 5u * bmsx::INSTRUCTION_BYTES;

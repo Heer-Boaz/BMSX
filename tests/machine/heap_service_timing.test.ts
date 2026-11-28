@@ -3,7 +3,7 @@ import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';

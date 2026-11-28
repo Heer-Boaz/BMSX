@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../toolchain/ts/firmware/stock_object_layout';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

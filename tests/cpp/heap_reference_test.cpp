@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "support/heap_allocator_reference.h"
 #include "machine/cpu/upvalue.h"
@@ -43,7 +44,7 @@ struct Machine {
 		auto& frame = *cpu.rootThread()->currentFrame;
 		std::array<u32, 1> cells{};
 		frame.registers.set(1, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
-		Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
+		test::bindOpenUpvalueFixture(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
 		frame.writeControl(FrameField::OpenHead, cells[0]);
 		frame.setTop(2);
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "fixture reaches HALT");
@@ -234,8 +235,8 @@ void closedCellLivesInRam() {
 	bmsx::test::GcHeap(cpu).collect();
 	bmsx::HeapAllocator arena(cpu.memory());
 	const auto occupied = arena.occupiedBytes();
-	const auto closureBytes = arena.allocationBytes(closure - GC_OBJECT_PREFIX);
-	const auto cellBytes = arena.allocationBytes(address - GC_OBJECT_PREFIX);
+	const auto closureBytes = arena.allocationBytes(closure - bmsx::test::GC_OBJECT_PREFIX);
+	const auto cellBytes = arena.allocationBytes(address - bmsx::test::GC_OBJECT_PREFIX);
 	cpu.setGlobalByKey(key, valueNil());
 	bmsx::test::GcHeap(cpu).collect();
 	require(arena.occupiedBytes() == occupied - closureBytes - cellBytes,

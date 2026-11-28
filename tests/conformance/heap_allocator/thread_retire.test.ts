@@ -8,7 +8,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { captureAddress } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET } from '../../../toolchain/ts/firmware/stock_object_layout';
 import {
 	THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadStatus,
 } from '../../../machine/ts/machine/cpu/thread_record';

@@ -1,3 +1,4 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
@@ -5,7 +6,7 @@ import { resizeThreadStackReference } from '../helpers/thread_allocation_referen
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compiledBlockSupports, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
+
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueTag, valueInteger, valueFloat, valueNil, valueTable, valueBool } from '../../machine/ts/machine/cpu/value';

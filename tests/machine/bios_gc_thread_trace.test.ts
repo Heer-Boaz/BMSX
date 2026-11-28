@@ -1,14 +1,16 @@
+import { bindOpen, initialize as initializeCell } from '../helpers/native_heap/upvalue_record';
+import { initializeRecord as initializeClosure } from '../helpers/native_heap/closure_record';
 import { GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
+
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS } from '../../toolchain/ts/firmware/stock_object_layout';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { bindOpen, close, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
+import { close, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';

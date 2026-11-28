@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { LuaAllocationMode } from '../helpers/native_heap/lua_heap';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
 	hashCanonicalTableKey, valueBuiltinFunction, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueClosure, valueThread,

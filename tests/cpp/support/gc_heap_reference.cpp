@@ -93,7 +93,7 @@ void GcHeap::writeBlackTableValue(u32 table, Value value) {
 }
 
 void GcHeap::writeTableEntry(u32 table, Value key, Value value) {
-	if ((!valueTagHasGcEdge(valueTag(key)) && !valueTagHasGcEdge(valueTag(value))) || markColor(table) != 3u)
+	if ((!valueTagIsStorageReference(valueTag(key)) && !valueTagIsStorageReference(valueTag(value))) || markColor(table) != 3u)
 		return;
 	if (phase() == GcPhase::MarkAgain && TableRecord(memory, table).metatableAddress() == 0u) {
 		markValue(key);

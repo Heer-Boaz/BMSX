@@ -5,7 +5,7 @@ import type { Memory } from '../memory/memory';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
-	valueIsNaN, valueNil, valuePayload, valueString, valueTag, valueTagHasGcEdge, type Value,
+	valueIsNaN, valueNil, valuePayload, valueString, valueTag, valueTagIsStorageReference, type Value,
 } from './value';
 import type { ValueWriteTarget } from './value_slots';
 
@@ -168,7 +168,7 @@ export class TableRecords {
 		target.setEncoded(destination, tag, memory.readRamRecordWord(words + slot * 4)); return true;
 	}
 	public storeIntegerArrayKey(record: number, index: number, tag: ValueTag, word: number): boolean {
-		if (valueTagHasGcEdge(tag)) return false;
+		if (valueTagIsStorageReference(tag)) return false;
 		const slot = this.integerArrayIndex(index), array = this.arrayCapacity(record);
 		if (slot < 0 || slot >= array) return false;
 		const words = this.arrayAddress(record), tags = words + array * 4;
@@ -427,7 +427,7 @@ export class TableRecords {
 		const slot = this.getArrayIndex(key), array = this.arrayCapacity(record);
 		if (slot >= 0 && slot < array) {
 			const word = valuePayload(value);
-			if (valueTagHasGcEdge(tag)) return TABLE_STORE_FIRMWARE + 2;
+			if (valueTagIsStorageReference(tag)) return TABLE_STORE_FIRMWARE + 2;
 			const words = this.arrayAddress(record);
 			this.writeSlot(words, words + array * 4, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
@@ -454,7 +454,7 @@ export class TableRecords {
 		if (index >= 0) {
 			const valueSlot = index + hash, prior = memory.readRamRecordByte(tags + valueSlot);
 			if (prior !== ValueTag.Nil && prior !== ValueTag.DeadKey) {
-				if (valueTagHasGcEdge(tag)) return TABLE_STORE_FIRMWARE - index;
+				if (valueTagIsStorageReference(tag)) return TABLE_STORE_FIRMWARE - index;
 				this.writeSlot(words, tags, valueSlot, tag, word);
 				return index;
 			}
@@ -462,7 +462,7 @@ export class TableRecords {
 		return TABLE_STORE_FIRMWARE - index;
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
-		if (tag === ValueTag.Nil || valueTagHasGcEdge(tag) || predicted < 0) return false;
+		if (tag === ValueTag.Nil || valueTagIsStorageReference(tag) || predicted < 0) return false;
 		const hash = this.hashSize(record);
 		if (predicted >= hash) return false;
 		const memory = this.memory, words = this.hashAddress(record);

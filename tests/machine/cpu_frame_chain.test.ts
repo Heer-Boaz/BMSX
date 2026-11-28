@@ -1,7 +1,7 @@
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference, resizeThreadStackReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
+import { CLOSURE_COUNT_SHIFT, CLOSURE_COUNT_WORD } from '../../machine/ts/machine/cpu/closure';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -264,7 +264,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		for (const [record, word] of [[first, 73], [second, 17]]) {
 			const cell = record + 16;
 			memory.writeRamRecordByte(record + 3, 1);
-			memory.writeRamRecordWord(record + GC_RECORD_LINK, (1 << GC_GRAY_INDEX_BITS) | 0x2345);
+			memory.writeRamRecordWord(record + CLOSURE_COUNT_WORD, (1 << CLOSURE_COUNT_SHIFT) | 0x2345);
 			memory.writeRamRecordWord(record + CLOSURE_CAPTURE_WORDS, cell | 0x80000000);
 			memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 			memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, ValueTag.Integer);

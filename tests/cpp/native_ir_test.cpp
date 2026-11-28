@@ -885,7 +885,7 @@ void dataflowPlansTableAndMemoryInputs() {
 	const auto& memory = std::get<NativeMemoryAccess>(blocks[2].instructions.front().operation);
 	const auto& receiver = std::get<NativeConstantLoad>(blocks[0].instructions.front().operation);
 	require(receiver.index == 0 && receiver.result == 7
-		&& table.receiverCheck == NativeTagCheck::Dynamic && table.store.barrier == NativeGcBarrier::None
+		&& table.receiverCheck == NativeTagCheck::Dynamic && table.store.referenceStore == NativeReferenceStore::None
 		&& table.store.nilValue == NativeNilValue::Present,
 		"the table plan distinguishes a live constant bank load from an immediate with a proved tag");
 	require(memory.addressCheck == NativeTagCheck::Proved && memory.store == NativeWordSource::Dynamic,
@@ -893,7 +893,7 @@ void dataflowPlansTableAndMemoryInputs() {
 	std::ostringstream report;
 	dumpNativeIr(report, region);
 	const auto text = report.str();
-	require(text.find("table-write R7 R8 K2 receiver=guard barrier=none value=present") != std::string::npos
+	require(text.find("table-write R7 R8 K2 receiver=guard reference-store=none value=present") != std::string::npos
 		&& text.find("address=proved") != std::string::npos && text.find("source-word=dynamic") != std::string::npos
 		&& text.find("terminal kind=") != std::string::npos,
 		"the dump exposes store, address, value and continuation choices directly");

@@ -177,7 +177,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	frame.registers.set(2, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<u32, 1> cells{};
 	frame.registers.set(0, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
-	Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase() + 2, 0u);
+	test::bindOpenUpvalueFixture(memory, cells[0], frame.thread->address, frame.stackBase() + 2, 0u);
 	frame.writeControl(FrameField::OpenHead, cells[0]);
 	u32 stopPc = rom.textAddress + 2 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook({[](void* context, ExecutionDomainId, u32 pc) { return pc == *static_cast<u32*>(context); }, &stopPc, ALL_EXECUTION_DOMAINS_MASK, 0u});

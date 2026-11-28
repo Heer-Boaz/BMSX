@@ -42,11 +42,11 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-void NativeLowering::emitReferenceStoreGate(NativeGcBarrier plan, sljit_s32 tag, sljit_s32 scratch,
+void NativeLowering::emitReferenceStoreGate(NativeReferenceStore plan, sljit_s32 tag, sljit_s32 scratch,
 	NativeBlockExitSite& exit) {
-	if (plan == NativeGcBarrier::None) return;
+	if (plan == NativeReferenceStore::None) return;
 	auto* c = m_compiler;
-	if (plan == NativeGcBarrier::Reference) {
+	if (plan == NativeReferenceStore::Reference) {
 		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
 		return;
 	}

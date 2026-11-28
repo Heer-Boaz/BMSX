@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET, GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_COLOR_MASK } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { asInteger, valueBool, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';

@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "common/endian.h"
 #include "support/string_pool_reference.h"
 #include "support/lua_heap_reference.h"
@@ -113,8 +114,8 @@ void allocationAdmissionUsesLogicalBytes() {
 	require(cpu.instructionBudgetRemaining == 23, "the allocations fit at the exact logical threshold");
 	require(bmsx::LuaHeap(cpu).usedBytes() == logical + logicalCharge, "chunk overhead is not charged to the language budget");
 	const bmsx::HeapAllocator arena(cpu.memory());
-	const auto hashBytes = arena.allocationBytes(hash.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(hash.hashAddress()) + arena.allocationBytes(hash.arrayAddress());
-	const auto arrayBytes = arena.allocationBytes(array.address() - GC_OBJECT_PREFIX) + arena.allocationBytes(array.arrayAddress());
+	const auto hashBytes = arena.allocationBytes(hash.address() - bmsx::test::GC_OBJECT_PREFIX) + arena.allocationBytes(hash.hashAddress()) + arena.allocationBytes(hash.arrayAddress());
+	const auto arrayBytes = arena.allocationBytes(array.address() - bmsx::test::GC_OBJECT_PREFIX) + arena.allocationBytes(array.arrayAddress());
 	require(arena.occupiedBytes() == physical + hashBytes + arrayBytes && hashBytes + arrayBytes > logicalCharge,
 		"physical diagnostics add the live chunks, including allocator overhead");
 	bmsx::test::GcHeap(cpu).collect();
@@ -736,10 +737,10 @@ void incrementalStateAndBarriers() {
 	for (int i = 0; i < 4200; ++i) bmsx::test::StringPoolReference(cpu).intern("dead-" + std::to_string(i) + std::string(16, 'x'));
 	auto target = bmsx::test::asReferenceTable(roots.getInteger(1000), bmsx::test::GcHeap(cpu));
 	require(bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()) >= bmsx::test::GC_STEP_WORDS
-		&& bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3,
+		&& bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(target.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3,
 		"mutations target a black allocation while marking is incomplete");
 	target.setStringKey(field, valueInteger(1));
-	require((machine.memory.readRamRecordByte(target.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
+	require((machine.memory.readRamRecordByte(target.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3
 		&& machine.memory.readRamRecordWord(bmsx::test::GcHeap(cpu).changedHeadOffset()) == 0,
 		"scalar replacement does not enqueue a black table");
 	auto child = bmsx::test::allocateTableReference(cpu);
@@ -918,8 +919,8 @@ void resumesLargeClosureCaptures() {
 	std::vector<u32> references(captures, cells[0]);
 	references.back() = cells[1];
 	frame.registers.set(3, valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[2], {}, references)));
-	Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
-	Upvalue::bindOpen(memory, cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
+	test::bindOpenUpvalueFixture(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
+	test::bindOpenUpvalueFixture(memory, cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
 	frame.writeControl(FrameField::OpenHead, cells[1]);
 	frame.setTop(4);
 	require(cpu.runUntilDepth(0, 20000) == RunResult::Halted, "guest closes both capture cells");
@@ -993,10 +994,10 @@ void resumesOpenThreadAfterClosingInstruction() {
 		auto& frame = *machine->cpu.activeThread()->currentFrame;
 		std::vector<u32> cells(captures);
 		const auto record = test::seedTestCapturedClosure(machine->cpu, machine->rom.functionAddresses[2], cells);
-		Upvalue::bindOpen(machine->memory, cells.back(), frame.thread->address, frame.stackBase(), 0u);
+		test::bindOpenUpvalueFixture(machine->memory, cells.back(), frame.thread->address, frame.stackBase(), 0u);
 		u32 head = cells.back();
 		for (u32 index = 0; index < captures - 1; ++index) {
-			Upvalue::bindOpen(machine->memory, cells[index], frame.thread->address, frame.stackBase() + 1, head);
+			test::bindOpenUpvalueFixture(machine->memory, cells[index], frame.thread->address, frame.stackBase() + 1, head);
 			head = cells[index];
 		}
 		frame.writeControl(FrameField::OpenHead, head);
@@ -1198,10 +1199,10 @@ void incrementalSharedWeakMode() {
 	const Value childValue = valueTable(child.address());
 	weak.setInteger(1, childValue);
 	bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
-	const auto index = [](u32 address) { return (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT; };
+	const auto index = [](u32 address) { return (address & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT; };
 	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
-	require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(weak.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
-		&& (machine.memory.readRamRecordByte(child.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == bmsx::test::GcHeap(cpu).white()
+	require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark && (machine.memory.readRamRecordByte(weak.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3
+		&& (machine.memory.readRamRecordByte(child.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == bmsx::test::GcHeap(cpu).white()
 		&& machine.memory.readRamRecordWord(control + bmsx::test::GC_WEAK_VISITS) == index(weak.address())
 		&& machine.memory.readRamRecordWord(control + bmsx::test::GC_WEAK_VISITS + bmsx::test::GC_VISIT_TAIL) == index(following.address())
 		&& machine.memory.readRamRecordWord(control + bmsx::test::GC_WEAK_VISITS + bmsx::test::GC_VISIT_COUNT) == 2,
@@ -1355,7 +1356,7 @@ void resumesWeakTableRemark() {
 	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(control + field); };
 	const auto advance = [&] { return bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil()); };
-	const u32 head = (watcher.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
+	const u32 head = (watcher.address() & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT;
 	size_t visited = 0;
 	for (int step = 0; read(bmsx::test::GC_REMARK_VISIT_INDEX) == 0u && step < 100; ++step) visited = advance();
 	const auto cursor = read(bmsx::test::GC_REMARK_VISIT_INDEX);
@@ -1395,13 +1396,13 @@ void consumesSelfLinkedGrayEdge() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(rooted.address()));
 	frame.writeControl(FrameField::Top, 1);
-	const u32 index = (rooted.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT;
-	machine.memory.writeRamRecordByte(rooted.address() + GC_COLOR_OFFSET, 2);
-	machine.memory.writeRamRecordWord(rooted.address() + GC_RECORD_LINK, index);
+	const u32 index = (rooted.address() & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT;
+	machine.memory.writeRamRecordByte(rooted.address() + bmsx::test::GC_COLOR_OFFSET, 2);
+	machine.memory.writeRamRecordWord(rooted.address() + bmsx::test::GC_RECORD_LINK, index);
 	machine.memory.writeRamRecordWord(gc.changedHeadOffset(), index);
 	gc.step(valueNil(), valueNil(), valueNil());
-	require(gc.phase() == bmsx::test::GcPhase::Atomic && (machine.memory.readRamRecordByte(rooted.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3
-		&& machine.memory.readRamRecordWord(rooted.address() + GC_RECORD_LINK) == 0,
+	require(gc.phase() == bmsx::test::GcPhase::Atomic && (machine.memory.readRamRecordByte(rooted.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3
+		&& machine.memory.readRamRecordWord(rooted.address() + bmsx::test::GC_RECORD_LINK) == 0,
 		"consuming the mark and link terminates a circular physical queue");
 	while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
 	require(gc.tableRecordAddress(rooted.address()) == rooted.address(), "the already visited Table remains reachable");
@@ -1462,7 +1463,7 @@ void strongWritesLeaveLargeTablesOutOfFinalRemark(bool grows) {
 	frame.setTop(2);
 	const u32 control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 	const auto phase = [&](u32 offset) { return memory.readRamRecordWord(control + offset); };
-	const auto color = [&](u32 record) { return memory.readRamRecordByte(record + GC_COLOR_OFFSET) & GC_COLOR_MASK; };
+	const auto color = [&](u32 record) { return memory.readRamRecordByte(record + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK; };
 	const auto step = [&] { return heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 256u); };
 	// Revisit one large table in the second pass so that there is a live
 	// mutator interval with another large table already completely scanned.
@@ -1588,8 +1589,8 @@ void collectUnattachedThreadRecord() {
 	memory.writeRamRecordByte(block + capacity * sizeof(u32), static_cast<u8>(ValueTag::Table));
 	const bmsx::HeapAllocator arena(cpu.memory());
 	const size_t stackBytes = arena.allocationBytes(block);
-	const size_t bytes = stackBytes + arena.allocationBytes(address - GC_OBJECT_PREFIX) + arena.allocationBytes(layout.frameBlock);
-	const size_t childBytes = arena.allocationBytes(child - GC_OBJECT_PREFIX);
+	const size_t bytes = stackBytes + arena.allocationBytes(address - bmsx::test::GC_OBJECT_PREFIX) + arena.allocationBytes(layout.frameBlock);
+	const size_t childBytes = arena.allocationBytes(child - bmsx::test::GC_OBJECT_PREFIX);
 	require(layout.block == block && gc.threadRecordAddress(address) == address && gc.allocationBytes(address) == bytes,
 		"an issued raw Thread has its physical header and backing without an execution view");
 	require(arena.occupiedBytes() == baselineBytes + bytes + childBytes,

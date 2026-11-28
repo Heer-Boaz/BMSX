@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';

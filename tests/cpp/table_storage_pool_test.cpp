@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "support/lua_heap_reference.h"
 #include "support/heap_allocator_reference.h"
@@ -276,7 +277,7 @@ int main() {
 		auto first = bmsx::test::allocateTableReference(cpu, 3, 4);
 
 		const u32 bodyAddress = first.arrayAddress();
-		const u32 firstHeader = arena.allocationBytes(first.address() - GC_OBJECT_PREFIX);
+		const u32 firstHeader = arena.allocationBytes(first.address() - bmsx::test::GC_OBJECT_PREFIX);
 		first.setInteger(3, valueInteger(99));
 		require(memory.readRamRecordWord(bodyAddress + 2 * 4u) == 99u, "array payload lives in guest RAM");
 		memory.writeRamRecordWord(bodyAddress + 2 * 4u, 11u);
@@ -289,7 +290,7 @@ int main() {
 			"cleared tables retain only the table header charge");
 		require(arena.occupiedBytes() == physicalBefore + firstHeader, "clearing retires the first body");
 		auto second = bmsx::test::allocateTableReference(cpu, 2, 4);
-		const u32 secondHeader = arena.allocationBytes(second.address() - GC_OBJECT_PREFIX);
+		const u32 secondHeader = arena.allocationBytes(second.address() - bmsx::test::GC_OBJECT_PREFIX);
 		require(second.trackedHeapBytes() == secondHeader + arena.allocationBytes(second.hashAddress()) + arena.allocationBytes(second.arrayAddress()),
 			"physical accounting uses the newly owned chunks");
 		for (int index = 1; index <= 2; ++index)

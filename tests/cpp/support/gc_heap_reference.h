@@ -4,7 +4,7 @@
 #include <optional>
 #include <utility>
 
-#include "machine/cpu/gc_object.h"
+#include "firmware_heap_layout.h"
 #include "heap_allocator_reference.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
@@ -145,7 +145,7 @@ public:
 	void markGlobalWrite(Value reference);
 	void writeBarrier(u32 address, u32 link);
 	void writeTableValue(u32 table, Value value) {
-		if (valueTagHasGcEdge(valueTag(value)) && markColor(table) == 3u)
+		if (valueTagIsStorageReference(valueTag(value)) && markColor(table) == 3u)
 			writeBlackTableValue(table, value);
 	}
 	void writeTableEntry(u32 table, Value key, Value value);

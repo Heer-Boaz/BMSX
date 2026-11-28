@@ -13,7 +13,7 @@ import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';

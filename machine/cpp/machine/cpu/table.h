@@ -63,7 +63,7 @@ public:
 	}
 	bool tryAssignIntegerArrayKey(int key, const Value& value) {
 		const u32 slot = arraySlot(key);
-		if (valueTagHasGcEdge(valueTag(value)) || slot >= arrayCapacity()
+		if (valueTagIsStorageReference(valueTag(value)) || slot >= arrayCapacity()
 			|| (metatableAddress() != 0u && values().tag(slot) == ValueTag::Nil)) return false;
 		setArraySlot(slot, value);
 		return true;

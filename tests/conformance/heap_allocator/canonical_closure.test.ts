@@ -1,3 +1,4 @@
+import { CLOSURE_CANONICAL } from '../../../toolchain/ts/firmware/stock_object_layout';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL } from '../../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';

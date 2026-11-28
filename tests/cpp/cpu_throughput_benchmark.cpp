@@ -226,7 +226,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		auto& frame = *cpu.activeThread()->currentFrame;
 		std::array<u32, 1> cells{};
 		registers.set(0, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
-		Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase() + 1, 0u);
+		test::bindOpenUpvalueFixture(memory, cells[0], frame.thread->address, frame.stackBase() + 1, 0u);
 		frame.writeControl(FrameField::OpenHead, cells[0]);
 		frame.setTop(1);
 	}

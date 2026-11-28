@@ -39,12 +39,12 @@ void CPU::abortCompletionCall(int frameIndex) {
 			auto& frame = *m_activeThread->currentFrame;
 			u32 address = frame.readControl(FrameField::OpenHead);
 			for (u32 closed = 0u; address != 0u && closed < UPVALUE_CHAIN_LIMIT; ++closed) {
-				const u32 cell = address & UPVALUE_ADDRESS_MASK;
+				const u32 cell = address & RAM_REFERENCE_MASK;
 				if (m_memory.readRamRecordByte(cell) != UPVALUE_RECORD_KIND || !Upvalue::isOpen(m_memory, cell)) break;
 				address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
 				Upvalue::close(m_memory, cell);
 				const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG));
-				if (valueTagHasGcEdge(tag)) heap.writeBarrier(cell, UPVALUE_NEXT);
+				if (valueTagIsStorageReference(tag)) heap.writeBarrier(cell, UPVALUE_NEXT);
 			}
 			frame.writeControl(FrameField::OpenHead, 0u);
 			m_activeThread->leaveFrame();

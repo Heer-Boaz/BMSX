@@ -11,6 +11,7 @@ namespace bmsx {
 using test::GcHeap;
 using test::GcPhase;
 using test::GC_ASSIST_BYTES;
+using test::GC_OBJECT_PREFIX;
 using test::GC_STEP_WORDS;
 
 namespace {

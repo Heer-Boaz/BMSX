@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

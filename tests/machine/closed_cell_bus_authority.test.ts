@@ -1,10 +1,11 @@
+import { initialize } from '../helpers/native_heap/upvalue_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { initialize, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
+import { UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';

@@ -1287,7 +1287,7 @@ void testBoundClosureArguments() {
 	auto& frame = *cpu.activeThread()->currentFrame;
 	std::array<bmsx::u32, 1> cells{};
 	const auto record = bmsx::test::seedTestCapturedClosure(cpu, machine.systemRom.functionAddresses[1], cells);
-	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
+	bmsx::test::bindOpenUpvalueFixture(cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
 	frame.writeControl(bmsx::FrameField::OpenHead, cells[0]);
 	frame.registers.set(0, bmsx::valueInteger(7));
 	frame.registers.set(1, bmsx::valueClosure(record));

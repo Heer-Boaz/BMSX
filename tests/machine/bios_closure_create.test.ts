@@ -1,3 +1,4 @@
+import { initializeRecord } from '../helpers/native_heap/closure_record';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -5,12 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import {
-	CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype,
-	closureRecordBytes, initializeRecord,
-} from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype, closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_SHIFT, CLOSURE_CANONICAL } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

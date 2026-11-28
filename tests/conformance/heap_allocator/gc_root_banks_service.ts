@@ -10,7 +10,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_MASK } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag, valueString } from '../../../machine/ts/machine/cpu/value';
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
 import { GC_ROOT_BANK_SIZE, GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, GcRootBankField, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../helpers/firmware_heap_layout';

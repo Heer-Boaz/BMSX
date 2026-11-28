@@ -4,7 +4,7 @@ import { GC_CHANGED_HEAD, GC_TRACE_HEAD, GcPhase, RemarkStage, type GcHeap } fro
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import type { GlobalBank } from '../../machine/ts/machine/cpu/global_bank';
 import type { StringId } from '../../machine/ts/machine/cpu/string_pool';
-import { valueNil, valuePayload, valueString, valueTag, valueTagHasGcEdge, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueNil, valuePayload, valueString, valueTag, valueTagIsStorageReference, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 
@@ -31,7 +31,7 @@ function writeGlobalRoot(gc: GcHeap, tag: ValueTag, word: number): void {
 export function writeReferenceGlobalSlot(gc: GcHeap, bank: GlobalBank, slot: number, value: Value): void {
 	const tag = valueTag(value), word = valuePayload(value);
 	bank.slots.setEncoded(slot, tag, word);
-	if (valueTagHasGcEdge(tag)) writeGlobalRoot(gc, tag, word);
+	if (valueTagIsStorageReference(tag)) writeGlobalRoot(gc, tag, word);
 }
 
 export function clearReferenceGlobalBank(gc: GcHeap, bank: GlobalBank): void {

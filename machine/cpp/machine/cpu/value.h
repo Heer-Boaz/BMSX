@@ -46,7 +46,7 @@ inline constexpr Value valueThread(uint32_t reference) { return valueFromTag(Val
 inline constexpr Value valueBuiltinFunction(BuiltinFunctionId id) {
 	return valueFromTag(ValueTag::BuiltinFunction, static_cast<uint32_t>(id));
 }
-inline constexpr bool valueTagHasGcEdge(ValueTag tag) {
+inline constexpr bool valueTagIsStorageReference(ValueTag tag) {
 	return tag >= ValueTag::String && tag <= ValueTag::Thread && tag != ValueTag::BuiltinFunction;
 }
 inline constexpr bool valueIsInteger(Value value) { return valueTag(value) == ValueTag::Integer; }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "gc_heap_reference.h"
 #include "machine/cpu/closure.h"
@@ -10,6 +11,38 @@
 #include <stdexcept>
 
 namespace bmsx::test {
+
+inline void initializeClosureFixture(Memory& memory, u32 address, const FunctionPrototype& prototype, u8 white, u32 count, bool canonical, bool latched) {
+	const u32 flags = ClosureRecord::domainBits(prototype.executionDomainId)
+		| (canonical ? CLOSURE_CANONICAL : 0u) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0u);
+	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8)
+		| (flags << 16) | ((count >> CLOSURE_COUNT_LOW_BITS) << 24));
+	memory.writeRamRecordWord(address + CLOSURE_COUNT_WORD, count << CLOSURE_COUNT_SHIFT);
+	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype.functionAddress);
+	if (latched) {
+		const u32 tail = ClosureRecord::captureWordAddress(address, count);
+		memory.writeRamRecordWord(tail, prototype.entry.codeAddress);
+		memory.writeRamRecordWord(tail + 4u, prototype.entry.numParams);
+		memory.writeRamRecordWord(tail + 8u, prototype.entry.maxStack);
+		memory.writeRamRecordWord(tail + 12u, prototype.entry.flags);
+		memory.writeRamRecordWord(tail + 16u, prototype.upvalueTableAddress);
+		memory.writeRamRecordWord(tail + 20u, prototype.recordUpvalueCount);
+	}
+}
+
+inline void setClosureCaptureFixture(Memory& memory, u32 address, u32 index, u32 reference) {
+	memory.writeRamRecordWord(ClosureRecord::captureWordAddress(address, index), reference);
+}
+
+inline void bindOpenUpvalueFixture(Memory& memory, u32 address, u32 owner, u32 slot, u32 next) {
+	const u32 offset = address & RAM_REFERENCE_MASK;
+	auto* record = memory.ramData() + offset;
+	record[UPVALUE_FLAGS] = UPVALUE_OPEN;
+	writeLE32(record + UPVALUE_VALUE_WORD, slot);
+	writeLE32(record + UPVALUE_OWNER, owner);
+	writeLE32(record + UPVALUE_NEXT, next);
+	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
+}
 
 // Native reference: reserve the closure and its new cells before publishing frame links.
 inline u32 allocateClosureRecordReference(GcHeap heap, u32 captures, bool latched = false, std::span<u32> cells = {}) {
@@ -29,7 +62,8 @@ inline u32 allocateClosureRecordReference(GcHeap heap, u32 captures, bool latche
 			if (count == cells.size()) {
 				const u8 white = heap.white();
 				for (u32 cell : cells) {
-					Upvalue::initialize(heap.memory, cell, white);
+					heap.memory.writeRamRecordPair(cell, UPVALUE_RECORD_KIND | (static_cast<u32>(white) << 8u), 0u);
+					heap.memory.writeRamRecordPair(cell + UPVALUE_OWNER, 0u, 0u);
 					heap.publishObject(cell);
 				}
 				heap.budget.resizeRecordCharge(0u, charged);
@@ -59,7 +93,7 @@ inline u32 seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = 
 	const FunctionPrototype prototype{.functionAddress = address, .entry = entry, .executionDomainId = domain};
 	GcHeap heap(cpu);
 	const u32 record = allocateClosureRecordReference(heap, 0u);
-	ClosureRecord::initialize(memory, record, prototype, heap.white(), 0u, true, false);
+	initializeClosureFixture(memory, record, prototype, heap.white(), 0u, true, false);
 	heap.publishObject(record);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	return record;
@@ -84,9 +118,9 @@ inline u32 seedTestCapturedClosure(CPU& cpu, u32 address, std::span<u32> newCell
 		.recordUpvalueCount = count, .executionDomainId = domain};
 	GcHeap heap(cpu);
 	const u32 record = allocateClosureRecordReference(heap, count, latched, newCells);
-	ClosureRecord::initialize(memory, record, prototype, heap.white(), count, false, latched);
+	initializeClosureFixture(memory, record, prototype, heap.white(), count, false, latched);
 	for (u32 index = 0; index < count; ++index)
-		ClosureRecord::setCaptureAddress(memory, record, index, captures[index]);
+		setClosureCaptureFixture(memory, record, index, captures[index]);
 	heap.publishObject(record);
 	return record;
 }
@@ -112,7 +146,7 @@ inline u32 seedTestMappedClosure(CPU& cpu, u32 address, bool canonical = true, E
 		throw std::logic_error("fixture storage must provide the selected mapped captureless binding");
 	GcHeap heap(cpu);
 	const u32 record = allocateClosureRecordReference(heap, 0u, true);
-	ClosureRecord::initialize(memory, record, prototype, heap.white(), 0u, canonical, true);
+	initializeClosureFixture(memory, record, prototype, heap.white(), 0u, canonical, true);
 	heap.publishObject(record);
 	if (canonical) cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	return record;

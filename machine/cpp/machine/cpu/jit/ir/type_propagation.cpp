@@ -249,13 +249,13 @@ struct NativeTypePropagation::Transfer {
 		// An incoming tag proof would buy two cheap tests at the cost of
 		// a new entry admission guard. Only local definitions remove the tests.
 		if (const auto type = input(0); type && type->assumption == 0)
-			op.barrier = valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None;
+			op.referenceStore = valueTagIsStorageReference(type->tag) ? NativeReferenceStore::Reference : NativeReferenceStore::None;
 	}
 
 	void operator()(NativeUpvalueAccess& op) const {
 		if (const auto type = input(0)) {
 			facts.require(type);
-			op.barrier = valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None;
+			op.referenceStore = valueTagIsStorageReference(type->tag) ? NativeReferenceStore::Reference : NativeReferenceStore::None;
 		}
 	}
 
@@ -277,7 +277,7 @@ struct NativeTypePropagation::Transfer {
 		if (op.mode == NativeTableMode::Write) {
 			if (const auto type = input(2)) {
 				facts.require(type);
-				op.store = {valueTagHasGcEdge(type->tag) ? NativeGcBarrier::Reference : NativeGcBarrier::None,
+				op.store = {valueTagIsStorageReference(type->tag) ? NativeReferenceStore::Reference : NativeReferenceStore::None,
 					type->tag == ValueTag::Nil ? NativeNilValue::Nil : NativeNilValue::Present,
 					type->tag == ValueTag::Nil ? NativeArrayLengthEffect::RetreatAtBoundary : NativeArrayLengthEffect::AdvanceAtBoundary};
 			}

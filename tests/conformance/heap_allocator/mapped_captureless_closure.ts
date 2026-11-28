@@ -1,3 +1,4 @@
+import { CLOSURE_CANONICAL } from '../../../toolchain/ts/firmware/stock_object_layout';
 import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -7,7 +8,7 @@ import { join } from 'node:path';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';

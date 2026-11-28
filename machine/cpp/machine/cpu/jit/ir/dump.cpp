@@ -85,7 +85,7 @@ void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
 
 constexpr std::array tagChecks{"guard", "proved", "rejected"};
 constexpr std::array wordSources{"dynamic", "integer", "float", "invalid"};
-constexpr std::array barriers{"dynamic", "none", "reference"};
+constexpr std::array referenceStores{"dynamic", "none", "reference"};
 
 // Render the decisions in the finalized plan, without re-deriving them
 // from the opcode, speculation feedback or the emitted instructions.
@@ -140,7 +140,7 @@ struct OperationPlan {
 		}
 		if (op.mode == NativeTableMode::Write) {
 			constexpr std::array nilPlans{"dynamic", "nil", "present"};
-			out << " barrier=" << barriers[unsigned(op.store.barrier)] << " value=" << nilPlans[unsigned(op.store.nilValue)];
+			out << " reference-store=" << referenceStores[unsigned(op.store.referenceStore)] << " value=" << nilPlans[unsigned(op.store.nilValue)];
 			if (op.store.hash == NativeHashStore::Index) out << " return-index-hash";
 			if (op.store.hash == NativeHashStore::Integer) out << " return-integer-hash";
 			if (op.store.hash == NativeHashStore::Identity) out << " return-identity-hash";
@@ -172,7 +172,7 @@ struct OperationPlan {
 	}
 	void operator()(const NativeUpvalueAccess& op) const {
 		out << (op.access == NativeAccess::Read ? " read" : " write") << " capture=" << op.capture;
-		if (op.access == NativeAccess::Write) out << " barrier=" << barriers[unsigned(op.barrier)];
+		if (op.access == NativeAccess::Write) out << " reference-store=" << referenceStores[unsigned(op.referenceStore)];
 	}
 	void operator()(const NativeCallSite& op) const {
 		out << " supplied=" << op.supplied << " results=" << op.requested;

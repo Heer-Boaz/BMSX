@@ -46,13 +46,13 @@ enum class NativeAccess : u8 { Read, Write };
 enum class NativeGlobalBank : u8 { Execution, System };
 enum class NativeTagCheck : u8 { Dynamic, Proved, Rejected };
 enum class NativeWordSource : u8 { Dynamic, Integer, Float, Invalid };
-enum class NativeGcBarrier : u8 { Dynamic, None, Reference };
+enum class NativeReferenceStore : u8 { Dynamic, None, Reference };
 enum class NativeNilValue : u8 { Dynamic, Nil, Present };
 enum class NativeArrayLengthEffect : u8 { ByValue, AdvanceAtBoundary, RetreatAtBoundary };
 enum class NativeHashStore : u8 { Exit, Index, Integer, Identity, String };
 
 struct NativeStorePlan {
-	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
+	NativeReferenceStore referenceStore = NativeReferenceStore::Dynamic;
 	NativeNilValue nilValue = NativeNilValue::Dynamic;
 	// Applies only on an admitted in-capacity integer-key route.
 	NativeArrayLengthEffect arrayLength = NativeArrayLengthEffect::ByValue;
@@ -149,7 +149,7 @@ struct NativeGlobalAccess {
 	u32 index;
 	NativeGlobalBank bank;
 	NativeAccess access;
-	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
+	NativeReferenceStore referenceStore = NativeReferenceStore::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
 			: NativeSlotAccess{.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
@@ -159,7 +159,7 @@ struct NativeUpvalueAccess {
 	NativeSlot slot;
 	u16 capture;
 	NativeAccess access;
-	NativeGcBarrier barrier = NativeGcBarrier::Dynamic;
+	NativeReferenceStore referenceStore = NativeReferenceStore::Dynamic;
 	constexpr NativeSlotAccess slots() const {
 		return access == NativeAccess::Read ? NativeSlotAccess{.writes = {slot, 1}}
 			: NativeSlotAccess{.reads = {static_cast<i16>(slot), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};

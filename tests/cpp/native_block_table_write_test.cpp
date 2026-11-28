@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "support/string_pool_reference.h"
 #include "support/lua_heap_reference.h"
 #include "support/heap_allocator_reference.h"
@@ -683,25 +684,25 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			model.setInteger(1, valueInteger(71));
 			require(table.lengthHint() != 0u, "the barrier case does not also change the length hint");
 			bmsx::test::GcHeap(cpu).step(valueTable(model.address()), ref, valueNil());
-			require(memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) == 3, "array receiver was actually scanned before inserting the new edge");
+			require(memory.readRamRecordByte(table.address() + bmsx::test::GC_COLOR_OFFSET) == 3, "array receiver was actually scanned before inserting the new edge");
 			registers.set(1, valueInteger(1));
 			registers.set(2, valueTable(child.address()));
 			const u32 header = table.address();
 			const u32 head = bmsx::test::GcHeap(cpu).changedHeadOffset();
-			const u32 previousLink = memory.readRamRecordWord(header + GC_RECORD_LINK);
-			const u32 weakLink = previousLink & ~GC_GRAY_INDEX_MASK;
+			const u32 previousLink = memory.readRamRecordWord(header + bmsx::test::GC_RECORD_LINK);
+			const u32 weakLink = previousLink & ~bmsx::test::GC_GRAY_INDEX_MASK;
 			require(weakLink != 0, "the table is also linked to a second weak table");
 			model.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 			const u32 previousHead = memory.readRamRecordWord(head);
-			require(previousHead == ((model.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
+			require(previousHead == ((model.address() & bmsx::test::GC_RECORD_MASK) >> bmsx::test::GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
 			state.remainingCycles = 100;
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == NativeBlockExit::WriteIndex && exit->currentPc == source[0].pc
 				&& exit->nextPc == source[1].pc && state.remainingCycles == 100 - write.baseCycles,
 				"the started reference store leaves before the following native instruction");
 			require(table.getInteger(1) == valueInteger(71) && registers.get(1) == valueInteger(1)
-				&& memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3
-				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousLink
+				&& memory.readRamRecordByte(header + bmsx::test::GC_COLOR_OFFSET) == 3
+				&& memory.readRamRecordWord(header + bmsx::test::GC_RECORD_LINK) == previousLink
 				&& memory.readRamRecordWord(head) == previousHead,
 				"the generated reference exit does not mutate the Table or either collector link");
 		}
@@ -725,12 +726,12 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
 		const auto control = bmsx::HeapAllocator(cpu.memory()).managementOffset() + bmsx::test::HEAP_GC_CONTROL_OFFSET;
 		memory.writeRamRecordByte(control, static_cast<u8>(bmsx::test::GcPhase::MarkAgain));
-		memory.writeRamRecordByte(owner.address() + GC_COLOR_OFFSET, 3u);
+		memory.writeRamRecordByte(owner.address() + bmsx::test::GC_COLOR_OFFSET, 3u);
 		auto heap = bmsx::test::GcHeap(cpu);
 		const auto changed = memory.readRamRecordWord(heap.changedHeadOffset());
 		const auto trace = memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD);
 		const u32 record = valuePayload(child);
-		const u8 color = memory.readRamRecordByte(record + GC_COLOR_OFFSET);
+		const u8 color = memory.readRamRecordByte(record + bmsx::test::GC_COLOR_OFFSET);
 
 		// Exercise a register-source Table append and a trained field
 		// overwrite with a Thread loaded directly from the constant bank.
@@ -764,9 +765,9 @@ void remarkTableStoresLeaveTheValueUncommitted() {
 			"the generated exit publishes only the prefix and charges the started store");
 		require((field ? owner.getStringKey(name) : owner.getInteger(1)) == (field ? valueInteger(17) : valueNil())
 			&& owner.lengthHint() == 0u, "the exit has changed neither the value lanes nor the array boundary");
-		require(memory.readRamRecordByte(owner.address() + GC_COLOR_OFFSET) == 3u
+		require(memory.readRamRecordByte(owner.address() + bmsx::test::GC_COLOR_OFFSET) == 3u
 			&& memory.readRamRecordWord(heap.changedHeadOffset()) == changed
-			&& memory.readRamRecordByte(record + GC_COLOR_OFFSET) == color
+			&& memory.readRamRecordByte(record + bmsx::test::GC_COLOR_OFFSET) == color
 			&& memory.readRamRecordWord(control + bmsx::test::GC_TRACE_HEAD) == trace,
 			"generated code does no collector work even during remark");
 	}

@@ -48,7 +48,7 @@ StringId NativeGlobalBankReference::name(const GlobalBank& bank, u32 slot) {
 
 void NativeGlobalBankReference::writeSlot(GcHeap heap, u32 slot, Value value) {
 	m_bank.m_values.set(slot, value);
-	if (valueTagHasGcEdge(valueTag(value))) heap.markGlobalWrite(value);
+	if (valueTagIsStorageReference(valueTag(value))) heap.markGlobalWrite(value);
 }
 
 void NativeGlobalBankReference::clear(GcHeap heap) {

@@ -1,3 +1,4 @@
+import { bindOpen } from '../helpers/native_heap/upvalue_record';
 import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
@@ -8,11 +9,11 @@ import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memo
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
-import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
+import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { abortFixtureCompletionCall, allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
-import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { valueTable, valueClosure, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';

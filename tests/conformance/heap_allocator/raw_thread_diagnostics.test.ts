@@ -9,7 +9,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../../machine/ts/machine/cpu/gc_object';
+import { CLOSURE_COUNT_SHIFT, CLOSURE_COUNT_WORD } from '../../../machine/ts/machine/cpu/closure';
 import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueBool, valueFloatBits, valueInteger, valuePayload, valueTag, valueThread } from '../../../machine/ts/machine/cpu/value';
@@ -60,7 +60,7 @@ test('Thread diagnostics use independent firmware RAM, not allocator ownership',
 	store(frame + FrameField.StackCapacity, capacity);
 	store(frame + FrameField.Closure, closure);
 	store(closure, ValueTag.Closure);
-	store(closure + GC_RECORD_LINK, 1 << GC_GRAY_INDEX_BITS);
+	store(closure + CLOSURE_COUNT_WORD, 1 << CLOSURE_COUNT_SHIFT);
 	const pendingPrototype = store(closure + CLOSURE_PROTOTYPE_ADDRESS, 0);
 	store(closure + CLOSURE_CAPTURE_WORDS, cell);
 	store(cell, UPVALUE_RECORD_KIND);

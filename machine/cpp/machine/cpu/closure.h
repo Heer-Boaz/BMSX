@@ -1,7 +1,5 @@
 #pragma once
 
-#include "machine/cpu/gc_object.h"
-
 #include <algorithm>
 #include <cstddef>
 
@@ -51,10 +49,11 @@ struct FunctionPrototype {
 
 inline constexpr u32 CLOSURE_BINDING_FLAGS = 2;
 inline constexpr u32 CLOSURE_BINDING_DOMAIN_MASK = 3;
-inline constexpr u32 CLOSURE_CANONICAL = 4;
 inline constexpr u32 CLOSURE_LATCHED_PROTOTYPE = 8;
 inline constexpr u32 CLOSURE_COUNT_HIGH_BYTE = 3;
-inline constexpr u32 CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
+inline constexpr u32 CLOSURE_COUNT_WORD = 4;
+inline constexpr u32 CLOSURE_COUNT_SHIFT = 19;
+inline constexpr u32 CLOSURE_COUNT_LOW_BITS = 32 - CLOSURE_COUNT_SHIFT;
 inline constexpr u32 CLOSURE_PROTOTYPE_ADDRESS = 8;
 inline constexpr u32 CLOSURE_CAPTURE_WORDS = 12;
 inline constexpr u32 CLOSURE_LATCHED_PROTOTYPE_BYTES = 6 * sizeof(u32);
@@ -82,7 +81,6 @@ struct BindingFlags {
 	constexpr bool latched() const { return (bits & CLOSURE_LATCHED_PROTOTYPE) != 0u; }
 };
 u32 recordAddress(const Memory&, u32 payload);
-void initialize(Memory&, u32 address, const FunctionPrototype&, u8 white, u32 count, bool canonical, bool latched);
 FunctionPrototype readBinding(const Memory&, u32 address, BindingFlags, const Blua32RomFunctionDirectory&);
 FunctionEntry readLatchedEntry(const Memory&, u32 address);
 u32 captureCount(const Memory&, u32 address);
@@ -90,6 +88,5 @@ constexpr u32 captureWordAddress(u32 address, u32 index) {
 	return address + CLOSURE_CAPTURE_WORDS + index * sizeof(u32);
 }
 u32 captureAddress(const Memory&, u32 address, u32 index);
-void setCaptureAddress(Memory&, u32 address, u32 index, u32 reference);
 }
 } // namespace bmsx

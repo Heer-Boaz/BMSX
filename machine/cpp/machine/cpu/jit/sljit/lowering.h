@@ -93,7 +93,7 @@ private:
 	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
 	void emitOwnIndexRead(NativeBlockExitSite&, std::optional<ValueTag> keyTag = {});
 	void emitOwnIndexStore(int value, NativeBlockExitSite&, NativeHashStore key);
-	void emitReferenceStoreGate(NativeGcBarrier, sljit_s32 tag, sljit_s32 scratch, NativeBlockExitSite&);
+	void emitReferenceStoreGate(NativeReferenceStore, sljit_s32 tag, sljit_s32 scratch, NativeBlockExitSite&);
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
 		std::optional<StringId> fixedKey, std::optional<u8> temporary);

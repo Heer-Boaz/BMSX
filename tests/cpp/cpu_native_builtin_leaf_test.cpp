@@ -11,7 +11,6 @@
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 #include "machine/cpu/jit/runtime/execution.h"

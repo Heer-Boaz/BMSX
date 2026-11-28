@@ -1,3 +1,4 @@
+#include "support/firmware_heap_layout.h"
 #include "common/utf8.h"
 #include "support/string_pool_reference.h"
 #include "support/lua_heap_reference.h"
@@ -1578,8 +1579,8 @@ void warmTableStoresCompleteTheirEffects() {
 		cpu.setGlobalByKey(bmsx::test::StringPoolReference(cpu).intern("mark pressure"), valueTable(pressure.address()));
 		bmsx::test::GcHeap(cpu).step(valueNil(), valueNil(), valueNil());
 		require(bmsx::test::GcHeap(cpu).phase() == bmsx::test::GcPhase::Mark
-			&& (machine->memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u
-			&& (machine->memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u,
+			&& (machine->memory.readRamRecordByte(table.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3u
+			&& (machine->memory.readRamRecordByte(fields.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 3u,
 			"the receivers have both been visited before adding the new edges");
 		registers.set(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
@@ -1599,10 +1600,10 @@ void warmTableStoresCompleteTheirEffects() {
 	const Value child = registers.get(1);
 	require(registers.get(5) == valueInteger(1) && isNil(registers.get(6)) && registers.get(7) == child
 		&& table.lengthHint() == 1 && table.getInteger(1) == child
-		&& (native.memory.readRamRecordByte(table.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
+		&& (native.memory.readRamRecordByte(table.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 2u,
 		"the stores append, retreat, then append and requeue the black owner for its new edge");
 	require(registers.get(9) == child && fields.getStringKey(*bmsx::test::StringPoolReference(native.cpu).find("retained")) == child
-		&& (native.memory.readRamRecordByte(fields.address() + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u,
+		&& (native.memory.readRamRecordByte(fields.address() + bmsx::test::GC_COLOR_OFFSET) & bmsx::test::GC_COLOR_MASK) == 2u,
 		"the predicted own field uses the same native collector effect");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(exits[static_cast<size_t>(NativeBlockExit::WriteInteger)].entries == integerMisses

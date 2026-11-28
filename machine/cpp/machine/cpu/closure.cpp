@@ -16,26 +16,8 @@ FunctionEntry readEntryTail(const Memory& memory, u32 tail) {
 } // namespace
 
 u32 recordAddress(const Memory& memory, u32 payload) {
-	const u32 offset = payload & GC_RECORD_MASK;
+	const u32 offset = payload & RAM_REFERENCE_MASK;
 	return memory.readRamRecordByte(offset) == static_cast<u8>(ValueTag::Closure) ? RAM_BASE + offset : 0u;
-}
-
-void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype, u8 white, u32 count, bool canonical, bool latched) {
-	const u32 flags = domainBits(prototype.executionDomainId)
-		| (canonical ? CLOSURE_CANONICAL : 0u) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0u);
-	memory.writeRamRecordWord(address, static_cast<u32>(ValueTag::Closure) | (static_cast<u32>(white) << 8)
-		| (flags << 16) | ((count >> CLOSURE_COUNT_LOW_BITS) << 24));
-	memory.writeRamRecordWord(address + GC_RECORD_LINK, count << GC_GRAY_INDEX_BITS);
-	memory.writeRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS, prototype.functionAddress);
-	if (latched) {
-		const u32 tail = captureWordAddress(address, count);
-		memory.writeRamRecordWord(tail, prototype.entry.codeAddress);
-		memory.writeRamRecordWord(tail + 4u, prototype.entry.numParams);
-		memory.writeRamRecordWord(tail + 8u, prototype.entry.maxStack);
-		memory.writeRamRecordWord(tail + 12u, prototype.entry.flags);
-		memory.writeRamRecordWord(tail + 16u, prototype.upvalueTableAddress);
-		memory.writeRamRecordWord(tail + 20u, prototype.recordUpvalueCount);
-	}
 }
 
 FunctionPrototype readBinding(const Memory& memory, u32 address, BindingFlags binding,
@@ -71,17 +53,13 @@ FunctionEntry readLatchedEntry(const Memory& memory, u32 address) {
 }
 
 u32 captureCount(const Memory& memory, u32 address) {
-	const u32 low = memory.readRamRecordWord(address + GC_RECORD_LINK) >> GC_GRAY_INDEX_BITS;
+	const u32 low = memory.readRamRecordWord(address + CLOSURE_COUNT_WORD) >> CLOSURE_COUNT_SHIFT;
 	const u32 high = memory.readRamRecordByte(address + CLOSURE_COUNT_HIGH_BYTE) & 0x7fu;
 	return low | (high << CLOSURE_COUNT_LOW_BITS);
 }
 
 u32 captureAddress(const Memory& memory, u32 address, u32 index) {
 	return memory.readRamRecordWord(captureWordAddress(address, index));
-}
-
-void setCaptureAddress(Memory& memory, u32 address, u32 index, u32 reference) {
-	memory.writeRamRecordWord(captureWordAddress(address, index), reference);
 }
 
 } // namespace bmsx::ClosureRecord

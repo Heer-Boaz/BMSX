@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET } from '../../toolchain/ts/firmware/stock_object_layout';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { hashCanonicalTableKey, valueInteger, valueNil, valuePayload, valueString, valueTable, ValueTag, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

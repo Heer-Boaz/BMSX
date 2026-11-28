@@ -1,12 +1,11 @@
 import { writeLE32 } from '../../common/endian';
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK, RAM_REFERENCE_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import { GC_RECORD_MASK } from './gc_object';
 import { ThreadField } from './thread_record';
-import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag, valueTagHasGcEdge } from './value';
+import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag, valueTagIsStorageReference } from './value';
 
 export const UPVALUE_HEAP_BYTES = 16;
-export const UPVALUE_ADDRESS_MASK = GC_RECORD_MASK;
+export const UPVALUE_ADDRESS_MASK = RAM_REFERENCE_MASK;
 export const UPVALUE_RECORD_KIND = 11;
 export const UPVALUE_FLAGS = 2;
 export const UPVALUE_OPEN = 1;
@@ -16,23 +15,8 @@ export const UPVALUE_OWNER = 8;
 export const UPVALUE_NEXT = 12;
 export const UPVALUE_CHAIN_LIMIT = MAIN_RAM_SIZE / UPVALUE_HEAP_BYTES;
 
-export function initialize(memory: Memory, address: number, white: number): void {
-	memory.writeRamRecordPair(address, UPVALUE_RECORD_KIND | (white << 8), 0);
-	memory.writeRamRecordPair(address + UPVALUE_OWNER, 0, 0);
-}
-
 export function isOpen(memory: Memory, address: number): boolean {
 	return (memory.readRamRecordByte((address & UPVALUE_ADDRESS_MASK) + UPVALUE_FLAGS) & UPVALUE_OPEN) !== 0;
-}
-
-export function bindOpen(memory: Memory, address: number, owner: number, slot: number, next: number): void {
-	const offset = address & UPVALUE_ADDRESS_MASK;
-	const ram = memory.ramData();
-	ram[offset + UPVALUE_FLAGS] = UPVALUE_OPEN;
-	writeLE32(ram, offset + UPVALUE_VALUE_WORD, slot);
-	writeLE32(ram, offset + UPVALUE_OWNER, owner);
-	writeLE32(ram, offset + UPVALUE_NEXT, next);
-	memory.invalidateRamWrite(offset, UPVALUE_HEAP_BYTES);
 }
 
 export function close(memory: Memory, address: number): void {
@@ -61,7 +45,7 @@ export function load(memory: Memory, address: number): Value {
 // published by firmware; this datapath never reads collector state.
 export function tryStoreDirect(memory: Memory, cell: number, tag: ValueTag, word: number): boolean {
 	if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) === 0) {
-		if (valueTagHasGcEdge(tag)) return false;
+		if (valueTagIsStorageReference(tag)) return false;
 		memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 		memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
 		return true;
