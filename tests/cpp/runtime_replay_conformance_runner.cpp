@@ -99,11 +99,13 @@ int main(int argc, char** argv) {
 		runtime.boot();
 		for (int frame = 0; frame < 75 && observeReplay(runtime).voices == 0; ++frame) tick();
 		const auto booted = observeReplay(runtime);
-		require(booted.domain == 0 && booted.voices == (1u << 4), "fixture has started the APU voice");
+		require(booted.voices == (1u << 4), "fixture has started the APU voice");
 		auto* pendingLookup = runtime.machine.cpu.rootThread()->currentFrame;
 		while (pendingLookup && !pendingLookup->hasControlFlag(bmsx::FRAME_EXTEND_RESULT_TOP))
 			pendingLookup = pendingLookup->previous;
 		require(pendingLookup != nullptr, "the checkpoint includes a suspended implicit table read");
+		require(pendingLookup->previous && pendingLookup->previous->savedExecutionBank() == 0,
+			"the suspended lookup returns to the cartridge");
 		const auto anchor = capture();
 		const auto payload = bmsx::encodeRuntimeSaveState(anchor);
 		for (int frame = 0; frame < 6; ++frame) tick();

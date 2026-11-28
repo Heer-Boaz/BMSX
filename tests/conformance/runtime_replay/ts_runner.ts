@@ -72,12 +72,12 @@ async function main(): Promise<void> {
 	runtime.boot();
 	for (let frame = 0; frame < 75 && observe().voices === 0; frame += 1) tick();
 	const booted = observe();
-	assert.equal(booted.domain, 0);
 	assert.equal(booted.voices, 1 << 4, 'fixture has started the APU voice');
 	let pendingLookup = runtime.machine.cpu.rootThread.currentFrame;
 	while (pendingLookup !== null && (pendingLookup.returnCount & CALL_RESULT_EXTEND_TOP) === 0)
 		pendingLookup = pendingLookup.previous;
 	assert.ok(pendingLookup !== null, 'the checkpoint includes a suspended implicit table read');
+	assert.equal(pendingLookup.previous?.savedExecutionBank, 0, 'the suspended lookup returns to the cartridge');
 	const anchor = capture();
 	const bytes = encodeRuntimeSaveState(anchor);
 	for (let frame = 0; frame < 6; frame += 1) tick();
