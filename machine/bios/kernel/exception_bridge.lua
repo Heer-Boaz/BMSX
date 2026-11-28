@@ -22,6 +22,7 @@ local value_tags<const> = require('kernel/value_type')
 local table_calls<const> = require('kernel/bios_table_call')
 local thread_calls<const> = require('kernel/coroutine_control')
 local heap_control<const> = require('kernel/heap_control_call')
+local image_control<const> = require('kernel/image_control_call')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
@@ -150,8 +151,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		local handled, fault = false, nil
 		if blua32.tag(values) == value_tags.integer_tag then
 			if (values == firmware_ids.create_table and depth ~= nil)
-				or (values >= firmware_ids.collect_full and values <= firmware_ids.reserve_entry)
-				or values == firmware_ids.bind_live_image then
+				or (values >= firmware_ids.collect_full and values <= firmware_ids.heap_capacity) then
 				handled = true
 				fault = heap_control.receive(*interrupted, values, depth, instruction)
 			elseif (values == firmware_ids.string_concat and depth ~= nil) or values == firmware_ids.string_from_bytes
@@ -168,6 +168,10 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 				handled = true
 				r10 = cop0.event_cycles
 				fault = binding.receive(*interrupted, depth, instruction, r10)
+			elseif (values >= firmware_ids.admit_floor and values <= firmware_ids.reserve_entry)
+				or values == firmware_ids.bind_live_image then
+				handled = true
+				fault = image_control.receive(*interrupted, values, depth, instruction)
 			end
 		end
 		if handled then

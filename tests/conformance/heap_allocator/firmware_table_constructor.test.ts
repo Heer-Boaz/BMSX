@@ -22,7 +22,7 @@ import {
 	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../../machine/ts/spec/blua32/image_format';
-import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -83,6 +83,20 @@ test('stock load lowers constructors and captured functions with TS/native parit
 	t.after(() => rmSync(output, { recursive: true, force: true }));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	const { images } = compileCartlibProgram(source, { optLevel: 3 });
+	const { systemImage, systemSymbols } = images;
+	const receiver = systemImage.functions[systemSymbols.metadata.functionIds.indexOf(
+		'module:kernel/heap_control_call/module/static:kernel__heap_control_call__receive',
+	)];
+	let enters = 0, leaves = 0;
+	for (let pc = receiver.codeAddress; pc < receiver.codeAddress + receiver.codeByteCount;) {
+		const op = decodeBlua32InstructionAtPc(systemImage.textBytes, systemImage.header.textAddress, pc);
+		assert.notEqual(op.op, OpCode.CALL);
+		assert.notEqual(op.op, OpCode.RET);
+		if (op.op === OpCode.JREG && op.c === RegisterJumpMode.EnterWindow) ++enters;
+		if (op.op === OpCode.JREG && op.c === RegisterJumpMode.LeaveWindow) ++leaves;
+		pc = op.pc + INSTRUCTION_BYTES;
+	}
+	assert.ok(enters > 0 && leaves > 0, 'the actual constructor handler enters and leaves ordinary software windows');
 	const system = join(output, 'system.rom'), cart = join(output, 'cart.rom'), trace = join(output, 'trace');
 	writeFileSync(system, images.systemRomBytes);
 	writeFileSync(cart, images.cartRomBytes);
