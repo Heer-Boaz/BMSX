@@ -1,6 +1,7 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
-import { valueBool, asClosure, valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -227,7 +228,7 @@ return true
 test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
 	const cpu = rom.run(rectangleAffine);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), cpu.gc);
+	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('kernel')!), nativeHeapReference(cpu).gc);
 	const profile = profileWarmGuestKernel(cpu, kernel, 256);
 	assert.equal(profile.reservations, 0);
 	assert.equal(profile.reservedBytes, 0);
@@ -569,7 +570,7 @@ return {
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	const sources = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('sources')!));
 	let sourceBytes = 0;
-	for (let index = 1; index <= 1024; index += 1) sourceBytes += nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(valuePayload(cpu.gc.tables.getInteger(sources, index)));
+	for (let index = 1; index <= 1024; index += 1) sourceBytes += nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(valuePayload(cpu.tables.getInteger(sources, index)));
 	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
 	// This is a retained-memory budget, independent of the sharing mechanism.
 	assert.ok(sourceBytes < 400 * 1024, `image source descriptors retained ${sourceBytes} bytes`);
@@ -610,7 +611,7 @@ probe = {
 	runGuestToHalt(cpu, 20_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const lane of ['translation', 'affine']) {
-		const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
+		const kernel = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 256);
 		assert.equal(profile.reservations, 0);
 		assert.equal(profile.reservedBytes, 0);

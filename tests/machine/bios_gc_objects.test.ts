@@ -7,13 +7,13 @@ import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { closureRecordBytes, initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
@@ -58,7 +58,7 @@ function fixture(optLevel: 0 | 3) {
 	function cell() {
 		return allocate(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initializeCell(target.memory, address, target.gc.white());
+			initializeCell(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
@@ -101,7 +101,7 @@ for (const optLevel of [0, 3] as const) {
 		retire.push(cell());
 		const table = allocate(target => createReferenceTable(target, 3, 8));
 		retire.push(table);
-		const white = cpu.gc.white(), oldWhite = white ^ 1;
+		const white = nativeHeapReference(cpu).gc.white(), oldWhite = white ^ 1;
 		for (const address of retire) color(address, 0xa0 | oldWhite);
 		color(keep, 0xfe);
 		setCursor(control + OBJECT_HEAD);
@@ -141,7 +141,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua preserves the C++ hash-first Table release quantum at O${optLevel}`, () => {
 		const { oracle, memory, control, occupied, allocate, color, setCursor, compare, begin, grant, finish } = fixture(optLevel);
 		const table = allocate(target => createReferenceTable(target, 3, 8));
-		color(table, oracle.gc.white() ^ 1);
+		color(table, nativeHeapReference(oracle).gc.white() ^ 1);
 		setCursor(control + OBJECT_HEAD);
 		const count = memory.readRamRecordWord(control + OBJECT_COUNT), charged = memory.readRamRecordWord(occupied);
 		const next = memory.readRamRecordWord(table - GC_OBJECT_LINK_BEFORE);
@@ -174,13 +174,13 @@ for (const optLevel of [0, 3] as const) {
 		function closure(captures: number, latched: boolean, kind = ValueTag.Closure) {
 			return allocate(target => {
 				let existing = 0;
-				target.gc.visitObjectRecords(null, (_, record) => {
+				nativeHeapReference(target).gc.visitObjectRecords(null, (_, record) => {
 					if (target.memory.readRamRecordByte(record) === ValueTag.Closure) existing = record;
 				});
 				assert.ok(existing !== 0, 'firmware entry owns a real Closure prototype');
 				const prototype = target.captureClosureBinding(existing);
 				const address = allocateClosureRecordReference(target, captures, latched);
-				initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures, latched);
+				initializeClosure(target.memory, address, prototype, false, nativeHeapReference(target).gc.white(), captures, latched);
 				target.memory.writeRamRecordByte(address, kind);
 				nativeHeapReference(target).gc.publishObject(address);
 				return address;
@@ -197,7 +197,7 @@ for (const optLevel of [0, 3] as const) {
 		});
 		const table = allocate(target => createReferenceTable(target, 4, 2));
 		const deadCell = cell();
-		const white = oracle.gc.white();
+		const white = nativeHeapReference(oracle).gc.white();
 		const dead = [deadThread, fewerCaptures, opaque, ordinary, table, deadCell];
 		for (const address of dead) color(address, white ^ 1);
 		color(liveThread, 3);
@@ -306,13 +306,13 @@ for (const optLevel of [0, 3] as const) {
 		loan.stackTop = 8;
 		loan.status = ThreadStatus.Suspended;
 		saved.registers.set(0, valueInteger(73));
-		color(dead, oracle.gc.white() ^ 1);
+		color(dead, nativeHeapReference(oracle).gc.white() ^ 1);
 		setCursor(control + OBJECT_HEAD);
 		begin(1);
 		const checkpoint = captureCpuCheckpoint(cpu);
 		function complete() {
 			assert.equal(finish(), 1);
-			assert.equal(cpu.gc.threadRecordAddress(dead), 0);
+			assert.equal(nativeHeapReference(cpu).gc.threadRecordAddress(dead), 0);
 			const fresh = allocateThreadRecordReference(cpu, 0);
 			assert.equal(fresh, dead, 'the allocator really reused the object address');
 			const view = cpu.bindThread(fresh);

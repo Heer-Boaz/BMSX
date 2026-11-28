@@ -9,7 +9,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -33,6 +32,8 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `
@@ -153,12 +154,12 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 				for (let visit = seen.length; visit < (checkWeak ? 6 : 4); ++visit) {
 					if (visit === 4) {
 						reachHalt();
-						assert.equal(cpu.gc.closureRecordAddress(seen[0]), seen[0], 'first version was not freed prematurely');
+						assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(seen[0]), seen[0], 'first version was not freed prematurely');
 						wake();
 						reachHalt();
-						assert.equal(cpu.gc.phase(), GcPhase.Pause);
-						assert.equal(cpu.gc.closureRecordAddress(seen[0]), 0, 'the index did not root the former version');
-						assert.equal(cpu.gc.closureRecordAddress(seen[2]), seen[2], 'the strongly reachable other version survived');
+						assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
+						assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(seen[0]), 0, 'the index did not root the former version');
+						assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(seen[2]), seen[2], 'the strongly reachable other version survived');
 						wake();
 					}
 					for (let n = 0; n < 8192 && !atIssue(); ++n) grant(1);

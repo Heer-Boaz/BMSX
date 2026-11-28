@@ -1,4 +1,5 @@
 import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
@@ -21,6 +22,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MAPPED_BUS_INSTRUCTION_FETCH, mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
@@ -34,7 +36,7 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRun
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
-import { asClosure, valueInteger, valueNil, valueString, valueTag, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valueString, valueTag, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { visitRuntimeExecutionRecords } from '../../ide/runtime/execution_records';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
@@ -121,9 +123,9 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	};
 	let calculate = f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('calculate'));
 	assert.equal(valueTag(calculate), ValueTag.Closure);
-	const original = compiledEntry(f.cpu.captureClosureBinding(asClosure(calculate, f.cpu.gc)).codeAddress);
+	const original = compiledEntry(f.cpu.captureClosureBinding(valuePayload(calculate)).codeAddress);
 	assert.ok(original, 'the installed program must have generated the callable itself');
-	f.cpu.beginCompletionCall(asClosure(calculate, f.cpu.gc), [valueInteger(2)]);
+	f.cpu.beginCompletionCall(valuePayload(calculate), [valueInteger(2)]);
 	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(5)]);
 	const parked = f.cpu.activeThread.frameAtDepth(depth - 1);
@@ -139,11 +141,11 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	calculate = f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('calculate'));
 	assert.equal(valueTag(calculate), ValueTag.Closure);
 	for (let attempt = 0; attempt < 12; ++attempt) {
-		f.cpu.beginCompletionCall(asClosure(calculate, f.cpu.gc), [valueInteger(2)]);
+		f.cpu.beginCompletionCall(valuePayload(calculate), [valueInteger(2)]);
 		assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 		assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(9)], 'cold and regenerated bodies must use the edited instructions');
 	}
-	const regenerated = compiledEntry(f.cpu.captureClosureBinding(asClosure(calculate, f.cpu.gc)).codeAddress);
+	const regenerated = compiledEntry(f.cpu.captureClosureBinding(valuePayload(calculate)).codeAddress);
 	assert.ok(regenerated && regenerated !== original, 'the new image must admit a new generated body for the edited callable');
 	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
 });
@@ -176,7 +178,7 @@ function probe() return retained end`);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('retained')!), original);
 	const introduced = cpu.stringPool.find('introduced')!, literal = valueString(cpu.stringPool.find('first seen in this edit')!);
 	assert.equal(cpu.getGlobalByKey(introduced), valueNil(), 'installing the name does not run the edited function');
-	cpu.beginCompletionCall(asClosure(probe, cpu.gc));
+	cpu.beginCompletionCall(valuePayload(probe));
 	assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [original, literal]);
 	assert.equal(cpu.getGlobalByKey(introduced), literal);
@@ -193,7 +195,7 @@ end
 	const { cpu, runtime } = f, { memory } = runtime.machine;
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
 	const read = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
-	const probe = asClosure(read('probe'), cpu.gc);
+	const probe = valuePayload(read('probe'));
 	const escaped = read('escaped'), address = valuePayload(escaped);
 	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
 	const tail = old.bssAddress + old.bssByteCount, ramEnd = memory.ramBusEnd();
@@ -223,7 +225,7 @@ end
 	assert.equal(memory.readMappedU32LE(tail + 4), 0x55667788);
 	assert.equal(cpu.activeThread.address, thread);
 	assert.equal(cpu.getFrameDepth(), depth);
-	assert.equal(asClosure(read('probe'), cpu.gc), probe);
+	assert.equal(valuePayload(read('probe')), probe);
 	cpu.beginCompletionCall(probe);
 	assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
 	assert.deepEqual(runtime.readCompletionValues(), [escaped, valueInteger(73), valueInteger(0)]);
@@ -269,8 +271,8 @@ test('one Hot Resume publishes new System and cartridge operands without restart
 		'module<entry>\nfunction system_probe() return 38 end');
 	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
 	const oldMedia = f.sources.currentBlua32Media;
-	const systemProbe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('system_probe')!), cpu.gc);
-	const cartProbe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('cart_probe')!), cpu.gc);
+	const systemProbe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('system_probe')!));
+	const cartProbe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('cart_probe')!));
 	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.path2lua['entry.lua'];
 	const systemModel = f.models.retain({ ...f.model.resource, contextId: TEST_SYSTEM_CONTEXT_ID }, 'lua', system.src);
 	const spelling = 'first bound by two replacement images';
@@ -322,7 +324,7 @@ end
 old_label = 'bygone'`);
 	const { cpu, runtime } = f;
 	const depth = cpu.getFrameDepth();
-	const describe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('describe')!), cpu.gc);
+	const describe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('describe')!));
 	const label = cpu.stringPool.find('old_label')!;
 	const retained = cpu.getGlobalByKey(label);
 	function describeFirst() {
@@ -350,7 +352,7 @@ function make_retained() return function(x) return x + retained_value + 3 end en
 retained_function = make_retained()`);
 	const key = nativeHeapReference(f.cpu).stringPool.intern('retained_function');
 	const reference = f.cpu.getGlobalByKey(key);
-	const retained = asClosure(reference, f.cpu.gc);
+	const retained = valuePayload(reference);
 	assert.equal(valueTag(reference), ValueTag.Closure);
 	assert.equal(ClosureRecord.captureCount(f.cpu.memory, retained), 1);
 	const upvalue = ClosureRecord.captureAddress(f.cpu.memory, retained, 0);
@@ -384,7 +386,7 @@ function make_retained() return function(x) return x + retained_value end end
 retained_function = make_retained()`);
 	const key = nativeHeapReference(f.cpu).stringPool.intern('retained_function');
 	const reference = f.cpu.getGlobalByKey(key);
-	const retained = asClosure(reference, f.cpu.gc);
+	const retained = valuePayload(reference);
 	const image = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout;
 	const revision = identityHotResumeRevision(image);
 	const index = blua32FunctionIndexAtAddress(image, f.cpu.captureClosureBinding(retained).functionAddress);
@@ -394,6 +396,65 @@ retained_function = make_retained()`);
 	assert.throws(() => buildHotResumeRelocation(f.cpu, [null, revision, null], f.cpu.getFrameDepth()), /closure/);
 	assert.equal(f.cpu.getGlobalByKey(key), reference);
 	assert.equal(f.cpu.captureClosureBinding(retained).codeAddress, oldCodeAddress);
+});
+
+test('Hot Resume protects a reusable canonical closure but ignores it after the sweep flip', async t => {
+	const f = await fixture(t, `
+function finish_gc() blua32.svc(0x10001) end
+function step_gc() return blua32.svc_value(0x10002) end
+function seed_cache()
+ local cached<const> = function() return 73 end
+ return cached
+end
+function forget_result() end`);
+	const { cpu, runtime } = f, { memory } = cpu;
+	const gc = nativeHeapReference(cpu).gc;
+	const depth = cpu.getFrameDepth();
+	const call = (name: string) => {
+		cpu.beginCompletionCall(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!)));
+		assert.equal(cpu.runUntilDepth(depth, 250_000), RunResult.Halted);
+		assert.equal(runtime.admitExternalCpuMutation(), true);
+		return runtime.readCompletionValues();
+	};
+	call('finish_gc');
+	assert.equal(gc.phase(), GcPhase.Pause);
+	const cached = call('seed_cache')[0];
+	assert.equal(valueTag(cached), ValueTag.Closure);
+	const closure = valuePayload(cached);
+	assert.notEqual(memory.readRamRecordByte(closure + ClosureRecord.CLOSURE_BINDING_FLAGS) & ClosureRecord.CLOSURE_CANONICAL, 0);
+	assert.deepEqual(call('forget_result'), []);
+	visitRuntimeExecutionRecords(cpu, address => assert.notEqual(address, closure, 'no graph path keeps the cached closure'));
+
+	const image = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout;
+	const record = cpu.captureClosureBinding(closure).functionAddress;
+	const index = blua32FunctionIndexAtAddress(image, record);
+	assert.notEqual(index, -1);
+	const revision = identityHotResumeRevision(image);
+	revision.revision.functionAddresses[index] = 0;
+	const build = () => buildHotResumeRelocation(cpu, [null, revision, null], depth);
+	const readCacheEntry = () => {
+		const key = record >>> 2, bucket = (key ^ (key >>> 7) ^ (key >>> 14)) & 127;
+		let link = memory.readRamRecordWord(CPU_FIXED_STACK_BASE + 0x3d00 + 4 * bucket);
+		while (link !== 0) {
+			const address = RAM_BASE + (link << 3);
+			if (address === closure) return address;
+			link = memory.readRamRecordWord(address - 8) & 0x7ffff;
+		}
+		return 0;
+	};
+	assert.equal(readCacheEntry(), closure);
+	const before = memory.captureSaveState().ram;
+	assert.throws(build, new RegExp(`canonical function 0x${record.toString(16)} must retain its record address`));
+	assert.deepEqual(memory.captureSaveState().ram, before);
+
+	for (let step = 0; step < 32 && gc.phase() !== GcPhase.Sweep; ++step) call('step_gc');
+	assert.equal(gc.phase(), GcPhase.Sweep);
+	assert.equal(gc.sweepGarbage(closure), true);
+	assert.equal(readCacheEntry(), closure, 'the dying closure is still physically cached before its sweep visit');
+	const stopped = memory.captureSaveState().ram;
+	const relocation = build();
+	assert.equal(relocation.closures.has(closure), false);
+	assert.deepEqual(memory.captureSaveState().ram, stopped);
 });
 
 test('Hot Resume rebinds a closure retained only in a weak table', async t => {
@@ -406,9 +467,9 @@ end
 put_weak()`);
 	const weakValues = valuePayload(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('weak_values')));
 	nativeHeapReference(f.cpu).gc.tables.setMetatableAddress(weakValues, valuePayload(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('weak_meta'))));
-	const reference = f.cpu.gc.tables.getInteger(weakValues, 1);
+	const reference = f.cpu.tables.getInteger(weakValues, 1);
 	assert.equal(valueTag(reference), ValueTag.Closure);
-	const retained = asClosure(reference, f.cpu.gc);
+	const retained = valuePayload(reference);
 	let visited = false;
 	nativeHeapReference(f.cpu).gc.tables.setInteger(weakValues, 1, valueNil());
 	visitRuntimeExecutionRecords(f.cpu, closure => { if (closure === retained) visited = true; });
@@ -420,7 +481,7 @@ put_weak()`);
 	const offset = source.indexOf('retained_value + 3');
 	f.model.pushEditOperations([{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' }]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
-	assert.equal(f.cpu.gc.tables.getInteger(weakValues, 1), reference);
+	assert.equal(f.cpu.tables.getInteger(weakValues, 1), reference);
 	const depth = f.cpu.getFrameDepth();
 	f.cpu.beginCompletionCall(retained, [valueInteger(2)]);
 	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);

@@ -1,3 +1,4 @@
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,12 +7,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
@@ -92,8 +91,8 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), { cpu, memory } = f;
 		assert.equal(f.begin(0), 0);
 		f.finish(0);
-		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
-		const count = f.count(), charged = cpu.luaHeap.usedBytes(), paceBefore = cpu.gc.epochWork();
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Sweep);
+		const count = f.count(), charged = cpu.luaHeap.usedBytes(), paceBefore = nativeHeapReference(cpu).gc.epochWork();
 		const work = f.begin(12);
 		assert.equal(work, 12);
 		for (let n = 0; n < 8192 && memory.readRamRecordByte(f.deadHash) !== 0; ++n) f.grant(1);
@@ -101,20 +100,20 @@ for (const opt of [0, 3] as const) {
 		assert.equal(memory.readRamRecordByte(f.deadHash), 0);
 		assert.equal(cpu.heapAllocator.issuedObjectStart(f.deadHash - RAM_BASE - GC_OBJECT_PREFIX), true);
 		assert.equal(f.count(), count, 'the count still belongs to the live object quantum');
-		assert.equal(cpu.gc.epochWork(), paceBefore);
+		assert.equal(nativeHeapReference(cpu).gc.epochWork(), paceBefore);
 		assert.ok(cpu.luaHeap.usedBytes() < charged, 'the Table already returned both backing allocations');
 		assert.deepEqual(f.notices, [f.deadHash]);
 		const notice = captureCpuCheckpoint(cpu);
-		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
-		for (let n = 0; n < 8192 && cpu.gc.phase() === GcPhase.Sweep; ++n) f.grant(1);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Sweep);
+		for (let n = 0; n < 8192 && nativeHeapReference(cpu).gc.phase() === GcPhase.Sweep; ++n) f.grant(1);
 		assert.ok(!cpu.isHaltedUntilIrq(), 'the same root owns both phases');
-		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Strings);
 		assert.equal(f.count(), f.nativeCount());
 		assert.ok(f.count() <= count - 2);
-		assert.equal(cpu.gc.epochWork(), paceBefore, 'object continuation does not account a second time');
+		assert.equal(nativeHeapReference(cpu).gc.epochWork(), paceBefore, 'object continuation does not account a second time');
 		const handoff = captureCpuCheckpoint(cpu);
 		const tail = f.finish(work);
-		assert.equal(cpu.gc.epochWork(), paceBefore + work);
+		assert.equal(nativeHeapReference(cpu).gc.epochWork(), paceBefore + work);
 		restoreCpuCheckpoint(cpu, handoff);
 		assert.equal(f.finish(work), tail);
 		restoreCpuCheckpoint(cpu, notice);
@@ -122,11 +121,11 @@ for (const opt of [0, 3] as const) {
 		assert.ok(f.finish(work) > tail);
 		const rest = f.begin(4096);
 		f.finish(rest);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 		assert.equal(cpu.stringPool.find(deadText), undefined);
 		assert.equal(cpu.stringPool.find(liveText), f.live);
-		assert.equal(cpu.gc.tableRecordAddress(f.keep), f.keep);
-		assert.equal(cpu.gc.tableRecordAddress(f.deadArray), 0);
+		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(f.keep), f.keep);
+		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(f.deadArray), 0);
 	});
 
 	test(`object exhaustion at exactly the grant defers String entry until the next quantum at O${opt}`, () => {
@@ -135,10 +134,10 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.begin(limit), limit);
 		f.finish(limit);
 		assert.equal(memory.readRamRecordWord(control + sweepLink), 0);
-		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Sweep);
 		assert.equal(cpu.stringPool.find(deadText), f.dead);
 		f.finish(f.begin(1));
-		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Strings);
 	});
 }
 

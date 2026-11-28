@@ -1,4 +1,5 @@
-import { asClosure } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -51,7 +52,7 @@ function fixture() {
 	const input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc), []);
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc), []);
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	};
 	return { runtime, history, input, issue };

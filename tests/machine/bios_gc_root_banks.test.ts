@@ -1,3 +1,4 @@
+import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,9 +7,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -16,7 +16,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_SERVICE_ROOT_PORT_BASE } from '../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, firmwareImageBackingOffset } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';

@@ -1,5 +1,6 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
-import { asClosure, valueNil, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueNil, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -31,11 +32,11 @@ compile()
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	assert.notEqual(cpu.gc.tables.getInteger(probe, 1), valueNil());
-	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
+	assert.notEqual(cpu.tables.getInteger(probe, 1), valueNil());
+	assert.notEqual(cpu.tables.getInteger(probe, 2), valueNil());
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
-	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
+	assert.equal(cpu.tables.getInteger(probe, 1), valueNil());
+	assert.equal(cpu.tables.getInteger(probe, 2), valueNil());
 });
 
 for (const optLevel of [3] as const) test(`timeline step appliers reuse matching code without retaining abandoned closures (O${optLevel})`, () => {
@@ -68,13 +69,13 @@ end
 `, { optLevel });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('exercise')!), cpu.gc), []);
-	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
-	assert.notEqual(cpu.gc.tables.getInteger(refs, 1), valueNil());
-	assert.notEqual(cpu.gc.tables.getInteger(refs, 2), valueNil());
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('exercise')!), nativeHeapReference(cpu).gc), []);
+	const refs = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
+	assert.notEqual(cpu.tables.getInteger(refs, 1), valueNil());
+	assert.notEqual(cpu.tables.getInteger(refs, 2), valueNil());
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tables.getInteger(refs, 1), valueNil(), 'the cache must not retain unused appliers');
-	assert.equal(cpu.gc.tables.getInteger(refs, 2), valueNil(), 'the cache must not retain unused writers');
+	assert.equal(cpu.tables.getInteger(refs, 1), valueNil(), 'the cache must not retain unused appliers');
+	assert.equal(cpu.tables.getInteger(refs, 2), valueNil(), 'the cache must not retain unused writers');
 });
 
 for (const optLevel of [3] as const) test(`timeline value factories reuse only equivalent track capabilities (O${optLevel})`, () => {
@@ -145,11 +146,11 @@ end
 `, { optLevel, modules: instrumentedModules });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
-	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc), []);
+	const refs = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('seed')!), nativeHeapReference(cpu).gc), []);
 	nativeHeapReference(cpu).gc.collect();
-	for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(refs, index), valueNil());
-	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('recreate')!), cpu.gc), []);
-	assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile_count')!), valueInteger(3),
+	for (let index = 1; index <= 3; index++) assert.equal(cpu.tables.getInteger(refs, index), valueNil());
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('recreate')!), nativeHeapReference(cpu).gc), []);
+	assert.equal(cpu.tables.getStringKey(probe, cpu.stringPool.find('compile_count')!), valueInteger(3),
 		'an abandoned generated factory must be collected, then compiled on demand');
 });

@@ -1,4 +1,5 @@
-import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../helpers/firmware_heap_layout';
+import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../helpers/native_heap/gc_heap';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -12,9 +13,8 @@ import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
-import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -185,7 +185,7 @@ test('table replacement admits just its logical increase, even when both layouts
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(target);
 		tables.setInteger(table, trigger, valueInteger(73));
 		assert.equal(cpu.luaHeap.collectionTarget(), target, 'replacing a layout must not cause a gratuitous GC assist');
-		assert.equal(cpu.gc.active(), false);
+		assert.equal(nativeHeapReference(cpu).gc.active(), false);
 		assert.equal(cpu.luaHeap.usedBytes(), logical + (packArrayIntoHash ? -20 : 5));
 		const newStorage = arena.allocationBytes(packArrayIntoHash ? tables.hashAddress(table) : tables.arrayAddress(table));
 		assert.equal(arena.occupiedBytes(), physical - oldStorage + newStorage);
@@ -352,13 +352,13 @@ test('fixed admission distinguishes an impossible size from a recoverable shorta
 	for (const active of [false, true]) {
 		if (active) nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-		assert.equal(cpu.gc.active(), active);
-		assert.equal(cpu.gc.tableRecordAddress(doomed), doomed);
+		assert.equal(nativeHeapReference(cpu).gc.active(), active);
+		assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(doomed), doomed);
 		assert.equal(cpu.luaHeap.usedBytes(), used);
 	}
 	// Exactly capacity is not oversized. Recovery must reclaim before it can fault.
 	assert.throws(() => nativeHeapReference(cpu).luaHeap.admit(cpu.luaHeap.capacity()), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.equal(cpu.gc.tableRecordAddress(doomed), 0);
+	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(doomed), 0);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 	assert.equal(cpu.instructionBudgetRemaining, 1, 'host admission is outside guest execution');
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
@@ -541,7 +541,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		};
 		const first = activate();
 		nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-		assert.equal(cpu.gc.phase(), GcPhase.Mark);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark);
 		const original = captureCpuCheckpoint(cpu);
 		restoreCpuCheckpoint(cpu, beforeCartridge);
 		assert.equal(cpu.isExecutionDomainResident(0), false);
@@ -685,9 +685,9 @@ test('temporary roots survive unbilled admission; unreachable allocations only a
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
 	nativeHeapReference(cpu).luaHeap.admit(0, valueTable(table), valueString(id));
 	assert.equal(cpu.instructionBudgetRemaining, 1);
-	assert.equal(cpu.gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
+	assert.equal(nativeHeapReference(cpu).gc.isAlive(table), true, 'the first mark actually visited the temporary Table');
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 32 + 22); assert.equal(cpu.stringPool.toString(id), 'é😀');
-	while (cpu.gc.active()) nativeHeapReference(cpu).gc.step(valueTable(table), valueString(id));
+	while (nativeHeapReference(cpu).gc.active()) nativeHeapReference(cpu).gc.step(valueTable(table), valueString(id));
 	assert.equal(nativeHeapReference(cpu).gc.collect(), bootCollectionWork + 2);
 	assert.equal(cpu.instructionBudgetRemaining, 1);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);

@@ -85,14 +85,14 @@ export class SceneLiveService {
 			if (world === undefined) continue;
 			const worldHashId = guest.identityScalar(world, ValueTag.Table);
 			const objects = valuePayload(guest.readStringMember(world, '_objects'));
-			for (let index = 1, length = guest.cpu.gc.tables.length(objects); index <= length; index++) {
-				const actor = guest.cpu.gc.tables.getInteger(objects, index), scene = guest.readStringMember(actor, 'scene');
+			for (let index = 1, length = guest.cpu.tables.length(objects); index <= length; index++) {
+				const actor = guest.cpu.tables.getInteger(objects, index), scene = guest.readStringMember(actor, 'scene');
 				if (isNil(scene)) continue;
 				const plan = guest.readStringMember(scene, 'definition');
 				if (!plans.has(guest.identityScalar(plan, ValueTag.Table))) continue;
 				const id = guest.readStringMember(actor, 'scene_member_id');
 				if (isNil(id)) continue; // Procedural children have no authored member occurrence.
-				const member = guest.cpu.gc.tables.get(valuePayload(guest.readStringMember(plan, 'members_by_id')), id);
+				const member = guest.cpu.tables.get(valuePayload(guest.readStringMember(plan, 'members_by_id')), id);
 				const memberIndex = asInteger(guest.readStringMember(member, 'index'));
 				if (selection?.kind === 'member' && memberIndex !== selection.index + 1) continue;
 				const sceneHashId = guest.identityScalar(scene, ValueTag.Table), actorHashId = guest.identityScalar(actor, ValueTag.Table);
@@ -115,7 +115,7 @@ export class SceneLiveService {
 		const plan = guest.readStringMember(scene, 'definition');
 		const registration = this.observations[domain + 1]?.plans.get(guest.identityScalar(plan, ValueTag.Table));
 		if (registration === undefined) return;
-		const memberIndex = asInteger(guest.readStringMember(guest.cpu.gc.tables.get(valuePayload(guest.readStringMember(plan, 'members_by_id')), id), 'index'));
+		const memberIndex = asInteger(guest.readStringMember(guest.cpu.tables.get(valuePayload(guest.readStringMember(plan, 'members_by_id')), id), 'index'));
 		const member: SceneLiveIdentity = { domain, actorHashId, worldHashId: guest.identityScalar(world!, ValueTag.Table), sceneHashId: guest.identityScalar(scene, ValueTag.Table),
 			memberIndex, generation: this.generation };
 		const contextId = domain === -1 ? this.sources.systemContextId : this.sources.cartridgeSlots[domain]!.contextId;
@@ -139,12 +139,12 @@ export class SceneLiveService {
 		const world = runtimeWorld(this.sources, this.guest, member.domain);
 		if (world === undefined || this.guest.identityScalar(world, ValueTag.Table) !== member.worldHashId) return false;
 		const objects = valuePayload(this.guest.readStringMember(world, '_objects'));
-		for (let index = 1, length = this.cpu.gc.tables.length(objects); index <= length; index++) {
-			const actor = this.cpu.gc.tables.getInteger(objects, index);
+		for (let index = 1, length = this.cpu.tables.length(objects); index <= length; index++) {
+			const actor = this.cpu.tables.getInteger(objects, index);
 			if (this.guest.identityScalar(actor, ValueTag.Table) !== member.actorHashId) continue;
 			const scene = this.guest.readStringMember(actor, 'scene');
 			if (isNil(scene) || this.guest.identityScalar(scene, ValueTag.Table) !== member.sceneHashId) return false;
-			const indexed = this.cpu.gc.tables.getInteger(valuePayload(this.guest.readStringMember(scene, '_members_by_index')), member.memberIndex);
+			const indexed = this.cpu.tables.getInteger(valuePayload(this.guest.readStringMember(scene, '_members_by_index')), member.memberIndex);
 			return !isNil(indexed) && this.guest.identityScalar(indexed, ValueTag.Table) === member.actorHashId;
 		}
 		return false;

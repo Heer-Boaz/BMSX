@@ -8,9 +8,8 @@ import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { initializeRecord, setCaptureAddress } from '../../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -23,6 +22,8 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const PROBE = 'test/native_gc_capture_trace', entrySource = 'halt_until_irq';
 // Select the C++ whole-color-byte policy explicitly. These fixed wrappers
@@ -75,10 +76,10 @@ try {
 		const arena = cpu.heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
 		memory.writeRamRecordWord(control, GcPhase.Mark | 0x100);
 		const cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-		initializeCell(memory, cell, cpu.gc.white());
+		initializeCell(memory, cell, nativeHeapReference(cpu).gc.white());
 		nativeHeapReference(cpu).gc.publishObject(cell);
 		const closure = allocateClosureRecordReference(cpu, 1);
-		initializeRecord(memory, closure, cpu.captureClosureBinding(cpu.rootThread.currentFrame!.closure), false, cpu.gc.white(), 1);
+		initializeRecord(memory, closure, cpu.captureClosureBinding(cpu.rootThread.currentFrame!.closure), false, nativeHeapReference(cpu).gc.white(), 1);
 		setCaptureAddress(memory, closure, 0, cell);
 		nativeHeapReference(cpu).gc.publishObject(closure);
 		const id = nativeHeapReference(cpu).stringPool.intern('native captured string');

@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { asClosure, asInteger, isNil, valueBool, valueTag, valuePayload, valueInteger, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
+import { asInteger, isNil, valueBool, valueTag, valuePayload, valueInteger, valueNil, valueString } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
@@ -76,7 +77,7 @@ end`;
 		]),
 	}, backend);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted, 'cold boot');
-	const read = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const read = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const lookup = (id: string, system = false) => {
 		runCompletionClosure(cpu, read, [valueString(nativeHeapReference(cpu).stringPool.intern(id)), valueBool(system)]);
 		return materializeCpuCompletionValues(cpu);

@@ -1,6 +1,8 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
-import { valueNil, asClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueNil, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -38,13 +40,13 @@ end
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 20_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const churn = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('churn')!), cpu.gc);
+	const churn = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('churn')!), nativeHeapReference(cpu).gc);
 	let warmed = 0;
 	for (let cycle = 0; cycle < 3; cycle++) {
 		runCompletionClosure(cpu, churn, [valueInteger(128)]);
 		const heap = collectReferenceHeapBytes(cpu) - logicalThreadBytes(cpu);
-		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
-		for (let index = 1; index <= 128; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
+		const weak = valuePayload(cpu.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
+		for (let index = 1; index <= 128; index++) assert.equal(cpu.tables.getInteger(weak, index), valueNil());
 		if (cycle === 0) warmed = heap;
 		else assert.ok(heap <= warmed, `retired identities must not retain more heap: ${heap} > ${warmed}`);
 	}

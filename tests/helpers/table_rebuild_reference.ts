@@ -1,6 +1,5 @@
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
-import { GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
-import type { GcHeap } from './native_heap/gc_heap';
+import { type GcHeap, GcDiagnosticField } from './native_heap/gc_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueFromTag, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 

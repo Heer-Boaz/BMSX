@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { asClosure, valueBool, valueInteger, valueNil } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil } from '../../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -11,6 +11,8 @@ import { compileFrameEvaluationCaseRom, frameEvaluationCases } from '../../helpe
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { runSystemCaseRom } from '../../helpers/system_case_rom';
+import { asClosure } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const args = process.argv.slice(2);
 assert.ok(args.length === 0 || (args.length === 2 && args[0] === '--case'), 'Expected no arguments or --case <name>');
@@ -35,7 +37,7 @@ try {
 			assert.equal(cpu.getFrameDepth(), depth);
 			assert.equal(cpu.readFramePc(depth - 1), pc);
 			if (cpu.getGlobalByKey(cpu.stringPool.find('fixture_inject_completion')!) === valueBool(true)) {
-				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), cpu.gc), [valueInteger(depth - 1)]);
+				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!), nativeHeapReference(cpu).gc), [valueInteger(depth - 1)]);
 				runGuestToHalt(cpu, 1_000_000, depth);
 				assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueInteger(43), valueNil(), valueBool(false)]);
 				assert.equal(cpu.getFrameDepth(), depth);

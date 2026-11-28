@@ -8,8 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../helpers/native_heap/lua_heap';
 import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -26,6 +24,8 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const source = `bss report: word[3]
 function irq()

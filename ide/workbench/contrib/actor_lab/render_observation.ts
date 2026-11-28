@@ -105,7 +105,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 			const call = this.calls.get(pc);
 			if (call !== undefined) {
 				if (registers.getTag(call.a) !== ValueTag.Closure) return;
-				pending.kind = this.visualKinds.get(this.cpu.memory.readRamRecordWord(registers.getClosure(call.a, this.cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS));
+				pending.kind = this.visualKinds.get(this.cpu.memory.readRamRecordWord(registers.getPayload(call.a) + CLOSURE_PROTOTYPE_ADDRESS));
 				pending.pc = call.pc + INSTRUCTION_BYTES; pending.thread = this.cpu.activeThread.address; pending.register = call.a + 1;
 				return;
 			}

@@ -61,8 +61,8 @@ for (const optLevel of [3] as const) test(`preloads use the existing dependency/
 	assert.ok(valueIsTable(exported));
 	cpu.beginCompletionCallInExecutionDomain(-1, image.vectors.initFunctionAddress);
 	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('calls')!), valueInteger(2134));
-	assert.equal(cpu.gc.tables.getStringKey(common, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
+	assert.equal(cpu.tables.getStringKey(common, cpu.stringPool.find('calls')!), valueInteger(2134));
+	assert.equal(cpu.tables.getStringKey(common, cpu.stringPool.find('order')!), valueInteger(213), 'init does not repeat module constructors');
 });
 
 test('default and explicit empty preloads preserve executable bytes; cycles use require diagnostics', () => {

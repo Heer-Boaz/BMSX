@@ -8,8 +8,6 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../helpers/native_heap/lua_heap';
 import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -24,6 +22,8 @@ import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_LAST_EPOCH_WORK, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `
@@ -91,12 +91,12 @@ try {
 			const seed = captureRuntimeSaveState(runtime), seedFile = join(directory, `${id}.seed`);
 			writeFileSync(seedFile, encodeRuntimeSaveState(seed));
 			applyRuntimeSaveState(oracle, seed);
-			const ref = oracle.machine.cpu;
-			const before = gc.epochWork(), work = nativeHeapReference(ref).gc.step(), finished = !ref.gc.active();
+			const ref = oracle.machine.cpu, { gc: refGc } = nativeHeapReference(ref);
+			const before = gc.epochWork(), work = refGc.step(), finished = !refGc.active();
 			const target = finished ? ref.luaHeap.collectionTarget() : ref.luaHeap.usedBytes() + GC_ASSIST_BYTES;
 			if (entry === GcPhase.Atomic) {
 				assert.ok(work > GC_STEP_WORDS, 'the original Atomic admission needs several physical quanta');
-				assert.equal(ref.gc.phase(), GcPhase.Sweep);
+				assert.equal(refGc.phase(), GcPhase.Sweep);
 			}
 			assert.equal(finished, entry === GcPhase.Strings);
 
@@ -117,14 +117,14 @@ try {
 			assert.equal(cpu.getFrameRegisterCount(caller), originalTop, 'zero operands leave the caller root window unchanged');
 			const oldTarget = budget.collectionTarget();
 			for (let n = 0; n < 32768 && budget.collectionTarget() === oldTarget; ++n) {
-				grant(gc.phase() === ref.gc.phase() ? 1 : 79);
+				grant(gc.phase() === refGc.phase() ? 1 : 79);
 				if (entry === GcPhase.Atomic && gc.phase() === GcPhase.Atomic)
 					assert.equal(gc.epochWork(), before, 'Atomic subquanta do not credit partial work');
 			}
 			assert.equal(budget.collectionTarget(), target);
-			assert.equal(gc.phase(), ref.gc.phase());
+			assert.equal(gc.phase(), refGc.phase());
 			if (finished) assert.equal(gc.epochWork(), before, 'String completion reprices before the epoch-accounting epilogue');
-			else assert.equal(gc.epochWork(), ref.gc.epochWork());
+			else assert.equal(gc.epochWork(), refGc.epochWork());
 			assert.ok(cpu.heapServiceActive(), 'target publication precedes the Boolean return');
 			assert.equal(cpu.readFramePc(caller), next);
 			const partial = captureRuntimeSaveState(runtime), partialFile = join(directory, `${id}.partial`);
@@ -135,7 +135,7 @@ try {
 				for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) grant(1);
 				assert.equal(cpu.getFrameRegisterCount(caller), resultTop);
 				assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(finished));
-				assert.equal(gc.epochWork(), ref.gc.epochWork());
+				assert.equal(gc.epochWork(), refGc.epochWork());
 				assert.equal(memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK), ref.memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK));
 				assert.equal(cpu.readFramePc(caller), next);
 				const end = finished ? 17 : 13;

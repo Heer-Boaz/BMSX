@@ -89,7 +89,7 @@ function initializeThread(cpu: CPU, address: number, block: number, frameBlock: 
 	const memory = cpu.memory, ram = memory.ramData(), offset = address & RAM_RECORD_WORD_MASK;
 	const start = block & RAM_RECORD_WORD_MASK, control = frameBlock & RAM_RECORD_WORD_MASK;
 	ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
-	writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (cpu.gc.white() << 8));
+	writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (nativeHeapReference(cpu).gc.white() << 8));
 	writeLE32(ram, offset + ThreadField.Entry, entry);
 	writeLE32(ram, offset + ThreadField.StackBlock, block);
 	writeLE32(ram, offset + ThreadField.FrameBlock, frameBlock);

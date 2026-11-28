@@ -50,7 +50,7 @@ test('Table length reads a stable boundary without changing mappings', () => {
 		const table = makeTable(cpu, kind); cpu.rootThread.currentFrame!.registers.setTable(0, table);
 		const before = cpu.captureRuntimeState();
 		for (let repeat = 0; repeat < 3; ++repeat) {
-			assert.equal(cpu.gc.tables.length(table), boundary, 'raw host query preserves its Number-returning contract');
+			assert.equal(cpu.tables.length(table), boundary, 'raw host query preserves its Number-returning contract');
 		}
 		assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), before), 'a length read does not change CPU control state');
 		assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), boundary, 'repeated reads reuse the computed boundary');
@@ -59,10 +59,10 @@ test('Table length reads a stable boundary without changing mappings', () => {
 	assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 1);
 	for (let k = 0; k < 300; ++k) nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern(`key${k}`), valueBool(true));
 	assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 1, 'hash redistribution preserves the logical seed');
-	assert.equal(cpu.gc.tables.length(table), 4096);
+	assert.equal(cpu.tables.length(table), 4096);
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 4097, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4097, 'adjacent append advances the cached boundary');
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 4097, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4096);
-	nativeHeapReference(cpu).gc.tables.clear(table); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 0); assert.equal(cpu.gc.tables.length(table), 0);
+	nativeHeapReference(cpu).gc.tables.clear(table); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 0); assert.equal(cpu.tables.length(table), 0);
 	const hash = createReferenceTable(cpu, 0, 16); nativeHeapReference(cpu).gc.tables.setInteger(hash, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 1);
 	nativeHeapReference(cpu).gc.tables.setInteger(hash, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
@@ -86,7 +86,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(cpu.instructionBudgetRemaining, remaining, `${kind}/${grant}: fixed charge once`);
 				assert.equal(frame.pc, base + starts[completed === 6 ? 0 : completed] * INSTRUCTION_BYTES);
 				assert.equal(frame.registers.get(6), completed >= 3 ? valueInteger(boundary) : completed >= 2 ? valueTable(table) : valueInteger(91));
-				assert.equal(cpu.gc.tables.getInteger(marker, 1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
+				assert.equal(cpu.tables.getInteger(marker, 1), valueInteger(completed >= 4 ? boundary : -1), 'no future table mutation after exhausted LEN');
 				assert.equal(frame.registers.get(8), completed >= 5 ? valueInteger(37) : valueNil(), 'cached live Number survives the helper and exact prefix admission');
 			}
 			assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), savedSeed); assert.equal(cpu.luaHeap.usedBytes(), heap);
@@ -120,7 +120,7 @@ for (const kind of ['ascending', 'descending'] as const) test(`published JS regi
 	assert.equal(exit.nextPc, base);
 	assert.equal(state.remainingCycles, 0);
 	assert.equal(frame.registers.getInteger(6), kind === 'ascending' ? 64 : 4096, 'resident LEN result is raw-published on completed Continue');
-	assert.equal(cpu.gc.tables.getInteger(marker, 1), frame.registers.get(6)); assert.equal(frame.registers.get(8), valueInteger(37));
+	assert.equal(cpu.tables.getInteger(marker, 1), frame.registers.get(6)); assert.equal(frame.registers.get(8), valueInteger(37));
 });
 
 for (const wide of [false, true]) test(`skipped LEN is neither charged nor executed (WIDE=${wide})`, () => {

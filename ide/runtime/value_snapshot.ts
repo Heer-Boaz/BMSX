@@ -1,5 +1,5 @@
 import type { StringPool } from '../../machine/ts/machine/cpu/string_pool';
-import type { GcHeap } from '../../machine/ts/machine/cpu/gc_heap';
+import type { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { f32BitsToNumber } from '../../machine/ts/common/float32';
 import { formatInteger, formatFloat } from '../../machine/ts/common/number_format';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -35,7 +35,7 @@ export class GuestValueSnapshot {
 	private remainingEntries = 0;
 	private remainingCharacters = 0;
 	private remainingSlots = 0;
-	public constructor(private readonly pool: StringPool, private readonly heap: GcHeap) {}
+	public constructor(private readonly pool: StringPool, private readonly tableRecords: TableRecords) {}
 	public begin(): void {
 		this.visited.clear();
 		this.remainingEntries = VALUE_SNAPSHOT_ENTRIES;
@@ -74,10 +74,10 @@ export class GuestValueSnapshot {
 		const snapshot = { kind: 'table' as const, id, entries, omitted: false };
 		this.visited.set(id, snapshot);
 		let slot = 0, omitted = false;
-		const count = this.heap.tables.storedSlotCount(id);
+		const count = this.tableRecords.storedSlotCount(id);
 		while (slot < count && this.remainingSlots > 0) {
 			this.remainingSlots--;
-			if (!this.heap.tables.loadStoredEntry(id, slot++, scratch, 0)) continue;
+			if (!this.tableRecords.loadStoredEntry(id, slot++, scratch, 0)) continue;
 			if (this.remainingEntries === 0) { omitted = true; break; }
 			this.remainingEntries--;
 			// Table keys are identities, not a second traversal of the object graph.

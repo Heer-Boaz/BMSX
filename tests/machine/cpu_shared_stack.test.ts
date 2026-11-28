@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
@@ -10,7 +11,7 @@ import { MAPPED_BUS_INSTRUCTION_FETCH } from '../../machine/ts/machine/memory/bu
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ValueTag, asClosure, valueBool, valueClosure, valueFloat, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueClosure, valueFloat, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -130,7 +131,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
-			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(name)), cpu.gc));
+			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(name)), nativeHeapReference(cpu).gc));
 			runGuestToHalt(cpu, 100);
 			const values: Value[] = [];
 			cpu.readCompletionValues(values);
@@ -215,7 +216,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		const table = cpu.rootThread.currentFrame!.registers.get(2);
 		assert.equal(cpu.rootThread.currentFrame!.registers.getTag(2), ValueTag.Table, 'capture owns its cell independently of the open result range');
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0); cpu.runUntilDepth(0, 100);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('read')), cpu.gc));
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('read')), nativeHeapReference(cpu).gc));
 		cpu.runUntilDepth(0, 100);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [table]);

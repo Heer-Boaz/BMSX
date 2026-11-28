@@ -13,6 +13,7 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../../helpers/cpu_ex
 import { gcStressVectors, installAllocationStress } from '../../helpers/gc_stress';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { systemCaseSource } from '../../helpers/system_case_rom';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const nativeRunner = nativeConformanceRunner('bmsx_gc_stress_runner', {
 	buildDirectory: process.argv[2] ?? 'build-native-cpu-default',
@@ -39,16 +40,16 @@ try {
 		for (let call = 0; call < 50_000 && result === RunResult.Yielded; call++) {
 			result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'allocation stress must not fault');
-			if (!restored && result === RunResult.Yielded && cpu.gc.active()) {
-				const phase = cpu.gc.phase();
+			if (!restored && result === RunResult.Yielded && nativeHeapReference(cpu).gc.active()) {
+				const phase = nativeHeapReference(cpu).gc.phase();
 				const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 				const checkpoint = captureCpuCheckpoint(cpu);
 				cpu.runUntilDepth(0, 2048);
 				assert.equal(cpu.readLuaFaultReasonWord(), 0);
-				assert.ok(cpu.gc.phase() !== phase || cpu.getFrameDepth() !== depth || cpu.readFramePc(depth - 1) !== pc,
+				assert.ok(nativeHeapReference(cpu).gc.phase() !== phase || cpu.getFrameDepth() !== depth || cpu.readFramePc(depth - 1) !== pc,
 					'the live collector or program counter advances before rewind');
 				restoreCpuCheckpoint(cpu, checkpoint);
-				assert.equal(cpu.gc.phase(), phase, 'restore reinstates the in-flight major collection');
+				assert.equal(nativeHeapReference(cpu).gc.phase(), phase, 'restore reinstates the in-flight major collection');
 				assert.equal(cpu.getFrameDepth(), depth);
 				assert.equal(cpu.readFramePc(depth - 1), pc);
 				restored = true;

@@ -1,6 +1,6 @@
 import type { StringPool } from '../../../machine/ts/machine/cpu/string_pool';
 
-import type { GcHeap } from '../../../machine/ts/machine/cpu/gc_heap';
+import type { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { asInteger, asStringId, isTruthy, valuePayload } from '../../../machine/ts/machine/cpu/value';
 export type FsmTransitionSink = (sequence: number, millisecondsWord: number, observedTick: number,
 	lane: string, previous: string, target: string, outcome: 'committed' | 'rejected') => void;
@@ -34,21 +34,21 @@ export class FsmTransitionObservation {
 	public constructor(
 		private readonly channel: number,
 		private readonly stringPool: StringPool,
-		private readonly heap: GcHeap,
+		private readonly tables: TableRecords,
 		private readonly publish: FsmTransitionSink,
 		private readonly retention: 'strict' | 'rolling' = 'strict',
 	) {
-		this.capacity = asInteger(this.heap.tables.getInteger(channel, CHANNEL_CAPACITY));
-		this.records = valuePayload(this.heap.tables.getInteger(channel, CHANNEL_RECORDS));
+		this.capacity = asInteger(this.tables.getInteger(channel, CHANNEL_CAPACITY));
+		this.records = valuePayload(this.tables.getInteger(channel, CHANNEL_RECORDS));
 		this.instanceId = this.readString(channel, CHANNEL_INSTANCE_ID);
 		this.machineId = this.readString(channel, CHANNEL_MACHINE_ID);
 	}
 
 	/** A restored live subscription begins at its accepted publication, not an older heap's cursor. */
-	public discardPublished(): void { this.consumedSequence = valuePayload(this.heap.tables.getInteger(this.channel, CHANNEL_PUBLISHED_SEQUENCE)); }
+	public discardPublished(): void { this.consumedSequence = valuePayload(this.tables.getInteger(this.channel, CHANNEL_PUBLISHED_SEQUENCE)); }
 
 	public drain(observedTick: number): void {
-		const publishedSequence = valuePayload(this.heap.tables.getInteger(this.channel, CHANNEL_PUBLISHED_SEQUENCE));
+		const publishedSequence = valuePayload(this.tables.getInteger(this.channel, CHANNEL_PUBLISHED_SEQUENCE));
 		let available = (publishedSequence - this.consumedSequence) >>> 0;
 		if (available === 0) return;
 		if (available > this.capacity) {
@@ -64,8 +64,8 @@ export class FsmTransitionObservation {
 		while (available > 0) {
 			const producerSequence = (this.consumedSequence + 1) >>> 0;
 			const slot = ((producerSequence - 1) & (this.capacity - 1)) + 1;
-			const record = valuePayload(this.heap.tables.getInteger(this.records, slot));
-			const recordSequence = valuePayload(this.heap.tables.getInteger(record, RECORD_PRODUCER_SEQUENCE));
+			const record = valuePayload(this.tables.getInteger(this.records, slot));
+			const recordSequence = valuePayload(this.tables.getInteger(record, RECORD_PRODUCER_SEQUENCE));
 			if (recordSequence !== producerSequence) {
 				if (this.retention === 'strict') throw new Error(`FSM transition recorder '${this.instanceId}' overflowed its ${this.capacity}-record buffer.`);
 				this.droppedCount++;
@@ -73,10 +73,10 @@ export class FsmTransitionObservation {
 				available--;
 				continue;
 			}
-			const committed = isTruthy(this.heap.tables.getInteger(record, RECORD_COMMITTED));
+			const committed = isTruthy(this.tables.getInteger(record, RECORD_COMMITTED));
 			this.publish(
 				recordSequence,
-				valuePayload(this.heap.tables.getInteger(record, RECORD_PRODUCER_TIME_MILLISECONDS_WORD)),
+				valuePayload(this.tables.getInteger(record, RECORD_PRODUCER_TIME_MILLISECONDS_WORD)),
 				observedTick,
 				this.readString(record, RECORD_LANE_DEF_ID),
 				this.readString(record, RECORD_FROM_DEF_ID),
@@ -89,6 +89,6 @@ export class FsmTransitionObservation {
 	}
 
 	private readString(table: number, index: number): string {
-		return this.stringPool.toString(asStringId(this.heap.tables.getInteger(table, index)));
+		return this.stringPool.toString(asStringId(this.tables.getInteger(table, index)));
 	}
 }

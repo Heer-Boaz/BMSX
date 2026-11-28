@@ -11,6 +11,7 @@ export function firmwareImageBackingOffset(management: number, domain: Execution
 	return management + FIRMWARE_IMAGE_BACKINGS_OFFSET + FIRMWARE_IMAGE_BACKING_SIZE * (domain + 1);
 }
 
+export const HEAP_GC_CONTROL_OFFSET = 0x344;
 export const GC_ROOT_BANKS_OFFSET = 0x600;
 export const GC_ROOT_BANKS_HEADER_SIZE = 16;
 export const GC_ROOT_BANK_SIZE = 16;

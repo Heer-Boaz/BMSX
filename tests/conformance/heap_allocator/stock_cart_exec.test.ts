@@ -29,6 +29,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 test('stock firmware binds the selected socket before EXEC; RESET discards an unentered image', async t => {
 	mkdirSync('tmp', { recursive: true });
@@ -238,8 +239,8 @@ halt_until_irq
 			writeFileSync(probeTrace, ['X', `O ${IO_CART_SELECT} 0`, 'L 1', 'F', `H ${absent} ${absent + EXECUTION_IMAGE_BINDING_SIZE}`].join('\n'));
 			const attemptedRows = execFileSync(native, [probeSystem, probeTrace, seed, otherPath, selectedPath], { encoding: 'utf8' });
 			assert.deepEqual(attemptedRows.trimEnd().split('\n'), [
-				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, attempted.cpu.gc.fullEpochs(),
-					attempted.cpu.gc.phase(), preparedCharge].join(' '),
+				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, nativeHeapReference(attempted.cpu).gc.fullEpochs(),
+					nativeHeapReference(attempted.cpu).gc.phase(), preparedCharge].join(' '),
 				'1', String(hashBytes(empty, 0, empty.length)),
 			]);
 

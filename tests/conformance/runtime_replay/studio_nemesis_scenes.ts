@@ -60,7 +60,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await test.capture?.('gameplay-editor');
 	await runMenuCommand('reboot');
 	await until(() => tasks.ready && harness.isCartActive() && world() !== valueNil()
-		&& guest.cpu.gc.tables.length(tableAddressPayload(guest.readStringMember(world(), '_objects'))) >= 4
+		&& guest.cpu.tables.length(tableAddressPayload(guest.readStringMember(world(), '_objects'))) >= 4
 		&& !runtime.completionCallPending(), 'Reboot installs the saved scene sources and publishes the root composition');
 	check(nemesisTitle(test) !== oldTitle, 'cold reboot created a fresh controller');
 	const intro = guest.readStringMember(registered('nemesis_s.intro'), 'presentation');

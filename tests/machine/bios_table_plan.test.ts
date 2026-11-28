@@ -92,8 +92,8 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(out(3), [array, hash, +keepHash]);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), sizes);
 		assert.equal(cpu.luaHeap.usedBytes(), charged);
-		assert.equal(cpu.gc.tables.arrayAddress(record), arrayBase);
-		assert.equal(cpu.gc.tables.hashAddress(record), hashBase);
+		assert.equal(cpu.tables.arrayAddress(record), arrayBase);
+		assert.equal(cpu.tables.hashAddress(record), hashBase);
 		return out(3);
 	}
 	return { cpu, oracle, memory, scratch, densityWords, same, begin, grant, finish, plan, out };

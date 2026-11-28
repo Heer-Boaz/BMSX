@@ -79,7 +79,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + callEntryCycles), RunResult.Yielded);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'a recycled prototype supplies its new stack extent');
-			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(0, nativeHeapReference(cpu).gc);
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getPayload(0);
 			const state = cpu.captureRuntimeState();
 			cpu.restoreRuntimeState(state);
 			const restored = cpu.rootThread.currentFrame!.closure!;
@@ -205,7 +205,7 @@ for (const { numParams, maxStack, argCount } of [
 			const argumentsByMachine = machines.map(({ cpu }) => {
 				const thread = cpu.rootThread;
 				const caller = thread.frameAtDepth(0);
-				const closure = caller.registers.getClosure(0, nativeHeapReference(cpu).gc);
+				const closure = caller.registers.getPayload(0);
 				const closureValue = caller.registers.get(0);
 				const args: Value[] = [valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueString(nativeHeapReference(cpu).stringPool.intern('call-initialization')), valueBool(false), valueBool(true), closureValue].slice(0, argCount);
 				assert.equal(thread.stackTop, 8);

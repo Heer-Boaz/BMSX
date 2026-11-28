@@ -1,5 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valuePayload, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName, toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { blua32FunctionIndexAtAddress, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
@@ -172,7 +172,7 @@ export function readRuntimeLuaModuleCapture(
 		upvalueIndex = index;
 	}
 	return upvalueIndex === -1 ? NOT_IN_SCOPE : {
-		kind: 'value', value: guest.cpu.readClosureUpvalue(asClosure(closure, guest.cpu.gc), upvalueIndex),
+		kind: 'value', value: guest.cpu.readClosureUpvalue(valuePayload(closure), upvalueIndex),
 	};
 }
 

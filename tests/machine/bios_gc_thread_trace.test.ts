@@ -1,3 +1,4 @@
+import { GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -5,14 +6,13 @@ import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { bindOpen, close, initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
@@ -70,7 +70,7 @@ function fixture(optLevel: 0 | 3) {
 	function cell() {
 		return add(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initializeCell(target.memory, address, target.gc.white());
+			initializeCell(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
@@ -78,7 +78,7 @@ function fixture(optLevel: 0 | 3) {
 	function closure() {
 		return add(target => {
 			const address = allocateClosureRecordReference(target, 0);
-			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 0);
+			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, nativeHeapReference(target).gc.white(), 0);
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
@@ -142,7 +142,7 @@ for (const optLevel of [0, 3] as const) {
 		word(last + FrameField.Closure, 0);
 		// The source reads the canonical header even for a null Closure.
 		// A matching public word still fails the allocator-issued predicate.
-		word(RAM_BASE, ValueTag.Closure | (cpu.gc.white() << 8));
+		word(RAM_BASE, ValueTag.Closure | (nativeHeapReference(cpu).gc.white() << 8));
 		word(last + FrameField.OpenHead, 0);
 		word(last + FrameField.StackBase, 2);
 		word(last + FrameField.Top, 3);
@@ -175,13 +175,13 @@ for (const optLevel of [0, 3] as const) {
 		for (const target of [cpu, oracle]) close(nativeHeapReference(target).gc, stale);
 		const newFrames = add(target => {
 			const staged = nativeHeapReference(target).heapAllocator.allocate(4 * FRAME_CONTROL_BYTES, true);
-			return target.gc.threads.growFrameBacking(thread, 4, staged);
+			return nativeHeapReference(target).gc.threads.growFrameBacking(thread, 4, staged);
 		});
 		assert.notEqual(newFrames, frames);
 		assert.equal(step(thread, false, 1, true), 14, 'closed saved cell clocks no Next lane and the relocated second frame is read');
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), Stage.Values << cursorBits);
 		for (let i = 0; i < 16 && memory.readRamRecordWord(control + GC_TRACE_RECORD) !== 0; ++i) step(thread, false, 3, true);
-		assert.equal(memory.readRamRecordByte(ignored + GC_COLOR_OFFSET), cpu.gc.white(), 'Thread padding is not a root');
+		assert.equal(memory.readRamRecordByte(ignored + GC_COLOR_OFFSET), nativeHeapReference(cpu).gc.white(), 'Thread padding is not a root');
 		assert.equal(memory.readRamRecordWord(thread + 68), ignored, 'trace leaves padding intact');
 		assert.equal(memory.readRamRecordByte(handler + GC_COLOR_OFFSET), 2, 'the tagged handler slot is traced');
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);

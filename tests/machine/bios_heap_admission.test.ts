@@ -1,3 +1,4 @@
+import { HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -7,7 +8,6 @@ import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcPhase, GC_PACE_PAID, GC_WORK_WORD_CYCLES } from '../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS, LuaAllocationRecovery } from '../helpers/native_heap/lua_heap';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';

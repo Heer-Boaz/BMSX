@@ -1,3 +1,4 @@
+import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -8,12 +9,11 @@ import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
-import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { abortFixtureCompletionCall, allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
 import { valueTable, valueClosure, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
@@ -68,10 +68,10 @@ test('marking selects issued white headers, not arbitrary byte patterns', () => 
 
 test('32-bit object payloads survive heap growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
-	const captured = frame.registers.getClosure(1, nativeHeapReference(cpu).gc);
+	const captured = frame.registers.getPayload(1);
 	const cell = ClosureRecord.captureAddress(cpu.memory, captured, 0);
 	assert.equal(frame.registers.getPayload(1), captured);
-	assert.equal(cpu.gc.closureRecordAddress(cell), 0);
+	assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(cell), 0);
 	checkReferences(cpu);
 	const roots = createReferenceTable(cpu, 512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, roots); frame.top = 2;
@@ -80,7 +80,7 @@ test('32-bit object payloads survive heap growth and collection', () => {
 		slots.words[i] = object; slots.tags[i] = ValueTag.Table;
 	}
 	nativeHeapReference(cpu).gc.collect();
-	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.tableRecordAddress(slots.words[i]), valuePayload(cpu.gc.tables.getInteger(roots, i + 1)));
+	for (let i = 0; i < slots.capacity; ++i) assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(slots.words[i]), valuePayload(cpu.tables.getInteger(roots, i + 1)));
 	checkReferences(cpu);
 });
 
@@ -88,10 +88,10 @@ test('a freed header is cleared before its physical address is reused', () => {
 	const cpu = machine(); nativeHeapReference(cpu).gc.collect();
 	const dead = createReferenceTable(cpu), id = dead;
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tableRecordAddress(id), 0);
+	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(id), 0);
 	const next = createReferenceTable(cpu);
 	assert.equal(next, id);
-	assert.equal(cpu.gc.tableRecordAddress(id), next);
+	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(id), next);
 });
 
 test('equally initialized CPUs have independent address spaces', () => {
@@ -99,8 +99,8 @@ test('equally initialized CPUs have independent address spaces', () => {
 	assert.equal(a, b);
 	nativeHeapReference(first).gc.tables.setInteger(a, 1, valueInteger(73));
 	nativeHeapReference(second).gc.tables.setInteger(b, 1, valueInteger(85));
-	assert.equal(first.gc.tables.getInteger(a, 1), valueInteger(73));
-	assert.equal(second.gc.tables.getInteger(b, 1), valueInteger(85));
+	assert.equal(first.tables.getInteger(a, 1), valueInteger(73));
+	assert.equal(second.tables.getInteger(b, 1), valueInteger(85));
 });
 
 test('restore publishes physical roots and drops discarded future records', () => {
@@ -112,7 +112,7 @@ test('restore publishes physical roots and drops discarded future records', () =
 	createReferenceTable(cpu);
 	nativeHeapReference(cpu).gc.collect();
 	const saved = cpu.captureRuntimeState(), thread = cpu.rootThread.address, canonical = frame.closure;
-	const root = frame.registers.get(0), fourth = cpu.gc.tables.getInteger(roots, 4);
+	const root = frame.registers.get(0), fourth = cpu.tables.getInteger(roots, 4);
 	const ram = cpu.memory.captureSaveState();
 	for (let iteration = 0; iteration < 64; ++iteration) {
 		const future = Array.from({ length: 12 }, () => createReferenceTable(cpu));
@@ -121,8 +121,8 @@ test('restore publishes physical roots and drops discarded future records', () =
 		assert.equal(cpu.rootThread.address, thread);
 		assert.equal(cpu.rootThread.currentFrame!.closure, canonical);
 		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), root);
-		assert.equal(cpu.gc.tables.getInteger(valuePayload(root), 4), fourth);
-		for (const object of future) assert.equal(cpu.gc.tableRecordAddress(object), 0);
+		assert.equal(cpu.tables.getInteger(valuePayload(root), 4), fourth);
+		for (const object of future) assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(object), 0);
 		checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
 		assert.deepEqual([createReferenceTable(cpu), createReferenceTable(cpu)], future.slice(0, 2).map(table => table));
@@ -141,10 +141,10 @@ test('incremental GC and phase-preserving restore keep physical attachments sync
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
 		nativeHeapReference(cpu).gc.step(); checkReferences(cpu);
-		const saved = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
+		const saved = cpu.captureRuntimeState(); phases.add(nativeHeapReference(cpu).gc.phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
-		if (!cpu.gc.active()) break;
+		if (!nativeHeapReference(cpu).gc.active()) break;
 	}
 	for (const phase of [GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Pause]) assert.ok(phases.has(phase));
 });
@@ -159,7 +159,7 @@ test('builtin functions retain their own ids outside the GC heap', () => {
 	assert.deepEqual(after, before);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	const restored = cpu.rootThread.currentFrame!.registers.getPayload(0);
-	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(cpu.gc.tables.getInteger(restored, builtin.id + 1), valueBuiltinFunction(builtin.id));
+	for (const builtin of BUILTIN_FUNCTIONS) assert.equal(cpu.tables.getInteger(restored, builtin.id + 1), valueBuiltinFunction(builtin.id));
 });
 
 
@@ -167,10 +167,10 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, memory = cpu.memory;
 	const key = nativeHeapReference(cpu).stringPool.intern('saved_capture');
 	setReferenceGlobal(cpu, key, frame.registers.get(1));
-	const closure = frame.registers.getClosure(1, nativeHeapReference(cpu).gc);
+	const closure = frame.registers.getPayload(1);
 	const address = ClosureRecord.captureAddress(cpu.memory, closure, 0);
-	assert.equal(cpu.gc.cellRecordAddress(address), address);
-	assert.equal(cpu.gc.openCellAddress(address + MAIN_RAM_SIZE), address, 'a mirrored open link selects the same physical cell');
+	assert.equal(nativeHeapReference(cpu).gc.cellRecordAddress(address), address);
+	assert.equal(nativeHeapReference(cpu).gc.openCellAddress(address + MAIN_RAM_SIZE), address, 'a mirrored open link selects the same physical cell');
 	assert.equal(memory.readRamRecordWord(closure + CLOSURE_CAPTURE_WORDS), address);
 	assert.equal(memory.readRamRecordByte(address + UPVALUE_FLAGS), UPVALUE_OPEN);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_OWNER), frame.thread.address);
@@ -188,7 +188,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	memory.writeRamRecordWord(rawCell + UPVALUE_OWNER, frame.thread.address | 0x80000000);
 	memory.writeRamRecordWord(rawCell + UPVALUE_VALUE_WORD, frame.stackBase);
 	memory.writeRamRecordWord(closure + CLOSURE_CAPTURE_WORDS, rawCell | 0x80000000);
-	assert.equal(cpu.gc.cellRecordAddress(rawCell), 0, 'a header outside the allocator does not make a live GC cell');
+	assert.equal(nativeHeapReference(cpu).gc.cellRecordAddress(rawCell), 0, 'a header outside the allocator does not make a live GC cell');
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345), 'a raw open cell needs no host attachment');
 	memory.writeRamRecordWord(closure + CLOSURE_CAPTURE_WORDS, address);
 	resizeThreadStackReference(cpu, frame.thread, oldCapacity);
@@ -207,7 +207,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	restoreCpuCheckpoint(cpu, open);
 	cpu.rootThread.currentFrame!.registers.setInteger(0, 44);
 	restoreCpuCheckpoint(cpu, checkpoint);
-	const restored = asClosure(cpu.getGlobalByKey(key), cpu.gc);
+	const restored = asClosure(cpu.getGlobalByKey(key), nativeHeapReference(cpu).gc);
 	assert.equal(ClosureRecord.captureAddress(cpu.memory, restored, 0), address);
 	assert.equal(cpu.readClosureUpvalue(restored, 0), valueFloatBits(0xffa12345));
 	nativeHeapReference(cpu).gc.collect();
@@ -216,13 +216,13 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	setReferenceGlobal(cpu, key, valueNil());
 	nativeHeapReference(cpu).gc.collect();
 	assert.equal(arena.occupiedBytes(), occupied - retiredBytes);
-	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
+	assert.equal(nativeHeapReference(cpu).gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
 	assert.equal(memory.readRamRecordByte(address), 0);
 });
 
 test('reclaimed closures are not visited by the next sweep', () => {
 	const cpu = machine(), { gc } = nativeHeapReference(cpu), frame = cpu.rootThread.currentFrame!;
-	const closure = frame.registers.getClosure(1, gc);
+	const closure = frame.registers.getPayload(1);
 	const cellAddress = ClosureRecord.captureAddress(cpu.memory, closure, 0);
 	const sweep = () => {
 		while (gc.phase() !== GcPhase.Sweep) gc.step();

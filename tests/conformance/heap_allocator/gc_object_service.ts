@@ -15,13 +15,14 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { captureCount, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL } from '../../../machine/ts/machine/cpu/closure';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 const source = `
 require('fixture_sweep_boot')
 local co<const> = require('coroutine')

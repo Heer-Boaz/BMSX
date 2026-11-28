@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { asInteger, valueBool, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -18,6 +16,8 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_CHANGED_HEAD, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const source = `
 local t, child, object = {11, 22}, {word = 31}, {}

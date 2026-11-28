@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -104,7 +105,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(receiver.top, prior.top);
 		assert.equal(receiver.registers.get(0), prior.value);
 		assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackBlock), prior.backing);
-		assert.equal(cpu.gc.closureRecordAddress(f.closure), f.closure);
+		assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(f.closure), f.closure);
 		assert.equal(Upvalue.isOpen(memory, cell), false);
 		assert.equal(Upvalue.load(memory, cell), valueInteger(183));
 	});

@@ -1,7 +1,8 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
-import { asClosure, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestRuntimeRomPayload, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createPathModuleProjectFixture, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createTestCodeControl } from '../helpers/code_control';
@@ -206,7 +207,7 @@ end
 		transport.executePending(node, !checkpointPending && call === undefined, (selected, time, program, current, finished) => {
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
 			assert.equal(current(), true); assert.equal(program, valuePayload(guest.readStringMember(target, 'program')));
-			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), cpu.gc),
+			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), nativeHeapReference(cpu).gc),
 				argumentCount: 3, args: () => [component, selected.key, valueInteger(time)] };
 			observer = finished;
 		});
@@ -552,7 +553,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	cpu.reset();
 	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(closure);
 	runToSupervisorFault(runtime);
 
@@ -565,7 +566,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
 
-	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	nativeHeapReference(cpu).gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
@@ -678,8 +679,8 @@ halt_until_irq`;
 		assert.strictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
-		const closure = asClosure(callback, cpu.gc), oldAddress = cpu.captureClosureBinding(closure).functionAddress;
-		ClosureRecord.writeBinding(cpu.memory, closure, { ...cpu.captureClosureBinding(closure), functionAddress: guest.cpu.captureClosureBinding(asClosure(guest.global('other_callback'), guest.cpu.gc)).functionAddress });
+		const closure = asClosure(callback, nativeHeapReference(cpu).gc), oldAddress = cpu.captureClosureBinding(closure).functionAddress;
+		ClosureRecord.writeBinding(cpu.memory, closure, { ...cpu.captureClosureBinding(closure), functionAddress: guest.cpu.captureClosureBinding(asClosure(guest.global('other_callback'), nativeHeapReference(guest.cpu).gc)).functionAddress });
 		assert.notStrictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(correspondence.update(callback), runtimeLuaFunctionSource(bridge.sources, guest, callback));
 		// A mapped cartridge address does not imply a cartridge is installed on that bus.
@@ -736,7 +737,7 @@ halt_until_irq`;
 		assert.equal(guest.global('index_calls'), valueInteger(0));
 		assert.equal(cpu.luaHeap.usedBytes(), bytes);
 		assert.equal(cpu.readFramePc(depth - 1), pc);
-		cpu.beginCompletionCall(asClosure(guest.readStringMember(subject, 'inherited'), guest.cpu.gc), [subject, valueInteger(5)]);
+		cpu.beginCompletionCall(asClosure(guest.readStringMember(subject, 'inherited'), nativeHeapReference(guest.cpu).gc), [subject, valueInteger(5)]);
 		assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
 		assert.equal(guest.readStringMember(subject, 'value'), valueInteger(15), 'the receiver is the instance, not its prototype');
 	});

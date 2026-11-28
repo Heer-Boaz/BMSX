@@ -648,7 +648,7 @@ test('closure records bind their selected socket and survive cross-domain calls 
 			frame.registers.setInteger(1, record);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 2);
-			closures.push(frame.registers.getClosure(0, nativeHeapReference(cpu).gc));
+			closures.push(frame.registers.getPayload(0));
 		}
 		assert.notEqual(closures[0], closures[1]);
 		assert.equal(cpu.captureClosureBinding(closures[0]).executionDomainId, 0);
@@ -661,7 +661,7 @@ test('closure records bind their selected socket and survive cross-domain calls 
 		cpu.restoreRuntimeState(state);
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, 1 - slot);
-			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot, nativeHeapReference(cpu).gc);
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getPayload(slot);
 			cpu.beginCompletionCall(closure);
 			cpu.runUntilDepth(1, 100);
 			const result: Value[] = [];

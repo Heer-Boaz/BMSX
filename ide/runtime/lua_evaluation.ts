@@ -2,7 +2,7 @@ import { type RuntimeStackTraceFrame } from './stack_trace';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { asClosure, isTruthy, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { valuePayload, isTruthy, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../machine/ts/spec/bmsx/io';
 import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from './debugger_state';
@@ -174,7 +174,7 @@ export class RuntimeLuaEvaluation {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');
 				if (module.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
 				const argumentCount = 4 + bytes.length;
-				return { domain: -1, closure: asClosure(this.guest.readStringMember(module.value, 'evaluate_bytes'), this.runtime.machine.cpu.gc),
+				return { domain: -1, closure: valuePayload(this.guest.readStringMember(module.value, 'evaluate_bytes')),
 					argumentCount,
 					args: () => {
 						const args = new Array<Value>(argumentCount);

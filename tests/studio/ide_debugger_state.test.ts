@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { test } from 'node:test';
@@ -25,7 +27,7 @@ import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { asClosure, asInteger, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asInteger, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -123,7 +125,7 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: asClosure(values[0], cpu.gc), argumentCount: 0, args: () => [] }) },
+		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: asClosure(values[0], nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
@@ -153,7 +155,7 @@ test('at-stop evaluation cannot publish a new frame before accepted CPU time set
 			assert.equal(scheduler.acceptedCpuCycles, 0);
 			assert.equal(scheduler.nowCycles, target, 'prior work settles before looking up the new closure');
 			assert.equal(cpu.getFrameDepth(), depth);
-			return { domain: -1 as const, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] };
+			return { domain: -1 as const, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] };
 		},
 	};
 	const initialCycle = scheduler.nowCycles;
@@ -209,7 +211,7 @@ return retired`;
 	assert.equal(blua32SourceRangeAtPc(linked.symbols, linked.layout.header.textAddress, stop.pc)!.start.line, 3);
 	assert.equal(cpu.getFrameDepth(), stop.depth);
 	const count = thread.stackRegisters.capacity() + 1, guest = new SuspendedGuestSession(runtime);
-	t.mock.method(cpu.gc, 'collect', () => assert.fail('Debugger admission does not run the host collector'));
+	t.mock.method(nativeHeapReference(cpu).gc, 'collect', () => assert.fail('Debugger admission does not run the host collector'));
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	let prepared = 0, constructed = 0, entered = 0, completed = false;
@@ -219,7 +221,7 @@ return retired`;
 		prepare: () => {
 			++prepared;
 			assert.strictEqual(state.source.stop, stop);
-			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: count, args: () => {
+			return { domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: count, args: () => {
 				++constructed;
 				assert.ok(thread.stackRegisters.capacity() > count);
 				return Array.from({ length: count }, (_, i) => valueInteger(i));
@@ -299,7 +301,7 @@ while true do counters[1] = counters[1] + 1 end
 				assert.equal(cpu.getFrameDepth(), depth);
 				assert.equal(cpu.readFramePc(depth - 1), pc);
 				assert.equal(state.source.stop !== undefined, true);
-				return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] };
+				return { domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] };
 			},
 		}, () => { started++; }, completed => { finished = completed; if (completed) cpu.readCompletionValues(values); }, assert.fail);
 		assert.equal(started, 1);
@@ -355,7 +357,7 @@ return loops
 	let finished = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, completed => { finished = completed; cpu.readCompletionValues(values); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
@@ -386,7 +388,7 @@ return work -- caller stop
 	const outcomes: boolean[] = [];
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, completed => { outcomes.push(completed); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
@@ -443,7 +445,7 @@ while true do counters[1] = counters[1] + 1 end
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			const first = memory.readMappedU32LE(irqCount);
 			assert.equal(first, 1, 'resolve arguments after the handler, not before it');
-			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 1, args: () => [valueInteger(first)] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 1, args: () => [valueInteger(first)] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(result); }, assert.fail);
 	assert.equal(prepared, 0);
@@ -498,20 +500,20 @@ return actor, advance
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	const actor = valuePayload(values[0]);
-	const closure = asClosure(values[1], cpu.gc);
+	const closure = asClosure(values[1], nativeHeapReference(cpu).gc);
 	const key = cpu.stringPool.find('value')!;
 	const depth = cpu.getFrameDepth();
 	let completed = false;
 	cpu.beginCompletionCall(closure, [values[0], valueInteger(100)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
-	const partial = cpu.gc.tables.getStringKey(actor, key);
+	const partial = cpu.tables.getStringKey(actor, key);
 	assert.ok(asInteger(partial) > 0 && asInteger(partial) < 100);
 	state.plans.setControlSuspended(true);
 	assert.equal(runtimeDebuggerExecutionRequested(state), false);
 	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.None);
 	assert.equal(cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
-	assert.equal(cpu.gc.tables.getStringKey(actor, key), partial);
+	assert.equal(cpu.tables.getStringKey(actor, key), partial);
 	assert.equal(cpu.getFrameDepth(), depth + 1);
 	state.plans.setControlSuspended(false);
 	assert.equal(runtimeDebuggerExecutionRequested(state), true);
@@ -520,7 +522,7 @@ return actor, advance
 	state.plans.didExecute();
 	assert.equal(completed, true);
 	assert.equal(state.plans.mutationActive, false);
-	assert.equal(cpu.gc.tables.getStringKey(actor, key), valueInteger(100));
+	assert.equal(cpu.tables.getStringKey(actor, key), valueInteger(100));
 	assert.equal(cpu.getFrameDepth(), depth);
 });
 
@@ -570,17 +572,17 @@ end
 		didEnter: () => { entered++; assert.equal(runtime.completionCallPending(), true); },
 		boundary: () => {
 			boundaryCalls++;
-			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), argumentCount: 0, args: () => [] },
+			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] },
 				condition: values => {
 					const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
-					return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true);
+					return () => cpu.tables.getStringKey(receipt, key) === valueBool(true);
 				} };
 		},
 		prepare: () => {
 			prepared++;
 			const target = guest.global('actor');
 			assert.notEqual(target, before, 'resolve the replacement, never the popup borrow');
-			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 1, args: () => [target] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 1, args: () => [target] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(results); }, assert.fail);
 	const execute = async () => {
@@ -637,9 +639,9 @@ end
 	const { cpu, memory } = runtime.machine;
 	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
 	const values: Value[] = []; cpu.readCompletionValues(values);
-	const driver = asClosure(values[0], cpu.gc);
+	const driver = asClosure(values[0], nativeHeapReference(cpu).gc);
 	const guest = new SuspendedGuestSession(runtime);
-	const source = cpu.captureClosureBinding((asClosure(guest.global('ram_body'), cpu.gc))).functionAddress;
+	const source = cpu.captureClosureBinding((asClosure(guest.global('ram_body'), nativeHeapReference(cpu).gc))).functionAddress;
 	const record = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
 	memory.readBytesInto(source, record, record.length);
 	const code = new Uint8Array(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET));
@@ -657,10 +659,10 @@ end
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
-		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), argumentCount: 0, args: () => [] },
+		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] },
 			condition: values => { const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
-				return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true); } }),
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
+				return () => cpu.tables.getStringKey(receipt, key) === valueBool(true); } }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);
 	for (let phase = 0; phase < 3; phase++) {
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
@@ -690,7 +692,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [2]);
 	assert.ok(state.breakpoints.bindings.pcs[0].size > 0, 'the real source has an emitted breakpoint PC');
 	let finished = 0;
-	cpu.beginCompletionCall(asClosure(values[0], cpu.gc), [valueInteger(1)]);
+	cpu.beginCompletionCall(asClosure(values[0], nativeHeapReference(cpu).gc), [valueInteger(1)]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, 'completion', honorUserStops, completed => {
 		assert.equal(completed, true); finished++;
 	}), 'workbench');
@@ -833,7 +835,7 @@ while true do halt_until_irq end
 	const { cpu, memory, irqController } = runtime.machine;
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
-	cpu.beginCompletionCall(asClosure(guest.global('operation'), cpu.gc), []);
+	cpu.beginCompletionCall(asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), []);
 	let completed = false;
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', true, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);
@@ -861,7 +863,7 @@ for (const level of [3] as const) for (const transition of ['source-install', 'h
 	let completed = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), nativeHeapReference(cpu).gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, result => { completed = result; }, assert.fail);
 	if (transition === 'source-install') {
 		state.sources.currentBlua32Media = { ...state.sources.currentBlua32Media };

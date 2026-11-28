@@ -3,10 +3,11 @@ import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import assert from 'node:assert/strict';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
-import { asClosure, valueBool } from '../../machine/ts/machine/cpu/value';
+import { valueBool } from '../../machine/ts/machine/cpu/value';
 import { CPU_CAUSE_CODE_TRAP } from '../../machine/ts/spec/blua32/cop0';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
 import { runGuestToHalt } from './cpu_execution';
+import { asClosure } from './native_heap/gc_heap';
 
 /** Host completion roots interrupt retained Lua execution but do not become its callee. */
 export const completionBoundaryVectors = {
@@ -48,7 +49,7 @@ export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
 	const pc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('probe')), cpu.gc));
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('probe')), nativeHeapReference(cpu).gc));
 	const fault = name.startsWith('completion_fault');
 	for (let grant = 0; grant < 10000 && cpu.completionCallPending(); grant++) {
 		cpu.runUntilDepth(depth, 1, thread);

@@ -1,15 +1,15 @@
+import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -107,9 +107,9 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function table(array: number, hash: number) {
 		const record = add(target => createReferenceTable(target, array, hash));
-		const arrayBase = cpu.gc.tables.arrayAddress(record), hashBase = cpu.gc.tables.hashAddress(record);
-		assert.equal(cpu.gc.tables.arrayCapacity(record), array);
-		assert.equal(cpu.gc.tables.hashSize(record), hash);
+		const arrayBase = cpu.tables.arrayAddress(record), hashBase = cpu.tables.hashAddress(record);
+		assert.equal(cpu.tables.arrayCapacity(record), array);
+		assert.equal(cpu.tables.hashSize(record), hash);
 		function arraySlot(slot: number, tag: ValueTag, payload: number) {
 			word(arrayBase + 4 * slot, payload);
 			byte(arrayBase + 4 * array + slot, tag);

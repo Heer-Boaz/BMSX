@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -8,7 +9,7 @@ import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure'
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { asClosure, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import {
@@ -168,7 +169,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`the CPU addresses
 	seedTestMappedStaticClosure(cpu, RAM_FUNCTION_ADDRESS);
 
 	runGuestToHalt(cpu, 100);
-	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, cpu.gc));
+	const closures = materializeCpuCompletionValues(cpu).map(value => asClosure(value, nativeHeapReference(cpu).gc));
 	assert.equal(cpu.captureClosureBinding(closures[0]).functionAddress, RAM_FUNCTION_ADDRESS);
 	assert.equal(cpu.captureClosureBinding(closures[1]).functionAddress, RAM_FUNCTION_ADDRESS);
 	const closure = closures[1];
@@ -251,10 +252,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 	nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, latest);
 	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('weak_closure'), valueTable(weak));
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tables.getInteger(weak, 1), latest, 'a strong guest root preserves the weak referent identity');
+	assert.equal(cpu.tables.getInteger(weak, 1), latest, 'a strong guest root preserves the weak referent identity');
 	assert.equal(instantiate(4), retained, 'overwriting the result drops the last strong reference to the tail');
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'a canonical closure is collectible when reachable only through a weak table');
+	assert.equal(cpu.tables.getInteger(weak, 1), valueNil(), 'a canonical closure is collectible when reachable only through a weak table');
 	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
 	assert.equal(instantiate(4), retained, 'retiring the moved entry leaves the remaining singleton reusable');
 	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);

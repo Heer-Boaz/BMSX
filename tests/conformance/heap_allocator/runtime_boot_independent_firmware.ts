@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { hashBytes, hashText } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_DIAGNOSTIC_OFFSET } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_RECORD_KIND, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueBool, valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
@@ -30,6 +29,7 @@ import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua3
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_DIAGNOSTIC_OFFSET } from '../../helpers/native_heap/gc_heap';
 
 // These addresses deliberately overlap the stock BIOS's software state, not
 // the fixed CPU bank. This ROM uses its own format and never links stock code.

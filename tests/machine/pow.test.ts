@@ -1,10 +1,12 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { luaPow } from '../../machine/ts/spec/blua32/pow';
 import { numberHighWord, numberLowWord } from '../../machine/ts/common/float64';
 import { runCompletionClosure, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { runCompiledTestSystem } from '../helpers/blua32';
-import { asClosure, valueFloat, valueFloatBits, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueFloat, valueFloatBits, valueInteger, type Value } from '../../machine/ts/machine/cpu/value';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 test('the private fdlibm kernel retains its binary64 reference results', () => {
@@ -52,7 +54,7 @@ for (const optLevel of [3] as const) test(`Float POW folding and runtime match r
 	const source = `function dynamic_pow(x, y) return x ^ y end\nreturn ${vectors.map(([x, y]) => `(${x}) ^ (${y})`).join(', ')}`;
 	const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'pow.lua'), 100000);
 	const folded = materializeCpuCompletionValues(cpu);
-	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('dynamic_pow')!), cpu.gc);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('dynamic_pow')!), nativeHeapReference(cpu).gc);
 	for (let i = 0; i < vectors.length; ++i) {
 		const [x, y, left, right, word] = vectors[i];
 		runCompletionClosure(cpu, fn, [left, right]);

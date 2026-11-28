@@ -3,9 +3,7 @@ import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
@@ -186,7 +184,7 @@ test('the storage-window deadline is the hardware allowance, not the caller gran
 			advanceRuntimeTime(runtime, spent);
 		}
 		assert.equal(cpu.fixedInterruptActive(), false);
-		assert.equal(cpu.gc.tables.get(table, valueInteger(-2)), valueInteger(2));
+		assert.equal(cpu.tables.get(table, valueInteger(-2)), valueInteger(2));
 		if (budget === 1) elapsed = paid;
 		else assert.equal(paid, elapsed);
 	}

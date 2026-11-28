@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -27,8 +28,8 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 		const { cpu } = createTestSystemCpu({ romBytes }, backend);
 		runGuestToHalt(cpu, 1_000_000);
 		const completed = materializeCpuCompletionValues(cpu);
-		const functions = completed.slice(0, 3).map(value => v.asClosure(value, nativeHeapReference(cpu).gc));
-		const protectedCall = v.asClosure(completed[3], nativeHeapReference(cpu).gc);
+		const functions = completed.slice(0, 3).map(value => asClosure(value, nativeHeapReference(cpu).gc));
+		const protectedCall = asClosure(completed[3], nativeHeapReference(cpu).gc);
 		const maximum = [0, 0, 0];
 		for (const [index, reference] of [Math.sin, Math.cos, Math.tan].entries()) {
 			for (const word of TRIG32_INPUT_WORDS) {

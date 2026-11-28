@@ -11,11 +11,10 @@ import {
 } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { Blua32FunctionRecord } from '../../toolchain/ts/rompack/blua32_image';
@@ -98,7 +97,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function native(proto: FunctionPrototype, canonical: boolean) {
 		const address = allocateClosureRecordReference(oracle, 0, false);
-		initializeRecord(oracle.memory, address, proto, canonical, oracle.gc.white(), 0);
+		initializeRecord(oracle.memory, address, proto, canonical, nativeHeapReference(oracle).gc.white(), 0);
 		nativeHeapReference(oracle).gc.publishObject(address);
 		return address;
 	}

@@ -284,7 +284,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new FsmTransitionObservation(channel, stringPool, nativeHeapReference(cpu).gc, (...record) => service.appendFsmTransition(trace, ...record));
+	const observation = new FsmTransitionObservation(channel, stringPool, cpu.tables, (...record) => service.appendFsmTransition(trace, ...record));
 	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	observation.drain(20);
 
@@ -335,7 +335,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new ActionEffectObservation(channel, stringPool, nativeHeapReference(cpu).gc, {
+	const observation = new ActionEffectObservation(channel, stringPool, cpu.tables, {
 		trigger: (...record) => service.appendActionEffectTrigger(trace, ...record),
 		activity: (...record) => service.appendActionEffectActivity(trace, ...record),
 	});

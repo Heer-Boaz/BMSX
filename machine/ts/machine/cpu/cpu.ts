@@ -1,5 +1,4 @@
 import { ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -265,8 +264,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public readonly luaHeap: LuaHeap;
 	public readonly heapAllocator: HeapAllocator;
-	public readonly gc: GcHeap;
-	private readonly tables: TableRecords;
+	public readonly tables: TableRecords;
 	public readonly stringPool: StringPool;
 	private haltedUntilIrqFrameDepth = -1;
 	private haltedUntilIrqThread = 0;
@@ -373,7 +371,6 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap = new LuaHeap(memory, this.heapAllocator);
 		this.stringPool = new StringPool(this.memory, this.heapAllocator);
 		this.tables = new TableRecords(memory, this.cop0Words);
-		this.gc = new GcHeap(memory, this.heapAllocator, this.tables);
 		this.systemGlobalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, CPU_FIXED_STACK_BASE + GLOBAL_BANK_OFFSET);
 		this.rootThread = new Thread(memory);

@@ -3,7 +3,7 @@ import type { HeapAllocator } from './heap_allocator';
 import { assistAllocation, chargeCollectionWork } from './cpu_roots';
 import { nativeHeapReference } from './reference';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
-import { HEAP_GC_CONTROL_OFFSET } from './heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET } from '../firmware_heap_layout';
 import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import type { CPU } from '../../../machine/ts/machine/cpu/cpu';

@@ -1,7 +1,9 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -240,7 +242,7 @@ for (const optLevel of [3] as const) {
 		if (optLevel === 3) {
 			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
-				const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
+				const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 				const profile = profileWarmGuestKernel(cpu, run, 512);
 				t.diagnostic(JSON.stringify({ lane, ...profile }));
 				assert.equal(profile.reservations, 0);

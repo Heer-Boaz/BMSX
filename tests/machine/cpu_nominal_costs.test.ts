@@ -60,8 +60,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			for (const [after, slot, value] of [[1, 9, valueInteger(1)], [2, 10, valueFloat(8)], [3, 11, valueFloat(8)], [4, 12, valueInteger(1)], [5, 13, valueInteger(3)], [6, 14, valueInteger(17)], [7, 15, valueInteger(11)], [8, 16, valueInteger(17)], [12, 17, valueInteger(23)], [13, 20, valueInteger(31)], [15, 21, valueInteger(37)]]) {
 				assert.equal(r.get(slot), completed >= after ? value : valueNil(), `R${slot} at grant ${grant}`);
 			}
-			assert.equal(cpu.gc.tables.getStringKey(table, key), valueInteger(completed >= 9 ? 23 : 17));
-			assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(completed >= 10 ? 23 : 11));
+			assert.equal(cpu.tables.getStringKey(table, key), valueInteger(completed >= 9 ? 23 : 17));
+			assert.equal(cpu.tables.getInteger(table, 1), valueInteger(completed >= 10 ? 23 : 11));
 			assert.equal(r.get(18), completed >= 12 ? valueTable(table) : valueNil());
 			assert.equal(cpu.getSystemGlobalByKey(global), valueInteger(completed >= 14 ? 23 : 31));
 			assert.equal(cpu.getGlobalByKey(global), valueInteger(completed >= 16 ? 23 : 37));
@@ -110,9 +110,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			const next = [rootStarts[0], rootStarts[1], rootStarts[2], ...childStarts, rootStarts[3], rootStarts[4], 0][completed];
 			assert.equal(cpu.rootThread.currentFrame!.pc, base + next * INSTRUCTION_BYTES);
 			assert.equal(root.registers.get(4), completed >= 6 ? valueInteger(29) : completed >= 1 ? valueInteger(17) : valueNil());
-			assert.equal(root.registers.getClosure(0, nativeHeapReference(cpu).gc), captured);
+			assert.equal(root.registers.getPayload(0), captured);
 			assert.equal(root.registers.getTag(6), completed >= 2 ? ValueTag.Closure : ValueTag.Nil);
-			if (completed >= 2) assert.equal(root.registers.getClosure(6, nativeHeapReference(cpu).gc), cached);
+			if (completed >= 2) assert.equal(root.registers.getPayload(6), cached);
 			assert.equal(root.registers.get(5), completed >= 8 ? valueBool(true) : valueNil());
 			if (completed >= 3 && completed < 7) {
 				const r = cpu.rootThread.currentFrame!.registers;

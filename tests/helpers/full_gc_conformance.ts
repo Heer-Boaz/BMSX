@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { hashBytes } from '../../machine/ts/common/hash';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -14,6 +13,8 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../machine/ts/spec/blua32/cop0';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { GcPhase } from './native_heap/gc_heap';
+import { nativeHeapReference } from './native_heap/reference';
 
 interface StoreCheckpoint {
 	name: string;
@@ -52,7 +53,7 @@ export class FullGcConformance {
 	}
 
 	grant(cycles: number): RunResult {
-		const { cpu, scheduler } = this.runtime.machine, { gc } = cpu;
+		const { cpu, scheduler } = this.runtime.machine, { gc } = nativeHeapReference(cpu);
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		const used = cycles - cpu.instructionBudgetRemaining;
 		assert.ok(used > 0);
@@ -70,11 +71,11 @@ export class FullGcConformance {
 		for (let n = 0; n < 256 && !cpu.fixedInterruptActive(); ++n) this.grant(1);
 		assert.ok(cpu.fixedInterruptActive(), 'the authored SVC enters the fixed System vector');
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
-		assert.equal(cpu.gc.fullEpochs(), 0, 'the firmware owns the epoch latch before reclamation');
+		assert.equal(nativeHeapReference(cpu).gc.fullEpochs(), 0, 'the firmware owns the epoch latch before reclamation');
 		this.owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		this.caller = cpu.readThreadFrameDepth(this.owner) - 1;
 		this.callerPc = cpu.readEpcWord();
-		this.reach(() => cpu.gc.fullEpochs() !== 0, 'epoch count publication');
+		this.reach(() => nativeHeapReference(cpu).gc.fullEpochs() !== 0, 'epoch count publication');
 	}
 
 	private held(): void {
@@ -119,8 +120,8 @@ export class FullGcConformance {
 		const drain = () => {
 			let result = RunResult.Yielded;
 			for (let i = 0; i < 32768 && this.collecting(); ++i) result = this.grant(911);
-			assert.equal(cpu.gc.fullEpochs(), 0);
-			assert.equal(cpu.gc.phase(), GcPhase.Pause);
+			assert.equal(nativeHeapReference(cpu).gc.fullEpochs(), 0);
+			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 			validate();
 			const low = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
 			this.trace.push(`H ${low} ${end}`);

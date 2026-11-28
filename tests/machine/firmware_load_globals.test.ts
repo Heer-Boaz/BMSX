@@ -1,6 +1,8 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
-import { valueBool, valueInteger, asClosure } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -105,7 +107,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
-		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), nativeHeapReference(cpu).gc), []);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(10000));
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');

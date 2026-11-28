@@ -1,13 +1,12 @@
+import { GC_MODE_META, GC_MODE_NODE, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { GC_MODE_META, GC_MODE_NODE, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, hashCanonicalTableKey, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
@@ -38,8 +37,8 @@ function fixture(optLevel: 0 | 3) {
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const output = management + GC_WORKSPACE_END - 12, floor = memory.ramBusEnd() - RAM_BASE;
-	const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode);
-	assert.equal(modeKey, oracle.gc.diagnosticWord(GcDiagnosticField.Mode));
+	const modeKey = nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode);
+	assert.equal(modeKey, nativeHeapReference(oracle).gc.diagnosticWord(GcDiagnosticField.Mode));
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -66,7 +65,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function table(hash: number) {
 		const address = add(target => createReferenceTable(target, 0, hash));
-		const words = cpu.gc.tables.hashAddress(address), tags = words + 8 * hash, links = tags + 2 * hash;
+		const words = cpu.tables.hashAddress(address), tags = words + 8 * hash, links = tags + 2 * hash;
 		const home = hashCanonicalTableKey(valueString(modeKey)) & (hash - 1);
 		function node(slot: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, payload: number, next: number) {
 			word(words + 4 * slot, keyWord);
@@ -88,7 +87,7 @@ function fixture(optLevel: 0 | 3) {
 			memory.readRamRecordWord(control + GC_MODE_NODE), memory.readRamRecordWord(control + MODE_REMAINING)];
 	}
 	function begin(receiver: number, limit: number) {
-		const address = oracle.gc.tableRecordAddress(oracle.gc.tables.metatableAddress(receiver));
+		const address = nativeHeapReference(oracle).gc.tableRecordAddress(oracle.tables.metatableAddress(receiver));
 		const mode = nativeHeapReference(oracle).gc['probeTableMode'](receiver, limit), pending = +(mode < 0);
 		const { value, work } = nativeHeapReference(oracle).gc['modeProbe'];
 		const result = pending || !address ? [pending, ValueTag.Nil, 0, work] : [pending, valueTag(value), valuePayload(value), work];

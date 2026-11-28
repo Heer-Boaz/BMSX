@@ -90,9 +90,7 @@ import { linkManagedTestSystem } from '../helpers/managed_system';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
-import { GcPhase, GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;

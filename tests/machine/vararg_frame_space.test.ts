@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -107,7 +108,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(f.frame.top, f.priorTop);
 		assert.equal(f.frame.stackCapacity, f.priorWindow);
 		assert.equal(f.readThread(ThreadField.StackBlock), f.priorBlock);
-		assert.equal(f.cpu.gc.closureRecordAddress(f.closure), f.closure);
+		assert.equal(nativeHeapReference(f.cpu).gc.closureRecordAddress(f.closure), f.closure);
 		assert.deepEqual(args.map((_, i) => f.thread.stackRegisters.get(f.frame.varargBase + i)), args);
 	});
 }

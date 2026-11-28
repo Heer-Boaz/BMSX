@@ -1,3 +1,4 @@
+import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GC_THREAD_VISITS, GC_VISIT_COUNT, GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
@@ -7,14 +8,13 @@ import { test } from 'node:test';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure, setCaptureAddress } from '../../machine/ts/machine/cpu/closure';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GC_THREAD_VISITS, GC_VISIT_COUNT, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GcTraceContextField, GC_TRACE_CONTEXT_OFFSET } from '../helpers/firmware_heap_layout';
+import { GcTraceContextField, GC_TRACE_CONTEXT_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
@@ -63,7 +63,7 @@ function fixture(optLevel: 0 | 3) {
 	function closure(captured: number) {
 		return add(target => {
 			const address = allocateClosureRecordReference(target, 1);
-			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 1);
+			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, nativeHeapReference(target).gc.white(), 1);
 			setCaptureAddress(target.memory, address, 0, captured);
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
@@ -72,7 +72,7 @@ function fixture(optLevel: 0 | 3) {
 	function cell(value: number) {
 		return add(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initializeCell(target.memory, address, target.gc.white());
+			initializeCell(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			target.memory.writeRamRecordByte(address + UPVALUE_VALUE_TAG, ValueTag.String);
 			target.memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, value);
@@ -91,8 +91,8 @@ function fixture(optLevel: 0 | 3) {
 		for (const target of [cpu, oracle]) nativeHeapReference(target).gc['enqueue'](address, link, GC_TRACE_HEAD);
 	}
 	function beginning(limit: number, work: number, pending: number, policy = 0) {
-		const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode);
-		assert.equal(modeKey, oracle.gc.diagnosticWord(GcDiagnosticField.Mode));
+		const modeKey = nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode);
+		assert.equal(modeKey, nativeHeapReference(oracle).gc.diagnosticWord(GcDiagnosticField.Mode));
 		memory.writeRamRecordWord(context + GcTraceContextField.Work, work);
 		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
 		memory.writeRamRecordWord(context + GcTraceContextField.Atomic, 0);
@@ -132,7 +132,7 @@ for (const optLevel of [0, 3] as const) {
 		word(thread + ThreadField.FrameDepth, 1);
 		word(frame + FrameField.StackCapacity, 8);
 		const capturing = closure(cell(string('captured'))), queuedCell = cell(string('queued'));
-		const array = cpu.gc.tables.arrayAddress(table);
+		const array = cpu.tables.arrayAddress(table);
 		word(array, string('array'));
 		byte(array + 8, ValueTag.String);
 		queue(thread); queue(table); queue(capturing); queue(queuedCell, UPVALUE_NEXT);
@@ -196,7 +196,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const policy of [0, 1]) {
 			const { cpu, memory, control, word, byte, add, string, beginning, finish, frontier } = fixture(optLevel);
 			const table = add(target => createReferenceTable(target, 1, 0)), item = string('raw mode edge');
-			const array = cpu.gc.tables.arrayAddress(table), epoch = memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET + 0xc) & 1;
+			const array = cpu.tables.arrayAddress(table), epoch = memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET + 0xc) & 1;
 			word(array, item);
 			byte(array + 4, ValueTag.String);
 			word(control + GC_TRACE_RECORD, table);

@@ -1,4 +1,6 @@
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import assert from 'node:assert/strict';
@@ -50,7 +52,7 @@ function fixture(t: TestContext, program = PROGRAM) {
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
-	const issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), cpu.gc);
+	const issue = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('issue')!), nativeHeapReference(cpu).gc);
 	afterTest(t, () => { lifetime.abort(); f.events.dispose(); f.gteHistory.dispose(); f.presenter.dispose(); });
 	return { ...f, tools, lifetime, cpu, issue, target: f.inspection.target };
 }
@@ -150,7 +152,7 @@ test('GTE commands issued by an actual loaded RAM closure retain instruction ide
 	const f = fixture(t, `ram_issue = assert(load('return function(address, value) return address + value end'))(); return true`);
 	const { tools, target, cpu, runtime, gteHistory } = f;
 	await tools.execute('studio_gte_history', { target, action: 'start' });
-	const chunk = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('ram_issue')!), cpu.gc);
+	const chunk = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('ram_issue')!), nativeHeapReference(cpu).gc);
 	// Firmware load accepts Lua syntax. Its genuine writable RAM closure can also
 	// execute raw memory instructions supplied through the central instruction ABI.
 	const codeAddress = cpu.memory.readMappedU32LE(cpu.captureClosureBinding(chunk).functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);

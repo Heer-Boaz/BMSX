@@ -46,7 +46,7 @@ last = scenes.instantiate('same')
 	assert.equal(provenance.plans.size, 4, 'failed compilation has no plan publication');
 	const plans = ['first', 'second', 'third', 'last'].map(name => {
 		const scene = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find(name)!));
-		return valuePayload(cpu.gc.tables.getStringKey(scene, cpu.stringPool.find('definition')!));
+		return valuePayload(cpu.tables.getStringKey(scene, cpu.stringPool.find('definition')!));
 	});
 	assert.equal(new Set(plans.map(plan => plan)).size, 4, 'plan identity survives repeated registry keys');
 	for (let index = 0; index < plans.length; index++) {

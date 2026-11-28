@@ -8,7 +8,6 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_COMPLETION, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, registerWindowBucket } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -26,6 +25,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -98,7 +98,7 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 	const observedCallSite = cpu.readThreadFrameWord(owner, 0, FrameField.CallSite);
 	const flags = cpu.readThreadFrameWord(owner, 0, FrameField.Flags);
 	const weakOwner = weak ? valuePayload(caller.registers.get(instruction.a + 1)) : 0;
-	const output = weak ? [valueInteger(1), cpu.gc.tables.getInteger(weakOwner, 1)] : [
+	const output = weak ? [valueInteger(1), cpu.tables.getInteger(weakOwner, 1)] : [
 		valueInteger(cpu.readThreadFrameWord(owner, 0, FrameField.Function)),
 		valueInteger(cpu.readThreadFrameWord(owner, 0, FrameField.Pc)),
 		valueInteger(observedCallSite),
@@ -118,11 +118,11 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 		nativeHeapReference(cpu).gc.collect(output[1]);
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		nativeHeapReference(cpu).stringPool.intern(deadText);
-		for (let step = 0; cpu.gc.phase() !== GcPhase.Atomic && step < 4096; ++step)
+		for (let step = 0; nativeHeapReference(cpu).gc.phase() !== GcPhase.Atomic && step < 4096; ++step)
 			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
-		assert.equal(cpu.gc.phase(), GcPhase.Atomic);
-		assert.equal(cpu.gc.isAlive(valuePayload(output[1])), false, 'the next() value is weak-only while the producer is still stopped');
-		assert.equal(cpu.gc.tables.getInteger(weakOwner, 1), output[1]);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Atomic);
+		assert.equal(nativeHeapReference(cpu).gc.isAlive(valuePayload(output[1])), false, 'the next() value is weak-only while the producer is still stopped');
+		assert.equal(cpu.tables.getInteger(weakOwner, 1), output[1]);
 	}
 	if (weak || refusal) {
 		if (refusal) nativeHeapReference(cpu).gc.collect();
@@ -210,8 +210,8 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 				assert.equal(cpu.readFrameRegister(depth - 1, instruction.a + i), i < output.length ? output[i] : valueNil());
 			if (weak) {
 				assert.equal(cpu.stringPool.find(deadText), undefined, 'growth collected the extent blocker before retry');
-				assert.equal(cpu.gc.tables.getInteger(weakOwner, 1), output[1]);
-				assert.equal(cpu.gc.tableRecordAddress(valuePayload(output[1])), valuePayload(output[1]));
+				assert.equal(cpu.tables.getInteger(weakOwner, 1), output[1]);
+				assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(valuePayload(output[1])), valuePayload(output[1]));
 			}
 		}
 		hash(rt, owner, THREAD_HEAP_BYTES);

@@ -1,7 +1,8 @@
+import { asThread } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { asThread, valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_RECORD_KIND, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -19,7 +20,7 @@ test('a failed thread retains its physical error word, tag and authored frames',
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_EXPLICIT_ERROR);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const value = cpu.getGlobalByKey(cpu.stringPool.find('failed_thread')!);
-	const failed = asThread(value, cpu.gc);
+	const failed = asThread(value, nativeHeapReference(cpu).gc);
 	assert.equal(valuePayload(value), failed);
 	assert.equal(cpu.memory.readRamRecordByte(failed + ThreadField.Header), THREAD_RECORD_KIND);
 	assert.equal(cpu.memory.readRamRecordWord(failed + ThreadField.Status), ThreadStatus.Failed);
@@ -35,7 +36,7 @@ test('a dead coroutine is collected after its last stack roots return', () => {
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	nativeHeapReference(cpu).gc.collect();
 	const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak_threads')!));
-	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil());
+	assert.equal(cpu.tables.getInteger(weak, 1), valueNil());
 });
 
 for (const optimize of [0, 3] as const) test(`coroutine transfers place exact fixed, discarded and open results without heap growth (O${optimize})`, () => {

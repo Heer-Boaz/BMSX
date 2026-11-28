@@ -111,7 +111,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.runUntilDepth(0, 1);
 			assert.equal(cpu.readLuaFaultReasonWord(), fault);
 			if (fault === 0) assert.equal(frame.registers.get(0), valueNil());
-			assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(87));
+			assert.equal(cpu.tables.getInteger(table, 1), valueInteger(87));
 		}
 	});
 

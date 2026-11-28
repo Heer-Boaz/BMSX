@@ -1,4 +1,6 @@
-import { asClosure, numberToHost, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { numberToHost, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -132,7 +134,7 @@ for (const optLevel of [3] as const) test(`static model pass consumes World memb
 	const { cpu } = createCartlibProgramHarness(source, { optLevel, modules });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const method = (name: string) => asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)), cpu.gc);
+	const method = (name: string) => asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(name)), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, method('check'), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const steady = profileWarmGuestKernel(cpu, method('steady'), 256);
@@ -163,7 +165,7 @@ return {model=function(id) return record end,
 	runGuestToHalt(cpu, 10_000_000);
 	const address = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('test_model_address')));
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-	const packet = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('packet')), cpu.gc);
+	const packet = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('packet')), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, packet, []);
 	const before = materializeCpuCompletionValues(cpu);
 	const changed: GLTFModel = { ...model, meshes: model.meshes.map((mesh, index) => index !== 0 ? mesh : {
@@ -174,7 +176,7 @@ return {model=function(id) return record end,
 	const replacement = packModelAsset(changed).buffer;
 	assert.equal(replacement.length, bytes.length);
 	cpu.memory.writeBytes(address, replacement);
-	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('renew')), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('renew')), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	runCompletionClosure(cpu, packet, []);
 	const after = materializeCpuCompletionValues(cpu);

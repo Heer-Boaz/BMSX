@@ -1,3 +1,5 @@
+import { GC_THREAD_VISITS, GC_WEAK_VISITS, GcPhase } from '../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
@@ -5,9 +7,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_THREAD_VISITS, GC_WEAK_VISITS, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

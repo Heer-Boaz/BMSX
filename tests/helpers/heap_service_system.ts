@@ -13,7 +13,6 @@ import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
-import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_DIAGNOSTIC_FAULTS_OFFSET, firmwareImageBackingOffset } from './firmware_heap_layout';
 import { registerReferenceGlobalName } from './global_bank_reference';
 import { EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset } from '../../machine/ts/spec/blua32/execution_domain';
@@ -33,6 +32,7 @@ import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { allocateThreadRecordReference, reserveThreadFrameReference } from './thread_allocation_reference';
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from './native_heap/gc_heap';
 
 const testBiosUtilityModules = ['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'];
 const testSystemAssets = {

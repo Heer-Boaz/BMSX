@@ -36,7 +36,7 @@ export class PlayEvidence implements FixtureOutput {
 	}
 	public captured(sequence: number): void { this.capture!.sequence = sequence; this.capture = undefined; this.revision++; }
 	public observeFsm(channel: number): void {
-		this.fsm = new FsmTransitionObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc,
+		this.fsm = new FsmTransitionObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.tables,
 			(sequence, millisecondsWord, tick, lane, previous, target, outcome) => {
 				this.fsmTrace!.facts.push({ sequence, millisecondsWord, tick, lane, previous, target, outcome }); this.revision++;
 			}, 'rolling');
@@ -44,7 +44,7 @@ export class PlayEvidence implements FixtureOutput {
 		this.revision++;
 	}
 	public observeActionEffects(channel: number): void {
-		this.effects = new ActionEffectObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.gc, {
+		this.effects = new ActionEffectObservation(channel, this.runtime.machine.cpu.stringPool, this.runtime.machine.cpu.tables, {
 			trigger: (sequence, millisecondsWord, tick, effect, outcome) => {
 				this.effectTrace!.facts.push({ sequence, millisecondsWord, tick, effect, kind: 'trigger', outcome }); this.revision++;
 			},
@@ -63,8 +63,8 @@ export class PlayEvidence implements FixtureOutput {
 	public drain(): void {
 		if (this.restored) {
 			const cpu = this.runtime.machine.cpu, pool = cpu.stringPool, context = this.readContext();
-			const fsm = cpu.gc.tables.getStringKey(context, pool.find('fsm_recorder')!);
-			const effects = cpu.gc.tables.getStringKey(context, pool.find('actioneffect_recorder')!);
+			const fsm = cpu.tables.getStringKey(context, pool.find('fsm_recorder')!);
+			const effects = cpu.tables.getStringKey(context, pool.find('actioneffect_recorder')!);
 			if (!isNil(fsm)) { this.observeFsm(valuePayload(fsm)); this.fsm!.discardPublished(); }
 			if (!isNil(effects)) { this.observeActionEffects(valuePayload(effects)); this.effects!.discardPublished(); }
 			this.restored = false;

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SHIFT } from '../../../machine/ts/machine/memory/mapped_page';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -28,6 +28,8 @@ import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, firmw
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { asClosure } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const label = 'String installed by the BIOS';
 const source = (marker: number, global = 'publication_amount') => `
@@ -75,7 +77,7 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const owned = ram.slice(backing, backing + FIRMWARE_IMAGE_BACKING_SIZE), operands = ram.slice(base, base + size);
 	const stringId = cpu.stringPool.find(label)!;
 	assert.equal(cpu.stringPool.toString(stringId), label);
-	const probeClosure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('publication_probe')!), cpu.gc);
+	const probeClosure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('publication_probe')!), nativeHeapReference(cpu).gc);
 	assert.equal(cpu.captureClosureBinding(probeClosure).functionAddress, probe);
 	// Exercise the real published Global slot, not a constant-folded initializer.
 	setReferenceGlobal(cpu, cpu.stringPool.find('publication_amount')!, valueInteger(59));
@@ -87,11 +89,11 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	}
 	function runProbe(marker: number) {
 		cpu.beginCompletionCall(probeClosure);
-		observe(`T c ${probeClosure}`, `1 0 0 ${cpu.gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		observe(`T c ${probeClosure}`, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		const result = scheduler.runCpuSlice(0, 256, 0, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
-		observe('L 256', `${result} ${256 - cpu.instructionBudgetRemaining} ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		observe('L 256', `${result} ${256 - cpu.instructionBudgetRemaining} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 		const values = runtime.readCompletionValues();
 		assert.deepEqual(values, [valueInteger(marker), valueInteger(59), valueString(stringId)]);
 		assert.equal(cpu.stringPool.toString(valuePayload(values[2])), label);

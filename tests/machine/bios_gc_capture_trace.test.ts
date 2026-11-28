@@ -1,3 +1,4 @@
+import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
@@ -6,14 +7,13 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { initializeRecord as initializeClosure, setCaptureAddress } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { bindOpen, initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -83,7 +83,7 @@ function fixture(optLevel: 0 | 3) {
 	function cell() {
 		return add(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initializeCell(target.memory, address, target.gc.white());
+			initializeCell(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
@@ -92,7 +92,7 @@ function fixture(optLevel: 0 | 3) {
 		return add(target => {
 			const address = allocateClosureRecordReference(target, captures.length);
 			const prototype = target.captureClosureBinding(target.rootThread.currentFrame!.closure);
-			initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures.length);
+			initializeClosure(target.memory, address, prototype, false, nativeHeapReference(target).gc.white(), captures.length);
 			for (const [index, cell] of captures.entries()) setCaptureAddress(target.memory, address, index, cell);
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
@@ -127,7 +127,7 @@ for (const optLevel of [0, 3] as const) {
 		const fake = add(target => nativeHeapReference(target).heapAllocator.allocate(32, true)) + GC_OBJECT_PREFIX;
 		const string = add(target => nativeHeapReference(target).stringPool.intern('bios-trace-closed-value'));
 		const prior = add(target => nativeHeapReference(target).stringPool.intern('bios-trace-prior-work'));
-		const liveColor = cpu.gc.white();
+		const liveColor = nativeHeapReference(cpu).gc.white();
 		const alias = (closed | 0x40000001) >>> 0;
 		const head = closure([open, closed, closed, fake, alias]);
 		const slot = 2;

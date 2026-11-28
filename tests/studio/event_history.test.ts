@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -55,7 +56,7 @@ test('automatic history wraps and survives pane closure and debugger reconfigura
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
 	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	const pane = new EventViewerInput(events), projection = pane.projection;
 	cpu.beginCompletionCall(fn, [v.valueInteger(1)]); cpu.runUntilDepth(0, BUDGET);
 	const first = events.at(0);
@@ -100,7 +101,7 @@ test('a source breakpoint stops before trace execution and continuing emits exac
 	const fnIndex = image.symbols!.metadata.functionDisplayNames.indexOf('event_emitter.emit');
 	const pc = image.layout.functions[fnIndex].codeAddress;
 	state.source.install(sources.currentBlua32Media, [new Map(), new Map([[pc, 0]]), new Map()]);
-	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [v.valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.ExecutionStopped);
 	assert.equal(events.count, 0);
@@ -133,7 +134,7 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 	const events = new RuntimeEventHistory(observed.runtime, observed.sources, new RuntimeInstructionObservers(observed.runtime.machine.cpu));
 	for (const { cpu } of [baseline, observed]) {
 		runGuestToHalt(cpu, BUDGET);
-		const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+		const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 		cpu.beginCompletionCall(fn, [v.valueInteger(1000)]);
 		runGuestToHalt(cpu, BUDGET);
 	}
@@ -145,7 +146,7 @@ test('observation preserves guest cycles, heap and complete CPU state', () => {
 
 test('numeric snapshots preserve Integer/Float tags and every IEEE bit across JSON', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const snapshot = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc), slots = new ValueSlots(10);
+	const snapshot = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables), slots = new ValueSlots(10);
 	const values = [v.valueInteger(16777217), v.valueFloat(16777216), v.valueInteger(0), v.valueFloatBits(0),
 		v.valueFloatBits(0x80000000), v.valueFloatBits(0x7f800000), v.valueFloatBits(0xff800000),
 		v.valueFloatBits(0x7fc00000), v.valueFloatBits(0xffa12345), v.valueFloatBits(1)];
@@ -162,7 +163,7 @@ test('numeric snapshots preserve Integer/Float tags and every IEEE bit across JS
 test('string snapshots retain decoded bytes across RAM restore and scratch reuse', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const pool = nativeHeapReference(cpu).stringPool, saved = cpu.memory.captureSaveState();
-	const reader = new GuestValueSnapshot(pool, nativeHeapReference(cpu).gc), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(pool, cpu.tables), values = new ValueSlots(1);
 	const text = '\uFEFF\0z\uD83D\uDE80é\r\n';
 	reader.begin();
 	values.setString(0, pool.intern(textToByteString(text)));
@@ -184,7 +185,7 @@ test('string snapshots retain decoded bytes across RAM restore and scratch reuse
 
 test('snapshot work includes vacant storage and shares its scan budget across nested values', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables), values = new ValueSlots(1);
 	const child = createReferenceTable(cpu, VALUE_SNAPSHOT_SLOTS, 0), root = createReferenceTable(cpu, 2, 0);
 	nativeHeapReference(cpu).gc.tables.setInteger(child, VALUE_SNAPSHOT_SLOTS, v.valueInteger(17));
 	nativeHeapReference(cpu).gc.tables.setInteger(root, 1, v.valueTable(child)); nativeHeapReference(cpu).gc.tables.setInteger(root, 2, v.valueInteger(42));
@@ -211,7 +212,7 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 
 test('snapshot entry boundary distinguishes an exhausted budget from fully visited empty storage', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
-	const reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc), values = new ValueSlots(1);
+	const reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables), values = new ValueSlots(1);
 	const table = createReferenceTable(cpu, VALUE_SNAPSHOT_ENTRIES + 1, 0);
 	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) nativeHeapReference(cpu).gc.tables.setInteger(table, index, v.valueInteger(index));
 	values.set(0, v.valueTable(table));
@@ -237,7 +238,7 @@ test('independent instruction consumers share physical points and dispose withou
 	let visits = 0;
 	const release = observers.add({ points: [new Set(), new Set(binding.points.map(point => point.pc)), new Set()], observe() { visits++; } });
 	cpu.runUntilDepth(0, BUDGET);
-	const fn = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
+	const fn = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(fn, [v.valueInteger(2)]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.count, 2); assert.equal(visits, 2);
 	events.dispose();

@@ -1,3 +1,4 @@
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
@@ -7,7 +8,6 @@ import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS, initializeRecord } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread_record';
 import { valueClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
@@ -223,7 +223,7 @@ for (const level of [0, 3] as const) {
 		const detached = allocateClosureRecordReference(cpu, 0);
 		initializeRecord(memory, detached, { functionAddress: prototype.address, executionDomainId: -1, codeAddress: prototype.codeAddress,
 			numParams: prototype.numParams, maxStack: prototype.maxStack, flags: prototype.flags, upvalueTableAddress: prototype.upvalueTableAddress,
-			recordUpvalueCount: 0 }, false, cpu.gc.white(), 0);
+			recordUpvalueCount: 0 }, false, nativeHeapReference(cpu).gc.white(), 0);
 		nativeHeapReference(cpu).gc.publishObject(detached);
 		const victim = createReferenceTable(cpu, 0, 2048);
 		const staged = arena.allocate(frames * FRAME_CONTROL_BYTES, true);
@@ -236,16 +236,16 @@ for (const level of [0, 3] as const) {
 		reserveThreadStorageReference(oracle, address, values, frames, valueClosure(detached));
 		const oldStack = read(ThreadField.StackBlock);
 		f.start(values, frames, detached);
-		for (let n = 0; n < 32768 && cpu.gc.phase() !== GcPhase.Strings; ++n) f.grant(32);
-		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+		for (let n = 0; n < 32768 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Strings; ++n) f.grant(32);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Strings);
 		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(read(ThreadField.StackBlock), oldStack, 'retry had not touched the owner while collection runs');
 		const checkpoint = captureCpuCheckpoint(cpu);
 		const spent = f.finish();
 		function verify() {
 			assert.equal(f.result(), 0);
-			assert.equal(cpu.gc.closureRecordAddress(detached), detached);
-			assert.equal(cpu.gc.tableRecordAddress(victim), 0);
+			assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(detached), detached);
+			assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(victim), 0);
 			for (const field of [ThreadField.StackBlock, ThreadField.StackCapacity, ThreadField.FrameBlock, ThreadField.FrameCapacity])
 				assert.equal(read(field), oracle.memory.readRamRecordWord(address + field));
 			assert.equal(cpu.luaHeap.usedBytes(), oracle.luaHeap.usedBytes());
@@ -267,15 +267,15 @@ for (const level of [0, 3] as const) {
 		nativeHeapReference(oracle).gc.finishFinalMark(valueClosure(f.closure));
 		const occupied = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
 		f.start(values, 0, f.closure, 1024);
-		for (let n = 0; n < 12000 && cpu.gc.epochWork() === 0; ++n) f.grant(1);
+		for (let n = 0; n < 12000 && nativeHeapReference(cpu).gc.epochWork() === 0; ++n) f.grant(1);
 		assert.ok(cpu.fixedInterruptActive());
-		assert.ok(cpu.gc.epochWork() > 0);
+		assert.ok(nativeHeapReference(cpu).gc.epochWork() > 0);
 		assert.equal(arena.occupiedBytes(), occupied, 'logical assist precedes physical reservation');
 		assert.equal(cpu.luaHeap.usedBytes(), logical);
 		f.finish();
 		assert.equal(f.result(), 0);
-		assert.equal(cpu.gc.phase(), oracle.gc.phase());
-		assert.equal(cpu.gc.epochWork(), oracle.gc.epochWork());
+		assert.equal(nativeHeapReference(cpu).gc.phase(), nativeHeapReference(oracle).gc.phase());
+		assert.equal(nativeHeapReference(cpu).gc.epochWork(), nativeHeapReference(oracle).gc.epochWork());
 		assert.equal(cpu.luaHeap.collectionTarget(), oracle.luaHeap.collectionTarget());
 		assert.equal(arena.occupiedBytes(), oracle.heapAllocator.occupiedBytes());
 		assert.equal(read(ThreadField.StackBlock), oracle.memory.readRamRecordWord(address + ThreadField.StackBlock));

@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
@@ -113,7 +115,7 @@ for (const optLevel of [3] as const) test(`actor32 O${optLevel}: typed borrows, 
 	const oldActor = v.valuePayload(actor), saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	tree.release();
 	assert.equal(root.value, null); assert.equal(root.key, v.valueNil());
-	runCompletionClosure(cpu, v.asClosure(guest.readStringMember(world, 'mutate'), cpu.gc), [world]);
+	runCompletionClosure(cpu, asClosure(guest.readStringMember(world, 'mutate'), nativeHeapReference(cpu).gc), [world]);
 	tree.update(sources, guest, 0, findRuntimeActor(sources, guest, 0, actorHash));
 	transport.refresh(tree.roots[0].children[1].children[0], false, guest, true, true);
 	assert.equal(transport.slider.enabled, false, 'an unbuilt duration is guest Nil');

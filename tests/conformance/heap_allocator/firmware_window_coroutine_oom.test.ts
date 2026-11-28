@@ -10,14 +10,13 @@ import { captureAddress, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/m
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { THREAD_HEAP_BYTES, ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, load, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_OWNER } from '../../../machine/ts/machine/cpu/upvalue';
-import { asClosure, asThread, valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_REGISTER_WINDOW, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -26,6 +25,8 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { asClosure, asThread, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -94,7 +95,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 		assert.equal(memory.readRamRecordWord(issuer + FrameField.Pc), pc);
 		const { op, a: callee } = decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, pc);
 		assert.equal(op, OpCode.CALL);
-		const closure = asClosure(cpu.readThreadRegister(interrupted, frameCount - 1, callee), cpu.gc);
+		const closure = asClosure(cpu.readThreadRegister(interrupted, frameCount - 1, callee), nativeHeapReference(cpu).gc);
 		const prototype = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 		if (prototype !== memory.readRamRecordWord(issuer + FrameField.Function)) continue;
 		const fn = entries.get(prototype)!;
@@ -124,7 +125,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 	function inspectFailed(rt: Runtime) {
 		const { cpu, memory } = rt.machine;
 		const observedGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
-		assert.equal(asThread(observedGlobal('failed_thread'), cpu.gc), failed);
+		assert.equal(asThread(observedGlobal('failed_thread'), nativeHeapReference(cpu).gc), failed);
 		assert.equal(cpu.readThreadStatus(failed), ThreadStatus.Failed);
 		assert.equal(cpu.readThreadFrameDepth(failed), depth, 'failure did not unwind the coroutine');
 		assert.equal(cpu.readThreadFrameWord(failed, depth - 1, FrameField.Pc), issue);
@@ -140,7 +141,7 @@ return ok, err, close_ok, close_error, escaped_cell()
 		assert.equal(cpu.readEpcWord(), resume);
 		assert.equal(observedGlobal('resume_ok'), valueBool(false));
 		assert.equal(observedGlobal('resume_error'), error);
-		const closure = asClosure(observedGlobal('escaped_cell'), cpu.gc);
+		const closure = asClosure(observedGlobal('escaped_cell'), nativeHeapReference(cpu).gc);
 		const cell = captureAddress(memory, closure, 0);
 		assert.ok(isOpen(memory, cell));
 		assert.equal(memory.readRamRecordWord((cell & UPVALUE_ADDRESS_MASK) + UPVALUE_OWNER), failed);

@@ -8,7 +8,7 @@ import {
 	type TableLookupResult,
 } from '../../machine/ts/machine/cpu/table';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, asClosure, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { observedRecordLifetime, retireObservedRecordLifetimes } from './record_lifetimes';
@@ -151,7 +151,7 @@ export class SuspendedGuestSession {
 		args: ReadonlyArray<SuspendedGuestValue> = EMPTY_CALL_ARGS,
 	): ReadonlyArray<SuspendedGuestValue> {
 		this.invalidate();
-		return this.runtime.callClosure(asClosure(value, this.cpu.gc), args);
+		return this.runtime.callClosure(valuePayload(value), args);
 	}
 
 	public kind(value: SuspendedGuestValue): SuspendedGuestValueKind {
@@ -201,7 +201,7 @@ export class SuspendedGuestSession {
 	/** A closure carries the execution domain in which its function record was bound. */
 	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
-		const closure = asClosure(value, this.cpu.gc);
+		const closure = valuePayload(value);
 		const address = this.cpu.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 		const domain = executionDomain(this.cpu.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS));
 		if (target === undefined) return { domain, address };
@@ -223,7 +223,7 @@ export class SuspendedGuestSession {
 			return valueNil();
 		}
 		const table = valuePayload(value);
-		this.cpu.gc.tables.resolveStringIndex(table, key, this.lookupResult);
+		this.cpu.tables.resolveStringIndex(table, key, this.lookupResult);
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
@@ -247,7 +247,7 @@ export class SuspendedGuestSession {
 
 	/** Stored entries only: numeric/boolean/reference keys are not stringified into lookup keys. */
 	public visitTableEntries(value: SuspendedGuestValue, visitor: (key: SuspendedGuestValue, value: SuspendedGuestValue) => void): void {
-		this.cpu.gc.tables.forEachStoredEntry(valuePayload(value), visitor);
+		this.cpu.tables.forEachStoredEntry(valuePayload(value), visitor);
 	}
 
 	public visitTableStringMembers(
@@ -267,8 +267,8 @@ export class SuspendedGuestSession {
 		};
 		let current = valuePayload(value);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			this.cpu.gc.tables.forEachStoredEntry(current, visitEntry);
-			current = this.cpu.gc.tables.indexParentTable(current);
+			this.cpu.tables.forEachStoredEntry(current, visitEntry);
+			current = this.cpu.tables.indexParentTable(current);
 			if (current === 0) return;
 		}
 		throw new Error(METATABLE_LOOP_MESSAGE);
@@ -306,7 +306,7 @@ export class SuspendedGuestSession {
 		const entry = this.entryScratch.get(depth);
 		parts.length = 0;
 		let entryCount = 0;
-		this.cpu.gc.tables.next(table, valueNil(), entry, 0);
+		this.cpu.tables.next(table, valueNil(), entry, 0);
 		while (entry.getTag(0) !== ValueTag.Nil && entryCount < maxEntries) {
 			const key = entry.get(0);
 			parts.push(
@@ -323,7 +323,7 @@ export class SuspendedGuestSession {
 				)}`,
 			);
 			entryCount += 1;
-			this.cpu.gc.tables.next(table, key, entry, 0);
+			this.cpu.tables.next(table, key, entry, 0);
 		}
 		if (entry.getTag(0) !== ValueTag.Nil) {
 			parts.push('…');

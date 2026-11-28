@@ -137,7 +137,7 @@ function captureRuntimeCpuFaultFrames(
 	const cpu = runtime.machine.cpu;
 	const memory = runtime.machine.memory;
 	const frames = new Array<RuntimeCpuFaultFrame>(frameDepth);
-	const snapshot = new GuestValueSnapshot(cpu.stringPool, cpu.gc);
+	const snapshot = new GuestValueSnapshot(cpu.stringPool, cpu.tables);
 	snapshot.begin();
 	const slot = new ValueSlots(1);
 	// Spend the bounded table/string preview budget at the fault site first.

@@ -76,12 +76,12 @@ end
 	// Observe fresh heap borrows after the operation, not pre-call handles or
 	// rounded display strings: payloads and subtype must both survive admission.
 	const current = guest.global('studio_test_actor'), stored = valuePayload(guest.readStringMember(current, 'tool_arguments'));
-	assert.deepEqual(expected.map((_, index) => cpu.gc.tables.getInteger(stored, index + 1)), expected);
+	assert.deepEqual(expected.map((_, index) => cpu.tables.getInteger(stored, index + 1)), expected);
 	const payload = guest.readStringMember(current, 'tool_payload');
-	const child = valuePayload(cpu.gc.tables.get(valuePayload(payload), valueBool(true)));
-	assert.equal(cpu.stringPool.bytes(valuePayload(cpu.gc.tables.getInteger(child, 1))), 'bytes\x00\xff');
-	assert.equal(cpu.gc.tables.getInteger(child, 2), valueNil());
-	assert.equal(cpu.gc.tables.getInteger(child, 3), valueFloatBits(0x80000000));
+	const child = valuePayload(cpu.tables.get(valuePayload(payload), valueBool(true)));
+	assert.equal(cpu.stringPool.bytes(valuePayload(cpu.tables.getInteger(child, 1))), 'bytes\x00\xff');
+	assert.equal(cpu.tables.getInteger(child, 2), valueNil());
+	assert.equal(cpu.tables.getInteger(child, 3), valueFloatBits(0x80000000));
 	assert.equal(guest.readStringMember(payload, 'flag'), valueBool(false));
 	assert.equal(asInteger(guest.readStringMember(current, 'tool_call_count')), 1);
 	assert.throws(() => tools.execute('studio_list_actor_operations', { node: node.reference }), 'call entry expires the old suspended inspection');

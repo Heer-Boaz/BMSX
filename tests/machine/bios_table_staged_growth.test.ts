@@ -54,7 +54,7 @@ for (const optLevel of [0, 3] as const) {
 			const reservation = both(target => nativeHeapReference(target).heapAllocator.allocate(40, true)) - RAM_BASE;
 			const record = both(target => createReferenceTable(target, oldArray, oldHash));
 			assert.ok(reservation > 0);
-			const oldWords = cpu.gc.tables.arrayAddress(record), oldStorage = cpu.gc.tables.hashAddress(record);
+			const oldWords = cpu.tables.arrayAddress(record), oldStorage = cpu.tables.hashAddress(record);
 			const blocked = 5 * array > cpu.heapAllocator.capacityBytes();
 			const collisions: Value[] = [];
 			if (oldArray === 0) {
@@ -137,8 +137,8 @@ for (const optLevel of [0, 3] as const) {
 				assert.deepEqual([memory.readRamRecordWord(reservation), memory.readRamRecordWord(reservation + 4)], oldResult);
 				assert.equal(memory.readRamRecordWord(job + 28), jobSentinel);
 			} else {
-				assert.equal(cpu.gc.tables.get(record, key), value);
-				if (keep) assert.equal(cpu.gc.tables.hashAddress(record), oldStorage);
+				assert.equal(cpu.tables.get(record, key), value);
+				if (keep) assert.equal(cpu.tables.hashAddress(record), oldStorage);
 			}
 			applyRuntimeSaveState(guest, initial);
 			begin();

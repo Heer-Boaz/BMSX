@@ -1,5 +1,7 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
-import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID, createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -42,7 +44,7 @@ function fixture(worldSource = WORLD) {
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), font = new Font({ variant: 'tiny' });
 	const world = runtimeWorld(sources, guest, -1)!;
 	const actors = valuePayload(guest.readStringMember(world, '_objects'));
-	const actorHashId = valuePayload(guest.cpu.gc.tables.getInteger(actors, 1));
+	const actorHashId = valuePayload(guest.cpu.tables.getInteger(actors, 1));
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
 	const target = captureActorTarget(-1, valuePayload(world), tree.roots, machine);
@@ -54,7 +56,7 @@ function fixture(worldSource = WORLD) {
 	refresh(); graph.viewport.layout(0, 0, 100, 100);
 	const snapshot = captureCpuCheckpoint(cpu);
 	const restore = () => { tree.release(); guest.invalidate('history-restored'); restoreCpuCheckpoint(cpu, snapshot); refresh(); };
-	const execute = (name: string) => { tree.release(); guest.invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), guest.cpu.gc), []); refresh(); };
+	const execute = (name: string) => { tree.release(); guest.invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), nativeHeapReference(guest.cpu).gc), []); refresh(); };
 	return { graph, target, tree, guest, font, refresh, restore, execute };
 }
 

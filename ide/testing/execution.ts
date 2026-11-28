@@ -168,14 +168,14 @@ export class TestExecution implements FixtureOutput {
 		this.capturedFrame?.(this.target, label);
 	}
 	public observeFsm(recorder: number): void {
-		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc,
+		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.tables,
 			(sequence, time, tick, lane, previous, target, outcome) =>
 				this.results.appendFsmTransition(trace, sequence, time, tick, lane, previous, target, outcome));
 		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId, this.program.sourceMedia.cartridgeSlots[0]!.sourceContextId);
 		this.fsm = observation;
 	}
 	public observeActionEffects(recorder: number): void {
-		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.gc, {
+		const observation = new ActionEffectObservation(recorder, this.target.runtime.machine.cpu.stringPool, this.target.runtime.machine.cpu.tables, {
 			trigger: (sequence, time, tick, effect, outcome) => this.results.appendActionEffectTrigger(trace, sequence, time, tick, effect, outcome),
 			activity: (sequence, time, tick, effect, kind, count) => this.results.appendActionEffectActivity(trace, sequence, time, tick, effect, kind, count),
 		});

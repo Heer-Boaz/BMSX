@@ -8,7 +8,6 @@ import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { valueBool, valueClosure, valueFloatBits, valueInteger, valueNil, valuePayload, valueTag, type Value } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -21,6 +20,7 @@ import { linkRawTestSystemBlua32, seedTestCapturedClosure } from '../../helpers/
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { admitTestHeapServiceCpu } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 test('completion calls use admitted backing and preserve borrowed Values across admission', t => {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);

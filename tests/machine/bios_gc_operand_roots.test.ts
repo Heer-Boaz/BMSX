@@ -1,12 +1,13 @@
+import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank, GC_DIAGNOSTIC_OFFSET } from '../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -81,8 +82,8 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD), index(receiver));
 		assert.equal(f.memory.readRamRecordByte(receiver + GC_COLOR_OFFSET), 2);
-		assert.equal(f.memory.readRamRecordByte(key + GC_COLOR_OFFSET), f.cpu.gc.white());
-		assert.equal(f.memory.readRamRecordByte(value + GC_COLOR_OFFSET), f.cpu.gc.white());
+		assert.equal(f.memory.readRamRecordByte(key + GC_COLOR_OFFSET), nativeHeapReference(f.cpu).gc.white());
+		assert.equal(f.memory.readRamRecordByte(value + GC_COLOR_OFFSET), nativeHeapReference(f.cpu).gc.white());
 		const stopped = captureCpuCheckpoint(f.cpu);
 		const retired = f.finish();
 		assert.equal(retired[0], 0, 'gray enqueues do not charge String work');

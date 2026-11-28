@@ -26,7 +26,7 @@ try {
 		assert.ok(cpu.isHaltedUntilIrq());
 		const table = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_table')!));
 		const key = cpu.getGlobalByKey(cpu.stringPool.find('checkpoint_key')!);
-		assert.equal(cpu.gc.tables.get(table, key), valueNil(), 'restore must not revive a deleted mapping');
+		assert.equal(cpu.tables.get(table, key), valueNil(), 'restore must not revive a deleted mapping');
 	}), 1, 'restore exactly one suspended iterator');
 	assert.equal(execFileSync(nativeRunner, [path, 'table'], { encoding: 'utf8' }).trim(), '1');
 	rmSync(directory, { recursive: true });

@@ -1,3 +1,4 @@
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
@@ -11,7 +12,6 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
-import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_DIAGNOSTIC_FAULTS_OFFSET } from '../helpers/firmware_heap_layout';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';

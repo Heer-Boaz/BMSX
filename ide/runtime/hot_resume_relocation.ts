@@ -1,7 +1,8 @@
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
 import { FRAME_COMPLETION, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameCaptureCount, frameExecutionBank, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
+import { GC_COLOR_MASK, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -46,6 +47,13 @@ const NMI_RETURN_EPC_WRITE = 2;
 const NMI_RETURN_EPC_WORD = 3;
 const LATCH_WORDS = 4;
 
+// Stock firmware's reusable Closure index. Only Studio's stopped linker
+// needs this projection; instruction execution never consults it.
+const STOCK_CANONICAL_CLOSURE_HEADS = CPU_FIXED_STACK_BASE + 0x3d00;
+const STOCK_CANONICAL_CLOSURE_BUCKETS = 128;
+const STOCK_GC_CONTROL = CPU_FIXED_STACK_BASE + 0x344;
+const STOCK_GC_PHASE_SWEEP = 4;
+
 export function buildHotResumeRelocation(
 	cpu: CPU,
 	revisions: HotResumeRevisions,
@@ -59,18 +67,26 @@ export function buildHotResumeRelocation(
 	const unmappedWords: string[] = [];
 	// A weak binding can be found again before the next sweep. The linker
 	// can replace its code, but a live canonical record keeps its address.
-	cpu.gc.visitObjectRecords(cpu, (owner, closure) => {
-		const memory = owner.memory;
-		const header = memory.readRamRecordWord(closure);
-		const flags = header >>> (8 * CLOSURE_BINDING_FLAGS);
-		if ((header & 0xff) !== ValueTag.Closure || (flags & CLOSURE_CANONICAL) === 0 || owner.gc.sweepGarbage(closure)) return;
-		const target = revisions[closureExecutionDomain(flags) + 1];
-		if (target === null) return;
-		const record = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-		const index = blua32FunctionIndexAtAddress(target.previousImage, record);
-		if (index >= 0 && target.revision.functionAddresses[index] !== record)
-			unmappedWords.push(`canonical function 0x${record.toString(16)} must retain its record address`);
-	});
+	const { memory } = cpu;
+	const control = memory.readRamRecordWord(STOCK_GC_CONTROL);
+	const deadColor = (control & 7) === STOCK_GC_PHASE_SWEEP ? ((control >>> 8) & 1) ^ 1 : -1;
+	for (let bucket = 0; bucket < STOCK_CANONICAL_CLOSURE_BUCKETS; ++bucket) {
+		let link = memory.readRamRecordWord(STOCK_CANONICAL_CLOSURE_HEADS + bucket * 4);
+		while (link !== 0) {
+			const closure = RAM_BASE + (link << GC_RECORD_SHIFT);
+			link = memory.readRamRecordWord(closure - GC_OBJECT_PREFIX) & GC_GRAY_INDEX_MASK;
+			const header = memory.readRamRecordWord(closure);
+			// An old-white record remains linked until its sweep retirement, but
+			// the firmware's lookup can no longer return it.
+			if (((header >>> 8) & GC_COLOR_MASK) === deadColor) continue;
+			const target = revisions[closureExecutionDomain(header >>> (8 * CLOSURE_BINDING_FLAGS)) + 1];
+			if (target === null) continue;
+			const record = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+			const index = blua32FunctionIndexAtAddress(target.previousImage, record);
+			if (index >= 0 && target.revision.functionAddresses[index] !== record)
+				unmappedWords.push(`canonical function 0x${record.toString(16)} must retain its record address`);
+		}
+	}
 	let binding: FunctionPrototype | undefined;
 	visitRuntimeExecutionRecords(cpu, closure => {
 		binding = cpu.captureClosureBinding(closure, binding);

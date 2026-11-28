@@ -1,5 +1,7 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
-import { valueInteger, asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -556,9 +558,9 @@ probe = {
 }
 `, 3);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
+	const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('run')!), nativeHeapReference(cpu).gc);
 	const measured = measureWarmKernel(cpu, run, 2048);
-	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check')!), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('check')!), nativeHeapReference(cpu).gc), []);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 	t.diagnostic(JSON.stringify({ ...measured, codeBytes, allocated, retained }));
 });
@@ -585,9 +587,9 @@ probe = {
 }
 `, 3);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const read = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('read')!), cpu.gc);
-	const shallow = cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('shallow')!);
-	const deep = cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('deep')!);
+	const read = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('read')!), nativeHeapReference(cpu).gc);
+	const shallow = cpu.tables.getStringKey(probe, cpu.stringPool.find('shallow')!);
+	const deep = cpu.tables.getStringKey(probe, cpu.stringPool.find('deep')!);
 	runCompletionClosure(cpu, read, [shallow, valueInteger(32)]);
 	runCompletionClosure(cpu, read, [deep, valueInteger(32)]);
 	const shallowCycles = runCompletionClosure(cpu, read, [shallow, valueInteger(2048)]);
@@ -648,9 +650,9 @@ probe = {
 `, 3);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const lane of ['root', 'basis'] as const) {
-		const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(`run_${lane}`)!), cpu.gc);
+		const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`run_${lane}`)!), nativeHeapReference(cpu).gc);
 		const measured = measureWarmKernel(cpu, run, 2048);
-		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(`check_${lane}`)!), cpu.gc), []);
+		runCompletionClosure(cpu, asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(`check_${lane}`)!), nativeHeapReference(cpu).gc), []);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)]);
 		t.diagnostic(JSON.stringify({ lane, ...measured, codeBytes, allocated, retained }));
 	}

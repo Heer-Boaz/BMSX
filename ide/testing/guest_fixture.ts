@@ -1,6 +1,6 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 
-import { asClosure, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -101,7 +101,7 @@ export class GuestFixture {
 	public readContext(): number {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
-		return valuePayload(cpu.gc.tables.getStringKey(execution, pool.find('context')!));
+		return valuePayload(cpu.tables.getStringKey(execution, pool.find('context')!));
 	}
 
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
@@ -110,7 +110,7 @@ export class GuestFixture {
 		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
 		this.returnThread = cpu.activeThread.address;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(asClosure(cpu.gc.tables.getStringKey(execution, pool.find(method)!), cpu.gc), args);
+		cpu.beginCompletionCall(valuePayload(cpu.tables.getStringKey(execution, pool.find(method)!)), args);
 		this.callPending = true;
 	}
 }

@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -48,7 +50,7 @@ for (const kind of ['float_bits','float_from_bits']) test(`generated ${kind}: wa
  const owner=cpu.activeThread.currentFrame!.executionImage;
  runGuestToHalt(cpu, 100000);
  const values:v.Value[]=[];cpu.readCompletionValues(values);
- const closure=v.asClosure(values[0],cpu.gc);
+ const closure=asClosure(values[0],nativeHeapReference(cpu).gc);
  for(let i=0;i<20;++i) {
   cpu.beginCompletionCall(closure,[kind==='float_bits'?v.valueFloatBits(0xffa12345):v.valueInteger(0xffa12345)]);
   assert.equal(cpu.runUntilDepth(0,1000),RunResult.Halted);

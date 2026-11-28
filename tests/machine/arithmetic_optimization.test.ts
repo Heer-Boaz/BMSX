@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
@@ -6,7 +8,7 @@ import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { asClosure, valueBool, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runCompletionClosure } from '../helpers/cpu_test_harness';
 
@@ -17,7 +19,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const machines = ([0, 3] as const).map(optLevel => {
 			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [], 'identities.lua')), backend);
 			assert.equal(runCpuWithinBudget(cpu, 100000), RunResult.Halted);
-			return { cpu, closure: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc) };
+			return { cpu, closure: asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc) };
 		});
 		for (const input of [
 			...[0, 1, -1, 16777217, -2147483648, 2147483647].map(valueInteger),
@@ -46,7 +48,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		for (const [index, expr] of expressions.entries()) for (const input of [valueNil(), valueBool(false), valueBool(true)]) {
 			cpu.memory.restoreSaveState(initialRam);
 			cpu.restoreRuntimeState(initial);
-			const fn = asClosure(materializeCpuCompletionValues(cpu)[index], cpu.gc);
+			const fn = asClosure(materializeCpuCompletionValues(cpu)[index], nativeHeapReference(cpu).gc);
 			cpu.beginCompletionCall(fn, [input]);
 			// Stop on exception entry, before the fixture's exception vector executes.
 			for (let grant = 0; grant < 16 && cpu.readExceptionReturnFrameDepth() === -1; ++grant) {

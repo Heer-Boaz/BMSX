@@ -69,7 +69,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   const stored = new ValueSlots(2);
   const keys: Value[] = [], values: Value[] = [];
   for (let slot = 0; slot < 8; ++slot) {
-   assert.equal(cpu.gc.tables.loadStoredEntry(hash, slot, stored, 0), true);
+   assert.equal(cpu.tables.loadStoredEntry(hash, slot, stored, 0), true);
    keys.push(stored.get(0));
    values.push(stored.get(1));
   }
@@ -126,7 +126,7 @@ return true`, 3);
   assert.equal(scheduler.currentNowCycles(), 73);
   assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
   assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.SETT], 'the next execution owns a fresh grant');
-  assert.equal(cpu.gc.tables.get(cpu.rootThread.currentFrame!.registers.getPayload(0), key), valueInteger(91));
+  assert.equal(cpu.tables.get(cpu.rootThread.currentFrame!.registers.getPayload(0), key), valueInteger(91));
  });
 
 }

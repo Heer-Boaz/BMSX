@@ -1,4 +1,6 @@
-import { asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -153,7 +155,7 @@ for (const [name, fixture] of [['plain', plain], ['rich', rich]] as const) {
 		const cpu = rom.run(id, 30_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		for (const lane of name === 'plain' ? ['run', 'affine'] : ['run']) {
-			const kernel = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(lane)!), cpu.gc);
+			const kernel = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find(lane)!), nativeHeapReference(cpu).gc);
 			const profile = profileWarmGuestKernel(cpu, kernel, 256);
 			assert.equal(profile.reservations, 0);
 			assert.equal(profile.reservedBytes, 0);

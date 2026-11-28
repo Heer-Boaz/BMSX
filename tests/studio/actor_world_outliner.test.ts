@@ -1,4 +1,6 @@
-import { ValueTag, asClosure, numberToHost } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { ValueTag, numberToHost } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -43,7 +45,7 @@ return true`, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	const world = guest.global('subject_world');
 	const parent = guest.identityScalar(guest.global('parent'), ValueTag.Table), child = guest.identityScalar(guest.global('child'), ValueTag.Table),
 		other = guest.identityScalar(guest.global('other'), ValueTag.Table);
-	const call = (name: string) => { runCompletionClosure(cpu, asClosure(guest.global(name), cpu.gc), []); };
+	const call = (name: string) => { runCompletionClosure(cpu, asClosure(guest.global(name), nativeHeapReference(cpu).gc), []); };
 	const row = (id: number) => tree.rows.find(item => item.element.hashId === id)!;
 	assert.equal(outliner.update(guest, world, child), true);
 	tree.updateLayout(0, 0, 200, 200, 20, 12);

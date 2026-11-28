@@ -109,7 +109,7 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 	writeFileSync(trace, ['X', `W ${offset + 4} 1`, 'h', `L ${budget}`, `H ${first} ${end}`, `H ${offset} ${offset + 16}`].join('\n'));
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	assert.deepEqual(execFileSync(native, [systemPath, trace, state, cartPath], { encoding: 'utf8' }).trimEnd().split('\n'), [
-		[result, budget - cpu.instructionBudgetRemaining, 0, cpu.gc.fullEpochs(), cpu.gc.phase(), logical].join(' '),
+		[result, budget - cpu.instructionBudgetRemaining, 0, nativeHeapReference(cpu).gc.fullEpochs(), nativeHeapReference(cpu).gc.phase(), logical].join(' '),
 		String(ledger),
 		String(hashBytes(memory.ramData(), offset, 16)),
 	]);

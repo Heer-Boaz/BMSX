@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -33,7 +35,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
    { entrySource, optLevel, programDomain: 'system' });
   const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
   runGuestToHalt(cpu, 1_000_000);
-  const closure = v.asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+  const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
   const call = (...args: v.Value[]) => {
    runCompletionClosure(cpu, closure, args);
    return materializeCpuCompletionValues(cpu);

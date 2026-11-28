@@ -1,5 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
-import { asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -168,7 +168,7 @@ function completionFixture() {
 	});
 	const { cpu } = createTestSystemCpu(image);
 	runGuestToHalt(cpu, 100);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	return { cpu, closure };
 }
 
@@ -249,7 +249,7 @@ end
 halt_until_irq`, 0));
 	runGuestToHalt(cpu, 100000);
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('probe')), cpu.gc));
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('probe')), nativeHeapReference(cpu).gc));
 	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	plans.pushCompletionBatch(thread, depth, [SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));

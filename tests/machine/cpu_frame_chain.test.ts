@@ -78,14 +78,14 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	assert.equal(read(ThreadField.FrameCapacity), 2 * oldFrameCount);
 	assert.equal(heap.usedBytes(), target);
 	assert.equal(heap.collectionTarget(), target, 'only the combined increase affects the admission threshold');
-	assert.equal(cpu.gc.active(), false);
+	assert.equal(nativeHeapReference(cpu).gc.active(), false);
 	assert.equal(frame.pc, pc); assert.equal(frame.registers.get(0), valueInteger(73));
 
 	heap.setCollectionTarget(target += (128 - 64) * THREAD_STACK_SLOT_BYTES);
 	resizeThreadStackReference(cpu, thread, 128);
 	assert.equal(heap.usedBytes(), target);
 	assert.equal(heap.collectionTarget(), target);
-	assert.equal(cpu.gc.active(), false);
+	assert.equal(nativeHeapReference(cpu).gc.active(), false);
 });
 
 test('full collection trims both Thread execution reservations with no replacement space', () => {
@@ -376,7 +376,7 @@ return pcall(target)
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + 6);
-		assert.ok(cpu.gc.active(), 'stack growth triggers an allocation assist');
+		assert.ok(nativeHeapReference(cpu).gc.active(), 'stack growth triggers an allocation assist');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
 		prepared.registers.set(7, valueString(nativeHeapReference(cpu).stringPool.intern('retired-frame-only')));
@@ -399,7 +399,7 @@ return pcall(target)
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
-		assert.ok(cpu.gc.active(), 'caller window growth triggers an allocation assist');
+		assert.ok(nativeHeapReference(cpu).gc.active(), 'caller window growth triggers an allocation assist');
 		assert.equal(cpu.stringPool.find('returning-frame-only'), result);
 		assert.equal(caller.registers.getStringId(0), result); assert.equal(caller.stackCapacity, 64); assert.equal(caller.top, 62);
 		for (let index = 1; index < 62; ++index) assert.equal(caller.registers.getTag(index), ValueTag.Nil);
@@ -415,7 +415,7 @@ return pcall(target)
 		if (completion) {
 			const values = cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
 			const frames = cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameBlock);
-			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, nativeHeapReference(cpu).gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+			assert.throws(() => cpu.beginCompletionCall(caller.registers.getPayload(0)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			assert.equal(thread.frameDepth, 1); assert.equal(thread.stackTop, 8);
 			assert.equal(caller.next, null, 'an impossible extent is rejected before a frame view is acquired');
 			assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock), values);

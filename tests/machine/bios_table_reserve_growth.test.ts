@@ -107,8 +107,8 @@ for (const optLevel of [0, 3] as const) {
 			const oldArray = staged ? 1024 : 8, array = staged ? 2048 : 256, hash = staged ? 16 : 8;
 			const record = f.same(target => createReferenceTable(target, oldArray, hash));
 			const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
-			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
-			const oldHash = f.same(target => target.gc.tables.hashAddress(record));
+			const oldBase = f.same(target => target.tables.arrayAddress(record));
+			const oldHash = f.same(target => target.tables.hashAddress(record));
 			f.same(target => target.memory.writeRamRecordWord(oldBase, 0x378422bc));
 			let base: number;
 			if (staged) {
@@ -130,11 +130,11 @@ for (const optLevel of [0, 3] as const) {
 		f.verify(record, before, occupied, [0, 0]);
 
 		const raw = f.same(target => createReferenceTable(target, 1, 0));
-		const base = f.same(target => target.gc.tables.arrayAddress(raw));
+		const base = f.same(target => target.tables.arrayAddress(raw));
 		// The record port still decodes aliases and compares raw unsigned slots.
 		f.same(target => target.memory.writeRamRecordWord(raw + TableHeader.Array, 0x80000001));
 		const rawHeader = f.header(raw), rawOccupied = f.cpu.luaHeap.usedBytes();
-		assert.ok(f.oracle.gc.tables.arrayCapacity(raw) > 4);
+		assert.ok(f.oracle.tables.arrayCapacity(raw) > 4);
 		f.begin(raw + MAIN_RAM_SIZE, 4, 0, false, false);
 		f.finish();
 		f.verify(raw, rawHeader, rawOccupied, [0, base]);

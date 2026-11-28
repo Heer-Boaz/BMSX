@@ -2,7 +2,7 @@ import { captureEditorActionPresentation, performHotResume, performReboot } from
 import { inputFocus } from '../input/focus';
 import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { asClosure } from '../../machine/ts/machine/cpu/value';
+import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import type { CodeEditorContext } from '../editor/ui/code_editor_state';
@@ -168,7 +168,7 @@ export function createHeadlessIdeHarness(
 				isCurrent: () => ide.execution.revision === revision,
 				prepare: () => ({
 					domain: SYSTEM_EXECUTION_DOMAIN_ID,
-					closure: asClosure(cpu.getGlobalByKey(cpu.stringPool.find('collectgarbage')!), cpu.gc),
+					closure: valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('collectgarbage')!)),
 					argumentCount: 0,
 					args: () => [],
 				}),

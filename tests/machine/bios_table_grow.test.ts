@@ -1,8 +1,8 @@
+import { GcPhase, GC_DIAGNOSTIC_OFFSET } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GcPhase, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -223,7 +223,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.tables.get(receiver, oldKey), valueNil());
 		assert.equal(f.tables.get(receiver, key), value);
 		assert.equal(f.tables.hashAddress(receiver), backing, 'General takes the old home, before any replan');
-		assert.equal(f.tables.hashAddress(receiver), reference.gc.tables.hashAddress(receiver));
+		assert.equal(f.tables.hashAddress(receiver), reference.tables.hashAddress(receiver));
 		assert.equal(f.arena.occupiedBytes(), reference.heapAllocator.occupiedBytes());
 		assert.equal(f.heap.usedBytes(), reference.luaHeap.usedBytes());
 		const expected = captureCpuCheckpoint(f.cpu).memory.ram;
@@ -252,7 +252,7 @@ for (const opt of [0, 3] as const) {
 		f.finish();
 		assert.equal(f.gc.tableRecordAddress(garbage), 0);
 		assert.notEqual(f.tables.hashAddress(receiver), old);
-		assert.equal(f.tables.hashAddress(receiver), reference.gc.tables.hashAddress(receiver));
+		assert.equal(f.tables.hashAddress(receiver), reference.tables.hashAddress(receiver));
 		assert.equal(f.tables.hashSize(receiver), 2, 'the previously refused extra=9 is not restored');
 		assert.equal(f.tables.get(receiver, keep), valueInteger(5));
 		assert.equal(f.tables.get(receiver, key), valueInteger(61));

@@ -1,33 +1,38 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
+import { GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
 import { GlobalBank } from '../../machine/ts/machine/cpu/global_bank';
-import { THREAD_RECORD_KIND, ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
+import { THREAD_RECORD_KIND, ThreadField, ThreadLayout, ThreadRecords } from '../../machine/ts/machine/cpu/thread_record';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
-import { CPU_FIXED_STACK_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 /** Inspect executable references on a stopped machine without deciding object liveness. */
 export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: number) => void,
 	visitThread?: (thread: number, frameDepth: number) => void): void {
-	const { memory, gc } = cpu;
+	const { memory, tables, heapAllocator } = cpu;
 	const objects: number[] = [];
 	const upvalues: number[] = [];
 	const seen = new Set<number>();
+	const threads = new ThreadRecords(memory);
 	const layout = new ThreadLayout();
 	const registers = new ValueSlots(0);
+	// Stored weak edges can outlive the backings they name. Keep the stopped
+	// inspection's issued-record check, not the collector's marking policy.
+	const issuedRecord = (reference: number, kind: number) => {
+		const offset = reference & GC_RECORD_MASK;
+		return memory.readRamRecordByte(offset) === kind
+			&& heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0;
+	};
 	const addRecord = (tag: ValueTag, word: number) => {
 		switch (tag) {
-			case ValueTag.Table: {
-				const table = gc.tableRecordAddress(word);
-				if (table !== 0) objects.push(table);
-				break;
-			}
+			case ValueTag.Table:
 			case ValueTag.Closure: {
-				const closure = gc.closureRecordAddress(word);
-				if (closure !== 0) objects.push(closure);
+				const address = issuedRecord(word, tag);
+				if (address !== 0) objects.push(address);
 				break;
 			}
 			case ValueTag.Thread:
@@ -76,15 +81,15 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 			case ValueTag.Closure:
 				visitClosure(address);
 				for (let index = 0, count = Closure.captureCount(memory, address); index < count; ++index) {
-					const cell = gc.cellRecordAddress(Closure.captureAddress(memory, address, index));
+					const cell = issuedRecord(Closure.captureAddress(memory, address, index), Upvalue.UPVALUE_RECORD_KIND);
 					if (cell !== 0) upvalues.push(cell);
 				}
 				break;
 			case ValueTag.Table: {
-				const meta = gc.tables.metatableAddress(address);
+				const meta = tables.metatableAddress(address);
 				if (meta !== 0) addRecord(ValueTag.Table, meta);
 				// A still-stored weak edge can be used again before firmware sweeps it.
-				gc.tables.forEachStoredEntry(address, addTableEntry);
+				tables.forEachStoredEntry(address, addTableEntry);
 				break;
 			}
 			case THREAD_RECORD_KIND: {
@@ -92,17 +97,17 @@ export function visitRuntimeExecutionRecords(cpu: CPU, visitClosure: (closure: n
 				const resumer = cpu.readThreadResumer(address);
 				if (resumer !== 0) objects.push(resumer);
 				addValue(cpu.readThreadError(address));
-				gc.threads.readLayout(address, layout);
+				threads.readLayout(address, layout);
 				visitThread?.(address, layout.depth);
 				registers.bindRam(memory, layout.offset, layout.capacity, false, true);
 				addSlots(registers, layout.top);
 				for (let index = layout.depth - 1; index >= 0; --index) {
-					const frame = gc.threads.frameAddress(layout, index);
+					const frame = threads.frameAddress(layout, index);
 					addRecord(ValueTag.Closure, memory.readRamRecordWord(frame + FrameField.Closure));
 					let head = memory.readRamRecordWord(frame + FrameField.OpenHead);
 					for (let remaining = Upvalue.UPVALUE_CHAIN_LIMIT; head !== 0 && remaining !== 0; --remaining) {
-						const cell = gc.openCellAddress(head);
-						if (cell === 0) break;
+						const cell = issuedRecord(head, Upvalue.UPVALUE_RECORD_KIND);
+						if (cell === 0 || !Upvalue.isOpen(memory, cell)) break;
 						upvalues.push(cell);
 						head = memory.readRamRecordWord(cell + Upvalue.UPVALUE_NEXT);
 					}

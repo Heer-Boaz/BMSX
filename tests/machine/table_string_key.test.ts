@@ -76,24 +76,24 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const compare = () => {
 		const bytes = nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(strings);
 		for (const key of keys) {
-			const expected = cpu.gc.tables.get(generic, valueString(key));
-			assert.equal(cpu.gc.tables.getStringKey(strings, key), expected);
-			cpu.gc.tables.loadStringKey(strings, key, slots, 0);
+			const expected = cpu.tables.get(generic, valueString(key));
+			assert.equal(cpu.tables.getStringKey(strings, key), expected);
+			cpu.tables.loadStringKey(strings, key, slots, 0);
 			assert.equal(slots.get(0), expected);
-			cpu.gc.tables.getStringKeyCached(strings, key, prediction, cached);
+			cpu.tables.getStringKeyCached(strings, key, prediction, cached);
 			prediction = cached.slot;
 			assert.equal(cached.value, expected);
 		}
 		assert.equal(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(strings), bytes, 'lookups reserve no guest storage');
 		// Physical iteration order is serialized state, not an incidental layout.
-		assert.equal(cpu.gc.tables.storedSlotCount(strings), cpu.gc.tables.storedSlotCount(generic));
-		for (let slot = 0; slot < cpu.gc.tables.storedSlotCount(generic); slot += 1) {
-			const a = cpu.gc.tables.loadStoredEntry(generic, slot, slots, 0);
-			const b = cpu.gc.tables.loadStoredEntry(strings, slot, slots, 0);
+		assert.equal(cpu.tables.storedSlotCount(strings), cpu.tables.storedSlotCount(generic));
+		for (let slot = 0; slot < cpu.tables.storedSlotCount(generic); slot += 1) {
+			const a = cpu.tables.loadStoredEntry(generic, slot, slots, 0);
+			const b = cpu.tables.loadStoredEntry(strings, slot, slots, 0);
 			assert.equal(b, a);
 			if (!a) continue;
 			const key = slots.get(0), value = slots.get(1);
-			cpu.gc.tables.loadStoredEntry(generic, slot, slots, 0);
+			cpu.tables.loadStoredEntry(generic, slot, slots, 0);
 			assert.equal(slots.get(0), key);
 			assert.equal(slots.get(1), value);
 		}
@@ -110,7 +110,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		slots.set(0, value);
 		if ((n & 1) === 0) {
 			nativeHeapReference(cpu).gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
-		} else if (!cpu.gc.tables.storePredictedStringKey(strings, key, prediction, slots.getTag(0), slots.getPayload(0))) {
+		} else if (!cpu.tables.storePredictedStringKey(strings, key, prediction, slots.getTag(0), slots.getPayload(0))) {
 			prediction = nativeHeapReference(cpu).gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
 		}
 		if ((n & 15) === 0) {
@@ -151,41 +151,41 @@ test('known string lookup follows changing inherited fields and preserves false 
 	nativeHeapReference(cpu).gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
 	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
-	cpu.gc.tables.resolveStringIndex(child, key, result);
+	cpu.tables.resolveStringIndex(child, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueBool(false));
-	cpu.gc.tables.resolveStringIndexCached(child, key, -1, result);
+	cpu.tables.resolveStringIndexCached(child, key, -1, result);
 	let prediction = result.slot;
 	assert.equal(result.extraVisits, 1);
 	assert.ok(prediction >= 0);
 	assert.equal(result.value, valueBool(false));
 	nativeHeapReference(cpu).gc.tables.storeStringKey(parent, key, ValueTag.Nil, 0);
-	cpu.gc.tables.resolveStringIndexCached(child, key, prediction, result);
+	cpu.tables.resolveStringIndexCached(child, key, prediction, result);
 	prediction = result.slot;
 	assert.equal(prediction, -1);
 	assert.equal(result.value, valueNil());
 	nativeHeapReference(cpu).gc.tables.storeStringKey(parent, key, ValueTag.Float, 0x80000000);
-	cpu.gc.tables.resolveStringIndex(child, key, result);
+	cpu.tables.resolveStringIndex(child, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueFloatBits(0x80000000));
 
 	nativeHeapReference(cpu).gc.tables.setStringKey(child, key, valueBool(false));
-	cpu.gc.tables.resolveStringIndexCached(child, key, result.slot, result);
+	cpu.tables.resolveStringIndexCached(child, key, result.slot, result);
 	assert.equal(result.value, valueBool(false));
 	assert.equal(result.extraVisits, 0, 'an own field stops traversal even when its value is false');
 
 	const raw = createReferenceTable(cpu, 0, 8);
 	const highBitKey = valueString((key ^ 0x80000000) >>> 0);
 	nativeHeapReference(cpu).gc.tables.set(raw, highBitKey, valueInteger(21));
-	assert.equal(cpu.gc.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
+	assert.equal(cpu.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
 	nativeHeapReference(cpu).gc.tables.setStringKey(raw, key, valueInteger(42));
-	memory.writeRamRecordWord(raw + TableHeader.HashStorage, cpu.gc.tables.hashAddress(raw) + MAIN_RAM_SIZE);
-	assert.equal(cpu.gc.tables.get(raw, highBitKey), valueInteger(21));
-	cpu.gc.tables.getStringKeyCached(raw, key, -1, result);
+	memory.writeRamRecordWord(raw + TableHeader.HashStorage, cpu.tables.hashAddress(raw) + MAIN_RAM_SIZE);
+	assert.equal(cpu.tables.get(raw, highBitKey), valueInteger(21));
+	cpu.tables.getStringKeyCached(raw, key, -1, result);
 	prediction = result.slot;
 	assert.equal(result.value, valueInteger(42));
 	assert.ok(prediction >= 0);
-	assert.equal(cpu.gc.tables.loadPredictedStringKey(raw, key, prediction, slots, 0), true);
+	assert.equal(cpu.tables.loadPredictedStringKey(raw, key, prediction, slots, 0), true);
 	assert.equal(slots.get(0), valueInteger(42));
 });
 
@@ -195,12 +195,12 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = createReferenceTable(cpu, 0, 1), present = nativeHeapReference(cpu).stringPool.intern('full'), missing = nativeHeapReference(cpu).stringPool.intern('new');
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueInteger(73));
-	const storage = cpu.gc.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
+	const storage = cpu.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueNil());
 	assert.equal(nativeHeapReference(cpu).gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
-	assert.equal(cpu.gc.tables.hashAddress(table), storage);
+	assert.equal(cpu.tables.hashAddress(table), storage);
 	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
-	assert.equal(cpu.gc.tables.getStringKey(table, missing), valueInteger(19));
+	assert.equal(cpu.tables.getStringKey(table, missing), valueInteger(19));
 });
 
 test('fixed string assignment probes the terminal table only if it can invoke a setter', () => {

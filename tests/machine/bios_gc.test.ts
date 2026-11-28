@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { valueBool, valueFloat } from '../../machine/ts/machine/cpu/value';
@@ -51,8 +52,8 @@ return true, capacity`;
 		// the bounded 2048-cycle pulse size for both build variants.
 		for (let i = 0; i < 4096 && result === RunResult.Yielded; ++i) result = runCpuWithinBudget(cpu, 2048);
 		assert.equal(result, RunResult.Halted, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}`);
-		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}, phase ${cpu.gc.phase()}`);
+		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}, phase ${nativeHeapReference(cpu).gc.phase()}`);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueFloat(cpu.luaHeap.capacity() / 1024)]);
-		assert.equal(cpu.gc.fullEpochs(), 0);
+		assert.equal(nativeHeapReference(cpu).gc.fullEpochs(), 0);
 	});
 }

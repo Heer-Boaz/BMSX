@@ -73,7 +73,7 @@ test('stock hash erasure gives only unresolved String method proofs to firmware'
 		writeFileSync(cartPath, cart);
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { heapAllocator: arena, gc: { tables } } = cpu;
+		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { heapAllocator: arena, tables } = cpu;
 		for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
 			if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
 			runtime.frameScheduler.runCyclesToNextLogicalTick(65536);

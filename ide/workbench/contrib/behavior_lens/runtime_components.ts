@@ -14,7 +14,7 @@ export function visitRuntimeComponents(
 	const registry = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/registry');
 	const type = readRuntimeLuaModuleExport(sources, guest, domain, modulePath);
 	if (world.kind === 'unavailable' || registry.kind === 'unavailable' || type.kind === 'unavailable' || isNil(world.value) || isNil(type.value)) return false;
-	const tables = guest.cpu.gc.tables;
+	const tables = guest.cpu.tables;
 	const admitted = valuePayload(guest.readStringMember(registry.value, '_entries_by_id'));
 	const objects = valuePayload(guest.readStringMember(world.value, '_objects'));
 	for (let i = 1, count = tables.length(objects); i <= count; i++) {

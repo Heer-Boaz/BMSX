@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { asClosure, valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import type { CompiledRegion } from '../../../machine/ts/machine/cpu/compiled_region';
@@ -15,6 +15,8 @@ import { CART_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { cartridgeSlots } from '../../helpers/cartridge';
+import { asClosure } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 // Like LuaJIT's production tests, inspect real generated-code owners after normal
 // execution, independently from semantic assertions. No instruction hooks/restore.
@@ -95,7 +97,7 @@ for (const optLevel of [0, 3] as const) {
 				const image = cpu.rootThread.currentFrame!.executionImage;
 				const cartEnd = CART_ROM_BASE + images.cartRomBytes.length;
 				for (let evaluator = 0; evaluator < (phase >= 5 ? 2 : 1); evaluator++) {
-					const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), cpu.gc);
+					const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find(evaluator === 0 ? 'fsm_evaluator' : 'fsm_other')!), nativeHeapReference(cpu).gc);
 					const binding = cpu.captureClosureBinding(closure);
 					assert.equal(binding.executionDomainId, image.executionDomainId);
 					const address = binding.functionAddress;
@@ -120,7 +122,7 @@ for (const optLevel of [0, 3] as const) {
 				if (phase >= 4) {
 					const bindings = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('fsm_bindings')!));
 					for (let index = 1; index <= 3; index++)
-						assert.equal(cpu.captureClosureBinding(asClosure(cpu.gc.tables.getInteger(bindings, index), cpu.gc)).functionAddress, primaryFunction);
+						assert.equal(cpu.captureClosureBinding(asClosure(cpu.tables.getInteger(bindings, index), nativeHeapReference(cpu).gc)).functionAddress, primaryFunction);
 				}
 			}
 			if (phase !== 8) cpu.clearHaltUntilIrq();

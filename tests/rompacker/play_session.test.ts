@@ -83,7 +83,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	};
 	const field = (name: string) => {
 		const table = game();
-		return target.runtime.machine.cpu.gc.tables.getStringKey(table, nativeHeapReference(target.runtime.machine.cpu).stringPool.intern(name));
+		return target.runtime.machine.cpu.tables.getStringKey(table, nativeHeapReference(target.runtime.machine.cpu).stringPool.intern(name));
 	};
 	await settle(() => session.ready);
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
@@ -123,7 +123,7 @@ for (const optLevel of [3] as const) for (const closeAtStop of [false, true]) te
 		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
 	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
-	const actor = f.target.runtime.machine.cpu.gc.tables.getInteger(valuePayload(guest.readStringMember(world, '_objects')), 1);
+	const actor = f.target.runtime.machine.cpu.tables.getInteger(valuePayload(guest.readStringMember(world, '_objects')), 1);
 	assert.equal(readActorChoices(session, guest, 0)[0].hashId, guest.identityScalar(actor, ValueTag.Table));
 	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
 	const target = captureActorTarget(0, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
@@ -251,7 +251,7 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.history.latestCycles < end, 'explicit resume branches at the inspected point');
 	const restored = f.game();
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(runtime.machine.cpu.gc.tables.getStringKey(restored, nativeHeapReference(runtime.machine.cpu).stringPool.intern('closed')), valueBool(true));
+	assert.equal(runtime.machine.cpu.tables.getStringKey(restored, nativeHeapReference(runtime.machine.cpu).stringPool.intern('closed')), valueBool(true));
 	assert.equal(f.session.evidence.logs.length, 1);
 	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });

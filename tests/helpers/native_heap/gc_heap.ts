@@ -1,12 +1,10 @@
-import { GcPhase, GcDiagnosticField, GcRootBank } from '../../../machine/ts/machine/cpu/gc_heap';
-export { GcPhase, GcDiagnosticField, GcRootBank };
-import { GcHeap as PhysicalGcHeap } from '../../../machine/ts/machine/cpu/gc_heap';
 import { assistAllocation, chargeCollectionWork, markRootHead, rootBankSlots, markLiteralRootBatch, markRootBank, markRootThreads } from './cpu_roots';
 import { nativeHeapReference } from './reference';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import type { CPU } from '../../../machine/ts/machine/cpu/cpu';
 import type { Memory } from '../../../machine/ts/machine/memory/memory';
 import type { HeapAllocator } from './heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET } from '../firmware_heap_layout';
 import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_COLOR_OFFSET, GC_COLOR_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
 import * as Closure from '../../../machine/ts/machine/cpu/closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
@@ -22,6 +20,10 @@ import { ceilDiv4, toSignedWord } from '../../../machine/ts/machine/common/numer
 import type { GcDiagnostics } from './gc_diagnostics';
 
 export const GC_DIAGNOSTIC_OFFSET = 0x680;
+export const enum GcDiagnosticField {
+	Mode = 4, Index = 8, NewIndex = 12, Length = 16, Error = 20, FaultIds = 24,
+	StringIndexTag = 28, StringIndexWord = 32,
+}
 
 export const GC_WORK_WORD_CYCLES = 3;
 export const GC_TRACE_HEAD = 4;
@@ -55,6 +57,7 @@ const GC_PACE_ESTIMATE = GC_PACE_BASIS + 4;
 const GC_PACE_RUNWAY = GC_PACE_ESTIMATE + 4;
 export const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
 const GC_PACE_PAY_AT = GC_PACE_PAID + 4;
+const GC_FULL_EPOCHS = GC_PACE_PAY_AT + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -66,6 +69,8 @@ export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
+export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
+export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
@@ -77,7 +82,11 @@ export function decodeGcPhase(word: number): GcPhase {
 export function gcPacedPhase(phase: GcPhase): boolean {
 	return phase !== GcPhase.Pause && phase !== GcPhase.Atomic;
 }
-export class GcHeap extends PhysicalGcHeap {
+export class GcHeap {
+	private readonly controlOffset: number;
+	private readonly diagnosticOffset: number;
+	public readonly tables: TableRecords;
+	public readonly threads: ThreadRecords;
 	public diagnostics: GcDiagnostics | null = null;
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
 	private readonly modeProbe: TableStringProbe & { work: number } = { node: -1, remaining: 0, slot: -1, value: valueNil(), work: 0 };
@@ -102,14 +111,64 @@ export class GcHeap extends PhysicalGcHeap {
 			default: return true;
 		}
 	};
-	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, memory: Memory, arena: HeapAllocator) {
-		super(memory, arena, cpu.gc.tables);
+	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap,
+		public readonly memory: Memory, public readonly arena: HeapAllocator) {
+		const management = arena.managementOffset();
+		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
+		this.diagnosticOffset = management + GC_DIAGNOSTIC_OFFSET;
 		this.threads = new ThreadRecords(memory, arena, budget);
 		this.tables = new TableRecords(this, cpu['cop0Words']);
 	}
-	declare public readonly arena: HeapAllocator;
-	declare public readonly tables: TableRecords;
-	declare public readonly threads: ThreadRecords;
+	public diagnosticWord(field: GcDiagnosticField): number {
+		return this.memory.readRamRecordWord(this.diagnosticOffset + field);
+	}
+	public phase(): GcPhase {
+		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
+	}
+	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
+	public visitObjectRecords<Context>(context: Context, visit: (context: Context, address: number) => void): void {
+		for (let address = this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_HEAD);
+			address !== 0; address = this.memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE)) {
+			visit(context, address);
+		}
+	}
+	private objectRecordAddress(address: number, kind: number): number {
+		const offset = address & GC_RECORD_MASK;
+		return this.memory.readRamRecordByte(offset) === kind
+			&& this.arena.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0;
+	}
+	public tableRecordAddress(address: number): number {
+		return this.objectRecordAddress(address, ValueTag.Table);
+	}
+	public cellRecordAddress(address: number): number {
+		return this.objectRecordAddress(address, UPVALUE_RECORD_KIND);
+	}
+	public closureRecordAddress(address: number): number {
+		return this.objectRecordAddress(address, ValueTag.Closure);
+	}
+	public openCellAddress(address: number): number {
+		const cell = this.cellRecordAddress(address);
+		return cell !== 0 && Upvalue.isOpen(this.memory, cell) ? cell : 0;
+	}
+	public threadRecordAddress(address: number): number {
+		return this.objectRecordAddress(address, THREAD_RECORD_KIND);
+	}
+	public active(): boolean { return this.phase() !== GcPhase.Pause; }
+	public finalMarkPending(): boolean { return this.phase() === GcPhase.Atomic; }
+	public isAlive(address: number): boolean { return address !== 0 && !this.unmarked(this.memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
+	private markColor(address: number): number { return this.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK; }
+	private unmarked(flags: number): boolean { return (flags & GC_COLOR_MASK) === this.white(); }
+	public sweepGarbage(address: number): boolean {
+		return this.phase() === GcPhase.Sweep && this.markColor(address) === (this.white() ^ 1);
+	}
+	public changedHeadOffset(): number { return this.controlOffset + GC_CHANGED_HEAD; }
+
+	public fullEpochs(): number { return this.memory.readRamRecordByte(this.controlOffset + GC_FULL_EPOCHS); }
+	public epochWork(): number { return this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK); }
+	public workSinceEpoch(before: number): number {
+		const finished = this.memory.readRamRecordWord(this.controlOffset + (this.active() ? GC_EPOCH_WORK : GC_LAST_EPOCH_WORK));
+		return (finished - before) >>> 0;
+	}
 	private readonly threadLayout = new ThreadLayout();
 	public publishObject(address: number): void {
 		const head = this.controlOffset + GC_OBJECT_HEAD;
@@ -924,3 +983,6 @@ export class GcHeap extends PhysicalGcHeap {
 		return work;
 	}
 }
+
+export function asClosure(value: Value, heap: GcHeap): number { return heap.closureRecordAddress(valuePayload(value)); }
+export function asThread(value: Value, heap: GcHeap): number { return heap.threadRecordAddress(valuePayload(value)); }

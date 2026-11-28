@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
@@ -20,7 +21,6 @@ import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import { asClosure } from '../../machine/ts/machine/cpu/value';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
@@ -490,7 +490,7 @@ test('manual frame contexts retain only installed source identity and expire acr
 test('a debugger completion root does not invent a guest call site in its suspended caller', () => {
 	const f = fixture('function park() halt_until_irq end\npark()', 0), cpu = f.runtime.machine.cpu;
 	const depth = cpu.getFrameDepth(), suspendedPc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('park')), cpu.gc));
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('park')), nativeHeapReference(cpu).gc));
 	assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
 	assert.equal(readRuntimeStackFrames(cpu, f.sources)[depth - 1].tracePc, suspendedPc);
 });

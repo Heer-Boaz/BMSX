@@ -9,10 +9,9 @@ import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend } from '../../../machine/
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { GC_CHANGED_HEAD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
-import { asClosure, asStringId, valueBool, valueBuiltinFunction, valueInteger, valuePayload, ValueTag, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { asStringId, valueBool, valueBuiltinFunction, valueInteger, valuePayload, ValueTag, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -26,6 +25,9 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runCompletionClosure, runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_CHANGED_HEAD, GcPhase, asClosure } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 setmetatable = require('kernel/set_metatable')
@@ -70,7 +72,7 @@ try {
 		runGuestToHalt(cpu, 1_000_000);
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const addr = (name: string) => valuePayload(global(name));
-		const normal = asClosure(global('normal_call'), cpu.gc), invalid = asClosure(global('invalid_call'), cpu.gc), clear = asClosure(global('clear_call'), cpu.gc);
+		const normal = asClosure(global('normal_call'), nativeHeapReference(cpu).gc), invalid = asClosure(global('invalid_call'), nativeHeapReference(cpu).gc), clear = asClosure(global('clear_call'), nativeHeapReference(cpu).gc);
 		const operation = global('setmetatable'), receiver = global('receiver'), replacement = global('replacement');
 		assert.equal(valueTag(operation), ValueTag.Closure);
 		const entry = memory.readRamRecordWord(valuePayload(operation) + CLOSURE_PROTOTYPE_ADDRESS);
@@ -94,7 +96,7 @@ try {
 		memory.writeRamRecordWord(control, GcPhase.MarkAgain);
 		memory.writeRamRecordWord(stringMarkWork, 7);
 		assert.equal(memory.readRamRecordWord(metatable), old);
-		const work = cpu.gc.epochWork();
+		const work = nativeHeapReference(cpu).gc.epochWork();
 		const rom = join(folder, 'system.rom'), seed = join(folder, 'initial.state'), tsSave = join(folder, 'mid.state'), cppSave = join(folder, 'mid.cpp.state');
 		const traceFile = join(folder, 'trace.txt');
 		writeFileSync(rom, romBytes);
@@ -154,7 +156,7 @@ try {
 			assert.equal(memory.readRamRecordWord(metatable), newAddress);
 			assert.equal(memory.readRamRecordWord(changed), targetGray);
 			assert.equal(memory.readRamRecordWord(stringMarkWork), 7, 'a table edge never spends String mark work');
-			assert.equal(cpu.gc.epochWork(), work);
+			assert.equal(nativeHeapReference(cpu).gc.epochWork(), work);
 			hash(raw, raw + TableHeader.Metatable + 4);
 			hash(control, stringMarkWork + 4);
 			assert.equal(grant(128), RunResult.Halted);
@@ -204,7 +206,7 @@ try {
 				assert.equal(memory.readRamRecordByte(color), 2);
 			}
 			assert.equal(memory.readRamRecordWord(stringMarkWork), 7);
-			assert.equal(cpu.gc.epochWork(), work);
+			assert.equal(nativeHeapReference(cpu).gc.epochWork(), work);
 			hash(raw, raw + TableHeader.Metatable + 4);
 			hash(control, stringMarkWork + 4);
 			reproduce(invalidArgument ? 'protected invalid' : 'protected clear', ['X', ...commands], expected);

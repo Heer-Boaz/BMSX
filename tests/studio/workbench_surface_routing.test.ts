@@ -1,4 +1,6 @@
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
@@ -138,7 +140,7 @@ function eventFixture(t: TestContext) {
 	const observed = eventHistoryRuntime(eventImages), f = fixture(t, undefined, observed);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	runGuestToHalt(observed.cpu, 10_000_000);
-	const emitFunction = asClosure(observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!), observed.cpu.gc);
+	const emitFunction = asClosure(observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(observed.cpu).gc);
 	const emit = (count: number) => {
 		observed.cpu.beginCompletionCall(emitFunction, [valueInteger(count)]);
 		runGuestToHalt(observed.cpu, 10_000_000);

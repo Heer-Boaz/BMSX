@@ -74,7 +74,7 @@ return true`;
 
 export function runGcPressureStage(cpu: CPU): void {
 	for (let call = 0; call < 12000; ++call) {
-		if (cpu.gc.finalMarkPending()) { nativeHeapReference(cpu).gc.stepFinalMark(); continue; }
+		if (nativeHeapReference(cpu).gc.finalMarkPending()) { nativeHeapReference(cpu).gc.stepFinalMark(); continue; }
 		const result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
 		if (cpu.readExceptionReturnFrameDepth() !== -1) assert.fail(`guest fault ${cpu.readLuaFaultReasonWord()} at ${cpu.readEpcWord().toString(16)}: ${valueToString(cpu.readFrameRegister(cpu.readExceptionReturnFrameDepth(), 0), cpu.stringPool)}`);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -106,14 +106,14 @@ export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 	cpu.clearHaltUntilIrq(); runGcPressureStage(cpu);
 	const childKey = cpu.stringPool.find('child')!, textKey = cpu.stringPool.find('text')!;
 	const owner = valuePayload(global('owner'));
-	const child = cpu.gc.tables.getStringKey(owner, childKey), text = cpu.gc.tables.getStringKey(owner, textKey);
+	const child = cpu.tables.getStringKey(owner, childKey), text = cpu.tables.getStringKey(owner, textKey);
 	const textId = valuePayload(text), arrayOwner = valuePayload(global('array_owner'));
-	const arrayChild = cpu.gc.tables.getInteger(arrayOwner, 1), cellChild = Upvalue.load(cpu.memory, cell);
+	const arrayChild = cpu.tables.getInteger(arrayOwner, 1), cellChild = Upvalue.load(cpu.memory, cell);
 	const observe = () => {
 		const depth = cpu.getFrameDepth();
 		return { depth, pc: cpu.readFramePc(depth - 1), pressure: global('pressure'),
 			usedBytes: cpu.luaHeap.usedBytes(), target: cpu.luaHeap.collectionTarget(),
-			phase: cpu.gc.phase(),
+			phase: nativeHeapReference(cpu).gc.phase(),
 			retiredText: cpu.stringPool.find(textToByteString('pressure-retired:é😀:37')) };
 	};
 	const parked = observe(), state = cpu.captureRuntimeState();
@@ -124,9 +124,9 @@ export function exerciseGcPressure(cpu: CPU, compiled = false): void {
 			'ordinary allocation admission reached the resumable final pass');
 		assert.equal(diagnostics.fullCollections, fullCollections, 'pressure never forces an emergency collection');
 		assert.deepEqual(oldNames.map(global), oldValues, 'retained identities do not move');
-		assert.equal(cpu.gc.tables.getStringKey(owner, childKey), child);
-		assert.equal(cpu.gc.tables.getStringKey(owner, textKey), text);
-		assert.equal(cpu.gc.tables.getInteger(arrayOwner, 1), arrayChild);
+		assert.equal(cpu.tables.getStringKey(owner, childKey), child);
+		assert.equal(cpu.tables.getStringKey(owner, textKey), text);
+		assert.equal(cpu.tables.getInteger(arrayOwner, 1), arrayChild);
 		assert.equal(Upvalue.load(cpu.memory, cell), cellChild, 'the closed cell retains its distinct child');
 		assert.equal(cpu.stringPool.find(textToByteString('pressure-live:é😀:37')), textId);
 		assert.equal(cpu.stringPool.find(textToByteString('pressure-retired:é😀:37')), undefined);

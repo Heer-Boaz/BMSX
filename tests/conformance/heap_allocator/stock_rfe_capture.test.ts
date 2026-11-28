@@ -9,12 +9,10 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_WEAK_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { isOpen, load as capture, UPVALUE_HEAP_BYTES, UPVALUE_NEXT } from '../../../machine/ts/machine/cpu/upvalue';
-import { ValueTag, asClosure, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -34,6 +32,9 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_WEAK_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GcPhase, asClosure } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `module<entry>
@@ -83,7 +84,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 		for (const route of ['forwarded', 'direct'] as const) await t.test(`${route} O${optLevel}`, () => {
 			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine, { gc, heapAllocator: arena } = cpu;
+			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine, { heapAllocator: arena } = cpu, { gc } = nativeHeapReference(cpu);
 			const report = linked.layout.header.bssAddress;
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(report) !== 1; ++i) {
 				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();

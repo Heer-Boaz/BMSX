@@ -5,8 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
-import { GC_LAST_EPOCH_WORK, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -18,6 +16,9 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_LAST_EPOCH_WORK, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
@@ -63,12 +64,12 @@ try {
 			assert.equal(work(), 0);
 		}
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 		assert.ok(heap.occupiedBytes() > 0);
-		for (let i = 0; i < 1024 && cpu.gc.phase() !== GcPhase.Mark; ++i) {
+		for (let i = 0; i < 1024 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Mark; ++i) {
 			assert.equal(grant(3), CpuSuspendedRunResult.Yielded);
 		}
-		assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the authored managed reset stage reached the collector in paid guest instructions');
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark, 'the authored managed reset stage reached the collector in paid guest instructions');
 		assert.ok(cpu.fixedInterruptActive() && scheduler.nowCycles > 0 && work() === 0);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), cpu.rootThread.address);
@@ -86,7 +87,7 @@ try {
 			assert.equal(result, CpuSuspendedRunResult.Completed);
 			assert.deepEqual(runtime.readCompletionValues(), [valueInteger(37)]);
 			assert.ok(work() > 0);
-			assert.equal(cpu.gc.phase(), GcPhase.Pause);
+			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 			observe('C', 37);
 			observeControl();
 		};

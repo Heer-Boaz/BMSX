@@ -10,11 +10,12 @@ import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
-import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { UPVALUE_NEXT, UPVALUE_RECORD_KIND } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 const entry = `
 halt_until_irq
 fixture_collect()
@@ -45,7 +46,7 @@ try {
 		writeFileSync(rom, bytes);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
 		assert.ok(cpu.isHaltedUntilIrq());
 		cpu.clearHaltUntilIrq();

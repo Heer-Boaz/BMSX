@@ -1,10 +1,10 @@
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { LuaHeap } from "../helpers/native_heap/lua_heap";
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -104,8 +104,8 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(memory.readRamRecordWord(back), self);
 			assert.equal(cpu.heapServiceActive(), true);
 			assert.equal(cpu.luaHeap.collectionTarget(), 0);
-			assert.equal(cpu.gc.phase(), GcPhase.Pause);
-			assert.equal(cpu.gc.white(), 0);
+			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
+			assert.equal(nativeHeapReference(cpu).gc.white(), 0);
 			const checkpoint = captureCpuCheckpoint(cpu);
 			const cycles = finish(0);
 			begin(3, [management, bucketAddress, bucketCount]);

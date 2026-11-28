@@ -51,7 +51,7 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	const frameCapacity = memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
 	caller.registers.setInteger(0, target);
 	const cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-	initialize(memory, cell, cpu.gc.white());
+	initialize(memory, cell, nativeHeapReference(cpu).gc.white());
 	nativeHeapReference(cpu).gc.publishObject(cell);
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3);
 	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, 73);

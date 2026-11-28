@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
@@ -7,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState, applyRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import { asClosure, valueFloat, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { valueFloat, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
@@ -63,7 +65,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 	input.instance = choices.find(item => item.identity.tag === ValueTag.Integer)!.identity;
 	const projection = new LuaProgramRuntimeProjection(sources, guest);
 	projection.refresh(input);
-	const invoke = (name: string) => { guest.invalidate(); runCompletionClosure(runtime.machine.cpu, asClosure(guest.global(name), guest.cpu.gc), []); projection.refresh(input); };
+	const invoke = (name: string) => { guest.invalidate(); runCompletionClosure(runtime.machine.cpu, asClosure(guest.global(name), nativeHeapReference(guest.cpu).gc), []); projection.refresh(input); };
 	return {runtime, sources, guest, input, projection, choices, invoke, transport};
 }
 

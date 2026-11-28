@@ -1,9 +1,9 @@
+import { GcPhase, asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { allocatedObjectRecords, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
+import { valueTable, valueIsTable, valueFloat, valueFloatBits, valueInteger, valueBool, valueNil, valueBuiltinFunction, type Value, ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -48,7 +48,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 		nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, cpu.readFrameRegister(0, 0));
 		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('weak'), valueTable(weak));
 		nativeHeapReference(cpu).gc.collect();
-		assert.ok(cpu.gc.tables.getInteger(weak, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
+		assert.ok(cpu.tables.getInteger(weak, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
 	}
 	const saved = cpu.captureRuntimeState();
 	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -60,7 +60,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	cpu.readCompletionValues(values);
 	assert.equal(values.length, 1);
 	if (name === 'constant') assert.deepEqual(values, [valueInteger(1)]);
-	else assert.ok(values[0] === cpu.gc.tables.getInteger(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
+	else assert.ok(values[0] === cpu.tables.getInteger(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
 });
 
 test('a closure completion value refers to separate physical closure and capture records', () => {
@@ -71,11 +71,11 @@ return function() return root end
 	runGuestToHalt(cpu, 100_000);
 	const state = cpu.captureRuntimeState();
 	const result = state.completionValues[0];
-	const descriptor = asClosure(result, cpu.gc);
+	const descriptor = asClosure(result, nativeHeapReference(cpu).gc);
 	assert.equal(valuePayload(result), descriptor);
 	const cell = ClosureRecord.captureAddress(cpu.memory, descriptor, 0);
 	assert.notEqual(cell, descriptor);
-	assert.equal(cpu.gc.cellRecordAddress(cell), cell);
+	assert.equal(nativeHeapReference(cpu).gc.cellRecordAddress(cell), cell);
 	assert.equal(Upvalue.isOpen(cpu.memory, cell), false);
 	assert.ok(valueIsTable(Upvalue.load(cpu.memory, cell)));
 });
@@ -145,10 +145,10 @@ test('restore retains weak referents until the original allocation-triggered col
 
 	const allocateUntilCollected = (): number => {
 		const current = valuePayload(cpu.getGlobalByKey(weakKey));
-		assert.ok(valueIsTable(cpu.gc.tables.getInteger(current, 1)));
+		assert.ok(valueIsTable(cpu.tables.getInteger(current, 1)));
 		for (let count = 1; count < 4096; count += 1) {
 			createReferenceTable(cpu, 256, 0);
-			if (cpu.gc.tables.getInteger(current, 1) === valueNil()) return count;
+			if (cpu.tables.getInteger(current, 1) === valueNil()) return count;
 		}
 		assert.fail('allocation did not reach the guest collection threshold');
 	};
@@ -203,15 +203,15 @@ return 1
 	cpu.restoreRuntimeState(cold);
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	assert.equal(cpu.gc.closureRecordAddress(closureAddress), closureAddress);
+	assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(closureAddress), closureAddress);
 	assert.deepEqual(cpu.captureRuntimeState(), warm);
 	cpu.runUntilDepth(0, 1000);
 	assert.deepEqual(cpu.captureRuntimeState(), expected);
 
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	while (cpu.gc.phase() !== GcPhase.Sweep) nativeHeapReference(cpu).gc.step();
-	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), cpu.gc.white() ^ 1);
+	while (nativeHeapReference(cpu).gc.phase() !== GcPhase.Sweep) nativeHeapReference(cpu).gc.step();
+	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), nativeHeapReference(cpu).gc.white() ^ 1);
 	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
 	const atColdSite = () => {
 		cpu.writeFrameExecution(frame, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, entry);
@@ -275,12 +275,12 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	const other = createTestSystemCpu(image).cpu;
 	other.memory.restoreSaveState(ram);
 	other.restoreRuntimeState(saved);
-	assert.equal(other.gc.tableRecordAddress(future), 0);
+	assert.equal(nativeHeapReference(other).gc.tableRecordAddress(future), 0);
 	const restored = valuePayload(other.getGlobalByKey(key));
 	assert.equal(restored, root);
-	assert.notEqual(other.gc.tables.getInteger(restored, 1), other.gc.tables.getInteger(restored, 2));
-	const child = valuePayload(other.gc.tables.getInteger(restored, 1024));
-	assert.equal(other.gc.tables.getInteger(child, 1), rootValue);
+	assert.notEqual(other.tables.getInteger(restored, 1), other.tables.getInteger(restored, 2));
+	const child = valuePayload(other.tables.getInteger(restored, 1024));
+	assert.equal(other.tables.getInteger(child, 1), rootValue);
 	assert.deepEqual(other.memory.captureSaveState(), ram, 'rebinding must not write guest bytes');
 	assert.deepEqual(other.captureRuntimeState(), before);
 });
@@ -301,7 +301,7 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
-	for (let index = 0; index < values.length; index += 1) assert.equal(cpu.gc.tables.getInteger(restored, index + 1), values[index]);
+	for (let index = 0; index < values.length; index += 1) assert.equal(cpu.tables.getInteger(restored, index + 1), values[index]);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
 
@@ -321,7 +321,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
 	let current = restored;
-	for (let index = 0; index < 4096; index += 1) current = valuePayload(cpu.gc.tables.getInteger(current, 1));
+	for (let index = 0; index < 4096; index += 1) current = valuePayload(cpu.tables.getInteger(current, 1));
 	assert.equal(current, restored);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
@@ -336,15 +336,15 @@ test('table boundary hints and mixed numeric hash layout survive restore without
 	setReferenceGlobal(cpu, key, valueTable(table));
 	const ram = cpu.memory.captureSaveState();
 	const state = cpu.captureRuntimeState();
-	assert.equal(cpu.gc.tables.length(table), 64);
+	assert.equal(cpu.tables.length(table), 64);
 	assert.deepEqual(cpu.captureRuntimeState(), state, 'inspection does not normalize a non-boundary hint');
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, 64, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, -32, valueInteger(999));
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
-	assert.equal(cpu.gc.tables.length(restored), 64);
-	assert.equal(cpu.gc.tables.getInteger(restored, -32), valueInteger(-32));
+	assert.equal(cpu.tables.length(restored), 64);
+	assert.equal(cpu.tables.getInteger(restored, -32), valueInteger(-32));
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 	for (let n = -65; n >= -256; n--) nativeHeapReference(cpu).gc.tables.setInteger(restored, n, valueInteger(n));
-	assert.equal(cpu.gc.tables.length(restored), 64, 'hash growth redistributes storage without changing the boundary');
+	assert.equal(cpu.tables.length(restored), 64, 'hash growth redistributes storage without changing the boundary');
 });

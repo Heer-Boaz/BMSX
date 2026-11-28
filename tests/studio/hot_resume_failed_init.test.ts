@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -11,7 +13,7 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { isOpen, load as readCapture } from '../../machine/ts/machine/cpu/upvalue';
-import { asClosure, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../machine/ts/spec/blua32/cop0';
@@ -116,7 +118,7 @@ while true do halt_until_irq end
 	assert.ok((memory.readMappedU32LE(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0);
 	debuggerState.plans.faultCompletionBatches(1);
 	assert.deepEqual(outcomes, ['faulted']);
-	const retained = asClosure(guest.global('retained_capture'), cpu.gc);
+	const retained = asClosure(guest.global('retained_capture'), nativeHeapReference(cpu).gc);
 	const cell = ClosureRecord.captureAddress(memory, retained, 0);
 	assert.equal(isOpen(memory, cell), true);
 	assert.equal(readCapture(memory, cell), valueInteger(42));

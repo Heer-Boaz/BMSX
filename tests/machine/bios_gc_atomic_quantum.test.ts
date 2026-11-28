@@ -1,3 +1,4 @@
+import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -6,12 +7,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -96,9 +95,9 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`One stopped guest Atomic quantum clears real weak values, then flips white and enters Sweep at O${optLevel}`, () => {
 		const f = fixture(optLevel), limit = 4096;
-		const initialWork = f.memory.readRamRecordWord(f.beforeWork), white = f.cpu.gc.white();
+		const initialWork = f.memory.readRamRecordWord(f.beforeWork), white = nativeHeapReference(f.cpu).gc.white();
 		const want = nativeHeapReference(f.oracle).gc.stepFinalMark(limit);
-		assert.equal(f.oracle.gc.phase(), GcPhase.Sweep);
+		assert.equal(nativeHeapReference(f.oracle).gc.phase(), GcPhase.Sweep);
 		f.begin(limit);
 		const tags = f.array + 4 * arraySlots;
 		for (let i = 0; i < 65536 && f.memory.readRamRecordByte(tags) !== ValueTag.Nil; ++i) f.grant(1);
@@ -106,19 +105,19 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.memory.readRamRecordByte(tags), ValueTag.Nil);
 		assert.equal(f.memory.readRamRecordByte(tags + 1), ValueTag.Table);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_STATE), clearWeak);
-		assert.equal(f.cpu.gc.phase(), GcPhase.Atomic);
-		assert.equal(f.cpu.gc.white(), white);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Atomic);
+		assert.equal(nativeHeapReference(f.cpu).gc.white(), white);
 		assert.equal(f.memory.readRamRecordWord(f.beforeWork), initialWork);
 		const stopped = captureCpuCheckpoint(f.cpu);
 		const finished = f.finish();
 		assert.equal(finished[0], want);
-		assert.equal(f.cpu.gc.phase(), GcPhase.Sweep);
-		assert.equal(f.cpu.gc.white(), white ^ 1);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Sweep);
+		assert.equal(nativeHeapReference(f.cpu).gc.white(), white ^ 1);
 		assert.equal(f.memory.readRamRecordWord(f.beforeWork), initialWork + want);
-		for (let slot = 1; slot <= 2; ++slot) assert.equal(valueTag(f.cpu.gc.tables.get(f.weak, valueInteger(slot))), ValueTag.Nil);
-		assert.equal(f.cpu.gc.tables.get(f.weak, valueInteger(3)), valueTable(f.retained));
+		for (let slot = 1; slot <= 2; ++slot) assert.equal(valueTag(f.cpu.tables.get(f.weak, valueInteger(slot))), ValueTag.Nil);
+		assert.equal(f.cpu.tables.get(f.weak, valueInteger(3)), valueTable(f.retained));
 		for (const dead of [f.firstDead, f.secondDead])
-			assert.equal(f.cpu.gc.tableRecordAddress(dead), dead, 'weak clear does not reclaim its referent');
+			assert.equal(nativeHeapReference(f.cpu).gc.tableRecordAddress(dead), dead, 'weak clear does not reclaim its referent');
 		f.compare();
 		restoreCpuCheckpoint(f.cpu, stopped);
 		assert.deepEqual(f.finish(), finished);
@@ -126,17 +125,17 @@ for (const optLevel of [0, 3] as const) {
 	});
 
 	test(`Stopped guest Atomic quanta keep the native frontier and policy work at allowance one at O${optLevel}`, () => {
-		const f = fixture(optLevel), white = f.cpu.gc.white();
+		const f = fixture(optLevel), white = nativeHeapReference(f.cpu).gc.white();
 		const stages = new Set<number>();
-		for (let i = 0; i < 256 && f.cpu.gc.phase() === GcPhase.Atomic; ++i) {
+		for (let i = 0; i < 256 && nativeHeapReference(f.cpu).gc.phase() === GcPhase.Atomic; ++i) {
 			const want = nativeHeapReference(f.oracle).gc.stepFinalMark(1);
 			f.begin(1);
 			assert.equal(f.finish()[0], want);
 			f.compare();
 			stages.add(f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_STATE) >>> GC_GRAY_INDEX_BITS);
-			if (f.cpu.gc.phase() === GcPhase.Atomic) assert.equal(f.cpu.gc.white(), white);
+			if (nativeHeapReference(f.cpu).gc.phase() === GcPhase.Atomic) assert.equal(nativeHeapReference(f.cpu).gc.white(), white);
 		}
-		assert.equal(f.cpu.gc.phase(), GcPhase.Sweep);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Sweep);
 		assert.ok(stages.has(3) && stages.has(4) && stages.has(5), `separate Atomic continuations: ${[...stages].join(',')}`);
 	});
 
@@ -151,7 +150,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.finish()[0], 1);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_TRACE_RECORD), f.weak);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_TRACE_CURSOR), (2 << cursorBits) | 1);
-		assert.equal(f.cpu.gc.phase(), GcPhase.Atomic);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Atomic);
 	});
 }
 

@@ -104,7 +104,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		compare();
 		const before = cpu.luaHeap.usedBytes();
 		const layout = new ThreadLayout();
-		oracle.gc.threads.readLayout(target.thread, layout);
+		nativeHeapReference(oracle).gc.threads.readLayout(target.thread, layout);
 		assert.equal(nativeHeapReference(oracle).gc.threads.shrinkStack(target.thread, layout), retained);
 		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
 			[cpu.heapAllocator.allocatorStateOffset(), cpu.luaHeap.occupiedOffset, target.thread]));

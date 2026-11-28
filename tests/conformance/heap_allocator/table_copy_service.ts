@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { asInteger, isNil, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -20,6 +19,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 // Actual Cart -> BIOS table.copy (own values, not a private fixture jump).
 // The unrooted member is produced by its own returned frame. On a physical

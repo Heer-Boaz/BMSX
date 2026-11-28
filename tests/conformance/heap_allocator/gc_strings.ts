@@ -11,9 +11,9 @@ import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 const source = `
 bss input: word
 *input = 211

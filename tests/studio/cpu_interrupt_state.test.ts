@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -20,7 +21,7 @@ import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot
 import { linkCartBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { EMPTY_CALL_ARGS, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
@@ -783,7 +784,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
 	const { cpu, irqController } = createTestBlua32PairCpu(HALT_CLOSURE_TEST_IMAGES);
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0] + BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
-	const haltClosure = asClosure(cpu.readFrameRegister(0, 0), cpu.gc);
+	const haltClosure = asClosure(cpu.readFrameRegister(0, 0), nativeHeapReference(cpu).gc);
 	const runtime = makeRuntime(cpu, irqController);
 
 	const out = runtime.callClosure(haltClosure, EMPTY_CALL_ARGS);
@@ -822,7 +823,7 @@ while true do end
 	assert.equal(cpu.runUntilDepth(0, 2000), RunResult.Yielded);
 	const baseDepth = cpu.getFrameDepth();
 	const pc = cpu.readFramePc(baseDepth - 1);
-	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('operation')!), cpu.gc);
+	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('operation')!), nativeHeapReference(cpu).gc);
 	for (const [argument, expected] of [[3, 10], [5, 15]]) {
 		cpu.beginCompletionCall(closure, [valueInteger(argument)]);
 		assert.equal(cpu.runUntilDepth(baseDepth, 2000), RunResult.Halted);
@@ -898,7 +899,7 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 test('completion-call return routing survives save-state through the raw CPU latch', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const closureKey = nativeHeapReference(cpu).stringPool.intern('completion_call');
 	setReferenceGlobal(cpu, closureKey, valueClosure(closure));
 
@@ -912,23 +913,23 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const restoredTable = valuePayload(materializeCpuCompletionValues(cpu)[0]);
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tableRecordAddress(restoredTable), restoredTable, 'completion is the sole root of the returned Table');
+	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(restoredTable), restoredTable, 'completion is the sole root of the returned Table');
 	assert.equal(valuePayload(materializeCpuCompletionValues(cpu)[0]), restoredTable);
 
-	const restoredClosure = asClosure(cpu.getGlobalByKey(closureKey), cpu.gc);
+	const restoredClosure = asClosure(cpu.getGlobalByKey(closureKey), nativeHeapReference(cpu).gc);
 	const runtime = makeRuntime(cpu, irqController);
 	const results = runtime.callClosure(restoredClosure, [valueTable(createReferenceTable(cpu))]);
 	assert.equal(results, runtime.readCompletionValues());
 	const borrowedTable = valuePayload(results[0]);
 	nativeHeapReference(cpu).gc.collect();
-	assert.equal(cpu.gc.tableRecordAddress(borrowedTable), borrowedTable);
+	assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(borrowedTable), borrowedTable);
 	assert.equal(valuePayload(results[0]), borrowedTable);
 });
 
 test('CPU aborts a physical completion call at its marked root', () => {
 	const { cpu } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const completionFrameIndex = cpu.getFrameDepth();
 	cpu.beginCompletionCall(closure);
 	cpu.beginCompletionCall(closure);
@@ -945,7 +946,7 @@ test('CPU aborts a physical completion call at its marked root', () => {
 test('Runtime callClosure leaves its completion frame pending when the shared executor hits a breakpoint', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 	const runtime = makeRuntime(cpu, irqController);
 	const closurePc = COMPLETION_LATCH_TEST_IMAGE.image.functions[1].codeAddress;
 	runtime.machine.cpu.setExecutionHook(
@@ -1856,11 +1857,11 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	cpu.restoreRuntimeState(snapshot);
 
 	const restoredRoot = valuePayload(cpu.getGlobalByKey(rootName));
-	const restoredChild = valuePayload(cpu.gc.tables.getStringKey(restoredRoot, childKey));
-	const restoredObjectKey = cpu.gc.tables.getStringKey(restoredRoot, objectKeyName);
+	const restoredChild = valuePayload(cpu.tables.getStringKey(restoredRoot, childKey));
+	const restoredObjectKey = cpu.tables.getStringKey(restoredRoot, objectKeyName);
 	assert.notEqual(restoredChild, restoredRoot);
-	assert.equal(valuePayload(cpu.gc.tables.getStringKey(restoredChild, parentKey)), restoredRoot);
-	assert.equal(valuePayload(cpu.gc.tables.get(restoredRoot, restoredObjectKey)), restoredChild);
+	assert.equal(valuePayload(cpu.tables.getStringKey(restoredChild, parentKey)), restoredRoot);
+	assert.equal(valuePayload(cpu.tables.get(restoredRoot, restoredObjectKey)), restoredChild);
 });
 
 

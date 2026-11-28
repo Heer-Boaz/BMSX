@@ -55,9 +55,9 @@ test('Table stores sparse high-bit Integer words in the hash part', () => {
 	nativeHeapReference(cpu).gc.tables.set(table, highKey, valueInteger(11));
 	nativeHeapReference(cpu).gc.tables.set(table, tokenKey, valueInteger(22));
 
-	assert.equal(cpu.gc.tables.get(table, highKey), valueInteger(11));
-	assert.equal(cpu.gc.tables.get(table, tokenKey), valueInteger(22));
-	assert.equal(cpu.gc.tables.length(table), 0);
+	assert.equal(cpu.tables.get(table, highKey), valueInteger(11));
+	assert.equal(cpu.tables.get(table, tokenKey), valueInteger(22));
+	assert.equal(cpu.tables.length(table), 0);
 	assert.ok(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table) < 4096);
 });
 
@@ -69,7 +69,7 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 			nativeHeapReference(cpu).gc.tables.set(table, valueInteger(key), valueInteger(key * 10));
 		}
 		const heapBytes = nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table);
-		assert.equal(cpu.gc.tables.length(table), 7);
+		assert.equal(cpu.tables.length(table), 7);
 
 		for (const key of [2, 4]) {
 			switch (route) {
@@ -86,13 +86,13 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 					nativeHeapReference(cpu).gc.tables.setInteger(table, key, valueNil());
 					break;
 				case 'integer-array':
-					assert.equal(cpu.gc.tables.storeIntegerArrayKey(table, key, ValueTag.Nil, 0), true);
+					assert.equal(cpu.tables.storeIntegerArrayKey(table, key, ValueTag.Nil, 0), true);
 					break;
 			}
-			const boundary = cpu.gc.tables.length(table);
-			assert.ok(boundary === 0 || cpu.gc.tables.get(table, valueInteger(boundary)) !== valueNil());
-			assert.equal(cpu.gc.tables.get(table, valueInteger(boundary + 1)), valueNil());
-			assert.equal(cpu.gc.tables.getInteger(table, 7), valueInteger(70));
+			const boundary = cpu.tables.length(table);
+			assert.ok(boundary === 0 || cpu.tables.get(table, valueInteger(boundary)) !== valueNil());
+			assert.equal(cpu.tables.get(table, valueInteger(boundary + 1)), valueNil());
+			assert.equal(cpu.tables.getInteger(table, 7), valueInteger(70));
 
 			switch (route) {
 				case 'generic':
@@ -108,18 +108,18 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 					nativeHeapReference(cpu).gc.tables.setInteger(table, key, valueBool(false));
 					break;
 				case 'integer-array':
-					assert.equal(cpu.gc.tables.storeIntegerArrayKey(table, key, ValueTag.False, 0), true);
+					assert.equal(cpu.tables.storeIntegerArrayKey(table, key, ValueTag.False, 0), true);
 					break;
 			}
-			assert.equal(cpu.gc.tables.length(table), 7);
-			assert.equal(cpu.gc.tables.get(table, valueInteger(key)), valueBool(false));
+			assert.equal(cpu.tables.length(table), 7);
+			assert.equal(cpu.tables.get(table, valueInteger(key)), valueBool(false));
 			assert.equal(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table), heapBytes);
 		}
 
 		nativeHeapReference(cpu).gc.tables.setInteger(table, 9, valueInteger(90));
-		assert.equal(cpu.gc.tables.length(table), 7);
+		assert.equal(cpu.tables.length(table), 7);
 		nativeHeapReference(cpu).gc.tables.setInteger(table, 8, valueInteger(80));
-		assert.equal(cpu.gc.tables.length(table), 9);
+		assert.equal(cpu.tables.length(table), 9);
 	});
 }
 
@@ -130,14 +130,14 @@ test('Table length remembers a boundary without scanning after distant writes', 
 	for (let key = 4096; key >= 1; key--) nativeHeapReference(cpu).gc.tables.setInteger(table, key, valueBool(false));
 	const hint = table + TableHeader.Length;
 	assert.equal(memory.readRamRecordWord(hint), 1);
-	assert.equal(cpu.gc.tables.length(table), 4096);
+	assert.equal(cpu.tables.length(table), 4096);
 	for (let repeat = 0; repeat < 8; repeat++) {
 		nativeHeapReference(cpu).gc.tables.setInteger(table, 2048, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, 2048, valueBool(false));
 	}
 	assert.equal(memory.readRamRecordWord(hint), 4096, 'LEN caches its result and distant holes do not disturb it');
 	// Erase the hinted entry without moving the hint (the weak-clearing owner).
 	nativeHeapReference(cpu).gc.tables.clearWeakEntries(table, false, true, () => false);
-	assert.equal(cpu.gc.tables.length(table), 0, 'a stale nonzero hint is only a search seed');
+	assert.equal(cpu.tables.length(table), 0, 'a stale nonzero hint is only a search seed');
 	assert.equal(memory.readRamRecordWord(hint), 0);
 });
 
@@ -145,19 +145,19 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = createReferenceTable(cpu, 0, 128);
 	for (let bit = 30; bit >= 0; bit--) nativeHeapReference(cpu).gc.tables.setInteger(table, 2 ** bit, valueBool(false));
-	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
+	assert.equal(cpu.tables.length(table), 2 ** 30);
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 0x7fffffff, valueBool(false));
-	assert.equal(cpu.gc.tables.getInteger(table, 0x7fffffff), valueBool(false));
-	const boundary = cpu.gc.tables.length(table);
+	assert.equal(cpu.tables.getInteger(table, 0x7fffffff), valueBool(false));
+	const boundary = cpu.tables.length(table);
 	assert.ok(boundary > 0 && boundary <= 0x7fffffff);
-	assert.notEqual(cpu.gc.tables.getInteger(table, boundary), valueNil());
-	if (boundary < 0x7fffffff) assert.equal(cpu.gc.tables.getInteger(table, boundary + 1), valueNil());
+	assert.notEqual(cpu.tables.getInteger(table, boundary), valueNil());
+	if (boundary < 0x7fffffff) assert.equal(cpu.tables.getInteger(table, boundary + 1), valueNil());
 	nativeHeapReference(cpu).gc.tables.set(table, valueFloat(2 ** 31), valueBool(true));
-	assert.equal(cpu.gc.tables.get(table, valueFloat(2 ** 31)), valueBool(true));
-	assert.equal(cpu.gc.tables.getInteger(table, 0x7fffffff), valueBool(false));
-	assert.equal(cpu.gc.tables.length(table), boundary, 'the Float key outside the sequence range cannot change its boundary');
+	assert.equal(cpu.tables.get(table, valueFloat(2 ** 31)), valueBool(true));
+	assert.equal(cpu.tables.getInteger(table, 0x7fffffff), valueBool(false));
+	assert.equal(cpu.tables.length(table), boundary, 'the Float key outside the sequence range cannot change its boundary');
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 0x7fffffff, valueNil());
-	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
+	assert.equal(cpu.tables.length(table), 2 ** 30);
 });
 
 test('table values come directly from the allocator-owned RAM block', () => {
@@ -165,7 +165,7 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	const arena = nativeHeapReference(cpu).heapAllocator, occupiedBefore = arena.occupiedBytes();
 	const table = createReferenceTable(cpu, 2, 1);
 	nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(71));
-	const base = cpu.gc.tables.arrayAddress(table), hash = cpu.gc.tables.hashAddress(table);
+	const base = cpu.tables.arrayAddress(table), hash = cpu.tables.hashAddress(table);
 	const headerBytes = arena.allocationBytes(table - GC_OBJECT_PREFIX), backingBytes = arena.allocationBytes(base);
 	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes + backingBytes + arena.allocationBytes(hash), 'the header and body are separate chunks');
 	assert.equal(memory.readRamRecordWord(base), 71);
@@ -178,9 +178,9 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	assert.equal(memory.readRamRecordWord(backing), base);
 	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);
 	memory.writeRamRecordWord(base, 94);
-	assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(94));
+	assert.equal(cpu.tables.getInteger(table, 1), valueInteger(94));
 	memory.writeRamRecordByte(tags, ValueTag.Nil);
-	assert.equal(valueTag(cpu.gc.tables.getInteger(table, 1)), ValueTag.Nil);
+	assert.equal(valueTag(cpu.tables.getInteger(table, 1)), ValueTag.Nil);
 	memory.writeRamRecordWord(backing, base);
 	nativeHeapReference(cpu).gc.tables.clear(table);
 	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes, 'clearing releases only the owned body');
@@ -294,16 +294,16 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const table = createReferenceTable(cpu, 0, 1024);
 	for (let key = -1; key >= -1024; key--) nativeHeapReference(cpu).gc.tables.setInteger(table, key, valueInteger(key));
-	const links = cpu.gc.tables.hashAddress(table) + 1024 * 10;
+	const links = cpu.tables.hashAddress(table) + 1024 * 10;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
 		for (let next = slot; next !== -1; next = (memory.readRamRecordWord(links + next * 4) | 0)) {
 			assert.ok(++count <= 8, `bucket ${slot} exceeded its chain depth bound`);
 		}
-		assert.equal(cpu.gc.tables.getInteger(table, -(slot + 1)), valueInteger(-(slot + 1)));
+		assert.equal(cpu.tables.getInteger(table, -(slot + 1)), valueInteger(-(slot + 1)));
 	}
-	nativeHeapReference(cpu).gc.tables.set(table, valueFloat(-0), valueBool(true)); assert.equal(cpu.gc.tables.getInteger(table, 0), valueBool(true));
-	nativeHeapReference(cpu).gc.tables.setInteger(table, 0, valueBool(false)); assert.equal(cpu.gc.tables.get(table, valueFloat(-0)), valueBool(false));
+	nativeHeapReference(cpu).gc.tables.set(table, valueFloat(-0), valueBool(true)); assert.equal(cpu.tables.getInteger(table, 0), valueBool(true));
+	nativeHeapReference(cpu).gc.tables.setInteger(table, 0, valueBool(false)); assert.equal(cpu.tables.get(table, valueFloat(-0)), valueBool(false));
 	// The same physical buckets are checked in the C++ table inspection suite.
 	const slots = new ValueSlots(2);
 	const vectors: ReadonlyArray<readonly [Value, number]> = [
@@ -313,7 +313,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	];
 	for (const [key, bucket] of vectors) {
 		const one = createReferenceTable(cpu, 0, 1024); nativeHeapReference(cpu).gc.tables.set(one, key, valueBool(false));
-		assert.equal(cpu.gc.tables.loadStoredEntry(one, bucket, slots, 0), true);
+		assert.equal(cpu.tables.loadStoredEntry(one, bucket, slots, 0), true);
 		assert.equal(slots.get(1), valueBool(false));
 	}
 });
@@ -325,7 +325,7 @@ test('Table hashes runtime object keys from value-owned identity', () => {
 
 	nativeHeapReference(cpu).gc.tables.set(table, tableKey, valueInteger(101));
 
-	assert.equal(cpu.gc.tables.get(table, tableKey), valueInteger(101));
+	assert.equal(cpu.tables.get(table, tableKey), valueInteger(101));
 });
 
 test('CPU modulus follows Lua floor-modulo semantics', () => {
@@ -343,20 +343,20 @@ test('physical table inspection preserves Lua iteration order and tagged values 
 	const before = nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table), values = new ValueSlots(4);
 	values.setInteger(0, 123); values.setInteger(3, 456);
 	const physical: Value[][] = [];
-	for (let slot = 0; slot < cpu.gc.tables.storedSlotCount(table); slot++) {
-		if (cpu.gc.tables.loadStoredEntry(table, slot, values, 1)) physical.push([values.get(1), values.get(2)]);
+	for (let slot = 0; slot < cpu.tables.storedSlotCount(table); slot++) {
+		if (cpu.tables.loadStoredEntry(table, slot, values, 1)) physical.push([values.get(1), values.get(2)]);
 	}
 	const logical: Value[][] = [];
 	values.setNil(1);
-	for (cpu.gc.tables.next(table, values.get(1), values, 1); values.getTag(1) !== ValueTag.Nil;
-		cpu.gc.tables.next(table, values.get(1), values, 1)) logical.push([values.get(1), values.get(2)]);
+	for (cpu.tables.next(table, values.get(1), values, 1); values.getTag(1) !== ValueTag.Nil;
+		cpu.tables.next(table, values.get(1), values, 1)) logical.push([values.get(1), values.get(2)]);
 	assert.deepEqual(physical, logical);
 	assert.equal(physical.length, 5);
 	assert.equal(values.get(0), valueInteger(123));
 	assert.equal(values.get(3), valueInteger(456));
 	assert.equal(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table), before);
 	const previous = [values.get(1), values.get(2)];
-	assert.equal(cpu.gc.tables.loadStoredEntry(table, 1, values, 1), false);
+	assert.equal(cpu.tables.loadStoredEntry(table, 1, values, 1), false);
 	assert.deepEqual([values.get(1), values.get(2)], previous);
 });
 

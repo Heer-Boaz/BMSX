@@ -1,17 +1,17 @@
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_REMARK_VISIT_STATE, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_REMARK_VISIT_STATE, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -117,7 +117,7 @@ for (const optLevel of [0, 3] as const) {
 			byte(table + GC_COLOR_OFFSET, 0xb4);
 			word(table + GC_RECORD_LINK, 0xbafab678);
 			const pending = pendingString(carried);
-			oracle.gc.writeGlobalRoot(ValueTag.Table, table);
+			nativeHeapReference(oracle).gc.writeGlobalRoot(ValueTag.Table, table);
 			invoke('mark_global_write', arena, metadata, ValueTag.Table, table, 0, pending);
 			if (queue) assert.equal(memory.readRamRecordWord(control + queue), indexOfRecord(table));
 			else assert.equal(memory.readRamRecordByte(table + GC_COLOR_OFFSET), 0xb4);
@@ -126,12 +126,12 @@ for (const optLevel of [0, 3] as const) {
 		word(control + EPOCH_WORK, 17);
 		byte(value + 1, 0x74);
 		const pending = pendingString(carried);
-		oracle.gc.writeGlobalRoot(ValueTag.String, value);
+		nativeHeapReference(oracle).gc.writeGlobalRoot(ValueTag.String, value);
 		invoke('mark_global_write', arena, metadata, ValueTag.String, value, 0, pending);
 		assert.equal(memory.readRamRecordWord(control + EPOCH_WORK), 19);
 		phase(GcPhase.Mark);
 		byte(thread + GC_COLOR_OFFSET, 0x68);
-		oracle.gc.writeGlobalRoot(ValueTag.Float, thread);
+		nativeHeapReference(oracle).gc.writeGlobalRoot(ValueTag.Float, thread);
 		invoke('mark_global_write', arena, metadata, ValueTag.Float, thread, 0, 0);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_HEAD), indexOfRecord(thread), 'TS direct entry uses the admitted record kind');
 		phase(GcPhase.Mark);
@@ -143,7 +143,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let selector = 0; selector < 8; ++selector) {
 			byte(control, 0xf8 | selector);
 			begin('phase');
-			assert.equal(finish()[0], oracle.gc.phase(), `physical phase selector ${selector}`);
+			assert.equal(finish()[0], nativeHeapReference(oracle).gc.phase(), `physical phase selector ${selector}`);
 		}
 	});
 
@@ -154,7 +154,7 @@ for (const optLevel of [0, 3] as const) {
 		const value = add(target => createReferenceTable(target));
 		const cell = add(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initialize(target.memory, address, target.gc.white());
+			initialize(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
@@ -217,7 +217,7 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, memory, oracle, management, arena, control, metadata, add, word, byte, begin, grant, finish, phase, compare } = fixture(optLevel);
 		const cell = add(target => {
 			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
-			initialize(target.memory, address, target.gc.white());
+			initialize(target.memory, address, nativeHeapReference(target).gc.white());
 			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		}) & UPVALUE_ADDRESS_MASK;

@@ -34,7 +34,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		if (module.kind !== 'value') throw new Error('Missing real firmware scope registry');
 		const active = valuePayload(guest.readStringMember(module.value, 'active'));
 		const result: Value[] = [];
-		guest.cpu.gc.tables.forEachStoredEntry(active, (_key, scope) => result.push(scope));
+		guest.cpu.tables.forEachStoredEntry(active, (_key, scope) => result.push(scope));
 		return result;
 	};
 	const first = await stopAtWait();

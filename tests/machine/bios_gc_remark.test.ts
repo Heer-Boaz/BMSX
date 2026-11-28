@@ -1,16 +1,16 @@
+import { GC_CHANGED_HEAD, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_THREAD_VISITS, GC_TRACE_HEAD, GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcRootBank, GcDiagnosticField, GC_DIAGNOSTIC_OFFSET } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_THREAD_VISITS, GC_TRACE_HEAD, GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcRootBank, GcDiagnosticField, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INDEX_NAN } from '../../machine/ts/spec/blua32/cop0';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -55,16 +55,16 @@ function fixture(optLevel: 0 | 3) {
 	const [w0, w1, w2, staleTrace, changed, stringIndex, receiver, value] = Array.from({ length: 8 }, table);
 	const string = (text: string) => same(t => nativeHeapReference(t).stringPool.intern(text));
 	const left = string('comparison left'), right = string('comparison right'), key = string('pending SETT key');
-	const mode = same(t => t.gc.diagnosticWord(GcDiagnosticField.Mode));
+	const mode = same(t => nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.Mode));
 	const descriptor = same(t => {
 		const base = nativeHeapReference(t).heapAllocator.allocate(72 + 4 * (LUA_FAULT_REASON_INDEX_NAN + 1), true);
 		assert.ok(base);
 		const faultBase = base + 72, ram = t.memory;
-		const originalFaults = t.gc.diagnosticWord(GcDiagnosticField.FaultIds);
+		const originalFaults = nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.FaultIds);
 		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
 			ram.writeRamRecordWord(faultBase + reason * 4, ram.readRamRecordWord(originalFaults + reason * 4));
 		const fields = [
-			9, mode, t.gc.diagnosticWord(GcDiagnosticField.Index), t.gc.diagnosticWord(GcDiagnosticField.NewIndex), t.gc.diagnosticWord(GcDiagnosticField.Length), t.gc.diagnosticWord(GcDiagnosticField.Error),
+			9, mode, nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.Index), nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.NewIndex), nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.Length), nativeHeapReference(t).gc.diagnosticWord(GcDiagnosticField.Error),
 			faultBase, valueTag(valueTable(stringIndex)), stringIndex, 1, left, right, 1, receiver,
 			valueTag(valueString(key)), key, valueTag(valueTable(value)), value,
 		];

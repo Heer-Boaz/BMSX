@@ -6,7 +6,6 @@ import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE, closureRecordBytes, type FunctionPrototype, initializeRecord } from '../../machine/ts/machine/cpu/closure';
 import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { isOpen, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { type Value, ValueTag, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -20,7 +19,7 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { FIRMWARE_DATA_OFFSET } from '../helpers/firmware_heap_layout';
+import { FIRMWARE_DATA_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -240,7 +239,7 @@ for (const level of [0, 3] as const) {
 			numParams: f.target.numParams, maxStack: f.target.maxStack, flags: f.target.flags,
 			upvalueTableAddress: f.target.upvalueTableAddress, recordUpvalueCount: 6,
 		};
-		initializeRecord(oracle.memory, address, proto, false, oracle.gc.white(), 6, true);
+		initializeRecord(oracle.memory, address, proto, false, nativeHeapReference(oracle).gc.white(), 6, true);
 		f.start(2);
 		f.finish();
 		assert.equal(f.actual.heapServiceResult(), address - RAM_BASE);
@@ -266,7 +265,7 @@ for (const level of [0, 3] as const) {
 		};
 		// The allocation and layout operations of the old mapped zero-capture CPU branch.
 		const expected = allocateClosureRecordReference(oracle, 0, true);
-		initializeRecord(oracle.memory, expected, proto, canonical, oracle.gc.white(), 0, true);
+		initializeRecord(oracle.memory, expected, proto, canonical, nativeHeapReference(oracle).gc.white(), 0, true);
 		nativeHeapReference(oracle).gc.publishObject(expected);
 		f.startWhole();
 		f.finish();

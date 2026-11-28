@@ -13,8 +13,6 @@ import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valueString } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -23,7 +21,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
-import { GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../../helpers/firmware_heap_layout';
+import { GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import {
 	IO_CART_SELECT, IO_SYS_CONTROL, SYS_CONTROL_RESET,
 } from '../../../machine/ts/spec/bmsx/io';
@@ -38,6 +36,7 @@ import { admitTestHeapServiceCpu } from '../../helpers/heap_service_system';
 import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const cartSource = 'bss records: word[0x10000]\nrecords[0] = 37\nreturn records[0]';
 const sentinel = 0x5eedaa55;

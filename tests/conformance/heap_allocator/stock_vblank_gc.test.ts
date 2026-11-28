@@ -5,8 +5,6 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { GC_LAST_EPOCH_WORK, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -14,7 +12,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CART_ROM_BASE, CPU_IRQ_VECTOR_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -24,6 +22,8 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_LAST_EPOCH_WORK, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const length = 0x120000;
@@ -79,10 +79,10 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const report = (field: Report) => memory.readRamRecordWord(reports + field * 4);
 	const flags = () => memory.readIoU32(IO_IRQ_FLAGS);
 	const sample = () => memory.readRamRecordWord(control + physicalSample);
-	const work = () => [cpu.gc.epochWork(), memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK)];
-	const traceCursor = () => [cpu.gc.phase(), memory.readRamRecordWord(control + GC_TRACE_HEAD),
+	const work = () => [nativeHeapReference(cpu).gc.epochWork(), memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK)];
+	const traceCursor = () => [nativeHeapReference(cpu).gc.phase(), memory.readRamRecordWord(control + GC_TRACE_HEAD),
 		memory.readRamRecordWord(control + GC_TRACE_RECORD), memory.readRamRecordWord(control + GC_TRACE_CURSOR),
-		cpu.gc.epochWork(), arena.occupiedBytes()];
+		nativeHeapReference(cpu).gc.epochWork(), arena.occupiedBytes()];
 	const commands: string[] = [], expected: string[] = [];
 	const observe = (command: string, result?: string | number) => {
 		commands.push(command);

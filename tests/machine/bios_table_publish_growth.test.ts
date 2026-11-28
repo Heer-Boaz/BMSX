@@ -1,3 +1,4 @@
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_ROOT_CURSOR, GC_TRACE_CURSOR, GC_TRACE_RECORD } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,12 +7,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_ROOT_CURSOR, GC_TRACE_CURSOR, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -93,7 +92,7 @@ for (const optLevel of [0, 3] as const) {
 		const { memory } = f;
 		for (const hash of [0, 1, 128, 256, 1024]) {
 			const record = f.same(target => createReferenceTable(target, 2, 4)), array = 9;
-			const oldHash = f.same(target => target.gc.tables.hashAddress(record));
+			const oldHash = f.same(target => target.tables.hashAddress(record));
 			const base = f.backing(array * 5), storage = hash === 0 ? 0 : f.backing(TableRecords.hashStorageBytes(hash));
 			const alias = hash === 1 ? MAIN_RAM_SIZE : 0, cppMirror = hash === 128;
 			f.same(target => {
@@ -119,7 +118,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 
 		const record = f.same(target => createReferenceTable(target, 1, 8)), array = 7;
-		const storage = f.same(target => target.gc.tables.hashAddress(record)), base = f.backing(array * 5);
+		const storage = f.same(target => target.tables.hashAddress(record)), base = f.backing(array * 5);
 		f.same(target => {
 			target.memory.writeRamRecordWord(storage, 0x1627419b);
 			target.memory.writeRamRecordWord(record + TableHeader.Free, 5);

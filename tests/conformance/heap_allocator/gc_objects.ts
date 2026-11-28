@@ -6,12 +6,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { GC_PACE_PAID, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { GC_WORKSPACE_END } from '../../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -19,6 +18,7 @@ import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GC_PACE_PAID, GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const OBJECT_HEAD = 0x6c, SWEEP_LINK = 0x74;
 const entrySource = 'halt_until_irq', PROBE = 'test/native_gc_objects';
@@ -69,7 +69,7 @@ try {
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		const table = createReferenceTable(cpu, 3, 8);
 		const colorShift = 8 * GC_COLOR_OFFSET;
-		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((cpu.gc.white() ^ 1) << colorShift);
+		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((nativeHeapReference(cpu).gc.white() ^ 1) << colorShift);
 		const phase = (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep;
 		const seed = [...boot, 'Y 3 8', `W ${table} ${header}`, `W ${control} ${phase}`,
 			`W ${control + SWEEP_LINK} ${control + OBJECT_HEAD}`];
@@ -113,7 +113,7 @@ try {
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(cycles > 0 && cycles < 65536);
 			assert.equal(cpu.heapServiceResult(), 1);
-			return [`${result} ${cycles} 0 ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`, ...hashes()];
+			return [`${result} ${cycles} 0 ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`, ...hashes()];
 		};
 		const final = tail();
 		assert.deepEqual(final.slice(1), reference.slice(-verify.length),

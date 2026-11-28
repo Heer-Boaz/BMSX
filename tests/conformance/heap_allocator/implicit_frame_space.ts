@@ -9,7 +9,6 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueBool, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -26,6 +25,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
@@ -104,10 +104,10 @@ return ok, result, trailing
 
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		if (refusal) {
-			for (let i = 0; i < 4096 && cpu.gc.phase() !== GcPhase.Atomic; ++i)
+			for (let i = 0; i < 4096 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Atomic; ++i)
 				nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
-			assert.equal(cpu.gc.phase(), GcPhase.Atomic);
-			assert.equal(cpu.gc.isAlive(forward), false, 'the selected receiver is only weakly reachable before the fault');
+			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Atomic);
+			assert.equal(nativeHeapReference(cpu).gc.isAlive(forward), false, 'the selected receiver is only weakly reachable before the fault');
 			while (arena.allocate(4088, true)) { /* fill the large free extents before either core runs the fault */ }
 			while (arena.allocate(24, true)) { /* leave no extents wide enough for the callback */ }
 		}
@@ -182,7 +182,7 @@ return ok, result, trailing
 				assert.ok(cpu.readThreadFrameDepth(owner) <= depth, 'failed reservation publishes no child');
 				assert.equal(memory.readRamRecordWord(owner + ThreadField.StackBlock), stackBlock);
 				assert.equal(memory.readRamRecordWord(owner + ThreadField.FrameBlock), frames);
-				assert.equal(cpu.gc.tableRecordAddress(forward), forward, 'the vector roots the otherwise weak-only receiver across recovery');
+				assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(forward), forward, 'the vector roots the otherwise weak-only receiver across recovery');
 			} else {
 				assert.equal(cpu.readThreadFrameDepth(owner), depth + 1);
 				const frame = cpu.activeThread.currentFrame!;
@@ -207,7 +207,7 @@ return ok, result, trailing
 				assert.equal(result[2], valueNil());
 			} else {
 				assert.deepEqual(result, writing ? [valueBool(true), valueInteger(1), valueNil()] : [valueBool(true), valueInteger(73), valueInteger(1)]);
-				assert.equal(cpu.gc.tables.getStringKey(forward, guard), valueInteger(writing ? 218 : 66));
+				assert.equal(cpu.tables.getStringKey(forward, guard), valueInteger(writing ? 218 : 66));
 			}
 			assert.equal(memory.readRamRecordWord(invoked), refusal ? 0 : 1);
 			observe('c', [result.length, ...result.flatMap(v => [valueTag(v), valuePayload(v)])].join(' '));

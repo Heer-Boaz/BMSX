@@ -9,7 +9,7 @@ import * as Closure from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import * as Upvalue from '../../../machine/ts/machine/cpu/upvalue';
-import { asClosure, valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
@@ -22,6 +22,8 @@ import { runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { asClosure } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 local close<const> = require('coroutine').close
@@ -76,14 +78,14 @@ for (const optLevel of [0, 3] as const) {
 		runGuestToHalt(cpu, 1_000_000);
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const target = global('abandoned'), record = valuePayload(target);
-		const capture = Closure.captureAddress(memory, asClosure(global('escaped'), cpu.gc), 0);
+		const capture = Closure.captureAddress(memory, asClosure(global('escaped'), nativeHeapReference(cpu).gc), 0);
 		const read = (field: ThreadField) => memory.readRamRecordWord(record + field);
 		const status = () => read(ThreadField.Status);
 		assert.equal(status(), ThreadStatus.Suspended);
 		assert.equal(Upvalue.isOpen(memory, capture), true);
 		assert.equal(Upvalue.load(memory, capture), valueInteger(209));
 
-		cpu.beginCompletionCall(asClosure(global('close_fixed'), cpu.gc), [target]);
+		cpu.beginCompletionCall(asClosure(global('close_fixed'), nativeHeapReference(cpu).gc), [target]);
 		const owner = cpu.activeThread.address;
 		const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
 		let successor = 0, stopped = false;
@@ -117,7 +119,7 @@ for (const optLevel of [0, 3] as const) {
 					assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), successor, 'RFE resumes the public close function');
 				if (!checkPlacement) {
 					commands.push(`L ${grant}`);
-					expected.push(`${result} ${cycles} ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+					expected.push(`${result} ${cycles} ${nativeHeapReference(cpu).gc.fullEpochs()} ${nativeHeapReference(cpu).gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 				}
 				if (result === RunResult.Halted) return total;
 				assert.equal(result, RunResult.Yielded);
@@ -157,13 +159,13 @@ for (const optLevel of [0, 3] as const) {
 		// The protected route preserves the existing two-result failure and
 		// callable reentry sees Dead rather than a stale cached view.
 		const failed = global('failed');
-		assert.deepEqual(runtime.callClosure(asClosure(global('close_protected'), cpu.gc), [failed]),
+		assert.deepEqual(runtime.callClosure(asClosure(global('close_protected'), nativeHeapReference(cpu).gc), [failed]),
 			[valueBool(true), valueBool(false), global('failure')]);
-		assert.deepEqual(runtime.callClosure(asClosure(global('close_protected'), cpu.gc), [failed]),
+		assert.deepEqual(runtime.callClosure(asClosure(global('close_protected'), nativeHeapReference(cpu).gc), [failed]),
 			[valueBool(true), valueBool(true), valueNil()]);
-		assert.deepEqual(runtime.callClosure(asClosure(global('close_running'), cpu.gc)),
+		assert.deepEqual(runtime.callClosure(asClosure(global('close_running'), nativeHeapReference(cpu).gc)),
 			[valueBool(false), valueString(cpu.stringPool.find('Invalid argument.')!)]);
-		const closeOpen = asClosure(global('close_open'), cpu.gc), failedWithNil = global('failed_with_nil');
+		const closeOpen = asClosure(global('close_open'), nativeHeapReference(cpu).gc), failedWithNil = global('failed_with_nil');
 		assert.deepEqual(runtime.callClosure(closeOpen, [failedWithNil]), [valueBool(false), valueNil()],
 			'an actual Nil error retains its second return slot');
 		assert.deepEqual(runtime.callClosure(closeOpen, [failedWithNil]), [valueBool(true)]);

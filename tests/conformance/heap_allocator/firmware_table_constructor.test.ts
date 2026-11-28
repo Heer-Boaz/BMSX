@@ -70,7 +70,7 @@ test('stock load compiles real table constructors with AOT field semantics and f
 	assert.deepEqual(values.slice(1, -1), expected);
 	assert.equal(valueTag(values[0]), ValueTag.Table);
 	assert.equal(valueTag(values[13]), ValueTag.Table);
-	const wide = valuePayload(values[0]), empty = valuePayload(values[13]), tables = cpu.gc.tables;
+	const wide = valuePayload(values[0]), empty = valuePayload(values[13]), tables = cpu.tables;
 	assert.equal(tables.arrayCapacity(wide), 514);
 	assert.equal(tables.hashSize(wide), 1);
 	assert.equal(tables.getInteger(wide, 513), valueInteger(0));

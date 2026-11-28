@@ -60,14 +60,14 @@ return factory
 	const block = caller.decodedPage!.compiledBlocks!.entries[(start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	assert.equal(block.terminal.exit, CompiledBlockExit.CreateClosure);
 	assert.equal(caller.registers.get(0), valueNil(), 'the source register no longer holds the Table');
-	const before = cpu.gc.white();
+	const before = nativeHeapReference(cpu).gc.white();
 	runGuestToHalt(cpu, 100_000);
-	assert.ok(cpu.gc.active() || cpu.gc.white() !== before, 'BIOS admitted collector work during the allocation');
+	assert.ok(nativeHeapReference(cpu).gc.active() || nativeHeapReference(cpu).gc.white() !== before, 'BIOS admitted collector work during the allocation');
 	cpu.readCompletionValues(values);
 	const capture = valuePayload(values[0]);
 	nativeHeapReference(cpu).gc.collect(values[0]);
 	assert.equal(cpu.readClosureUpvalue(capture, 0), valueTable(table));
-	assert.equal(cpu.gc.tables.getStringKey(table, payload), valueString(kept));
+	assert.equal(cpu.tables.getStringKey(table, payload), valueString(kept));
 });
 
 test('hot immediate CLOSURE retains the full Bx operand and canonical STATIC identity', () => {
@@ -152,6 +152,6 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 			setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(address));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, nativeHeapReference(js).gc)).functionAddress, address);
+		assert.equal(js.captureClosureBinding(frame.registers.getPayload(source)).functionAddress, address);
 	}
 });

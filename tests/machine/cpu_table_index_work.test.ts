@@ -359,7 +359,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		frame.registers.setInteger(8, 57); cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 32);
 		assert.equal(frame.registers.getInteger(6), 73); assert.equal(frame.registers.getInteger(8), 57);
-		nativeHeapReference(cpu).gc.tables.setStringKey(cpu.gc.tables.metatableAddress(installed), nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(createReferenceTable(cpu)));
+		nativeHeapReference(cpu).gc.tables.setStringKey(cpu.tables.metatableAddress(installed), nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(createReferenceTable(cpu)));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 24);

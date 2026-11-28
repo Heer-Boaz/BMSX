@@ -10,11 +10,11 @@ import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -202,18 +202,18 @@ for (const opt of [0, 3] as const) {
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}
 		});
-		const before = arena.occupiedBytes(), beforeLogical = cpu.luaHeap.usedBytes(), oldWhite = cpu.gc.white();
+		const before = arena.occupiedBytes(), beforeLogical = cpu.luaHeap.usedBytes(), oldWhite = nativeHeapReference(cpu).gc.white();
 		assert.equal(memory.readRamRecordByte(entry + GC_COLOR_OFFSET), oldWhite);
 		const seed = captureCpuCheckpoint(oracle);
 		nativeHeapReference(oracle).gc.collect();
-		assert.equal(oracle.gc.closureRecordAddress(entry), 0, 'no ordinary published root owns the operand');
+		assert.equal(nativeHeapReference(oracle).gc.closureRecordAddress(entry), 0, 'no ordinary published root owns the operand');
 		restoreCpuCheckpoint(oracle, seed);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
 		const record = allocateThreadRecordReference(oracle, entry);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
 		assert.notEqual(record, 0);
-		assert.equal(oracle.gc.tableRecordAddress(victim), 0);
+		assert.equal(nativeHeapReference(oracle).gc.tableRecordAddress(victim), 0);
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 8192 && memory.readRamRecordByte(entry + GC_COLOR_OFFSET) === oldWhite; ++i) f.grant(1);
 		assert.equal(cpu.heapServiceActive(), true);
@@ -226,9 +226,9 @@ for (const opt of [0, 3] as const) {
 			for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) cycles += f.grant(4096);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
-			assert.equal(cpu.gc.white(), oldWhite ^ 1);
-			assert.equal(cpu.gc.tableRecordAddress(victim), 0);
-			assert.equal(cpu.gc.closureRecordAddress(entry), entry);
+			assert.equal(nativeHeapReference(cpu).gc.white(), oldWhite ^ 1);
+			assert.equal(nativeHeapReference(cpu).gc.tableRecordAddress(victim), 0);
+			assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(entry), entry);
 			assert.equal(memory.readRamRecordWord(control + objectHead), record);
 			assert.equal(memory.readRamRecordWord(record + ThreadField.Entry), entry);
 			// Native work does not materialize the private BIOS root/frontier scratch.
@@ -246,13 +246,13 @@ for (const opt of [0, 3] as const) {
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f), sourceCycles = 21;
 		f.same(cpu => nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes()));
-		const target = cpu.luaHeap.collectionTarget(), occupied = arena.occupiedBytes(), work = cpu.gc.epochWork();
+		const target = cpu.luaHeap.collectionTarget(), occupied = arena.occupiedBytes(), work = nativeHeapReference(cpu).gc.epochWork();
 		const head = memory.readRamRecordWord(control + objectHead);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = sourceCycles;
 		const record = allocateThreadRecordReference(oracle, entry);
 		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
-		assert.ok(oracle.gc.epochWork() > work, 'the old source granted a positive mark quantum');
+		assert.ok(nativeHeapReference(oracle).gc.epochWork() > work, 'the old source granted a positive mark quantum');
 		assert.ok(oracle.luaHeap.collectionTarget() > target);
 		f.beginWhole(management, entry, sourceCycles);
 		for (let i = 0; i < 8192 && cpu.luaHeap.collectionTarget() === target; ++i) f.grant(1);
@@ -260,7 +260,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(arena.occupiedBytes(), occupied);
 		assert.equal(memory.readRamRecordWord(control + objectHead), head);
 		assert.equal(cpu.luaHeap.collectionTarget(), oracle.luaHeap.collectionTarget());
-		assert.equal(cpu.gc.epochWork(), oracle.gc.epochWork());
+		assert.equal(nativeHeapReference(cpu).gc.epochWork(), nativeHeapReference(oracle).gc.epochWork());
 		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) f.grant(128);
 		assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
 		assert.equal(memory.readRamRecordWord(control + objectHead), record);
@@ -279,7 +279,7 @@ for (const opt of [0, 3] as const) {
 			while (nativeHeapReference(cpu).heapAllocator.allocate(16, true)) {}
 		});
 		const before = arena.occupiedBytes(), count = memory.readRamRecordWord(control + objectCount);
-		const white = cpu.gc.white();
+		const white = nativeHeapReference(cpu).gc.white();
 		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
 		assert.throws(() => allocateThreadRecordReference(oracle, entry), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
@@ -287,8 +287,8 @@ for (const opt of [0, 3] as const) {
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) f.grant(4096);
 		assert.equal(cpu.heapServiceResult(), 0);
-		assert.equal(cpu.gc.white(), white ^ 1, 'only one fresh epoch was permitted from Pause');
-		assert.equal(cpu.gc.closureRecordAddress(entry), entry);
+		assert.equal(nativeHeapReference(cpu).gc.white(), white ^ 1, 'only one fresh epoch was permitted from Pause');
+		assert.equal(nativeHeapReference(cpu).gc.closureRecordAddress(entry), entry);
 		assert.equal(arena.occupiedBytes(), before);
 		assert.equal(memory.readRamRecordWord(control + objectCount), count);
 		f.compare(GC_ROOT_BANKS_OFFSET);

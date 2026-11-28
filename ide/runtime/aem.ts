@@ -2,7 +2,7 @@ import type { SuspendedGuestSession } from './suspended_guest';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { asClosure, EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
+import { valuePayload, EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import {
 	aemDocumentFormat,
@@ -70,7 +70,7 @@ export function applyAemSourceRevision(
 	};
 	const currentImage = () => domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
 	const currentRom = () => domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemRom.bytes : sources.cartridgeSlots[domain]!.rom.bytes;
-	const reloadClosure = () => asClosure(guest.readStringMember(guest.global(buildModuleExportSlotName('cartlib/aem', [])), 'reload_from_rom'), cpu.gc);
+	const reloadClosure = () => valuePayload(guest.readStringMember(guest.global(buildModuleExportSlotName('cartlib/aem', [])), 'reload_from_rom'));
 	void runtimeTasks.schedule(() => {
 		const image = currentImage();
 		if (image !== expectedImage) {

@@ -544,7 +544,7 @@ test('generated-source capacity admits whole replacements without flushing unrel
 				skippedInstructionWidth: 0, fallthrough: false };
 		});
 		return compileJavaScriptRegion(plans, cpu.rootThread.currentFrame!.executionImage, memory,
-			nativeHeapReference(cpu).stringPool, globals, globals, cop0, cpu.gc.tables);
+			nativeHeapReference(cpu).stringPool, globals, globals, cop0, cpu.tables);
 	};
 	const a = compile(31), b = compile(63), c = compile(95), b2 = compile(63);
 	const cache = new CompiledCodeCache(a.sourceUnits + b.sourceUnits);

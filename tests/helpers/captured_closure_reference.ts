@@ -53,10 +53,11 @@ export function allocateClosureRecordReference(cpu: CPU, captures: number, latch
 // Only scratch ownership changes: the oracle has local, test-side buffers.
 
 function findOpenUpvalue(cpu: CPU, frame: CallFrame, index: number): number {
+	const { gc } = nativeHeapReference(cpu);
 	const slot = (frame.stackBase + index) >>> 0;
 	let address = frame.openUpvalueHead;
 	for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
-		const cell = cpu.gc.openCellAddress(address);
+		const cell = gc.openCellAddress(address);
 		if (cell === 0) break;
 		const current = cpu.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
 		if (current <= slot) return current === slot ? cell : 0;
@@ -66,10 +67,11 @@ function findOpenUpvalue(cpu: CPU, frame: CallFrame, index: number): number {
 }
 
 function linkOpenUpvalue(cpu: CPU, frame: CallFrame, cell: number, slot: number): void {
+	const { gc } = nativeHeapReference(cpu);
 	let previous = 0;
 	let next = frame.openUpvalueHead;
 	for (let remaining = UPVALUE_CHAIN_LIMIT; next !== 0 && remaining !== 0; --remaining) {
-		const current = cpu.gc.openCellAddress(next);
+		const current = gc.openCellAddress(next);
 		if (current === 0 || cpu.memory.readRamRecordWord(current + UPVALUE_VALUE_WORD) <= slot) break;
 		previous = current;
 		next = cpu.memory.readRamRecordWord(current + UPVALUE_NEXT);
@@ -112,7 +114,7 @@ export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, funct
 	const cells = new Uint32Array(newUpvalueCount);
 	const address = allocateClosureRecordReference(cpu, count, latched, cells, newUpvalueCount);
 	const closure = address;
-	Closure.initializeRecord(cpu.memory, address, functionRecord, false, cpu.gc.white(), count, latched);
+	Closure.initializeRecord(cpu.memory, address, functionRecord, false, nativeHeapReference(cpu).gc.white(), count, latched);
 	let nextCell = 0;
 	for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
 		if (upvalues[index] !== 0 || (upvalueWords[index] & BLUA32_UPVALUE_IN_STACK_MASK) === 0) {

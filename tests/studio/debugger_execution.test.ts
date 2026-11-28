@@ -1,3 +1,4 @@
+import { asClosure, asThread } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
@@ -15,7 +16,7 @@ import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/ru
 import { DebuggerSourceContext } from '../../ide/workbench/services/assistant/debugger_sources';
 import { decodeDebuggerToolRequest } from '../../ide/workbench/services/assistant/debugger_tool_protocol';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, asThread, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -328,7 +329,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
 		assert.equal(f.state.source.stop!.reason, RuntimeDebuggerStopReason.Breakpoint);
-		assert.equal(f.state.source.stop!.thread, asThread(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('child')), f.cpu.gc));
+		assert.equal(f.state.source.stop!.thread, asThread(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('child')), nativeHeapReference(f.cpu).gc));
 	});
 	for (const recompile of [false, true]) test(`O${optLevel}: another thread cannot consume resume suppression at the same depth (Hot Resume ${recompile})`, t => {
 		const f = fixture(t, `require('thread_primitives'); other = function()
@@ -345,7 +346,7 @@ write_parent()`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 7);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
-		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('invoke')), f.cpu.gc));
+		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(nativeHeapReference(f.cpu).stringPool.intern('invoke')), nativeHeapReference(f.cpu).gc));
 		assert.equal(runCpuWithinBudget(f.cpu, 100_000, depth), RunResult.ExecutionStopped);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
 		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread.address);

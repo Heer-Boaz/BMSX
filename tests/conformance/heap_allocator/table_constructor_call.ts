@@ -5,7 +5,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { asInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -27,6 +26,7 @@ import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { BIOS_FUNCTION_EXPORTS } from '../../../toolchain/ts/rompack/system';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const source = `local ok, t = pcall(function()
 return {120, x = 63, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8}

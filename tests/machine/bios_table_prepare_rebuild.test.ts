@@ -1,3 +1,4 @@
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { advanceTableRebuildReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
@@ -7,13 +8,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -120,8 +119,8 @@ for (const opt of [0, 3] as const) {
 		] as const) {
 			const inPlace = kind === 'in-place';
 			const record = f.same(target => createReferenceTable(target, inPlace ? array : oldArray, oldHash));
-			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
-			const source = f.same(target => target.gc.tables.hashAddress(record));
+			const oldBase = f.same(target => target.tables.arrayAddress(record));
+			const source = f.same(target => target.tables.hashAddress(record));
 			const base = inPlace ? oldBase : f.same(target => nativeHeapReference(target).heapAllocator.allocate(5 * array, true));
 			const storage = f.same(target => nativeHeapReference(target).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			assert.ok(base && storage);
@@ -190,8 +189,8 @@ for (const opt of [0, 3] as const) {
 		]) {
 			const mask = hash - 1, shrinking = array < oldArray;
 			const record = f.same(target => createReferenceTable(target, oldArray, oldHash));
-			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
-			const source = f.same(target => target.gc.tables.hashAddress(record));
+			const oldBase = f.same(target => target.tables.arrayAddress(record));
+			const source = f.same(target => target.tables.hashAddress(record));
 			const base = shrinking ? oldBase : f.same(target => nativeHeapReference(target).heapAllocator.allocate(5 * array, true));
 			const storage = f.same(target => nativeHeapReference(target).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			assert.ok(base && storage);
@@ -290,8 +289,8 @@ for (const opt of [0, 3] as const) {
 		] as const) {
 			const oldHash = 128, hash = keepHash ? 0 : 256;
 			const record = f.same(cpu => createReferenceTable(cpu, oldArray, oldHash));
-			const oldBase = f.same(cpu => cpu.gc.tables.arrayAddress(record));
-			const oldStorage = f.same(cpu => cpu.gc.tables.hashAddress(record));
+			const oldBase = f.same(cpu => cpu.tables.arrayAddress(record));
+			const oldStorage = f.same(cpu => cpu.tables.hashAddress(record));
 			const base = array > oldArray ? f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(5 * array, true)) : oldBase;
 			const storage = keepHash ? 0 : f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			const key = valueInteger(array === 0 ? 1025 : 3), value = valueInteger(787);
@@ -336,9 +335,9 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), oldStorage, 'Array publishes before Hash');
 			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore);
 			const checkpoint = captureCpuCheckpoint(f.cpu), paid = f.finish(expected);
-			assert.equal(f.cpu.gc.tables.get(record, key), value);
-			assert.equal(f.cpu.gc.tables.get(record, valueInteger(-5)), valueInteger(15));
-			assert.equal(f.cpu.gc.tables.get(record, valueInteger(oldArray)), valueInteger(17));
+			assert.equal(f.cpu.tables.get(record, key), value);
+			assert.equal(f.cpu.tables.get(record, valueInteger(-5)), valueInteger(15));
+			assert.equal(f.cpu.tables.get(record, valueInteger(oldArray)), valueInteger(17));
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), keepHash ? oldStorage : storage);
 			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore + TableRecords.allocationCharge(array, keepHash ? oldHash : hash) - TableRecords.allocationCharge(oldArray, oldHash));
 			if (array !== 0) assert.equal(f.memory.readRamRecordWord(record + TableHeader.Length), 3);
@@ -350,9 +349,9 @@ for (const opt of [0, 3] as const) {
 	test(`staged Hash publication invalidates its own method cache before marking inserted String edges at O${opt}`, () => {
 		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const oldHash = 128, hash = 256, record = f.same(cpu => createReferenceTable(cpu, 0, oldHash));
-		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
+		const source = f.same(cpu => cpu.tables.hashAddress(record));
 		const storage = f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
-		const key = valueString(f.cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => nativeHeapReference(cpu).stringPool.intern('staged black owner value')));
+		const key = valueString(nativeHeapReference(f.cpu).gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => nativeHeapReference(cpu).stringPool.intern('staged black owner value')));
 		f.same(cpu => {
 			nativeHeapReference(cpu).gc.tables.set(record, valueInteger(-10), valueInteger(40));
 			nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
@@ -370,7 +369,7 @@ for (const opt of [0, 3] as const) {
 		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent), 0);
 		assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), storage);
-		assert.equal(f.cpu.gc.tables.get(record, key), value);
+		assert.equal(f.cpu.tables.get(record, key), value);
 		assert.equal(f.memory.readRamRecordByte(valuePayload(value) + 1), oldValueMark);
 		const checkpoint = captureCpuCheckpoint(f.cpu), paid = f.finish(expected);
 		assert.notEqual(f.memory.readRamRecordByte(valuePayload(value) + 1), oldValueMark);

@@ -6,7 +6,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { hashCanonicalTableKey, valueInteger, valueNil, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -22,6 +21,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase } from '../../helpers/native_heap/gc_heap';
 
 const path = 'kernel/global_bank';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -180,7 +180,7 @@ try {
 		// native raw-ID setter avoids reinterning (which itself retains it).
 		const barrierKey = nativeHeapReference(old).stringPool.intern('namespace_pending_name');
 		nativeHeapReference(old).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-		assert.equal(old.gc.phase(), GcPhase.Mark);
+		assert.equal(nativeHeapReference(old).gc.phase(), GcPhase.Mark);
 		const markByte = oldMem.readRamRecordByte(barrierKey + 1);
 		const prior = readNamespaceBank(oldMem, management + GLOBAL_BANK_OFFSET);
 		assert.ok(prior.count < prior.capacity);

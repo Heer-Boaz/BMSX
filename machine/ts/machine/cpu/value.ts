@@ -4,7 +4,6 @@ import { luaCompareIntegerFloat, luaFloatResultBits, luaFloatToInteger, luaFloat
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { BLUA32_STRING_RECORD_ALIGNMENT_SHIFT } from '../../spec/blua32/image_format';
 import type { StringId, StringPool } from './string_pool';
-import type { GcHeap } from './gc_heap';
 
 export const enum ValueTag {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
@@ -53,8 +52,6 @@ export function asFloat(value: Value): number { return f32BitsToNumber(valuePayl
 export function numberToHost(value: Value): number { return valueIsInteger(value) ? asInteger(value) : asFloat(value); }
 export function asStringId(value: Value): StringId { return valuePayload(value); }
 export function asBuiltinFunctionId(value: Value): BuiltinFunctionId { return valuePayload(value); }
-export function asClosure(value: Value, heap: GcHeap): number { return heap.closureRecordAddress(valuePayload(value))!; }
-export function asThread(value: Value, heap: GcHeap): number { return heap.threadRecordAddress(valuePayload(value)); }
 export function numberAsFloat(value: Value): number { return valueIsInteger(value) ? Math.fround(asInteger(value)) : asFloat(value); }
 export function valueToWord(value: Value): number | null {
 	return valueIsInteger(value) ? valuePayload(value) : valueIsFloat(value) ? luaFloatToWord(valuePayload(value)) : null;

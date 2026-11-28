@@ -1,3 +1,4 @@
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,14 +7,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CLOSURE_PROTOTYPE_ADDRESS, closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { LuaAllocationMode } from '../helpers/native_heap/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
@@ -74,16 +73,16 @@ for (const optLevel of [0, 3] as const) {
 		const deadText = 'reclaim before table reservation '.repeat(144);
 		const dead = nativeHeapReference(cpu).stringPool.intern(deadText);
 		exhaust(f);
-		for (let n = 0; n < 4096 && cpu.gc.phase() !== GcPhase.Strings; ++n)
+		for (let n = 0; n < 4096 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Strings; ++n)
 			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Strings);
 		assert.equal(cpu.stringPool.find(deadText), dead);
 		const initial = captureCpuCheckpoint(cpu);
 		restoreCpuCheckpoint(oracle, initial);
 		assert.equal(nativeHeapReference(oracle).luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, array * 5, TableHeader.ArrayStorage,
 			valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, capacity),
 			LuaAllocationMode.Retry, TableRecords.hashStorageBytes(capacity), TableHeader.HashStorage), 0);
-		while (oracle.gc.active()) nativeHeapReference(oracle).gc.step();
+		while (nativeHeapReference(oracle).gc.active()) nativeHeapReference(oracle).gc.step();
 		const address = createReferenceTable(oracle, array, hash);
 		assert.ok(address);
 		for (const mode of [Mode.Direct, Mode.Scheduled]) {
@@ -98,7 +97,7 @@ for (const optLevel of [0, 3] as const) {
 			const halfway = captureCpuCheckpoint(cpu);
 			const spent = f.finish();
 			assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
-			assert.equal(cpu.gc.phase(), GcPhase.Pause);
+			assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 			f.compare();
 			restoreCpuCheckpoint(cpu, halfway);
 			assert.equal(f.finish(), spent);
@@ -126,7 +125,7 @@ for (const optLevel of [0, 3] as const) {
 		f.finish();
 		assert.equal(firmwareProbeResult(cpu), 0);
 		assert.equal(f.head(), address);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause, 'terminal RetryFresh has no additional epoch');
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause, 'terminal RetryFresh has no additional epoch');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
 		assert.equal(cpu.luaHeap.usedBytes(), logical);
 	});
@@ -134,20 +133,20 @@ for (const optLevel of [0, 3] as const) {
 	test(`BIOS direct terminal OOM finishes a current epoch and one fresh epoch at O${optLevel}`, () => {
 		const f = fixture(optLevel), { cpu } = f;
 		exhaust(f);
-		for (let n = 0; n < 4096 && cpu.gc.phase() !== GcPhase.Strings; ++n)
+		for (let n = 0; n < 4096 && nativeHeapReference(cpu).gc.phase() !== GcPhase.Strings; ++n)
 			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-		assert.equal(cpu.gc.phase(), GcPhase.Strings);
-		const white = cpu.gc.white();
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Strings);
+		const white = nativeHeapReference(cpu).gc.white();
 		f.begin(Kind.Table, 4, 129, Mode.Direct);
 		f.finish();
 		assert.equal(firmwareProbeResult(cpu), 0, 'the fresh epoch cannot supply an adequate backing');
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
-		assert.equal(cpu.gc.white(), white ^ 1, 'only the additional fresh epoch flips the white mark');
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
+		assert.equal(nativeHeapReference(cpu).gc.white(), white ^ 1, 'only the additional fresh epoch flips the white mark');
 		f.begin(Kind.Table, 4, 129, Mode.RetryCurrent);
 		f.finish();
 		assert.equal(firmwareProbeResult(cpu), 0);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
-		assert.equal(cpu.gc.white(), white, 'RetryCurrent refusal runs one fresh epoch before exhausting');
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
+		assert.equal(nativeHeapReference(cpu).gc.white(), white, 'RetryCurrent refusal runs one fresh epoch before exhausting');
 	});
 
 	test(`BIOS charges logical assist to the original work allowance, not elapsed CPU cycles at O${optLevel}`, () => {
@@ -157,15 +156,15 @@ for (const optLevel of [0, 3] as const) {
 		const initial = captureCpuCheckpoint(cpu);
 		f.begin(Kind.Table, 0, 0, Mode.Scheduled, 2);
 		const noAssist = f.finish();
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Pause);
 		assert.equal(cpu.luaHeap.collectionTarget(), logical);
 		assert.equal(cpu.luaHeap.usedBytes(), logical + charge);
 		restoreCpuCheckpoint(cpu, initial);
 		f.begin(Kind.Table, 0, 0, Mode.Scheduled, 3);
 		assert.ok(f.finish() > noAssist);
-		assert.equal(cpu.gc.phase(), GcPhase.Mark);
-		assert.ok(cpu.gc.epochWork() > 0);
-		assert.equal(cpu.luaHeap.collectionTarget(), logical + 2 * cpu.gc.epochWork());
+		assert.equal(nativeHeapReference(cpu).gc.phase(), GcPhase.Mark);
+		assert.ok(nativeHeapReference(cpu).gc.epochWork() > 0);
+		assert.equal(cpu.luaHeap.collectionTarget(), logical + 2 * nativeHeapReference(cpu).gc.epochWork());
 		assert.equal(cpu.luaHeap.usedBytes(), logical + charge);
 	});
 }

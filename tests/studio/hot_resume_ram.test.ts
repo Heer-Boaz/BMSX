@@ -1,10 +1,12 @@
+import { asClosure, asThread } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { isOpen, load as readCapture } from '../../machine/ts/machine/cpu/upvalue';
-import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
@@ -156,12 +158,12 @@ return ok, first, finished, last, read_back()
 	runGuestToHalt(cpu, 1_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.activeThread, cpu.rootThread);
-	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.find('worker')!), cpu.gc);
+	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.find('worker')!), nativeHeapReference(cpu).gc);
 	assert.notEqual(worker, 0);
 	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Suspended);
 	const bodyFrame = Array.from({ length: cpu.readThreadFrameDepth(worker) }, (_, index) => index)
 		.find(index => cpu.readThreadFrameWord(worker, index, FrameField.OpenHead) !== 0)!;
-	const readBack = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('read_back')!), cpu.gc);
+	const readBack = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('read_back')!), nativeHeapReference(cpu).gc);
 	const cell = ClosureRecord.captureAddress(memory, readBack, 0);
 	assert.equal(cpu.readThreadFrameWord(worker, bodyFrame, FrameField.OpenHead), cell);
 	assert.equal(isOpen(memory, cell), true);
@@ -223,7 +225,7 @@ return pcall(run, 17)
 	assert.equal(body.functionAddress, image.symbols.functionAddresses[bodyIndex]);
 	assert.equal(wrapper.varargCount, 1);
 	const argument = wrapper.varargBase;
-	const handler = asClosure(thread.stackRegisters.get(argument), cpu.gc);
+	const handler = asClosure(thread.stackRegisters.get(argument), nativeHeapReference(cpu).gc);
 	assert.notEqual(handler, 0);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, handler), 1);
 	for (let slot = 0; slot < thread.stackTop; ++slot)

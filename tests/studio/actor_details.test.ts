@@ -1,10 +1,11 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { asClosure, asStringId, valueInteger, valueString, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asStringId, valueInteger, valueString, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -108,12 +109,12 @@ function fixture(worldSource = WORLD) {
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
 	const objects = valuePayload(guest.readStringMember(world, '_objects'));
-	const actorHashId = guest.identityScalar(cpu.gc.tables.getInteger(objects, 1), ValueTag.Table), otherHashId = guest.identityScalar(cpu.gc.tables.getInteger(objects, 2), ValueTag.Table);
+	const actorHashId = guest.identityScalar(cpu.tables.getInteger(objects, 1), ValueTag.Table), otherHashId = guest.identityScalar(cpu.tables.getInteger(objects, 2), ValueTag.Table);
 	const update = (hashId = actorHashId) => tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, hashId));
 	update();
 	const target = captureActorTarget(-1, guest.identityScalar(world, ValueTag.Table), tree.roots, tree.roots[0]);
 	const invalidate = (reason: GuestInvalidationReason = 'execution') => { tree.release(); guest.invalidate(reason); details.invalidate(reason); };
-	const execute = (name: string) => { invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), cpu.gc), []); update(); };
+	const execute = (name: string) => { invalidate(); runCompletionClosure(cpu, asClosure(guest.global(name), nativeHeapReference(cpu).gc), []); update(); };
 	return { cpu, runtime, sources, guest, tree, details, target, update, invalidate, execute, beforeBirth, actorHashId, otherHashId };
 }
 
@@ -777,14 +778,14 @@ test('table pin comparison follows restored string text even when the pool reuse
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const data = valuePayload(f.guest.readStringMember(f.tree.roots[0].value!, 'data'));
-	const id = asStringId(f.cpu.gc.tables.getInteger(data, 12)), identity = f.guest.identity(f.cpu.gc.tables.getInteger(data, 12));
-	const text = f.guest.formatValue(f.cpu.gc.tables.getInteger(data, 12)), preview = pin.item.value;
+	const id = asStringId(f.cpu.tables.getInteger(data, 12)), identity = f.guest.identity(f.cpu.tables.getInteger(data, 12));
+	const text = f.guest.formatValue(f.cpu.tables.getInteger(data, 12)), preview = pin.item.value;
 	f.invalidate('history-restored'); restoreCpuCheckpoint(f.cpu, beforeAllocation); f.update();
 	f.execute('advance_gameplay_state'); f.execute('set_data_tail_text');
 	const restoredData = valuePayload(f.guest.readStringMember(f.tree.roots[0].value!, 'data'));
-	assert.equal(asStringId(f.cpu.gc.tables.getInteger(restoredData, 12)), id, 'the restored pool really reused the same raw string id');
-	assert.equal(f.guest.matchesIdentity(f.cpu.gc.tables.getInteger(restoredData, 12), identity), false, 'retained semantic identity never aliases recycled storage');
-	assert.notEqual(f.guest.formatValue(f.cpu.gc.tables.getInteger(restoredData, 12)), text);
+	assert.equal(asStringId(f.cpu.tables.getInteger(restoredData, 12)), id, 'the restored pool really reused the same raw string id');
+	assert.equal(f.guest.matchesIdentity(f.cpu.tables.getInteger(restoredData, 12), identity), false, 'retained semantic identity never aliases recycled storage');
+	assert.notEqual(f.guest.formatValue(f.cpu.tables.getInteger(restoredData, 12)), text);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.item.value, preview); assert.equal(pin.item.valueChanged, true);
 });

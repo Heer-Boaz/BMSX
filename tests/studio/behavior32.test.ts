@@ -1,8 +1,10 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { asClosure, asInteger, isNil, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asInteger, isNil, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import { compiledBlua32Sources } from '../../toolchain/ts/rompack/blua32_sources';
@@ -143,14 +145,14 @@ for (const optLevel of [3] as const) test(`behavior32 O${optLevel}: real cartlib
 		'inspection neither allocates guest storage nor executes the guest');
 
 	guest.invalidate();
-	runCompletionClosure(cpu, asClosure(guest.global('unbuild'), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(guest.global('unbuild'), nativeHeapReference(cpu).gc), []);
 	const rebound = readBehaviorTreeInstances(sources, guest, 0).items.find(item => item.label === 'board')!;
 	const unbound = inspectBehaviorTreeInstance(sources, guest, rebound.component);
 	for (const field of ['_layout', '_values'])
 		assert.equal(unbound.find(item => item.identity?.section === 'blackboard' && item.identity.field === field)!.value, 'nil',
 			'an actual unbound blackboard exposes its stored Nil values, not invented named slots');
 	guest.invalidate();
-	runCompletionClosure(cpu, asClosure(guest.global('drop'), cpu.gc), []);
+	runCompletionClosure(cpu, asClosure(guest.global('drop'), nativeHeapReference(cpu).gc), []);
 	assert.equal(readStateMachineInstances(sources, guest, 0).items.length, 0);
 	assert.equal(findStateMachineState(sources, guest, 0, componentId, machineId, machineId), undefined);
 	assert.equal(readBehaviorTreeInstances(sources, guest, 0).items.length, 0);

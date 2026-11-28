@@ -1,9 +1,10 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { asClosure, valueInteger, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueTable } from '../../machine/ts/machine/cpu/value';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -29,7 +30,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity 
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
 	runGuestToHalt(cpu, BUDGET);
-	const emit = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), cpu.gc);
+	const emit = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!), nativeHeapReference(cpu).gc);
 	cpu.beginCompletionCall(emit, [valueInteger(count)]);
 	runGuestToHalt(cpu, BUDGET);
 	const input = new EventViewerInput(history);
@@ -304,7 +305,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 }
 
 test('Event Details keeps actual snapshot-budget warnings inline rather than hiding them with scalar help', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), slots = new ValueSlots(1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc);
+	const { history, cpu } = fixture(t, 'tiny', 1), slots = new ValueSlots(1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables);
 	slots.setString(0, nativeHeapReference(cpu).stringPool.intern('x'.repeat(VALUE_SNAPSHOT_CHARACTERS + 1))); reader.begin();
 	const payload = reader.read(slots, 0); assert.ok(payload.kind === 'string'); assert.equal(payload.omitted, true);
 	const record = { ...history.at(history.firstSequence), payload }, properties = eventProperties(record);
@@ -319,7 +320,7 @@ test('Event Details keeps actual snapshot-budget warnings inline rather than hid
 });
 
 test('compact Event Details keeps an omitted stored key visible even when its captured value is complete', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc), slots = new ValueSlots(1);
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables), slots = new ValueSlots(1);
 	const payload = createReferenceTable(cpu, 0, 1);
 	nativeHeapReference(cpu).gc.tables.setStringKey(payload, nativeHeapReference(cpu).stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueInteger(7));
 	slots.setTable(0, payload); reader.begin();
@@ -338,7 +339,7 @@ test('compact Event Details keeps an omitted stored key visible even when its ca
 });
 
 test('Event Details carries actual omitted-key identity into descendants without blaming retained sibling values', t => {
-	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc), slots = new ValueSlots(1);
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(nativeHeapReference(cpu).stringPool, cpu.tables), slots = new ValueSlots(1);
 	const payload = createReferenceTable(cpu, 0, 1), nested = createReferenceTable(cpu, 1, 0); nativeHeapReference(cpu).gc.tables.setInteger(nested, 1, valueInteger(7));
 	nativeHeapReference(cpu).gc.tables.setStringKey(payload, nativeHeapReference(cpu).stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueTable(nested));
 	slots.setTable(0, payload); reader.begin();

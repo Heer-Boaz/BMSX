@@ -1,3 +1,4 @@
+import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -6,12 +7,11 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_MASK } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../helpers/firmware_heap_layout';
+import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -60,7 +60,7 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
 			[control, cpu.heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
-				cpu.gc.diagnosticWord(GcDiagnosticField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
+				nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -91,17 +91,17 @@ for (const optLevel of [0, 3] as const) {
 	test(`One resident quantum executes the original major mark through Atomic admission at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		const limit = 4096, want = f.reference(limit);
-		assert.equal(f.oracle.gc.phase(), GcPhase.Atomic);
+		assert.equal(nativeHeapReference(f.oracle).gc.phase(), GcPhase.Atomic);
 		assert.ok(want > 0 && want < limit);
 		f.begin(limit);
-		for (let i = 0; i < 65536 && f.cpu.gc.phase() !== GcPhase.MarkAgain; ++i) f.grant(1);
-		assert.equal(f.cpu.gc.phase(), GcPhase.MarkAgain);
+		for (let i = 0; i < 65536 && nativeHeapReference(f.cpu).gc.phase() !== GcPhase.MarkAgain; ++i) f.grant(1);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.MarkAgain);
 		assert.ok(f.cpu.heapServiceActive(), 'remark and MarkAgain run in the same resident activation');
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_ROOT_CURSOR), 0);
 		assert.equal(f.memory.readRamRecordWord(f.epochWork), 0, 'accounting does not precede completion of the source quantum');
 		const middle = captureCpuCheckpoint(f.cpu);
 		const finished = f.finish();
-		assert.equal(f.cpu.gc.phase(), GcPhase.Atomic);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Atomic);
 		assert.equal(finished[0], want);
 		assert.equal(f.memory.readRamRecordWord(f.epochWork), want);
 		f.compare();
@@ -119,7 +119,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(f.finish()[0], want);
 			f.compare();
 		}
-		assert.equal(f.cpu.gc.phase(), GcPhase.Mark);
+		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Mark);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_ROOT_CURSOR), 0);
 		const head = f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD);
 		assert.notEqual(head & GC_GRAY_INDEX_MASK, 0);

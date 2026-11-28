@@ -1,3 +1,4 @@
+import { GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,14 +7,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -143,15 +142,15 @@ for (const opt of [0, 3] as const) {
 				for (const [k, v] of next) store.set(record, k, v);
 				return next;
 			});
-			const oldBase = f.cpu.gc.tables.arrayAddress(record), charged = f.cpu.luaHeap.usedBytes();
+			const oldBase = f.cpu.tables.arrayAddress(record), charged = f.cpu.luaHeap.usedBytes();
 			const expected = f.begin(record, array, hash, keepHash, key, value);
 			let publication: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			if (keepHash) {
-				for (let n = 0; n < 4096 && f.cpu.gc.tables.arrayCapacity(record) !== array; ++n) f.grant(1);
+				for (let n = 0; n < 4096 && f.cpu.tables.arrayCapacity(record) !== array; ++n) f.grant(1);
 				assert.ok(!f.cpu.isHaltedUntilIrq());
-				assert.equal(f.cpu.gc.tables.arrayCapacity(record), array);
-				assert.equal(f.cpu.gc.tables.arrayAddress(record), oldBase, 'header count changed before its backing lane');
+				assert.equal(f.cpu.tables.arrayCapacity(record), array);
+				assert.equal(f.cpu.tables.arrayAddress(record), oldBase, 'header count changed before its backing lane');
 				assert.equal(f.cpu.luaHeap.usedBytes(), charged);
 				publication = captureCpuCheckpoint(f.cpu);
 				// 31→32 starts with backwards overlapping tag copy. The top byte
@@ -177,7 +176,7 @@ for (const opt of [0, 3] as const) {
 				assert.ok(f.drain() > cycles);
 				f.verify(expected);
 			}
-			for (const [k, v] of [...mappings, [key, value]] as const) assert.equal(f.cpu.gc.tables.get(record, k), v);
+			for (const [k, v] of [...mappings, [key, value]] as const) assert.equal(f.cpu.tables.get(record, k), v);
 		}
 	});
 
@@ -195,9 +194,9 @@ for (const opt of [0, 3] as const) {
 				nativeHeapReference(target).gc.tables.set(record, b, second);
 			});
 			const expected = f.begin(record, 0, 8, false, c, third, cppMirror);
-			for (let n = 0; n < 4096 && f.cpu.gc.tables.hashSize(record) !== 8; ++n) f.grant(1);
-			assert.equal(f.cpu.gc.tables.hashSize(record), 8);
-			const storage = f.cpu.gc.tables.hashAddress(record), links = storage + 80;
+			for (let n = 0; n < 4096 && f.cpu.tables.hashSize(record) !== 8; ++n) f.grant(1);
+			assert.equal(f.cpu.tables.hashSize(record), 8);
+			const storage = f.cpu.tables.hashAddress(record), links = storage + 80;
 			// Wait for the new link lane to be initialized before observing the collision.
 			for (let n = 0; n < 4096 && f.memory.readRamRecordByte(links + 2) !== 0xff; ++n) f.grant(1);
 			assert.equal(f.memory.readRamRecordByte(links + 2), 0xff);
@@ -210,9 +209,9 @@ for (const opt of [0, 3] as const) {
 			assert.equal(expected, 7);
 			assert.equal(f.memory.readRamRecordByte(links + 2), 6, 'trigger owns home 7 after moving the prior collision');
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Free), 5);
-			assert.equal(f.cpu.gc.tables.get(record, a), first);
-			assert.equal(f.cpu.gc.tables.get(record, b), second);
-			assert.equal(f.cpu.gc.tables.get(record, c), third);
+			assert.equal(f.cpu.tables.get(record, a), first);
+			assert.equal(f.cpu.tables.get(record, b), second);
+			assert.equal(f.cpu.tables.get(record, c), third);
 			restoreCpuCheckpoint(f.cpu, checkpoint);
 			assert.equal(f.drain(), cycles);
 			f.verify(expected, cppMirror);
@@ -223,7 +222,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt);
 		const owner = f.same(target => createReferenceTable(target, 0, 1));
 		const id = f.same(target => nativeHeapReference(target).stringPool.intern('a new collectable edge'));
-		const key = f.same(target => valueString(target.gc.diagnosticWord(GcDiagnosticField.NewIndex)));
+		const key = f.same(target => valueString(nativeHeapReference(target).gc.diagnosticWord(GcDiagnosticField.NewIndex)));
 		f.same(target => {
 			const pending = nativeHeapReference(target).stringPool.intern('a String marked before the table write');
 			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
@@ -232,16 +231,16 @@ for (const opt of [0, 3] as const) {
 			target.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
 			target.memory.writeRamRecordByte(owner + GC_COLOR_OFFSET, 3);
 		});
-		const work = f.cpu.gc.epochWork();
+		const work = nativeHeapReference(f.cpu).gc.epochWork();
 		const expected = f.begin(owner, 0, 2, false, key, valueString(id));
 		for (let i = 0; i < 4096 && f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent) !== 0; ++i) f.grant(1);
 		assert.equal(f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent), 0);
 		assert.ok(!f.cpu.isHaltedUntilIrq());
-		assert.equal(f.cpu.gc.epochWork(), work, 'the key cache was cleared before barrier accounting');
+		assert.equal(nativeHeapReference(f.cpu).gc.epochWork(), work, 'the key cache was cleared before barrier accounting');
 		const checkpoint = captureCpuCheckpoint(f.cpu);
 		const cycles = f.drain();
 		f.verify(expected);
-		assert.ok(f.cpu.gc.epochWork() > work, 'the guest accounted String work');
+		assert.ok(nativeHeapReference(f.cpu).gc.epochWork() > work, 'the guest accounted String work');
 		assert.equal(nativeHeapReference(f.cpu).stringPool.takeMarkWork(), 0);
 		restoreCpuCheckpoint(f.cpu, checkpoint);
 		assert.equal(f.drain(), cycles);
@@ -258,13 +257,13 @@ for (const opt of [0, 3] as const) {
 			while (arena.allocate(TableRecords.hashStorageBytes(hash), true)) { /* exhaust hash fits */ }
 		});
 		const before = f.cpu.heapAllocator.occupiedBytes(), charged = f.cpu.luaHeap.usedBytes();
-		const oldHash = f.cpu.gc.tables.hashAddress(record);
+		const oldHash = f.cpu.tables.hashAddress(record);
 		const expected = f.begin(record, 31, hash, false, valueInteger(-1), valueBool(true));
 		assert.equal(expected, HASH_STORE_DECLINED);
 		for (let n = 0; n < 8192 && !f.cpu.isHaltedUntilIrq(); ++n) {
 			f.grant(1);
-			assert.equal(f.cpu.gc.tables.arrayCapacity(record), 32);
-			assert.equal(f.cpu.gc.tables.hashAddress(record), oldHash);
+			assert.equal(f.cpu.tables.arrayCapacity(record), 32);
+			assert.equal(f.cpu.tables.hashAddress(record), oldHash);
 		}
 		assert.equal(f.cpu.heapAllocator.occupiedBytes(), before);
 		assert.equal(f.cpu.luaHeap.usedBytes(), charged);

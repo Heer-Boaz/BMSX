@@ -1,3 +1,4 @@
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
@@ -6,12 +7,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { hashCanonicalTableKey, valueInteger, valueNil, valuePayload, valueString, valueTable, ValueTag, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -28,7 +28,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const first = memory.ramBusEnd() - RAM_BASE, last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
-	const control = cpu.gc.controlOffset;
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	function same<T>(act: (target: CPU) => T): T {
 		const got = act(cpu);
 		assert.deepEqual(act(oracle), got);
@@ -86,15 +86,15 @@ for (const opt of [0, 3] as const) {
 			nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, meta);
 			nativeHeapReference(cpu).gc.tables.set(table, weakKey, valueTable(victim));
 			nativeHeapReference(cpu).gc.collect(valueTable(table));
-			assert.equal(cpu.gc.tables.get(table, weakKey), valueNil(), 'a real native weak epoch cleared the value');
-			return [table, home, keysAt(8, home)[0], cpu.gc.tables.hashAddress(table) + 8 * 8] as const;
+			assert.equal(cpu.tables.get(table, weakKey), valueNil(), 'a real native weak epoch cleared the value');
+			return [table, home, keysAt(8, home)[0], cpu.tables.hashAddress(table) + 8 * 8] as const;
 		});
 		assert.equal(f.memory.readRamRecordByte(tagBase + dead), ValueTag.String, 'weak clearing retained the String key tombstone');
 		assert.equal(f.memory.readRamRecordByte(tagBase + dead + 8), ValueTag.Nil);
 		f.begin(owner, trigger, val, dead);
 		f.finish(dead);
 		assert.equal(f.memory.readRamRecordWord(owner + TableHeader.Free), 7, 'home reuse never consumes the free cursor');
-		assert.equal(f.cpu.gc.tables.get(owner, trigger), val);
+		assert.equal(f.cpu.tables.get(owner, trigger), val);
 
 		const [identityTable, identityHome] = f.same(cpu => {
 			const record = createReferenceTable(cpu, 0, 8), key = valueTable(createReferenceTable(cpu, 0, 0));
@@ -102,7 +102,7 @@ for (const opt of [0, 3] as const) {
 			nativeHeapReference(cpu).gc.tables.set(record, key, valueNil());
 			return [record, hashCanonicalTableKey(key) & 7] as const;
 		});
-		const tags = f.cpu.gc.tables.hashAddress(identityTable) + 8 * 8;
+		const tags = f.cpu.tables.hashAddress(identityTable) + 8 * 8;
 		assert.equal(f.memory.readRamRecordByte(tags + identityHome), ValueTag.Nil);
 		assert.equal(f.memory.readRamRecordByte(tags + identityHome + 8), ValueTag.DeadKey);
 		f.begin(identityTable, keysAt(8, identityHome)[0], val, identityHome);
@@ -133,7 +133,7 @@ for (const opt of [0, 3] as const) {
 		const home = hashCanonicalTableKey(incoming) & (hash - 1);
 		f.begin(record, incoming, val, home);
 		f.finish(home);
-		const census = f.cpu.gc.tables.hashAddress(record) + 14 * hash;
+		const census = f.cpu.tables.hashAddress(record) + 14 * hash;
 		assert.equal(f.memory.readRamRecordWord(census), 1);
 		assert.equal(f.memory.readRamRecordWord(census + (1 + 9) * 4), 1, '257 uses ceilLog2 band 9');
 	});
@@ -151,7 +151,7 @@ for (const opt of [0, 3] as const) {
 				// the original TraceRecord, not the moving Table, rescans.
 				return [table, hash === 8 ? table : createReferenceTable(cpu, 0, 0)] as const;
 			});
-			const words = f.cpu.gc.tables.hashAddress(record), tags = words + 8 * hash;
+			const words = f.cpu.tables.hashAddress(record), tags = words + 8 * hash;
 			const trace = f.control + GC_TRACE_RECORD;
 			f.same(cpu => {
 				cpu.memory.writeRamRecordByte(f.control, GcPhase.Mark);
@@ -174,8 +174,8 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.memory.readRamRecordWord(f.control + GC_MODE_NODE), 0);
 			assert.notEqual(f.memory.readRamRecordWord(f.control + GC_CHANGED_HEAD), 0, 'the traced black Table is queued for rescan');
 			assert.notEqual(f.memory.readRamRecordByte(traced + GC_COLOR_OFFSET), 3, 'the original trace target is no longer black');
-			assert.equal(f.cpu.gc.tables.get(record, displaced), val, 'the displaced key remains reachable through its original chain');
-			assert.equal(f.cpu.gc.tables.get(record, trigger), val);
+			assert.equal(f.cpu.tables.get(record, displaced), val, 'the displaced key remains reachable through its original chain');
+			assert.equal(f.cpu.tables.get(record, trigger), val);
 			restoreCpuCheckpoint(f.cpu, checkpoint);
 			f.finish(home);
 

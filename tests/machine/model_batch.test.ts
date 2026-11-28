@@ -1,4 +1,6 @@
-import { asClosure, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -211,11 +213,11 @@ return draw.count,draw.commands[1],draw.commands[2],draw.commands[3],draw.comman
 `, optLevel);
 		assert.deepEqual(values, [4, 0x20000022, 0x20000011, 0x20000044, 0x20000033, 4].map(valueInteger));
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
-		const steady = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('steady')), cpu.gc);
+		const steady = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('steady')), nativeHeapReference(cpu).gc);
 		const profile = profileWarmGuestKernel(cpu, steady, 128);
 		assert.equal(profile.reservations, 0, 'warm collection, mergesort and repeated packed submission allocate no guest heap');
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(128)]);
-		const clipped = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('clipped')), cpu.gc);
+		const clipped = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('clipped')), nativeHeapReference(cpu).gc);
 		const clippedProfile = profileWarmGuestKernel(cpu, clipped, 128);
 		assert.equal(clippedProfile.reservations, 0, 'warm clipped polygon generation and sorting allocate no guest heap');
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(256)]);

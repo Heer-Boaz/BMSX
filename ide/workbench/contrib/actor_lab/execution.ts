@@ -1,7 +1,7 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { textToByteString } from '../../../../machine/ts/common/byte_string';
 import { isRamStringId, type StringPool } from '../../../../machine/ts/machine/cpu/string_pool';
-import { asClosure, isNil, numberToHost, valueClosure, valueFloat, valueInteger, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { valuePayload, isNil, numberToHost, valueClosure, valueFloat, valueInteger, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../../machine/ts/spec/blua32/execution_domain';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
@@ -110,7 +110,7 @@ export class ActorExecutionService {
 				if (world === undefined) {
 					this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'World changed before actor invocation.' }); return;
 				}
-				return { request: { domain, closure: asClosure(this.guest.readStringMember(world, 'request_mutation_boundary'), this.runtime.machine.cpu.gc), argumentCount: 1, args: () => [world] },
+				return { request: { domain, closure: valuePayload(this.guest.readStringMember(world, 'request_mutation_boundary')), argumentCount: 1, args: () => [world] },
 					condition: values => {
 						const receipt = values[0];
 						return () => this.guest.isTruthy(this.guest.readStringMember(receipt, 'reached'));
@@ -166,7 +166,7 @@ export class ActorExecutionService {
 			prepare: () => {
 				const world = this.world(domain, worldHashId);
 				if (world === undefined) return;
-				return { domain, closure: asClosure(this.guest.readStringMember(world, 'render'), this.runtime.machine.cpu.gc), argumentCount: 1, args: () => [world] };
+				return { domain, closure: valuePayload(this.guest.readStringMember(world, 'render')), argumentCount: 1, args: () => [world] };
 			},
 		}, () => {}, completed => {
 			if (!completed) { finished(false); return; }
@@ -181,7 +181,7 @@ export class ActorExecutionService {
 		return world !== undefined && this.guest.identityScalar(world, ValueTag.Table) === hashId ? world : undefined;
 	}
 	private prepare(request: ActorInvocation, world: Value, operation: ActorExecutionOperation): RuntimeGuestCall | undefined {
-		const cpu = this.runtime.machine.cpu, guest = this.guest;
+		const guest = this.guest;
 		if (request.kind === 'position') {
 			const actor = findRuntimeActor(this.sources, guest, request.target.domain, request.target.actorHashId);
 			if (actor === undefined || numberToHost(guest.readStringMember(actor, 'ox')) !== request.fromX || numberToHost(guest.readStringMember(actor, 'oy')) !== request.fromY) return;
@@ -191,7 +191,7 @@ export class ActorExecutionService {
 			if (object.kind !== 'value') return;
 			const setter = guest.readStringMember(actor, 'set_position');
 			if (setter !== guest.readStringMember(object.value, 'set_position')) return;
-			return { domain: request.target.domain, closure: asClosure(setter, cpu.gc), argumentCount: 3, args: () => [actor, valueFloat(request.x), valueFloat(request.y)] };
+			return { domain: request.target.domain, closure: valuePayload(setter), argumentCount: 3, args: () => [actor, valueFloat(request.x), valueFloat(request.y)] };
 		}
 		if (request.kind === 'spawn') {
 			const module = readRuntimeLuaModuleExport(this.sources, guest, request.domain, 'cartlib/world/prefab');
@@ -203,7 +203,7 @@ export class ActorExecutionService {
 				if (guest.matchesIdentity(key, request.definitionId) && guest.matchesIdentity(definition, request.definition)) id = key;
 			});
 			if (isNil(id)) return;
-			return this.prepareArguments(request.domain, asClosure(guest.readStringMember(world, 'spawn'), cpu.gc),
+			return this.prepareArguments(request.domain, valuePayload(guest.readStringMember(world, 'spawn')),
 				[world, id], request.args, operation);
 		}
 		const { target } = request, tree = this.tree;
@@ -232,7 +232,7 @@ export class ActorExecutionService {
 		let literals: readonly PreparedLuaLiteral[] = request.kind === 'action' || request.kind === 'method'
 			? request.args : request.kind === 'event' ? [request.payload] : [];
 		if (leadingString !== undefined) literals = [{ kind: 'string', bytes: textToByteString(leadingString) }, ...literals];
-		return this.prepareArguments(target.domain, asClosure(closure, cpu.gc), [receiver, ...leading], literals, operation);
+		return this.prepareArguments(target.domain, valuePayload(closure), [receiver, ...leading], literals, operation);
 	}
 	private prepareArguments(domain: ResourceDomain, closure: number, direct: Value[],
 		literals: readonly PreparedLuaLiteral[], operation: ActorExecutionOperation): RuntimeGuestCall {
@@ -267,7 +267,7 @@ export class ActorExecutionService {
 		const source = `return function(${parameters.join(',')}) return target(${operands.join(',')}) end`;
 		args[0] = valueInteger(args.length); // First source byte in the variadic suffix.
 		for (let byte = 0; byte < source.length; byte++) args.push(valueInteger(source.charCodeAt(byte)));
-		return { domain: SYSTEM_EXECUTION_DOMAIN_ID, closure: asClosure(this.guest.readStringMember(repl.value, 'invoke_bytes'), cpu.gc),
+		return { domain: SYSTEM_EXECUTION_DOMAIN_ID, closure: valuePayload(this.guest.readStringMember(repl.value, 'invoke_bytes')),
 			argumentCount: args.length, args: () => args, observeEntry: { closure, entered: () => { operation.invoked = true; } } };
 	}
 	public setPaused(operation: ActorExecutionOperation, paused: boolean): void {

@@ -8,8 +8,7 @@ import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
@@ -22,7 +21,7 @@ import { EXECUTION_DOMAIN_COUNT, EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAG
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, FIRMWARE_IMAGE_BACKINGS_OFFSET, GC_ROOT_BANKS_OFFSET, firmwareImageBackingOffset } from '../../helpers/firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, FIRMWARE_IMAGE_BACKING_SIZE, FIRMWARE_IMAGE_BACKINGS_OFFSET, GC_ROOT_BANKS_OFFSET, firmwareImageBackingOffset, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -36,6 +35,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../helpers/native_heap/gc_heap';
 
 const input = {
 	sampleInputControllerSnapshot() {},
@@ -83,6 +83,7 @@ function verifySystemExec(rom: string, native: string, out: string): void {
 	const system = readFileSync(rom);
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
+	const { gc } = nativeHeapReference(cpu);
 	let target = 0;
 	runtime.boot();
 	cpu.setExecutionHook((_domain, pc) => {
@@ -115,7 +116,7 @@ function verifySystemExec(rom: string, native: string, out: string): void {
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.deepEqual(memory.ramData().subarray(first, end), ledger, 'EXEC did not reserve or collect');
 	trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
-		cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	trace.observe('P', `1 ${pc}`);
 	trace.observe(`H ${first} ${end}`, digest);
 	trace.replay('System EXEC consumption of firmware backing', rom, wire);
@@ -132,12 +133,13 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	writeFileSync(systemPath, system);
 	const rt = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, systemController } = rt.machine, frames = rt.frameScheduler;
+	const { gc } = nativeHeapReference(cpu);
 	const trace = new Trace(native, join(dir, 'cold-refusal.trace'));
 	rt.boot();
 	for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) {
 		const result = scheduler.runCpuSlice(0, 127, 0, CpuRunKind.Scheduled);
 		trace.observe('L 127', [result, 127 - cpu.instructionBudgetRemaining,
-			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -462,6 +464,7 @@ function verifyExceptionBridge(rom: string, native: string, dir: string, optLeve
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler, gxGpu } = runtime.machine;
+	const { gc } = nativeHeapReference(cpu);
 	const fixedTrap = () => cpu.activeThread.address === CPU_RESET_BANK_ADDRESS && cpu.readCauseWord() === CPU_CAUSE_CODE_TRAP;
 	cpu.setExecutionHook(fixedTrap, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
 	for (let grant = 0; grant < 2048 && !fixedTrap(); ++grant) {
@@ -484,7 +487,7 @@ function verifyExceptionBridge(rom: string, native: string, dir: string, optLeve
 	function step() {
 		const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
-			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) step();
 	assert.equal(cpu.activeThread.address, owner);
@@ -527,6 +530,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: sys, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
+	const { gc } = nativeHeapReference(cpu);
 	const management = arena.managementOffset(), report = linked.layout.header.bssAddress;
 	const nativePartial = join(dir, 'warm-native.state');
 	const tsPartial = join(dir, 'warm-ts.state');
@@ -555,7 +559,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	function rawGrant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Yielded);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	rt.boot();
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -790,9 +794,9 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 		assert.equal(cpu.captureRuntimeState().previousRootContextWord, root);
 		assert.equal(memory.readRamRecordWord(receiver + TableHeader.ArrayStorage), storage);
 		assert.equal(memory.readRamRecordWord(receiver + TableHeader.Array), 2048);
-		assert.equal(cpu.gc.tables.get(receiver, valueInteger(1)), valueInteger(4));
-		assert.equal(cpu.gc.tables.get(receiver, valueInteger(1024)), valueInteger(1027));
-		assert.equal(cpu.gc.tables.get(receiver, valueInteger(1025)), valueInteger(17));
+		assert.equal(cpu.tables.get(receiver, valueInteger(1)), valueInteger(4));
+		assert.equal(cpu.tables.get(receiver, valueInteger(1024)), valueInteger(1027));
+		assert.equal(cpu.tables.get(receiver, valueInteger(1025)), valueInteger(17));
 		fingerprint(receiver, 36);
 		fingerprint(storage, 5 * 2048);
 	}
@@ -842,6 +846,7 @@ halt_until_irq`;
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
+	const { gc } = nativeHeapReference(cpu);
 	const management = arena.managementOffset(), cartBinding = executionImageBindingOffset(0);
 	const cartBacking = firmwareImageBackingOffset(management, 0);
 	const trace = new Trace(native, join(dir, label + '.trace'), cartPath);
@@ -851,7 +856,7 @@ halt_until_irq`;
 	const nativePartial = join(dir, label + '-native.state');
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
 		trace.observe(`H ${offset} ${offset + length}`, hashBytes(memory.ramData(), offset, length));
@@ -898,8 +903,8 @@ halt_until_irq`;
 	assert.equal(memory.readRamRecordWord(outgoingStrings + 4), alias, 'the outgoing binding directly names its canonical RAM literal');
 	assert.equal(memory.readRamRecordWord(cartBacking + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 3));
 	if (!retainsBlocker) {
-		nativeHeapReference(cpu).gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
-		assert.equal(cpu.gc.phase(), GcPhase.Mark);
+		gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.Mark);
 	}
 	writeFileSync(seedPath, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));
 	memory.installSystemRom(replacement);
@@ -911,8 +916,8 @@ halt_until_irq`;
 	commands.push('X', `^ ${replacementPath}`);
 	// The privilege handoff can consume one arbitrary cycle at a time. Cut a
 	// genuine stopped collector phase, rather than its entry/return boundary.
-	for (let i = 0; i < 20000 && cpu.gc.phase() !== GcPhase.Sweep; ++i) grant(64);
-	assert.equal(cpu.gc.phase(), GcPhase.Sweep, 'checkpoint while the stopped collector is traversing the object list');
+	for (let i = 0; i < 20000 && gc.phase() !== GcPhase.Sweep; ++i) grant(64);
+	assert.equal(gc.phase(), GcPhase.Sweep, 'checkpoint while the stopped collector is traversing the object list');
 	assert.equal(memory.readRamRecordWord(cartBinding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), outgoingStrings, 'stopped marking borrows the still-installed String backing');
 	assert.equal(memory.ramBusEnd(), initialFloor);
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -921,7 +926,7 @@ halt_until_irq`;
 	const start = commands.length, before = expected.length;
 	function finishFloorRecovery() {
 		for (let i = 0; i < 4096 && memory.ramBusEnd() === initialFloor && !cpu.isHaltedUntilIrq(); ++i) grant(1024);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause, 'the stopped floor pass finished its collection');
+		assert.equal(gc.phase(), GcPhase.Pause, 'the stopped floor pass finished its collection');
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(memory.ramBusEnd(), retainsBlocker ? initialFloor : newFloor);
 		assert.equal(cpu.isHaltedUntilIrq(), retainsBlocker);
@@ -997,6 +1002,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
+	const { gc } = nativeHeapReference(cpu);
 	const management = arena.managementOffset(), installed = executionImageBindingOffset(SYSTEM_EXECUTION_DOMAIN_ID);
 	const backing = firmwareImageBackingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 	const seedPath = join(dir, label + '.seed'), tsPartial = join(dir, label + '.ts'), nativePartial = join(dir, label + '.cpp');
@@ -1007,7 +1013,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		assert.equal(result, cpu.isHaltedUntilIrq() ? RunResult.Halted : RunResult.Yielded);
 		assert.ok(cycles - cpu.instructionBudgetRemaining > 0, 'stopped guest work charges ordinary instructions');
 		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining,
-			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			gc.fullEpochs(), gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
 		trace.observe(`H ${offset} ${offset + length}`, hashBytes(memory.ramData(), offset, length));
@@ -1019,15 +1025,15 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	}
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	assert.equal(cpu.gc.phase(), GcPhase.Pause);
-	const root = cpu.rootThread.address, floor = memory.ramBusEnd(), white = cpu.gc.white();
+	assert.equal(gc.phase(), GcPhase.Pause);
+	const root = cpu.rootThread.address, floor = memory.ramBusEnd(), white = gc.white();
 	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const deadText = 'unreachable warm-reset binding blocker: ' + 'a'.repeat(0x28000);
 	if (reclaim) assert.ok(nativeHeapReference(cpu).stringPool.intern(deadText) >= RAM_BASE);
 	while (arena.allocate(8192, true) !== 0) { /* non-GC allocations eliminate the remaining large free extents */ }
-	assert.equal(cpu.gc.phase(), GcPhase.Pause);
+	assert.equal(gc.phase(), GcPhase.Pause);
 	assert.equal(nativeHeapReference(cpu).luaHeap.allocationDebt(4 * ordinals), 0, 'the fixture isolates physical refusal from logical admission');
-	const fullEpochs = cpu.gc.fullEpochs(), oldBinding = memory.readRamRecordWord(installed);
+	const fullEpochs = gc.fullEpochs(), oldBinding = memory.readRamRecordWord(installed);
 	const oldBacking = memory.readRamRecordWord(backing);
 	assert.notEqual(oldBinding, 0);
 	assert.equal(oldBacking, oldBinding);
@@ -1039,8 +1045,8 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	assert.equal(memory.readRamRecordWord(backing), oldBacking);
 	trace.observe('X');
 	trace.observe('^ ' + replacementPath);
-	for (let i = 0; i < 8192 && cpu.gc.phase() === GcPhase.Pause && !cpu.isHaltedUntilIrq(); ++i) grant(16);
-	assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the initial binding physically refused and entered guest collection');
+	for (let i = 0; i < 8192 && gc.phase() === GcPhase.Pause && !cpu.isHaltedUntilIrq(); ++i) grant(16);
+	assert.equal(gc.phase(), GcPhase.Mark, 'the initial binding physically refused and entered guest collection');
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(memory.ramBusEnd(), floor, 'the requested floor did not need a recovery epoch');
 	assert.equal(memory.readRamRecordWord(installed), 0, 'after retiring the old binding, before publishing the incoming binding');
@@ -1055,9 +1061,9 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	function finish() {
 		for (let i = 0; i < 32768 && !cpu.isHaltedUntilIrq() &&
 			(memory.readRamRecordWord(installed) === 0 || cpu.rootThread.address === CPU_RESET_BANK_ADDRESS); ++i) grant(2048);
-		assert.equal(cpu.gc.phase(), GcPhase.Pause);
-		assert.equal(cpu.gc.white(), white ^ 1, 'one fresh mark/sweep, not a second recovery epoch');
-		assert.equal(cpu.gc.fullEpochs(), fullEpochs, 'allocation recovery is not an explicit Full collection');
+		assert.equal(gc.phase(), GcPhase.Pause);
+		assert.equal(gc.white(), white ^ 1, 'one fresh mark/sweep, not a second recovery epoch');
+		assert.equal(gc.fullEpochs(), fullEpochs, 'allocation recovery is not an explicit Full collection');
 		assert.equal(memory.ramBusEnd(), floor);
 		const base = memory.readRamRecordWord(installed);
 		if (reclaim) {

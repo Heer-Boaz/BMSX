@@ -1,6 +1,8 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { asClosure, valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
@@ -83,7 +85,7 @@ test('firmware compiler emits SVC and keeps the following return', () => {
 	const cpu = callResultRom.run(loadedSvc, firmwareCycleLimit), memory = cpu.memory;
 	const [fn, ...rejected] = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(rejected, [valueBool(true), valueBool(true), valueBool(true)]);
-	const prototype = memory.readRamRecordWord(asClosure(fn, cpu.gc) + CLOSURE_PROTOTYPE_ADDRESS);
+	const prototype = memory.readRamRecordWord(asClosure(fn, nativeHeapReference(cpu).gc) + CLOSURE_PROTOTYPE_ADDRESS);
 	const first = memory.readRamRecordWord(prototype + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
 	const end = first + memory.readRamRecordWord(prototype + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET);
 	const instructions = [];
@@ -106,7 +108,7 @@ advance = factory()
 test('firmware O3: retained tuple forwarding allocates no guest wrappers', () => {
 	const cpu = callResultRom.run(retainedForward, firmwareCycleLimit);
 	// The warmed probe collects the guest heap between calls.
-	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), cpu.gc);
+	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), nativeHeapReference(cpu).gc);
 	const globals = cpu.globalSlotCount;
 	const profile = profileWarmGuestKernel(cpu, closure, 8, 500_000);
 	assert.equal(profile.reservations, 0, 'forwarding an open tuple must not reserve guest heap storage');

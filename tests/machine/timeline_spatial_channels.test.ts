@@ -1,6 +1,7 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
-import { asClosure, asStringId, numberToHost, valueBool, valueInteger, valueString, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asStringId, numberToHost, valueBool, valueInteger, valueString, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -197,7 +198,7 @@ observed[6]=pose.oy
 test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
 	const cpu = manualRom.run(mixedClockGroups);
 	const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
-	assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
+	assert.deepEqual(Array.from({ length: 6 }, (_, index) => numberToHost(cpu.tables.getInteger(observed, index + 1))),
 		[7, 1.25, 10, 2.5, 17, 3.75]);
 });
 
@@ -340,7 +341,7 @@ observed[11]=manual.presentation
 test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
 	const cpu = manualRom.run(manualClock);
 	const observed = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('observed')!));
-	assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.gc.tables.getInteger(observed, index + 1))),
+	assert.deepEqual(Array.from({ length: 11 }, (_, index) => numberToHost(cpu.tables.getInteger(observed, index + 1))),
 		[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
 		'manual playback must retain its explicit driver without joining World clock views');
 });
@@ -401,9 +402,9 @@ probe={
 test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
 	const cpu = scheduledRom.run(externalClock);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const step = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('step')!), cpu.gc);
-	const space = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('space')!), cpu.gc);
-	const restart = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('restart')!), cpu.gc);
+	const step = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('step')!), nativeHeapReference(cpu).gc);
+	const space = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('space')!), nativeHeapReference(cpu).gc);
+	const restart = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('restart')!), nativeHeapReference(cpu).gc);
 	// This CPU fixture drives the published clock words directly; it tests
 	// timeline consumption, not peripheral service timing or audio playback.
 	const advance = (milliseconds: number, samples: number, abort: boolean, expected: readonly number[]) => {
@@ -438,7 +439,7 @@ probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1)
 test('warmed grouped curve sampling makes no guest heap reservations', t => {
 	const cpu = manualRom.run(warmSampling);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
+	const run = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('run')!), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = nativeHeapReference(cpu).luaHeap;
 	const before = collectReferenceHeapBytes(cpu);

@@ -1,3 +1,5 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { TABLE_CONSTRUCTOR_BINDING } from '../helpers/table_constructor';
@@ -7,7 +9,7 @@ import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { asClosure, valueFloat, valueFloatBits, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valueFloat, valueFloatBits, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -60,7 +62,7 @@ end`;
 			const { cpu } = createTestSystemCpu(image, backend);
 			runGuestToHalt(cpu, 100000);
 			const [pointer, arithmetic] = materializeCpuCompletionValues(cpu);
-			const closure = asClosure(pointer, cpu.gc), reference = asClosure(arithmetic, cpu.gc);
+			const closure = asClosure(pointer, nativeHeapReference(cpu).gc), reference = asClosure(arithmetic, nativeHeapReference(cpu).gc);
 			for (const index of [valueInteger(1), valueFloat(1), valueInteger(0x40000001), valueInteger(-1),
 				valueFloatBits(0x80000000), valueFloatBits(1), valueFloatBits(0x80000001), valueFloatBits(0x7f7fffff),
 				valueFloat(Infinity), valueFloat(-Infinity), valueFloatBits(0xffc00001)]) {
@@ -110,7 +112,7 @@ end`;
 		for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const { cpu, memory } = createTestSystemCpu(image, backend);
 			runGuestToHalt(cpu, 100000);
-			const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
+			const closure = asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc);
 			for (const index of [0, 2 ** 30, -(2 ** 30)]) {
 				runCompletionClosure(cpu, closure, [valueInteger(index)]);
 				assert.deepEqual(materializeCpuCompletionValues(cpu), [4660].map(valueInteger));

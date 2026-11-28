@@ -37,6 +37,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const oldLiteral = 'installed literal';
 const ramAlias = 'already live in RAM';
@@ -225,7 +226,7 @@ test('stock firmware binds staged System and cartridge operands together without
 	}
 	function complete(command: string, begin: () => void, budget = 97): Value[] {
 		begin();
-		observe(command, `1 0 0 ${cpu.gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		observe(command, `1 0 0 ${nativeHeapReference(cpu).gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		for (let i = 0; i < 4096 && (cpu.completionCallPending() || cpu.fixedInterruptActive()); ++i) {
 			const result = scheduler.runCpuSlice(callerDepth, budget, cpu.rootThread.address, CpuRunKind.Scheduled);
 			observe(`n ${budget} ${callerDepth}`, `${result} ${budget - cpu.instructionBudgetRemaining} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);

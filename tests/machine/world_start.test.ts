@@ -1,5 +1,7 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
-import { asClosure, valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IO_SYS_FRAME_MS_Q16 } from '../../machine/ts/spec/bmsx/io';
@@ -230,7 +232,7 @@ end
 	cpu.memory.writeIoU32(IO_SYS_FRAME_MS_Q16, 20 * 0x10000);
 	runGuestToHalt(cpu, 25_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	const repeat = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), cpu.gc);
+	const repeat = asClosure(cpu.tables.getStringKey(probe, cpu.stringPool.find('repeat_start')!), nativeHeapReference(cpu).gc);
 	runCompletionClosure(cpu, repeat, []);
 	const before = allocatedObjectRecords(cpu).length;
 	const bytes = cpu.luaHeap.usedBytes();

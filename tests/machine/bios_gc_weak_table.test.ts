@@ -1,14 +1,14 @@
+import { GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
-import { GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -29,7 +29,7 @@ function fixture(optLevel: 0 | 3) {
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const firstByte = memory.ramBusEnd() - RAM_BASE, lastByte = management + GC_WORKSPACE_END;
-	const newIndex = cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex);
+	const newIndex = nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.NewIndex);
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(firstByte, lastByte), expected = oracle.memory.ramData().subarray(firstByte, lastByte);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -73,9 +73,9 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function table(array: number, hash: number) {
 		const record = add(target => createReferenceTable(target, array, hash));
-		const arrayBase = cpu.gc.tables.arrayAddress(record), hashBase = cpu.gc.tables.hashAddress(record);
-		assert.equal(cpu.gc.tables.arrayCapacity(record), array);
-		assert.equal(cpu.gc.tables.hashSize(record), hash);
+		const arrayBase = cpu.tables.arrayAddress(record), hashBase = cpu.tables.hashAddress(record);
+		assert.equal(cpu.tables.arrayCapacity(record), array);
+		assert.equal(cpu.tables.hashSize(record), hash);
 		function arraySlot(slot: number, tag: ValueTag, payload: number) {
 			word(arrayBase + 4 * slot, payload);
 			byte(arrayBase + 4 * array + slot, tag);

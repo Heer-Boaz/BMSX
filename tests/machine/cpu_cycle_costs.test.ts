@@ -209,7 +209,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch 
 	const { cpu } = createManagedTestOpcodeCpu(image, backend);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	cpu.runUntilDepth(0, 1);
-	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, nativeHeapReference(cpu).gc);
+	const closure = cpu.rootThread.currentFrame!.registers.getPayload(0);
 	for (let call = 0; call < 16; ++call) {
 		cpu.beginCompletionCall(closure, [valueInteger(17), valueInteger(29)]);
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);

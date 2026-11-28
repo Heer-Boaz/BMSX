@@ -9,12 +9,11 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
-import { asClosure, valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NON_TABLE } from '../../../machine/ts/spec/blua32/cop0';
-import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_DIAGNOSTIC_FAULTS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -23,6 +22,7 @@ import { runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { runCpuWithinBudget } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { asClosure, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../helpers/native_heap/gc_heap';
 
 const source = `
 local set_metatable<const> = require('kernel/set_metatable')
@@ -73,7 +73,7 @@ for (const optLevel of [0, 3] as const) {
 		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const receiver = global('receiver');
-		const probe = asClosure(global('probe'), cpu.gc);
+		const probe = asClosure(global('probe'), nativeHeapReference(cpu).gc);
 		const args = [receiver, valueInteger(41)];
 		const management = cpu.heapAllocator.managementOffset();
 		const head = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
@@ -122,8 +122,8 @@ for (const optLevel of [0, 3] as const) {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-			observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(),
-				cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+			observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, nativeHeapReference(cpu).gc.fullEpochs(),
+				nativeHeapReference(cpu).gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 			return result;
 		}
 		function hash(first: number, length: number) {
@@ -139,7 +139,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.deepEqual(values, [...methods,
 				valueBool(false), valueString(fault), valueBool(false), valueString(error)],
 				'firmware fault and handler messages change without selecting a different metamethod');
-			assert.equal(cpu.gc.tables.getStringKey(valuePayload(receiver), cpu.stringPool.find('missing_assignment')!), valueNil(),
+			assert.equal(cpu.tables.getStringKey(valuePayload(receiver), cpu.stringPool.find('missing_assignment')!), valueNil(),
 				'the selected __newindex ran instead of publishing a raw field');
 			observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 			observe('Z', [cpu.readCauseWord(), cpu.readLuaFaultReasonWord(), cpu.readEpcWord()].join(' '));

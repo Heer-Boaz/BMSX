@@ -210,10 +210,10 @@ for (const optLevel of [0, 3] as const) {
 			while (nativeHeapReference(oracle).heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
 		assert.equal(nativeHeapReference(oracle).heapAllocator.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
 		const before = oracle.stringPool.bytes(source);
-		const white = oracle.gc.white();
+		const white = nativeHeapReference(oracle).gc.white();
 		const result = internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length);
 		assert.equal(oracle.stringPool.find(victimText), undefined);
-		assert.equal(oracle.gc.white(), white ^ 1, 'exactly one fresh recovery epoch suffices');
+		assert.equal(nativeHeapReference(oracle).gc.white(), white ^ 1, 'exactly one fresh recovery epoch suffices');
 		assert.equal(oracle.stringPool.bytes(result), text);
 		assert.equal(oracle.stringPool.bytes(source), before);
 	});

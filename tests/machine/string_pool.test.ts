@@ -1,3 +1,4 @@
+import { GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -7,7 +8,6 @@ import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
@@ -391,13 +391,13 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
-	assert.equal(cpu.gc.tables.getStringKey(table, replacement), valueNil());
+	assert.equal(cpu.tables.getStringKey(table, replacement), valueNil());
 	nativeHeapReference(cpu).gc.tables.setStringKey(table, replacement, valueInteger(29));
-	assert.equal(cpu.gc.tables.get(table, valueString(replacement)), valueInteger(29));
-	assert.equal(cpu.gc.tables.getStringKey(table, retained), valueInteger(23));
+	assert.equal(cpu.tables.get(table, valueString(replacement)), valueInteger(29));
+	assert.equal(cpu.tables.getStringKey(table, retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
-	for (cpu.gc.tables.next(table, entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
-		cpu.gc.tables.next(table, entry.get(0), entry, 0)) {
+	for (cpu.tables.next(table, entry.get(0), entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		cpu.tables.next(table, entry.get(0), entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
 		keys.push(pool.toString(entry.getStringId(0)));
 	}

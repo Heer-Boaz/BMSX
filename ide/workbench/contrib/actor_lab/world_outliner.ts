@@ -54,8 +54,8 @@ export class ActorWorldOutliner {
 		this.objectsRevision = objectsRevision; this.topologyRevision = topologyRevision;
 		const tree = this.tree;
 		const stamp = ++this.revision, objects = valuePayload(guest.readStringMember(world, '_objects'));
-		for (let i = 1, length = guest.cpu.gc.tables.length(objects); i <= length; i++) {
-			const actor = guest.cpu.gc.tables.getInteger(objects, i), parent = guest.readStringMember(actor, 'parent');
+		for (let i = 1, length = guest.cpu.tables.length(objects); i <= length; i++) {
+			const actor = guest.cpu.tables.getInteger(objects, i), parent = guest.readStringMember(actor, 'parent');
 			const hashId = guest.identityScalar(actor, ValueTag.Table);
 			let entry = this.members.get(hashId);
 			if (entry === undefined) {
@@ -85,7 +85,7 @@ export class ActorWorldOutliner {
 	public readActor(guest: SuspendedGuestSession, world: Value | undefined, hashId: number): Value | undefined {
 		const entry = this.members.get(hashId);
 		if (entry === undefined) return undefined;
-		return guest.cpu.gc.tables.getInteger(valuePayload(guest.readStringMember(world!, '_objects')), entry.arrayIndex);
+		return guest.cpu.tables.getInteger(valuePayload(guest.readStringMember(world!, '_objects')), entry.arrayIndex);
 	}
 	public reveal(hashId: number): void {
 		this.updateSelection(hashId, false);
@@ -110,7 +110,7 @@ export class ActorWorldOutliner {
 		const first = tree.scroll | 0, end = Math.min(tree.rows.length, first + tree.layout.visibleRowCount);
 		let changed = false;
 		for (let i = first; i < end; i++) {
-			const entry = tree.rows[i].element, actor = guest.cpu.gc.tables.getInteger(objects, entry.arrayIndex);
+			const entry = tree.rows[i].element, actor = guest.cpu.tables.getInteger(objects, entry.arrayIndex);
 			const label = guest.formatValue(guest.readStringMember(actor, 'id'));
 			if (entry.label !== label) { entry.label = label; changed = true; }
 		}

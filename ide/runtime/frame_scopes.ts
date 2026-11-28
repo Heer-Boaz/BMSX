@@ -1,4 +1,4 @@
-import { asClosure, isNil, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { isNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { readRuntimeLuaModuleExport } from './lua_inspection';
 import type { RuntimeSourceState } from './sources';
@@ -11,10 +11,10 @@ export function resolveFrameScopeRetirement(sources: RuntimeSourceState, guest: 
 	if (module.kind !== 'value' || isNil(module.value)) return undefined;
 	return {
 		registry: valuePayload(guest.readStringMember(module.value, 'active')),
-		closure: asClosure(guest.readStringMember(module.value, 'retire'), guest.cpu.gc),
+		closure: valuePayload(guest.readStringMember(module.value, 'retire')),
 	};
 }
 
 export function hasOpenFrameScopes(guest: SuspendedGuestSession, registry: number): boolean {
-	return guest.cpu.gc.tables.nextStoredEntry(registry, 0, firstScope, 0, false) !== 0;
+	return guest.cpu.tables.nextStoredEntry(registry, 0, firstScope, 0, false) !== 0;
 }

@@ -1,3 +1,4 @@
+import { asClosure } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -9,7 +10,7 @@ import { createTestHeapServiceCpu, compileHeapServiceSystem, linkHeapServiceEntr
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { ValueTag, asClosure, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -55,7 +56,7 @@ end
 			const { cpu } = createTestHeapServiceCpu(image, backend);
 			runGuestToHalt(cpu, 100_000);
 			const [closure] = materializeCpuCompletionValues(cpu);
-			cpu.beginCompletionCall(asClosure(closure, cpu.gc), [valueBuiltinFunction(BuiltinFunctionId.Next)]);
+			cpu.beginCompletionCall(asClosure(closure, nativeHeapReference(cpu).gc), [valueBuiltinFunction(BuiltinFunctionId.Next)]);
 			runGuestToHalt(cpu, 100_000);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [80, 80, 55, 9, 2].map(valueInteger));
 		}
@@ -138,7 +139,7 @@ test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', (
 			assert.equal(frames[i].pc, pc);
 			assert.equal(frames[i].registers.get(0), value);
 			assert.equal(frames[i].registers.get(1), value);
-			assert.equal(cpu.gc.tables.getInteger(tables[i], 1), value);
+			assert.equal(cpu.tables.getInteger(tables[i], 1), value);
 		}
 	}
 });
@@ -170,8 +171,8 @@ test('negative integer keys use hash storage without disturbing the array', () =
 		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETT] + BASE_CYCLES[OpCode.SETT]);
 		assert.equal(r.getInteger(3), 73);
 		assert.equal(r.getInteger(4), 89);
-		assert.equal(cpu.gc.tables.getInteger(table, key), valueInteger(89));
-		assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(61), 'the array lane remains untouched');
+		assert.equal(cpu.tables.getInteger(table, key), valueInteger(89));
+		assert.equal(cpu.tables.getInteger(table, 1), valueInteger(61), 'the array lane remains untouched');
 		assert.equal(r.getInteger(6), 61, 'inheritance still sees the live positive array value');
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES);
 	}
@@ -273,8 +274,8 @@ test('compiled array stores retain hints and length searches preserve live regis
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		const boundary = js.rootThread.frameAtDepth(0).registers.getInteger(3);
 		const table = js.rootThread.frameAtDepth(0).registers.getPayload(0);
-		assert.ok(boundary === 0 || js.gc.tables.get(table, valueInteger(boundary)) !== valueNil());
-		assert.equal(js.gc.tables.get(table, valueInteger(boundary + 1)), valueNil());
+		assert.ok(boundary === 0 || js.tables.get(table, valueInteger(boundary)) !== valueNil());
+		assert.equal(js.tables.get(table, valueInteger(boundary + 1)), valueNil());
 		if (value !== valueNil()) assert.equal(boundary, 5);
 		assert.equal(js.readFrameRegister(0, 4), valueInteger(boundary + 1), 'the live native definition survives the length helper');
 	}

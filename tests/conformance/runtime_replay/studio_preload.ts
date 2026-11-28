@@ -18,12 +18,12 @@ export async function runStudioPreload(test: StudioFixture) {
 		const current = moduleValue('observation');
 		const actor = guest.readStringMember(moduleValue('game'), 'actor');
 		const bindings = valuePayload(guest.readStringMember(current, 'completed_bindings'));
-		const program = guest.cpu.gc.tables.get(bindings, actor);
+		const program = guest.cpu.tables.get(bindings, actor);
 		const programs = valuePayload(guest.readStringMember(current, 'programs'));
-		const capture = guest.cpu.gc.tables.get(programs, program);
+		const capture = guest.cpu.tables.get(programs, program);
 		const nodes = guest.readStringMember(capture, 'nodes');
 		const types = valuePayload(guest.readStringMember(nodes, 'type'));
-		check(guest.readStringMember(capture, 'node_count') === valueInteger(2) && guest.formatValue(guest.cpu.gc.tables.getInteger(types, 1)) === expectedType,
+		check(guest.readStringMember(capture, 'node_count') === valueInteger(2) && guest.formatValue(guest.cpu.tables.getInteger(types, 1)) === expectedType,
 			`preload: actual completed compilation retains ${expectedType}, including erased single-child structure`);
 		return program;
 	};

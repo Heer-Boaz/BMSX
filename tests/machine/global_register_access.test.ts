@@ -114,7 +114,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	cpu.restoreRuntimeState(anchor);
 	assert.equal(cpu.luaHeap.usedBytes(), usage, 'restore retains the logical count independently of capacity');
 	assert.deepEqual(cpu.captureRuntimeState(), anchor);
-	assert.equal(cpu.gc.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(objectKey)), 1), valueInteger(42));
+	assert.equal(cpu.tables.getInteger(tableAddressPayload(cpu.getGlobalByKey(objectKey)), 1), valueInteger(42));
 	assert.equal(cpu.stringPool.toString(nilKey), 'nil-name');
 	assert.equal(cpu.globalSlotCount, count + 259);
 });

@@ -22,6 +22,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const source = `
 function exercise(seed)
@@ -83,7 +84,7 @@ for (const optLevel of [0, 3] as const) test(`ordinary JMP and RET retire only t
 	assert.equal(valueTag(highValue), ValueTag.Table);
 	assert.equal(valueTag(lowValue), ValueTag.Table);
 	assert.ok(highSlot > lowSlot && lowSlot > 0);
-	const changed = cpu.gc.changedHeadOffset(), prior = memory.readRamRecordWord(changed) & GC_GRAY_INDEX_MASK;
+	const changed = nativeHeapReference(cpu).gc.changedHeadOffset(), prior = memory.readRamRecordWord(changed) & GC_GRAY_INDEX_MASK;
 	// Model two already-scanned open cells, without invoking a host collector.
 	for (const address of [high, low]) {
 		const word = (memory.readRamRecordWord(address) & ~(GC_COLOR_MASK << (8 * GC_COLOR_OFFSET))) | (3 << (8 * GC_COLOR_OFFSET));

@@ -93,7 +93,7 @@ return result.original, result.one, result.two, result.three, result.four, statu
 		runGuestToHalt(cpu, 100_000);
 		const results = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(results.slice(0, -1), [7, 13, 12, 14, 15, 20].map(valueInteger));
-		assert.equal(cpu.gc.tables.hashSize(valuePayload(results[6])), 8);
+		assert.equal(cpu.tables.hashSize(valuePayload(results[6])), 8);
 	}
 });
 

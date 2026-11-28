@@ -5,6 +5,7 @@ import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { isOpen, UPVALUE_ADDRESS_MASK, UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_RECORD_KIND } from '../../machine/ts/machine/cpu/upvalue';
 import { closeUpvalueReference } from './upvalue_store_reference';
+import { nativeHeapReference } from './native_heap/reference';
 
 /** Both routes receive the same grant, including when the final atomic
  * instruction's complete charge crosses that deadline. */
@@ -101,6 +102,6 @@ export function readNamespaceBank(memory: Memory, descriptor: number) {
 
 export function allocatedObjectRecords(cpu: CPU): number[] {
 	const records: number[] = [];
-	cpu.gc.visitObjectRecords(records, (records, address) => { records.push(address); });
+	nativeHeapReference(cpu).gc.visitObjectRecords(records, (records, address) => { records.push(address); });
 	return records;
 }

@@ -62,7 +62,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 		memory.writeBytes(pc, code);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
 		cpu.runUntilDepth(0, (cycles + BASE_CYCLES[OpCode.JMP]) * 68);
-		assert.equal(cpu.gc.tables.hashSize(table), 1, 'a live overwrite does not change its reservation');
+		assert.equal(cpu.tables.hashSize(table), 1, 'a live overwrite does not change its reservation');
 	}
 	const frame = machines[0].cpu.rootThread.frameAtDepth(0);
 	const decoded = frame.executionImage.decodedPages.get(pc)!;
@@ -139,14 +139,14 @@ test('ordinary bus writes cannot rebind an array or alter its private elements',
 	assert.ok(entry, 'the JavaScript path adopted a compiled table region');
 	for (const { cpu, memory } of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		const table = r.getPayload(0), storage = cpu.gc.tables.arrayAddress(table);
+		const table = r.getPayload(0), storage = cpu.tables.arrayAddress(table);
 		for (const address of [table + TableHeader.ArrayStorage, storage]) {
 			memory.clearBusFault();
 			memory.writeU32(address, 0);
 			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 		}
-		assert.equal(cpu.gc.tables.arrayAddress(table), storage);
-		assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(71));
+		assert.equal(cpu.tables.arrayAddress(table), storage);
+		assert.equal(cpu.tables.getInteger(table, 1), valueInteger(71));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		r.setInteger(1, 89);
 	}
@@ -186,10 +186,10 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 				const before = nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 				cpu.runUntilDepth(0, 24);
-				assert.equal(cpu.gc.tables.getStringKey(table, key), constant ? valueBool(false) : value);
+				assert.equal(cpu.tables.getStringKey(table, key), constant ? valueBool(false) : value);
 				assert.equal(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(table), before);
 				assert.equal(r.get(8), values[n]); assert.equal(r.get(9), values[n]); assert.equal(r.get(2), value);
-				assert.equal(cpu.gc.tables.getStringKey(parent, key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
+				assert.equal(cpu.tables.getStringKey(parent, key), valueInteger(71), 'writes shadow inheritance instead of modifying its source');
 				assert.equal(cpu.instructionBudgetRemaining, 0);
 				assert.equal(frame.pc, pc, 'the successor executes after a complete semantic or inline store');
 			}
@@ -203,12 +203,12 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		const inline = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0 };
 		const updated = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, inline)];
 		assert.equal(updated.exit, CompiledBlockExit.Continue);
-		assert.equal(cpu.gc.tables.getStringKey(existing, key), constant ? valueBool(false) : valueInteger(29));
+		assert.equal(cpu.tables.getStringKey(existing, key), constant ? valueBool(false) : valueInteger(29));
 		const empty = createReferenceTable(cpu, 0, 8); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
 		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0 };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
-		assert.equal(cpu.gc.tables.hashSize(empty), 8); assert.equal(cpu.gc.tables.getStringKey(empty, key), valueNil());
+		assert.equal(cpu.tables.hashSize(empty), 8); assert.equal(cpu.tables.getStringKey(empty, key), valueNil());
 		assert.equal(r.get(8), values[3]); assert.equal(r.get(2), values[3]); assert.equal(r.get(9), valueNil());
 	});
 }
@@ -254,6 +254,6 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 		assert.equal(packet.argumentCount, 6);
 		assert.equal(packet.registers.get(2), valueTable(retained));
 		assert.equal(packet.registers.get(5), valueInteger(0));
-		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueInteger(71));
+		assert.equal(cpu.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueInteger(71));
 	}
 });

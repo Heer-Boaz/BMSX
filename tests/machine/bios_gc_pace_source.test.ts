@@ -1,8 +1,8 @@
+import { GC_PACE_PAID } from '../helpers/native_heap/gc_heap';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 import { numberConstantValue } from '../../toolchain/ts/lua/number';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';

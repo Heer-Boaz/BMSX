@@ -10,7 +10,7 @@ import { runCompletionClosure } from './cpu_test_harness';
 /** The guest budget charges the Thread record and capacities, not allocator overhead. */
 export function logicalThreadBytes(cpu: CPU, address = cpu.rootThread.address): number {
 	const layout = new ThreadLayout();
-	cpu.gc.threads.readLayout(address, layout);
+	nativeHeapReference(cpu).gc.threads.readLayout(address, layout);
 	return THREAD_HEAP_BYTES + layout.capacity * THREAD_STACK_SLOT_BYTES
 		+ layout.frames * FRAME_CONTROL_BYTES;
 }

@@ -34,7 +34,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const replacement = allocateClosureRecordReference(cpu, 1, false, cells, cells.length);
 	const upvalue = cells[0];
 	Upvalue.bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
-	ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, cpu.gc.white(), 1);
+	ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, nativeHeapReference(cpu).gc.white(), 1);
 	ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, upvalue);
 	frame.closureAddress = replacement;
 	cpu.runUntilDepth(0, 1024);

@@ -16,7 +16,9 @@ import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, ru
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
 import { WORLD_CPU_MODULES } from './world_cpu';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure } from './native_heap/gc_heap';
+import { nativeHeapReference } from './native_heap/reference';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {
@@ -269,7 +271,7 @@ ${cases}
 return function(index) return test_cases[index]() end
 `, options);
 				runGuestToHalt(cpu, budget);
-				booted = { cpu, runner: asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc), checkpoint: captureCpuCheckpoint(cpu) };
+				booted = { cpu, runner: asClosure(materializeCpuCompletionValues(cpu)[0], nativeHeapReference(cpu).gc), checkpoint: captureCpuCheckpoint(cpu) };
 			} else restoreCpuCheckpoint(booted.cpu, booted.checkpoint);
 			runCompletionClosure(booted.cpu, booted.runner, [valueInteger(index)], budget);
 			assert.equal(booted.cpu.completionCallPending(), false, 'the guest case returned to its runner');

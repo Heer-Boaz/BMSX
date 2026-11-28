@@ -1,3 +1,4 @@
+import { asClosure, GcPhase } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
@@ -12,9 +13,8 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
-import { asClosure, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';

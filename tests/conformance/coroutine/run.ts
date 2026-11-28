@@ -1,4 +1,4 @@
-import { asClosure, valueBool } from '../../../machine/ts/machine/cpu/value';
+import { valueBool } from '../../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,6 +18,8 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { runSystemCaseRom, systemCaseSource } from '../../helpers/system_case_rom';
 import { exerciseNestedHistory } from './nested_history';
+import { asClosure } from '../../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const compiled = process.argv[2] === '--compiled';
 assert.deepEqual(process.argv.slice(2), compiled ? ['--compiled'] : [], 'Expected no arguments or --compiled');
@@ -59,7 +61,7 @@ try {
 			runGuestToHalt(cpu, 500_000);
 			assert.ok(cpu.isHaltedUntilIrq());
 			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc));
+			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), nativeHeapReference(cpu).gc));
 			let result = RunResult.Yielded, windowFault = false;
 			for (let grant = 0; grant < 10_000 && result === RunResult.Yielded; ++grant) {
 				result = cpu.runUntilDepth(depth, 17);
