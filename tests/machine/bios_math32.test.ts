@@ -9,6 +9,8 @@ import { linkManagedTestSystem } from '../helpers/managed_system';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
+import { readLE32 } from '../../machine/ts/common/endian';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -32,27 +34,33 @@ for (const opt of [0, 3] as const) test(`BIOS log O${opt} branches to one natura
 	const linked = linkManagedTestSystem(source, opt, modules);
 	const fn = linked.layout.functions[linked.symbols.metadata.functionDisplayNames.indexOf('log')];
 	assert.ok(fn);
-	const linkRegisters: number[] = [], returnRegisters: number[] = [];
-	const labelSlots: number[] = [];
-	let previous: ReturnType<typeof decodeBlua32InstructionAtPc> | undefined;
+	const instructions: ReturnType<typeof decodeBlua32InstructionAtPc>[] = [];
 	for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
 		const decoded = decodeBlua32InstructionAtPc(linked.bytes, linked.layout.address, pc);
 		assert.notEqual(decoded.op, OpCode.CALL, 'the natural-log kernel does not create a language frame');
 		assert.notEqual(decoded.op, OpCode.SVC);
-		if (decoded.op === OpCode.JREG) {
-			if (decoded.c === 1) {
-				assert.ok(previous?.op === OpCode.LOADK && previous.a === decoded.a);
-				assert.equal(decoded.b, decoded.a);
-				labelSlots.push(previous.bx);
-				linkRegisters.push(decoded.a);
-			} else returnRegisters.push(decoded.a);
-		}
+		instructions.push(decoded);
 		pc = decoded.pc + INSTRUCTION_BYTES;
-		previous = decoded;
 	}
-	assert.equal(returnRegisters.length, 1);
-	assert.deepEqual(linkRegisters, [returnRegisters[0], returnRegisters[0]]);
-	assert.equal(labelSlots[0], labelSlots[1]);
+	const returns = instructions.filter(instruction => instruction.op === OpCode.JREG);
+	assert.equal(returns.length, 1);
+	assert.equal(returns[0].c, 0);
+	const { constantTableAddress } = linked.layout.header;
+	const targets: number[] = [], continuations: number[] = [];
+	for (let i = 1; i < instructions.length; ++i) {
+		const load = instructions[i - 1], jump = instructions[i];
+		if (load.op !== OpCode.LOADK || load.a !== returns[0].a) continue;
+		assert.equal(jump.op, OpCode.JMP);
+		assert.equal(jump.a, 0);
+		const next = jump.pc + INSTRUCTION_BYTES;
+		const constant = constantTableAddress - linked.layout.address + load.bx * BLUA32_CONSTANT_RECORD_SIZE;
+		assert.equal(readLE32(linked.bytes, constant + BLUA32_CONSTANT_PAYLOAD_OFFSET), next);
+		targets.push(next + jump.sbx * INSTRUCTION_BYTES);
+		continuations.push(next);
+	}
+	assert.equal(targets.length, 2);
+	assert.equal(targets[0], targets[1]);
+	assert.notEqual(continuations[0], continuations[1]);
 
 	const romBytes = writeTestBlua32Rom(linked);
 	const expected = [0, 1.5, 2, 3, -Infinity].map(v.valueFloat);

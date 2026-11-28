@@ -99,7 +99,7 @@ import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } f
 import { toLuaModulePath } from './module_path';
 import {
 	encodeProgramObjectSections,
-	type ProgramBiosFunctionConstReloc,
+	type ProgramCodeFunctionSymbol,
 	type ProgramConstValueReloc,
 	type ProgramRodataConstReloc,
 	type ProgramObjectDataSection,
@@ -114,8 +114,6 @@ import {
 	type ProgramSystemObjectImage,
 } from './compiler/program_object';
 import {
-	CLOSURE_DESTINATION_EXT_BITS,
-	CLOSURE_DESTINATION_EXT_SHIFT,
 	MAX_LOW_OPERAND, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
@@ -166,12 +164,7 @@ import {
 
 type ProgramCompilerConstReloc =
 	| ProgramImageConstReloc
-	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number }
-	| {
-		wordIndex: number;
-		kind: 'bios_function';
-		importIndex: number;
-	};
+	| { wordIndex: number; kind: 'local_text_addr'; constIndex: number; offset: number };
 
 type InitParticipantBinding = ProgramInitParticipant & {
 	objectSlot: number;
@@ -207,7 +200,6 @@ export type CompiledSystemProgram = CompiledProgramBase & {
 export type CompiledCartProgram = CompiledProgramBase & {
 	domain: 'cart';
 	constRelocs: ProgramImageConstReloc[];
-	biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[];
 };
 
 export type CompiledProgram =
@@ -257,7 +249,6 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 		sections,
 		link: {
 			constRelocs: compiled.constRelocs,
-			biosFunctionConstRelocs: compiled.biosFunctionConstRelocs,
 			constValueRelocs: compiled.constValueRelocs,
 			rodataConstRelocs: compiled.rodataConstRelocs,
 			symbols: {
@@ -526,6 +517,7 @@ class ProgramBuilder {
 	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private readonly functionAddrRelocByProto = new Map<number, number>();
+	private readonly codeFunctionRelocSlots = new Map<number | string, number>();
 	private readonly linkValueRelocSlotByKey = new Map<string, number>();
 	private bssByteCount: number;
 	private dataByteCount = 0;
@@ -624,7 +616,7 @@ class ProgramBuilder {
 	}
 
 	public constValueRelocIndex(
-		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value' | 'function_addr' | 'text_addr'>,
+		kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr',
 		symbolIndex: number,
 		addend: number,
 	): number {
@@ -667,6 +659,18 @@ class ProgramBuilder {
 		this.relocatedConstIndices.add(index);
 		this.constValueRelocs.push({ kind: 'function_addr', constIndex: index, protoIndex });
 		this.functionAddrRelocByProto.set(protoIndex, index);
+		return index;
+	}
+
+	public codeFunctionRelocIndex(target: { kind: 'proto'; protoIndex: number } | ProgramCodeFunctionSymbol): number {
+		const key = target.kind === 'proto' ? target.protoIndex
+			: target.kind === 'export_proto' ? 'export:' + programModuleExportKey(target.path, target.exportPathKey)
+				: target.kind === 'module_init' ? 'init:' + target.symbol : 'bios:' + target.importIndex;
+		const existing = this.codeFunctionRelocSlots.get(key);
+		if (existing !== undefined) return existing;
+		const index = this.reserveAddressConstant();
+		this.codeFunctionRelocSlots.set(key, index);
+		this.constValueRelocs.push({ constIndex: index, kind: 'code_function', target });
 		return index;
 	}
 
@@ -1943,6 +1947,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
+			if (instr.op === OpCode.JREG && instr.c === 1) {
+				// A symbolic link has a static destination. Reserve WIDE LOADK
+				// for its continuation and relax the following direct branch.
+				wordWidths[index] = 3;
+				continue;
+			}
 			if (instr.op === OpCode.KSMI && instr.a > MAX_ABX_REGISTER_A) {
 				// The optimizer and slot allocator keep one known Integer
 				// definition. Only the narrow ABx encoding needs expansion.
@@ -1972,8 +1982,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const cWide = (instr.rkMask & RK_C) !== 0
 					? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
 					: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
-				const labelLoad = instr.op === OpCode.JREG && instr.c === 1 ? 2 : 0;
-				wordWidths[index] = labelLoad + (forceWide || forceFieldWide || aWide || bWide || cWide ? 2 : 1);
+				wordWidths[index] = forceWide || forceFieldWide || aWide || bWide || cWide ? 2 : 1;
 				continue;
 			}
 			if (instr.format === 'ABx') {
@@ -2008,21 +2017,22 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			endIndex = cursor;
 			for (let index = 0; index < instructions.length; index += 1) {
 				const instr = instructions[index];
-				if (instr.format !== 'AsBx') {
+				const link = instr.op === OpCode.JREG && instr.c === 1;
+				if (!link && instr.format !== 'AsBx') {
 					continue;
 				}
-				if (instr.target === null) {
+				const targetIndex = link ? instr.branchTargets![0] : instr.target;
+				if (targetIndex === null) {
 					throw new Error('[FunctionBuilder] Unpatched jump instruction.');
 				}
-				const targetIndex = instr.target;
 				const encodedTarget = targetIndex === instructions.length ? endIndex : instrStartIndex[targetIndex];
 				const sbx = encodedTarget - (instrWordIndex[index] + 1);
 				if (sbx < sbxWideMin || sbx > sbxWideMax) {
 					throw new Error(`[FunctionBuilder] Jump offset out of range: ${sbx}`);
 				}
 				sbxValues[index] = sbx;
-				if (wordWidths[index] === 1 && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
-					wordWidths[index] = 2;
+				if (wordWidths[index] === (link ? 3 : 1) && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
+					wordWidths[index] += 1;
 					changed = true;
 				}
 			}
@@ -2047,7 +2057,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const range = ranges[index];
 			const labelLoad = instr.op === OpCode.JREG && instr.c === 1;
 			if (labelLoad) {
-				const offset = instrStartIndex[instr.branchTargets![0]] * INSTRUCTION_BYTES;
+				const offset = (instrWordIndex[index] + 1) * INSTRUCTION_BYTES;
 				const constants = labelConstants ??= new Map();
 				let constIndex = constants.get(offset);
 				if (constIndex === undefined) {
@@ -2058,9 +2068,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					constRelocs.push({ wordIndex: cursor + 1, kind: 'bx', constIndex });
 				}
 				const split = splitUnsignedOperand(constIndex, 'Bx', MAX_BX_BITS, EXT_BX_BITS, true);
-				writeInstruction(code, cursor, OpCode.WIDE, instr.a >>> MAX_OPERAND_BITS, split.wide, 0);
+				const link = splitUnsignedOperand(instr.b, 'A', MAX_OPERAND_BITS, 0, true);
+				writeInstruction(code, cursor, OpCode.WIDE, link.wide, split.wide, 0);
 				finalRanges[cursor++] = range;
-				writeInstruction(code, cursor, OpCode.LOADK, instr.a & MAX_LOW_OPERAND,
+				writeInstruction(code, cursor, OpCode.LOADK, link.low,
 					(split.low >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, split.low & MAX_LOW_OPERAND, split.ext);
 				finalRanges[cursor++] = range;
 			}
@@ -2072,7 +2083,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				continue;
 			}
 			const hasWide = width - (labelLoad ? 2 : 0) === 2;
-			if (instr.format === 'ABC') {
+			if (instr.format === 'ABC' && !labelLoad) {
 				if (isDisplacedMemoryOp(instr.op)) {
 					const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 					const bSplit = splitUnsignedOperand(instr.b, 'B', MAX_OPERAND_BITS, 0, hasWide);
@@ -2183,7 +2194,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				continue;
 			}
 
-			const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+			const aSplit = splitUnsignedOperand(labelLoad ? 0 : instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 			const sbx = sbxValues[index];
 			const bxSplit = splitSignedOperand(sbx, 'sBx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 			if (hasWide) {
@@ -2191,7 +2202,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				finalRanges[cursor] = range;
 				cursor += 1;
 			}
-			writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+			writeInstruction(code, cursor, labelLoad ? OpCode.JMP : instr.op,
+				aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 			finalRanges[cursor] = range;
 			cursor += 1;
 		}
