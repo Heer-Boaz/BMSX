@@ -4,16 +4,19 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { valueInteger } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -188,3 +191,122 @@ for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] 
 		}
 	});
 }
+
+for (const optLevel of [0, 3] as const) test(`ordinary capture binding validates the whole descriptor span before refusing at O${optLevel}`, async t => {
+	const system = linkManagedTestSystem(`
+local entries<const> = require('bmsx/startup')
+local protect<const> = blua32.closure(entries.protected_call)
+local function make(a, b)
+	halt_until_irq
+	return function() return a * 100 + b end
+end
+local ok<const>, result<const> = protect(make, 7, 8)
+if ok then return true, result() end
+return false, result == 'Out of memory.', result == 'Invalid argument.'
+`, optLevel);
+	const rom = writeTestBlua32Rom(system);
+	const { functions, textBytes, header } = system.layout;
+	const prototype = functions.find(fn => fn.upvalues.length === 2 && fn.numParams === 0)!;
+	const captureA = readLE32(rom, prototype.upvalueTableAddress);
+	const captureB = readLE32(rom, prototype.upvalueTableAddress + 4);
+	const descriptors = (rom.length + 3) & ~3;
+	for (const scenario of ['fits', 'exhausted', 'invalid', 'unmapped'] as const) await t.test(scenario, t => {
+		const fits = scenario === 'fits', invalid = scenario === 'invalid', unmapped = scenario === 'unmapped';
+		const count = fits ? captureLimit : captureLimit + 1;
+		const media = new Uint8Array(descriptors + 4 * (count - +unmapped));
+		media.set(rom);
+		writeLE32(media, prototype.address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, descriptors);
+		writeLE32(media, prototype.address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, count);
+		for (let i = 0; i < count - +unmapped; ++i)
+			writeLE32(media, descriptors + 4 * i, invalid && i === count - 1 ? 0xffffffff : i === 1 ? captureB : captureA);
+
+		const runtime = new Runtime({ systemRomBytes: media, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		runtime.boot();
+		const { cpu, memory, scheduler } = runtime.machine;
+		runGuestToHalt(cpu, 4_194_304);
+		assert.equal(cpu.isHaltedUntilIrq(), true);
+		cpu.clearHaltUntilIrq();
+		const frame = cpu.activeThread.currentFrame!;
+		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+		let issue = decodeBlua32InstructionAtPc(textBytes, header.textAddress, frame.pc);
+		for (let i = 0; i < 16 && issue.op !== OpCode.SVC; ++i) {
+			assert.equal(slice(1), RunResult.Yielded);
+			issue = decodeBlua32InstructionAtPc(textBytes, header.textAddress, frame.pc);
+		}
+		assert.deepEqual([issue.op, issue.b, issue.c], [OpCode.SVC, 2, 0]);
+		const token = valueInteger(StockFirmwareOperand.BindFunction);
+		assert.equal(frame.registers.get(issue.a), token);
+		assert.equal(frame.registers.get(issue.a + 1), valueInteger(prototype.address));
+		const { heapAllocator: arena, luaHeap } = nativeHeapReference(cpu);
+		const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
+		const oldWork = new Uint8Array(memory.ramData().subarray(workspace, workspace + workspaceBytes));
+		const openHead = frame.openUpvalueHead, physical = arena.occupiedBytes(), logical = luaHeap.usedBytes();
+		const bus = memory.readBusFaultSequence();
+		let sampled = 0;
+		const readWord = memory.readMappedBusU32LE.bind(memory);
+		t.mock.method(memory, 'readMappedBusU32LE', (...args: Parameters<typeof readWord>) => {
+			if (args[0] >= descriptors && args[0] < descriptors + 4 * count)
+				assert.equal(args[0], descriptors + 4 * sampled++, 'one ordered sample per descriptor');
+			return readWord(...args);
+		});
+		const dir = mkdtempSync(join(tmpdir(), 'bmsx-aot-capture-capacity-'));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const systemFile = join(dir, 'system.rom'), seed = join(dir, 'seed'), trace = join(dir, 'trace');
+		writeFileSync(systemFile, media);
+		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+		const commands = ['X'], rows: string[] = [];
+		function grant(cycles: number) {
+			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
+			commands.push(`E ${cycles}`);
+			rows.push(`${result} ${spent} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+			return result;
+		}
+		assert.equal(grant(1), RunResult.Yielded);
+		assert.ok(cpu.fixedInterruptActive());
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+		let outcome = RunResult.Yielded;
+		for (let i = 0; i < 2048 && cpu.fixedInterruptActive() && outcome === RunResult.Yielded; ++i) {
+			if (!fits) {
+				assert.equal(frame.openUpvalueHead, openHead);
+				assert.equal(frame.registers.get(issue.a), token);
+				assert.equal(arena.occupiedBytes(), physical);
+				assert.equal(luaHeap.usedBytes(), logical);
+			}
+			outcome = grant(1024);
+		}
+		assert.equal(sampled, count);
+		assert.equal(memory.readBusFaultSequence(), bus + +unmapped);
+		if (fits) {
+			assert.equal(memory.readRamRecordWord(workspace + missingOffset + 31 * 4), 0xffffffff);
+			assert.notEqual(memory.readRamRecordWord(workspace + newCellsOffset + 1023 * 4), 0);
+		} else {
+			assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), oldWork);
+			assert.equal(arena.occupiedBytes(), physical);
+			assert.equal(luaHeap.usedBytes(), logical);
+		}
+		assert.equal(cpu.captureRuntimeState().hardHalted, unmapped);
+		if (unmapped) {
+			assert.equal(outcome, RunResult.Halted);
+			for (const [address, value] of [
+				[IO_SYS_BUS_FAULT_CODE, BUS_FAULT_UNMAPPED], [IO_SYS_BUS_FAULT_ADDR, descriptors + 4 * (count - 1)],
+				[IO_SYS_BUS_FAULT_ACCESS, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32],
+			]) {
+				assert.equal(memory.readMappedWord(address), value);
+				commands.push(`M ${address}`);
+				rows.push(`${value} 0`);
+			}
+		} else {
+			for (let i = 0; i < 128 && outcome === RunResult.Yielded; ++i) outcome = grant(1024);
+			assert.equal(outcome, RunResult.Halted);
+			const values = runtime.readCompletionValues();
+			assert.deepEqual(values, fits ? [valueBool(true), valueInteger(708)] : [valueBool(false), valueBool(!invalid), valueBool(invalid)]);
+			commands.push('c');
+			rows.push([values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+		}
+		const first = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
+		commands.push('F', `H ${first} ${end}`);
+		rows.push(String(+unmapped), String(hashBytes(memory.ramData(), first, end - first)));
+		writeFileSync(trace, commands.join('\n'));
+		assert.deepEqual(execFileSync(native, [systemFile, trace, seed], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
+	});
+});

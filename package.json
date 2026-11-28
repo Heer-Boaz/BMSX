@@ -97,7 +97,7 @@
 		"test:bios-coroutine-first-resume": "bash scripts/test.sh node --import tsx --import ./tests/helpers/test_setup.ts --test --test-concurrency=1 tests/conformance/heap_allocator/coroutine_first_resume.test.ts",
 		"test:bios-coroutine-close": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/coroutine_close_service.test.ts",
 		"test:bios-closed-upvalue-store": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closed_upvalue_store.ts",
-		"test:bios-captured-closure": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/captured_closure_binding.ts",
+		"test:bios-captured-closure": "npm test -- tests/conformance/heap_allocator/aot_closure_binding.test.ts",
 		"test:bios-mapped-captureless-closure": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/mapped_captureless_closure.ts",
 		"test:bios-canonical-closure": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/canonical_closure.test.ts",
 		"test:bios-gc-full": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_full_service.ts",
