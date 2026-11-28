@@ -1,7 +1,6 @@
 import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
-import { createReferenceTable } from '../../helpers/cpu_heap_reference';
-import { setReferenceGlobal } from '../../helpers/global_bank_reference';
+import { stockHeapManagementOffset } from '../../../toolchain/ts/firmware/stock_heap_layout';
+import { StockStringIndex } from '../../../toolchain/ts/firmware/stock_string_index';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -31,13 +30,21 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../helpers/firmware_heap_layout';
 
+const enum CollectorField { Phase = 0, White = 1, TraceHead = 4, ChangedHead = 8, TraceRecord = 0x34, TraceCursor = 0x38, ModeMeta = 0x4c, ModeNode = 0x50 }
+const markAgain = 2, arenaOccupiedOffset = 0x400 + 0x1ac;
+const hashSlots = 4;
+const home = (key: number) => hashCanonicalTableKey(valueInteger(key)) & (hashSlots - 1);
+const negativeKeys = Array.from({ length: 64 }, (_, i) => -i - 1);
+const [anchor, displaced] = negativeKeys.filter(key => home(key) === 0);
+const incoming = negativeKeys.find(key => home(key) === 3)!;
 const source = `bss command: word
 store_subject = {2, edge = 14}
 store_reference = {}
-store_key = 0
+-- The nil field requests the four-slot hash lane without claiming a node.
+displacement_subject = { [${anchor}] = 11, [${displaced}] = 22, [${incoming}] = nil }
+store_key = ${incoming}
 mem[${IO_IRQ_MASK}] = 0
 while *command == 0 do halt_until_irq end
 local subject, value = store_subject, store_reference
@@ -49,12 +56,14 @@ elseif *command == 2 then
 	subject.edge = value
 	return subject.edge, subject[1]
 else
+	subject = displacement_subject
 	subject[store_key] = 77
 	return subject[store_key]
 end`;
 const board = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 test('stock table stores leave marked reference writes and displaced-node collisions to the BIOS', async t => {
+	t.mock.method(WebAssembly, 'Instance', () => assert.fail('stock table stores must not instantiate the allocator oracle'));
 	const directory = mkdtempSync(join(tmpdir(), 'bmsx-table-reference-window-'));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
@@ -66,48 +75,42 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
 	const cart = writeTestBlua32Rom(linked), cartPath = join(directory, 'cart.rom');
 	writeFileSync(cartPath, cart);
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const [label, mode, op] of [['array reference', 1, OpCode.SETI], ['hash reference', 2, OpCode.SETFIELD],
 		['scalar displacement', 3, OpCode.SETT]] as const) await t.test(label, () => {
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, board);
 		runtime.boot();
-		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { gc, heapAllocator: arena } = nativeHeapReference(cpu);
+		const { cpu, memory, gxGpu, scheduler } = runtime.machine;
+		const { tables } = cpu;
 		for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
 			if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
 			runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
 		}
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.ok(cpu.isHaltedUntilIrq());
-		const name = (identifier: string) => nativeHeapReference(cpu).stringPool.find(identifier)!;
-		const reference = valuePayload(readStockGlobalValue(cpu.memory, name('store_reference')));
-		let receiver = valuePayload(readStockGlobalValue(cpu.memory, name('store_subject')));
-		let key = mode === 2 ? valueString(name('edge')) : valueInteger(1);
-		const count = 4, home = (value: number) => hashCanonicalTableKey(value) & (count - 1);
-		let anchor = valueNil(), displaced = valueNil();
+		const strings = new StockStringIndex(memory);
+		const reference = valuePayload(readStockGlobalValue(memory, strings.find('store_reference')!));
+		const receiver = valuePayload(readStockGlobalValue(memory, strings.find(mode === 3 ? 'displacement_subject' : 'store_subject')!));
+		const key = mode === 2 ? valueString(strings.find('edge')!) : valueInteger(mode === 3 ? incoming : 1);
 		if (mode === 3) {
-			// Fill index 0 and the last free node (3) with keys belonging to
-			// home 0. A new home-3 key must displace the previous occupant.
-			const negative = Array.from({ length: 64 }, (_, i) => valueInteger(-i - 1));
-			[anchor, displaced] = negative.filter(k => home(k) === 0);
-			key = negative.find(k => home(k) === 3)!;
-			receiver = createReferenceTable(cpu, 0, count);
-			gc.tables.set(receiver, anchor, valueInteger(11));
-			gc.tables.set(receiver, displaced, valueInteger(22));
-			setReferenceGlobal(cpu, name('store_subject'), valueTable(receiver));
-			setReferenceGlobal(cpu, name('store_key'), key);
-			assert.equal(memory.readRamRecordWord(gc.tables.hashAddress(receiver) + 3 * 4), valuePayload(displaced));
+			assert.equal(tables.hashSize(receiver), hashSlots);
+			const words = tables.hashAddress(receiver);
+			assert.equal(memory.readRamRecordWord(words), anchor >>> 0);
+			assert.equal(memory.readRamRecordWord(words + 3 * 4), displaced >>> 0, 'guest populated the displaced home-3 node');
+			assert.equal(tables.get(receiver, key), valueNil(), 'the incoming key does not already exist');
 		}
-		const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const management = stockHeapManagementOffset(memory), control = management + HEAP_GC_CONTROL_OFFSET;
+		const occupiedOffset = management + arenaOccupiedOffset, chargeOffset = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		const recolor = (record: number, shade: number) => memory.writeRamRecordByte(record + GC_COLOR_OFFSET,
 			(memory.readRamRecordByte(record + GC_COLOR_OFFSET) & ~GC_COLOR_MASK) | shade);
 		const color = (record: number) => memory.readRamRecordByte(record + GC_COLOR_OFFSET) & GC_COLOR_MASK;
-		memory.writeRamRecordByte(control, (memory.readRamRecordByte(control) & ~7) | GcPhase.MarkAgain);
-		recolor(reference, gc.white());
+		memory.writeRamRecordByte(control + CollectorField.Phase, (memory.readRamRecordByte(control + CollectorField.Phase) & ~7) | markAgain);
+		recolor(reference, memory.readRamRecordByte(control + CollectorField.White) & 1);
 		recolor(receiver, 3);
-		memory.writeRamRecordWord(control + GC_TRACE_HEAD, 0);
-		memory.writeRamRecordWord(control + GC_CHANGED_HEAD, 0);
-		memory.writeRamRecordPair(control + GC_TRACE_RECORD, mode === 3 ? receiver : 0, mode === 3 ? 2 : 0);
-		memory.writeRamRecordPair(control + GC_MODE_META, mode === 3 ? receiver : 0, mode === 3 ? 3 : 0);
+		memory.writeRamRecordWord(control + CollectorField.TraceHead, 0);
+		memory.writeRamRecordWord(control + CollectorField.ChangedHead, 0);
+		memory.writeRamRecordPair(control + CollectorField.TraceRecord, mode === 3 ? receiver : 0, mode === 3 ? 2 : 0);
+		memory.writeRamRecordPair(control + CollectorField.ModeMeta, mode === 3 ? receiver : 0, mode === 3 ? 3 : 0);
 		const depth = cpu.getFrameDepth() - 1, owner = cpu.activeThread.address;
 		const readInstruction = () => decodeBlua32InstructionAtPc(cart, CART_ROM_BASE, cpu.readFramePc(depth));
 		memory.writeMappedWord(linked.layout.header.bssAddress, mode);
@@ -121,14 +124,15 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		};
 		for (let i = 0; i < 128 && readInstruction().op !== op; ++i) grant(1);
 		if (mode === 2) {
-			assert.equal(gc.tables.getInteger(receiver, 1), valueInteger(61), 'the preceding scalar array write stayed direct');
+			assert.equal(tables.getInteger(receiver, 1), valueInteger(61), 'the preceding scalar array write stayed direct');
 			assert.equal(color(receiver), 3);
 		}
 		const issuePc = cpu.readFramePc(depth), issue = readInstruction(), next = issue.pc + INSTRUCTION_BYTES;
 		assert.equal(issue.op, op);
-		const previous = gc.tables.get(receiver, key), allocated = arena.occupiedBytes(), charged = nativeHeapReference(cpu).luaHeap.usedBytes();
-		const hashAddress = gc.tables.hashAddress(receiver) - RAM_BASE;
-		const hashBytesCount = TableRecords.hashStorageBytes(gc.tables.hashSize(receiver));
+		const previous = tables.get(receiver, key);
+		const allocated = memory.readRamRecordWord(occupiedOffset), charged = memory.readRamRecordWord(chargeOffset);
+		const hashAddress = tables.hashAddress(receiver) - RAM_BASE;
+		const hashBytesCount = TableRecords.hashStorageBytes(tables.hashSize(receiver));
 		const previousHash = hashBytes(memory.ramData(), hashAddress, hashBytesCount);
 		const snapshot = (label: string) => {
 			const path = join(directory, `${mode}-${label}.state`);
@@ -150,11 +154,11 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		assert.deepEqual([0, 1, 2].map(i => packet.registers.get(i)), [
 			valueTable(receiver), key, mode === 3 ? valueInteger(77) : valueTable(reference),
 		]);
-		const node = packet.registers.get(5), hash = gc.tables.hashSize(receiver);
+		const node = packet.registers.get(5), hash = tables.hashSize(receiver);
 		assert.equal(node, valueInteger(mode === 1 ? -2 : mode === 3 ? -1 : hashCanonicalTableKey(key) & (hash - 1)));
-		assert.equal(gc.tables.get(receiver, key), previous, 'neither Value lane was published by the issuer');
+		assert.equal(tables.get(receiver, key), previous, 'neither Value lane was published by the issuer');
 		assert.equal(color(receiver), 3);
-		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), mode === 3 ? receiver : 0);
+		assert.equal(memory.readRamRecordWord(control + CollectorField.TraceRecord), mode === 3 ? receiver : 0);
 		assert.equal(hashBytes(memory.ramData(), hashAddress, hashBytesCount), previousHash);
 		const stopped = snapshot('partial'), portable = join(directory, `${mode}-cpp.state`);
 		const prefix = commands.length, rowPrefix = rows.length;
@@ -163,25 +167,26 @@ test('stock table stores leave marked reference writes and displaced-node collis
 			assert.equal(cpu.fixedInterruptActive(), false);
 			assert.equal(cpu.readEpcWord(), next);
 			assert.equal(cpu.readFramePc(depth), next);
-			assert.equal(arena.occupiedBytes(), allocated);
-			assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), charged);
+			assert.equal(memory.readRamRecordWord(occupiedOffset), allocated);
+			assert.equal(memory.readRamRecordWord(chargeOffset), charged);
 			if (mode === 3) {
-				assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
-				assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0);
-				assert.equal(memory.readRamRecordWord(control + GC_MODE_META), 0);
-				assert.equal(memory.readRamRecordWord(control + GC_MODE_NODE), 0);
-				assert.equal(memory.readRamRecordWord(control + GC_CHANGED_HEAD), (receiver - RAM_BASE) >>> GC_RECORD_SHIFT);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.TraceRecord), 0);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.TraceCursor), 0);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.ModeMeta), 0);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.ModeNode), 0);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.ChangedHead), (receiver - RAM_BASE) >>> GC_RECORD_SHIFT);
 				assert.equal(color(receiver), 2);
-				assert.equal(gc.tables.get(receiver, anchor), valueInteger(11));
-				assert.equal(gc.tables.get(receiver, displaced), valueInteger(22));
-				assert.equal(gc.tables.get(receiver, key), valueInteger(77));
+				assert.equal(tables.get(receiver, valueInteger(anchor)), valueInteger(11));
+				assert.equal(tables.get(receiver, valueInteger(displaced)), valueInteger(22));
+				assert.equal(tables.get(receiver, key), valueInteger(77));
 			} else {
-				assert.equal(memory.readRamRecordWord(control + GC_TRACE_HEAD), (reference - RAM_BASE) >>> GC_RECORD_SHIFT);
-				assert.equal(memory.readRamRecordWord(control + GC_CHANGED_HEAD), 0);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.TraceHead), (reference - RAM_BASE) >>> GC_RECORD_SHIFT);
+				assert.equal(memory.readRamRecordWord(control + CollectorField.ChangedHead), 0);
 				assert.equal(color(reference), 2);
-				assert.equal(gc.tables.get(receiver, key), valueTable(reference));
+				assert.equal(tables.get(receiver, key), valueTable(reference));
 			}
-			for (const [first, length] of [[control, GC_MODE_NODE + 4], [receiver - RAM_BASE, TableRecords.HEADER_BYTES], [hashAddress, hashBytesCount]]) {
+			for (const [first, length] of [[control, CollectorField.ModeNode + 4], [receiver - RAM_BASE, TableRecords.HEADER_BYTES],
+				[hashAddress, hashBytesCount], [occupiedOffset, 4], [chargeOffset, 4]]) {
 				commands.push(`H ${first} ${first + length}`);
 				rows.push(String(hashBytes(memory.ramData(), first, length)));
 			}

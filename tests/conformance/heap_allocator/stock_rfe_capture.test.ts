@@ -1,4 +1,7 @@
 import { readStockGlobalValue } from '../../../toolchain/ts/firmware/stock_global_bank';
+import { stockHeapManagementOffset } from '../../../toolchain/ts/firmware/stock_heap_layout';
+import { StockStringIndex } from '../../../toolchain/ts/firmware/stock_string_index';
+import { isStockHeapIssuedObject } from '../../../ide/runtime/stock_heap_inspection';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -33,10 +36,12 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { GC_WEAK_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GcPhase, asClosure } from '../../helpers/native_heap/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
-import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
+// The initial condition is a stopped stock collector, not a native GC step.
+const enum CollectorField { Phase = 0, White = 1, ChangedHead = 8, WeakVisits = 0x1c }
+const enum Phase { Pause = 0, MarkAgain = 2 }
+const visitHeader = 3, visitMember = 0x40;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `module<entry>
 bss phase: word
@@ -61,13 +66,14 @@ collectgarbage('step')
 while true do halt_until_irq end`;
 
 test('RFE rescans a closed managed capture before stock Atomic clears weak values', async t => {
+	t.mock.method(WebAssembly, 'Instance', () => assert.fail('stock RFE must not instantiate the allocator oracle'));
 	const directory = mkdtempSync(join(tmpdir(), 'bmsx-rfe-capture-'));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
 		'--mode', 'bios', '-respath', 'machine/bios/res', '--debug', '-O3', '--output-dir', directory,
 		'--store-dir', join(directory, 'store')], { encoding: 'utf8' });
 	const systemPath = join(directory, 'system', 'bmsx-bios.debug.rom'), system = readFileSync(systemPath);
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { buildDirectory: join(directory, 'native') });
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner', { buildDirectory: join(directory, 'native') });
 
 	for (const optLevel of [0, 3] as const) {
 		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'rfe.lua'), [], { entrySource: source, optLevel });
@@ -85,7 +91,8 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 		for (const route of ['forwarded', 'direct'] as const) await t.test(`${route} O${optLevel}`, () => {
 			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine, { heapAllocator: arena, gc } = nativeHeapReference(cpu);
+			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine;
+			const { tables } = cpu;
 			const report = linked.layout.header.bssAddress;
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(report) !== 1; ++i) {
 				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
@@ -132,33 +139,38 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 			assert.equal(cpu.getFrameDepth(), depth + 1);
 			assert.equal(cpu.readEpcWord(), returnPc);
 
-			const global = (name: string) => readStockGlobalValue(cpu.memory, nativeHeapReference(cpu).stringPool.find(name)!);
-			const getter = asClosure(global('saved_capture'), gc);
+			const strings = new StockStringIndex(memory);
+			const global = (name: string) => readStockGlobalValue(memory, strings.find(name)!);
+			const closure = global('saved_capture');
+			assert.equal(valueTag(closure), ValueTag.Closure);
+			const getter = Closure.recordAddress(memory, valuePayload(closure));
+			assert.ok(isStockHeapIssuedObject(memory, (getter & GC_RECORD_MASK) - GC_OBJECT_PREFIX));
 			const cell = Closure.captureAddress(memory, getter, 0), cellOffset = cell & GC_RECORD_MASK;
 			assert.equal(cpu.activeThread.currentFrame!.openUpvalueHead, cell);
-			assert.ok(arena.issuedObjectStart(cellOffset - GC_OBJECT_PREFIX));
+			assert.ok(isStockHeapIssuedObject(memory, cellOffset - GC_OBJECT_PREFIX));
 			assert.ok(isOpen(memory, cell));
 			const edge = capture(memory, cell), child = valuePayload(edge);
 			assert.equal(valueTag(edge), ValueTag.Table);
-			assert.ok(arena.issuedObjectStart((child & GC_RECORD_MASK) - GC_OBJECT_PREFIX));
-			const weak = valuePayload(global('weak')), key = nativeHeapReference(cpu).stringPool.find('target')!;
-			const weakValue = () => gc.tables.getStringKey(weak, key);
+			assert.ok(isStockHeapIssuedObject(memory, (child & GC_RECORD_MASK) - GC_OBJECT_PREFIX));
+			const weak = valuePayload(global('weak')), key = strings.find('target')!;
+			const weakValue = () => tables.getStringKey(weak, key);
 			assert.equal(weakValue(), edge);
-			assert.equal(memory.readRamRecordByte(child + GC_COLOR_OFFSET), gc.white());
 
 			// Stage the end of major mark: the real weak owner was visited, but the
 			// captured child is white. The guest, not the fixture, issued all records.
-			const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, changed = gc.changedHeadOffset();
-			assert.equal(gc.phase(), GcPhase.Pause);
+			const control = stockHeapManagementOffset(memory) + HEAP_GC_CONTROL_OFFSET;
+			const changed = control + CollectorField.ChangedHead, weakVisits = control + CollectorField.WeakVisits;
+			assert.equal(memory.readRamRecordByte(control + CollectorField.Phase), Phase.Pause);
+			assert.equal(memory.readRamRecordByte(child + GC_COLOR_OFFSET), memory.readRamRecordByte(control + CollectorField.White) & 1);
 			assert.equal(memory.readRamRecordWord(changed), 0);
-			assert.equal(memory.readRamRecordWord(control + GC_WEAK_VISITS), 0);
+			assert.equal(memory.readRamRecordWord(weakVisits), 0);
 			const weakIndex = (weak - RAM_BASE) >>> GC_RECORD_SHIFT;
-			memory.writeRamRecordWord(control + GC_WEAK_VISITS, weakIndex);
-			memory.writeRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_TAIL, weakIndex);
-			memory.writeRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT, 1);
-			memory.writeRamRecordByte(weak + GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER);
-			for (const record of [weak, gc.tables.metatableAddress(weak), getter, cell]) memory.writeRamRecordByte(record + GC_COLOR_OFFSET, 3);
-			memory.writeRamRecordByte(control, GcPhase.MarkAgain);
+			memory.writeRamRecordWord(weakVisits, weakIndex);
+			memory.writeRamRecordWord(weakVisits + 4, weakIndex);
+			memory.writeRamRecordWord(weakVisits + 8, 1);
+			memory.writeRamRecordByte(weak + visitHeader, visitMember);
+			for (const record of [weak, tables.metatableAddress(weak), getter, cell]) memory.writeRamRecordByte(record + GC_COLOR_OFFSET, 3);
+			memory.writeRamRecordByte(control + CollectorField.Phase, Phase.MarkAgain);
 
 			const path = (kind: string) => join(directory, `O${optLevel}-${route}.${kind}`);
 			const snapshot = (kind: string) => {
@@ -265,7 +277,7 @@ test('RFE rescans a closed managed capture before stock Atomic clears weak value
 				observe('P', `${depth} ${returnPc}`);
 				observeWindow();
 			};
-			const weakStorage = gc.tables.hashAddress(weak) - RAM_BASE, weakBytes = TableRecords.hashStorageBytes(gc.tables.hashSize(weak));
+			const weakStorage = tables.hashAddress(weak) - RAM_BASE, weakBytes = TableRecords.hashStorageBytes(tables.hashSize(weak));
 			const finish = () => {
 				for (let i = 0; i < 128 && memory.readRamRecordWord(report) !== 2; ++i) grant(8192);
 				assert.equal(memory.readRamRecordWord(report), 2);
