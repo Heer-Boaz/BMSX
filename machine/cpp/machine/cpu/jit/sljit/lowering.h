@@ -112,7 +112,8 @@ private:
 		sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords = 1u);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
-	void emitRomReads();
+	void emitProtectedRamGuard(NativeBlockExitSite&, const State&, u32 width, u32 touchedBytes);
+	void emitRamMisses();
 	void emitLocalIoWrites();
 
 	sljit_compiler* m_compiler;
@@ -153,9 +154,10 @@ private:
 		int slot;
 		bool checkTag;
 	};
-	struct RomRead {
+	struct RamMiss {
 		sljit_jump* ramMiss;
-		sljit_label* result;
+		sljit_label* protectedTransfer;
+		sljit_label* romResult;
 		NativeBlockExitSite* bus;
 		State registers;
 		u32 width;
@@ -192,7 +194,7 @@ struct NativeLowering::Workspace {
 	std::vector<ExternalBranch> external;
 	std::vector<ColdExit> coldExits;
 	std::vector<Branch> coldBranches;
-	std::vector<RomRead> romReads;
+	std::vector<RamMiss> ramMisses;
 	std::vector<LocalIoWrite> localIoWrites;
 	std::vector<SingleStringRead> singleStringReads;
 	std::vector<StringStoreMiss> stringStoreMisses;

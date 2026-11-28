@@ -112,11 +112,72 @@ void NativeLowering::emitLocalIoWrites() {
 	}
 }
 
-void NativeLowering::emitRomReads() {
+void NativeLowering::emitProtectedRamGuard(NativeBlockExitSite& slow, const State& registers, u32 width, u32 touchedBytes) {
 	auto* c = m_compiler;
-	for (const auto& read : m_workspace.romReads) {
+	const u32 tail = touchedBytes - 1u;
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(NativeBlockAbi::state),
+		offsetof(NativeCpuRunState, frameBank), SLJIT_IMM, frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID)), slow, registers);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, cop0Words));
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), COP0_STATUS * sizeof(u32),
+		SLJIT_IMM, CPU_STATUS_USER_MODE_CURRENT);
+	fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), slow, registers);
+
+	// Reject overlap of the complete span with either dedicated backing.
+	for (const auto& [begin, end] : {std::pair{CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END},
+		std::pair{CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END}}) {
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, begin - RAM_BASE - (width - 1u));
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, end - begin + width - 1u), slow, registers);
+	}
+
+	// A memory access can alias an unpublished register or control word.
+	// Use the live frame's bound backing, not an edited dormant descriptor.
+	// The fixed bank's backing was already excluded by the physical check.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, thread));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, address));
+	auto* fixed = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, CPU_RESET_BANK_ADDRESS);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, tail);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, THREAD_HEAP_BYTES + tail), slow, registers);
+
+	// Compare the touched bytes in the physical RAM record address
+	// space; a backed control range can straddle the record-port wrap.
+	for (bool values : {true, false}) {
+		if (values) {
+			const auto stack = SLJIT_OFFSETOF(Thread, stack);
+			sljit_emit_op2(c, SLJIT_SUB, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::wordsOffset(),
+				SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
+			sljit_emit_op1(c, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::sizeOffset());
+		} else {
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameOffset));
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameCapacity));
+		}
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, tail);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+		sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, values ? THREAD_STACK_SLOT_BYTES : FRAME_CONTROL_BYTES);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, tail);
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_R0, 0), slow, registers);
+	}
+	sljit_set_label(fixed, sljit_emit_label(c));
+}
+
+void NativeLowering::emitRamMisses() {
+	auto* c = m_compiler;
+	for (const auto& miss : m_workspace.ramMisses) {
 		using Rom = Span<const u8>;
-		sljit_set_label(read.ramMiss, sljit_emit_label(c));
+		sljit_set_label(miss.ramMiss, sljit_emit_label(c));
+		if (miss.protectedTransfer) {
+			// R1 still holds the unsigned offset used by the public aperture test.
+			auto* outside = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0,
+				SLJIT_IMM, m_bindings.ramBytes - miss.width);
+			if (!miss.romResult) fault(outside, *miss.bus, miss.registers);
+			emitProtectedRamGuard(*miss.bus, miss.registers, miss.width, miss.width);
+			sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), miss.protectedTransfer);
+			if (!miss.romResult) continue;
+			sljit_set_label(outside, sljit_emit_label(c));
+		}
 		auto* system = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cartridgeRom));
@@ -125,16 +186,16 @@ void NativeLowering::emitRomReads() {
 		// tail or another device still belongs to the ordered, scalar bus.
 		auto* range = sljit_emit_label(c);
 		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
-		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, read.width);
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, miss.width);
 		fault(sljit_emit_cmp(c, SLJIT_GREATER, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, size_)),
-			*read.bus, read.registers);
+			*miss.bus, miss.registers);
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Rom, data_), SLJIT_R0, 0);
-		emitBackingLoad(read.format, true);
-		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), read.result);
+		emitBackingLoad(miss.format, true);
+		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), miss.romResult);
 
 		sljit_set_label(system, sljit_emit_label(c));
-		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - read.width),
-			*read.bus, read.registers);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - miss.width),
+			*miss.bus, miss.registers);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.systemRom));
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), range);
 	}
@@ -144,7 +205,8 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	auto& slow = *sideExit(instruction.slow);
 	const auto kind = access.format;
 	const bool tagged = kind == MemoryAccessKind::Value;
-	if (tagged && (!m_bindings.cpu || instruction.pc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE)) {
+	const bool systemSource = m_bindings.cpu && instruction.pc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE;
+	if (tagged && !systemSource) {
 		// Non-System execution keeps the CPU exit.
 		emitLeave(slow, Charge::Pending);
 		return;
@@ -178,56 +240,11 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	}
 	if (tagged) {
 		auto* c = m_compiler;
-		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(NativeBlockAbi::state),
-			offsetof(NativeCpuRunState, frameBank), SLJIT_IMM, frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID)), slow, m_cache.state());
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, cop0Words));
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), COP0_STATUS * sizeof(u32),
-			SLJIT_IMM, CPU_STATUS_USER_MODE_CURRENT);
-		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), slow, m_cache.state());
-
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
 		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width), slow, m_cache.state());
 		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
 			IO_BASE - RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
-		// Reject overlap of the complete span with either dedicated backing.
-		for (const auto& [begin, end] : {std::pair{CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END},
-			std::pair{CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END}}) {
-			sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, begin - RAM_BASE - (width - 1u));
-			fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, end - begin + width - 1u), slow, m_cache.state());
-		}
-
-		// A tagged access can alias an unpublished register or control word.
-		// Use the live frame's bound backing, not an edited dormant descriptor.
-		// The fixed bank's backing was already excluded by the physical check.
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, thread));
-		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, address));
-		auto* fixed = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, CPU_RESET_BANK_ADDRESS);
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
-		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_R2, 0);
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
-		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, THREAD_HEAP_BYTES + VALUE_MEMORY_TAG_OFFSET), slow, m_cache.state());
-
-		// Compare the five touched bytes in the physical RAM record address
-		// space; a backed control range can straddle the record-port wrap.
-		for (bool values : {true, false}) {
-			if (values) {
-				const auto stack = SLJIT_OFFSETOF(Thread, stack);
-				sljit_emit_op2(c, SLJIT_SUB, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::wordsOffset(),
-					SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
-				sljit_emit_op1(c, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::sizeOffset());
-			} else {
-				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameOffset));
-				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameCapacity));
-			}
-			sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
-			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
-			sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, values ? THREAD_STACK_SLOT_BYTES : FRAME_CONTROL_BYTES);
-			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
-			fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_R0, 0), slow, m_cache.state());
-		}
-		sljit_set_label(fixed, sljit_emit_label(c));
+		emitProtectedRamGuard(slow, m_cache.state(), width, VALUE_MEMORY_TAG_OFFSET + 1u);
 
 		if (!load) {
 			emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, 1u);
@@ -261,9 +278,14 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM0(),
 		reinterpret_cast<sljit_sw>(m_bindings.ramBusEnd), SLJIT_IMM, RAM_BASE + width);
 	auto* ramMiss = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_R2, 0);
-	if (!load) fault(ramMiss, slow, m_cache.state());
-	// Value windows and frame latches are above the aperture; admitted
-	// public transfers do not observe or overwrite either.
+	const bool protectedScalar = systemSource && !words && kind <= MemoryAccessKind::U32LE;
+	auto* ramTransfer = protectedScalar ? sljit_emit_label(m_compiler) : nullptr;
+	// Public hits take the same fallthrough. Only a System miss checks the
+	// live mode and whether the transfer aliases unpublished CPU state.
+	if (!load) {
+		if (protectedScalar) m_workspace.ramMisses.push_back({ramMiss, ramTransfer, nullptr, &slow, m_cache.state(), width, kind});
+		else fault(ramMiss, slow, m_cache.state());
+	}
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
 	if (words) {
 		// A watch anywhere in the sequence hands the untouched instruction to the bus.
@@ -309,7 +331,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	const auto move = kind == MemoryAccessKind::U8 ? SLJIT_MOV32_U8 : kind == MemoryAccessKind::U16LE ? SLJIT_MOV32_U16 : SLJIT_MOV32;
 	if (load) {
 		emitBackingLoad(kind, false);
-		m_workspace.romReads.push_back({ramMiss, sljit_emit_label(m_compiler), &slow, m_cache.state(), width, kind});
+		m_workspace.ramMisses.push_back({ramMiss, ramTransfer, sljit_emit_label(m_compiler), &slow, m_cache.state(), width, kind});
 		if (kind != MemoryAccessKind::F64LE) {
 			const auto target = m_cache.write(access.slot, kind == MemoryAccessKind::F32LE ? ValueTag::Float : ValueTag::Integer);
 			if (target.tag == ValueTag::Float)
