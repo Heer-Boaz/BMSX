@@ -522,7 +522,10 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		admitTestHeapServiceCpu(cpu, addresses);
 		const beforeCartridge = captureCpuCheckpoint(cpu);
 		const binding = executionImageBindingOffset(0);
-		const backing = firmwareImageBackingOffset(nativeHeapReference(cpu).heapAllocator.managementOffset(), 0);
+		const management = nativeHeapReference(cpu).heapAllocator.managementOffset();
+		const backing = firmwareImageBackingOffset(management, 0);
+		const systemBacking = firmwareImageBackingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
+		const systemDescriptor = memory.ramData().slice(systemBacking, systemBacking + FIRMWARE_IMAGE_BACKING_SIZE);
 		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
 		const count = () => memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET);
 		const activate = () => {
@@ -532,6 +535,10 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 			assert.ok(id >= RAM_BASE);
 			const boot = addresses.resolveDomain(0)!;
 			bindReferenceImageOperands(cpu, addresses, boot);
+			assert.deepEqual(memory.ramData().subarray(systemBacking, systemBacking + FIRMWARE_IMAGE_BACKING_SIZE), systemDescriptor,
+				'publishing Cart0 literals does not overwrite the preceding System backing');
+			assert.equal(memory.readRamRecordWord(backing), strings(), 'with no global names the Cart0 backing begins at its literal table');
+			assert.equal(memory.readRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET), 4);
 			cpu.replaceExecutionImages([boot]);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
 			assert.equal(count(), 1);

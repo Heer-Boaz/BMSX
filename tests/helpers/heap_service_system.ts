@@ -13,7 +13,7 @@ import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { COP0_TABLE_LOOKUP_KEY, COP0_TABLE_ASSIGN_KEY, COP0_TABLE_LENGTH_KEY, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
-import { FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_DIAGNOSTIC_FAULTS_OFFSET, firmwareImageBackingOffset } from './firmware_heap_layout';
+import { FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, GC_DIAGNOSTIC_FAULTS_OFFSET, firmwareImageBackingOffset } from './firmware_heap_layout';
 import { registerReferenceGlobalName } from './global_bank_reference';
 import { EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset } from '../../machine/ts/spec/blua32/execution_domain';
 import {
@@ -211,7 +211,8 @@ export function bindReferenceImageOperands(cpu: CPU, executionAddressSpace: Exec
 		memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_ORDINARY_OFFSET,
 			globalCount === 0 ? 0 : base, systemCount === 0 ? 0 : base + 4 * globalCount);
 		memory.writeRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, stringCount === 0 ? 0 : output);
-		memory.writeRamRecordPair(backing, base, bytes);
+		memory.writeRamRecordWord(backing, base);
+		memory.writeRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_BYTES_OFFSET, bytes);
 		memory.writeRamRecordWord(backing + FIRMWARE_IMAGE_BACKING_RAM_STRING_END_OFFSET, ramEnd);
 	}
 }
