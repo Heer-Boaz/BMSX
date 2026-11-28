@@ -240,6 +240,20 @@ halt_until_irq
 	}
 });
 
+const clearSuffixOnVBlank = `
+local trace<const> = require('kernel/gc_thread_trace').internal
+bss cleared_suffix: word
+local interrupted<const>: *addr = ${CPU_INTERRUPTED_CONTEXT_ADDRESS}
+local owner<const>: *stopped_thread = *interrupted
+local depth<const> = owner.frame_depth & ${THREAD_CONTROL_COUNT_MASK}
+local frame<const>: *stopped_frame = ${RAM_BASE} + ((owner.frame_block + (depth - 1) * sizeof(stopped_frame)) & ${RAM_RECORD_WORD_MASK})
+local first<const> = (frame.top + frame.stack_base) & ${FRAME_WINDOW_MASK}
+trace.clear_stack_range(owner.stack_block & ${RAM_RECORD_WORD_MASK}, owner.stack_capacity, first, owner.stack_capacity)
+*cleared_suffix = 1
+mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+mem[${IO_IRQ_MASK}] = 0
+`;
+
 test('open software returns forward a prefix and adapt to zero, short and padded receivers', t => {
 	const path = 'window/results';
 	const program = `module<const>
@@ -284,20 +298,7 @@ return sum, a, b, c, d, e, f, g, h, i, j, k, trial.count(), trial.relay(1, 8)
 	const { cpu: oracle } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(original) });
 	runGuestToHalt(oracle, 4_194_304);
 	assert.deepEqual(materializeCpuCompletionValues(oracle), output);
-	const irqSource = `
-local trace<const> = require('kernel/gc_thread_trace').internal
-bss cleared_suffix: word
-local interrupted<const>: *addr = ${CPU_INTERRUPTED_CONTEXT_ADDRESS}
-local owner<const>: *stopped_thread = *interrupted
-local depth<const> = owner.frame_depth & ${THREAD_CONTROL_COUNT_MASK}
-local frame<const>: *stopped_frame = ${RAM_BASE} + ((owner.frame_block + (depth - 1) * sizeof(stopped_frame)) & ${RAM_RECORD_WORD_MASK})
-local first<const> = (frame.top + frame.stack_base) & ${FRAME_WINDOW_MASK}
-trace.clear_stack_range(owner.stack_block & ${RAM_RECORD_WORD_MASK}, owner.stack_capacity, first, owner.stack_capacity)
-*cleared_suffix = 1
-mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
-mem[${IO_IRQ_MASK}] = 0
-`;
-	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }], [], 'main', { irqSource });
+	const linked = linkManagedTestSystem(main, 3, [{ path, source: program }], [], 'main', { irqSource: clearSuffixOnVBlank });
 	const modes = new Set<number>();
 	const forwardedLeaves = new Map<number, number>();
 	for (const name of ['choose', 'relay']) {
@@ -519,6 +520,94 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 	writeFileSync(trace, commands.join('\n'));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	assert.deepEqual(execFileSync(native, [rom, trace, trace], { encoding: 'utf8' }).trim().split('\n'), observations);
+});
+
+test('a private self-tail edge loops in the caller window across IRQ and cross-core restore', t => {
+	const source = `
+bss visits: word
+local function walk(n, left, right, extra)
+	if n == 0 then
+		if extra ~= nil then return left, right, extra end
+		return left, right
+	end
+	*visits = *visits + 1
+	return walk(n - 1, right, left)
+end
+local left, right, absent = walk(901, {value = 41}, {value = 52}, 3)
+return left.value, right.value, absent, *visits, walk(0, 7, 8, 9)
+`;
+	const linked = linkManagedTestSystem(source, 3, [], [], 'main', { irqSource: clearSuffixOnVBlank });
+	const { layout, symbols } = linked;
+	const index = symbols.metadata.functionIds.indexOf('module:main/entry/local:walk');
+	const caller = symbols.metadata.functionIds.indexOf('module:main/entry');
+	assert.notEqual(index, -1);
+	assert.equal(symbols.metadata.softwareFramesByFunction[index]?.entry, true);
+	assert.equal(symbols.metadata.softwareFramesByFunction[index]?.calls.length, 0);
+	const fn = layout.functions[index];
+	let backedge = -1;
+	for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+		const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+		assert.ok(row.op !== OpCode.CALL && row.op !== OpCode.RET && row.op !== OpCode.JAL && row.op !== OpCode.SVC);
+		if (row.op === OpCode.JMP && row.pc + (1 + row.sbx) * INSTRUCTION_BYTES === fn.codeAddress) {
+			assert.equal(backedge, -1);
+			backedge = pc;
+		}
+		pc = row.pc + INSTRUCTION_BYTES;
+	}
+	assert.notEqual(backedge, -1);
+	const romBytes = writeTestBlua32Rom(linked);
+	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+		cpuExecutionBackend: CpuExecutionBackend.Interpreter },
+	{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
+	runtime.boot();
+	const { cpu, memory, scheduler, irqController } = runtime.machine;
+	const folder = mkdtempSync(join(tmpdir(), 'bmsx-self-tail-jump-'));
+	t.after(() => rmSync(folder, { recursive: true, force: true }));
+	const rom = join(folder, 'system.rom'), trace = join(folder, 'trace'), state = join(folder, 'state');
+	writeFileSync(rom, romBytes);
+	let continuation = -1, grantSize = 31;
+	const commands: string[] = [], observations: string[] = [];
+	for (let grant = 0; grant < 8192; ++grant) {
+		const cycles = grantSize;
+		const outcome = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+		commands.push(`E ${cycles}`);
+		observations.push(`${outcome} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		if (outcome === RunResult.Halted) break;
+		const depth = cpu.getFrameDepth();
+		const pc = cpu.readFramePc(depth - 1);
+		if (pc >= fn.codeAddress && pc < fn.codeAddress + fn.codeByteCount) {
+			assert.equal(cpu.readFrameFunctionAddress(depth - 1), layout.functions[caller].address);
+			if (continuation !== -1) continue;
+			grantSize = 1;
+			if (pc !== backedge) continue;
+			const frame = cpu.activeThread.currentFrame!;
+			assert.equal(frame.top, 5, 'only the original return link and replacement formal slots stay live');
+			assert.equal(frame.registers.get(4), valueNil(), 'a missing recursive argument does not retain the old value');
+			continuation = commands.length;
+			writeFileSync(state, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+			memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+			irqController.raise(IRQ_VBLANK);
+			assert.equal(cpu.enterPendingInterrupt(), true);
+			commands.push(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`, `i ${IRQ_VBLANK}`, 'I');
+			observations.push('1');
+			grantSize = 127;
+		}
+	}
+	assert.notEqual(continuation, -1);
+	const cleared = symbols.metadata.staticScopes.declarations.find(symbol => symbol.name === 'cleared_suffix')!.address!;
+	assert.equal(memory.readMappedU32LE(cleared), 1);
+	commands.push(`M ${cleared}`);
+	observations.push('1 0');
+	const output = [valueInteger(52), valueInteger(41), valueNil(), valueInteger(901), valueInteger(7), valueInteger(8), valueInteger(9)];
+	assert.deepEqual(runtime.readCompletionValues(), output);
+	commands.push('c');
+	observations.push([output.length, ...output.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
+	const replay = () => execFileSync(native, [rom, trace, state], { encoding: 'utf8' }).trim().split('\n');
+	writeFileSync(trace, commands.join('\n'));
+	assert.deepEqual(replay(), observations);
+	writeFileSync(trace, ['X', ...commands.slice(continuation)].join('\n'));
+	assert.deepEqual(replay(), observations.slice(continuation));
 });
 
 test('a wide software callee uses backing admitted at entry without growing it on the call', () => {
