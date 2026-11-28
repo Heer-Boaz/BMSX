@@ -37,7 +37,6 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 	{ symbol: 'protected_handler', path: 'kernel/protected_handler' },
 	{ symbol: 'coroutine_resume', path: 'kernel/coroutine_resume' },
 	{ symbol: 'coroutine_yield', path: 'kernel/coroutine_yield' },
-	{ symbol: 'coroutine_yieldable', path: 'kernel/coroutine_yieldable', callable: true },
 	{ symbol: 'coroutine_entry', path: 'kernel/coroutine_entry' },
 ];
 
@@ -48,7 +47,7 @@ export const SYSTEM_KERNEL_MODULES = [
 	'kernel/bios_table_ids', 'kernel/bios_table_call', 'kernel/bios_copy_table', 'kernel/gc_barrier',
 	'kernel/table_grow', 'kernel/set_global', 'kernel/set_global_entry', 'kernel/get_global_entry', 'kernel/set_metatable',
 	'kernel/string_control_call', 'kernel/byte_string_input',
-	'kernel/coroutine_control_ids', 'kernel/coroutine_control', 'kernel/coroutine_close',
+	'kernel/coroutine_control_ids', 'kernel/coroutine_control', 'kernel/coroutine_close', 'kernel/coroutine_yieldable',
 	'kernel/thread_create', 'kernel/frame_upvalue',
 	'kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_strings',
 	'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/thread_retire', 'kernel/gc_objects', 'kernel/table_create',

@@ -7,12 +7,13 @@ local frames<const> = require('kernel/thread_frame_storage')
 local creation<const> = require('kernel/thread_create')
 local retirement<const> = require('kernel/coroutine_close')
 local captures<const> = require('kernel/frame_upvalue')
+local yieldable<const> = require('kernel/coroutine_yieldable')
 local count_mask<const> = (1 << 18) - 1
 local window_mask<const> = (1 << 20) - 1
 local word_mask<const> = 0x003ffffc
 local invalid_argument<const> = 10
 
-local receive<const> = function(owner, token, destination, count)
+local receive<const> = function(owner, token, destination, count, protected_handler)
 	local expected<const> = token == ids.set_frame_upvalue and 4 or 1
 	if destination == nil or count ~= expected then return invalid_argument end
 
@@ -41,6 +42,11 @@ local receive<const> = function(owner, token, destination, count)
 		-- The fixed consumer reads Nil padding on success, while the open
 		-- result extent still describes one success or two failure values.
 		frame.top = (frame.top & ~window_mask) | (destination + (closed and 1 or 2))
+	elseif token == ids.yieldable then
+		if kinds[0] ~= types.thread_tag then return invalid_argument end
+		local result<const>: *u32 = input_words - 4
+		local tag<const>: *u8 = input_tags - 1
+		*result, *tag = 0, yieldable(arguments[0], protected_handler) and types.true_tag or types.false_tag
 	else
 		local fault<const> = captures.store_value(arguments[0], kinds[0], arguments[1], kinds[1],
 			arguments[2], kinds[2], arguments[3], kinds[3])

@@ -5,7 +5,6 @@ local running<const> = __bmsx_coroutine_running
 local raise<const> = __bmsx_error
 local frame_scopes<const> = require('debug/frame_scopes')
 local entries<const> = require('bmsx/startup')
-local yieldable<const> = blua32.closure(entries.coroutine_yieldable)
 
 -- The status primitive preserves the CPU ThreadStatus ordinal, including Failed.
 local status_names<const> = { [0] = 'suspended', 'running', 'normal', 'suspended', 'dead', 'dead' }
@@ -29,7 +28,8 @@ coroutine.close = close_thread
 function coroutine.isyieldable(...)
 	local thread = ...
 	if blua32.argument_count() == 0 then thread = running() end
-	return thread ~= main_thread and yieldable(thread)
+	if thread == main_thread then return false end
+	return blua32.svc_value(ids.yieldable, thread)
 end
 
 local unwrap<const> = function(thread, ok, ...)

@@ -8,17 +8,22 @@ local layout<const> = require('kernel/gc_runtime_layout')
 local frames<const> = require('kernel/thread_frame_storage')
 local allocator<const> = require('kernel/dlmalloc')
 local entries<const> = require('bmsx/startup')
+local yieldable<const> = require('kernel/coroutine_yieldable')
 
 local word_mask<const> = 0x003ffffc
 local window_mask<const> = 0x000fffff
 local control_count_mask<const> = 0x0003ffff
 local extend_top<const> = 1 << 5
+local exception_frame<const> = 1 << 1
 local maximum_values<const> = 0x00400000 // 5
 local new<const>, running<const>, normal<const>, suspended<const>, dead<const>, failed<const> = 0, 1, 2, 3, 4, 5
 local false_tag<const>, true_tag<const>, string_tag<const>, closure_tag<const> = 1, 2, 5, 7
 local out_of_memory<const>, invalid_argument<const> = 9, 10
 
-rodata resume_refusal: string[1] = { 'cannot resume non-suspended coroutine' }
+rodata resume_refusal: string[2] = {
+	'cannot resume non-suspended coroutine',
+	'cannot resume coroutine across a hardware exception',
+}
 
 -- Same physical Value planes on both sides of the transfer. A copy is
 -- between distinct Thread backings, and follows any receiving relocation.
@@ -124,12 +129,21 @@ end
 local resume<const> = function(interrupted, frame_address, target) -- TS:4676–4711 C++:1412–1449
 	local source<const>: *stopped_thread = interrupted
 	local destination<const>: *stopped_thread = target
-	local status<const> = destination.status
-	if status ~= new and status ~= suspended then
+	local block<const>: *stopped_frame = layout.ram_base + (source.frame_block & word_mask)
+	local crossing_exception = false
+	for i = 0, (source.frame_depth & control_count_mask) - 2 do
+		if (block[i].flags & exception_frame) ~= 0 then
+			crossing_exception = true
+			break
+		end
+	end
+	local status
+	if not crossing_exception then status = destination.status end
+	if crossing_exception or (status ~= new and status ~= suspended) then
 		local header<const>: *addr = 32
 		local image<const>: *boot_image = *header
 		local constants<const>: *constant_record = image.constants
-		local ordinal<const>: *u32 = &resume_refusal[0]
+		local ordinal<const>: *u32 = &resume_refusal[crossing_exception and 1 or 0]
 		local pc<const> = deliver(interrupted, 0, 0, 1, false_tag, constants[*ordinal].word, string_tag, 0)
 		if not pc then return nil, interrupted, out_of_memory end
 		return pc, interrupted, nil
@@ -151,10 +165,8 @@ local resume<const> = function(interrupted, frame_address, target) -- TS:4676–
 	return nil, interrupted, out_of_memory
 end
 
-local return_to_resumer<const> = function(interrupted, first, count, finished)
+local return_to_resumer<const> = function(interrupted, destination, first, count, finished)
 	local source<const>: *stopped_thread = interrupted
-	local destination<const> = source.resumer
-	if destination == 0 then return nil, interrupted, invalid_argument end
 	local context<const>: *stopped_thread = destination
 	source.status = finished and dead or suspended
 	context.status = running
@@ -166,18 +178,26 @@ local return_to_resumer<const> = function(interrupted, first, count, finished)
 end
 
 local yield<const> = function(interrupted, frame_address) -- TS:4643–4661,4669–4674 C++:1383–1400,1405–1410
+	local source<const>: *stopped_thread = interrupted
 	local frame<const>: *stopped_frame = frame_address
+	local resumer<const> = source.resumer
+	if resumer == 0 or not yieldable(interrupted, entries.protected_handler) then
+		return frame.pc, interrupted, nil
+	end
 	local first<const> = frame.vararg_base & window_mask
 	local base<const> = frame.stack_base & window_mask
-	local pc<const>, destination<const>, reason<const> = return_to_resumer(interrupted, first, base - first, false)
+	local pc<const>, destination<const>, reason<const> = return_to_resumer(interrupted, resumer, first, base - first, false)
 	return pc, destination, reason
 end
 
 local finish<const> = function(interrupted, frame_address, first)
+	local source<const>: *stopped_thread = interrupted
+	local resumer<const> = source.resumer
+	if resumer == 0 then return nil, interrupted, invalid_argument end
 	local frame<const>: *stopped_frame = frame_address
 	local base<const> = frame.stack_base & window_mask
 	local top<const> = frame.top & window_mask
-	local pc<const>, destination<const>, reason<const> = return_to_resumer(interrupted, base + first, top - first, true)
+	local pc<const>, destination<const>, reason<const> = return_to_resumer(interrupted, resumer, base + first, top - first, true)
 	return pc, destination, reason
 end
 

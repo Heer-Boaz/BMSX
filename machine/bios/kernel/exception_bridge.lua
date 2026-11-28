@@ -180,9 +180,9 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			elseif values >= table_ids.copy and values <= table_ids.namespace then
 				handled = true
 				fault = table_calls.receive(*interrupted, values, depth, instruction)
-			elseif values >= thread_ids.create and values <= thread_ids.set_frame_upvalue then
+			elseif values >= thread_ids.create and values <= thread_ids.yieldable then
 				handled = true
-				fault = thread_calls.receive(*interrupted, values, depth, instruction)
+				fault = thread_calls.receive(*interrupted, values, depth, instruction, vectors.protected_handler)
 			elseif values == firmware_ids.bind_function then
 				handled = true
 				r10 = cop0.event_cycles
