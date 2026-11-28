@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { writeLE32 } from '../../machine/ts/common/endian';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import {
 	BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES,
 	MAX_LOW_OPERAND, MAX_OPERAND_BITS, ValueMoveKind, writeInstruction,
@@ -44,6 +46,37 @@ test('fixed stack follows the shared A+1 argument window across converging stati
 test('fixed stack rejects ambiguous call targets and open transfers', () => {
 	assert.throws(() => deriveBlua32FixedStack(branchToCall(2), [0]), /no single static callee/);
 	assert.throws(() => deriveBlua32FixedStack(branchToCall(1, 0), [0]), /open call window/);
+});
+
+test('fixed stack follows both linked register returns without allocating another frame', () => {
+	const text = new Uint8Array(10 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JMPIF, 0, 0, 3);
+	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.JREG, 1, 1, 1);
+	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.LOADK, 1, 0, 0);
+	writeInstruction(text, 5, OpCode.JREG, 1, 1, 1);
+	writeInstruction(text, 6, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 7, OpCode.MOV, 2, 1, ValueMoveKind.Copy);
+	writeInstruction(text, 8, OpCode.JREG, 2, 0, 0);
+	writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
+	const { image } = linkRawTestSystemBlua32({
+		text, verifiedControlFlow: true, constants: [integerConstant(0)],
+		functions: [{ firstWord: 0, wordCount: 9, numParams: 1, maxStack: 3 }, { firstWord: 9, wordCount: 1 }],
+	});
+	const address = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET;
+	writeLE32(image.bytes, address, image.functions[0].codeAddress + 7 * INSTRUCTION_BYTES);
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 3, frames: 1 });
+	for (const continuation of [3, 6]) {
+		writeInstruction(image.textBytes, continuation, OpCode.RET, 3, 2, 0);
+		assert.throws(() => deriveBlua32FixedStack(image, [0]), /return window exceeds/);
+		writeInstruction(image.textBytes, continuation, OpCode.RET, 0, 1, 0);
+	}
+	writeInstruction(image.textBytes, 7, OpCode.K0, 2, 0, 0);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
+	writeInstruction(image.textBytes, 7, OpCode.MOV, 2, 1, ValueMoveKind.Copy);
+	writeLE32(image.bytes, address, image.functions[1].codeAddress);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
 });
 
 test('fixed stack rejects recursion and register-address CLOSURE', () => {

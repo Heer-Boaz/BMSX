@@ -26,6 +26,8 @@ export type Blua32FixedStackBoundary = {
 	readonly codeTargets: Set<number>;
 };
 
+type RegisterTargets = Map<number, readonly number[]>;
+
 /**
  * Derive the backing required for fixed-window ROM entry points and
  * check that the linked operations stay within their scalar instruction set.
@@ -74,21 +76,28 @@ export function deriveBlua32FixedStack(
 		let valueSlots = width, frames = 1;
 		const last = fn.codeAddress + fn.codeByteCount;
 		const instructions = new Map<number, DecodedInstruction>();
+		let hasRegisterJump = false;
 		for (let pc = fn.codeAddress; pc < last;) {
 			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
 			instructions.set(pc, instruction);
+			hasRegisterJump ||= instruction.op === OpCode.JREG;
 			pc = instruction.pc + INSTRUCTION_BYTES;
 		}
 
 		// Track a singleton static function record per register. Zero means
 		// no single target proved. Joining divergent edges removes a target.
 		const inputs = new Map<number, Uint32Array>();
+		// An indirect branch can have multiple possible local PCs. A missing
+		// fact means some incoming path can supply an unproved word.
+		const branches: RegisterTargets | null = hasRegisterJump ? new Map() : null;
+		const branchInputs = branches === null ? null : new Map<number, RegisterTargets>();
 		const pending: number[] = [];
 		function merge(pc: number, registers: Uint32Array): void {
 			if (!instructions.has(pc)) throw new Error(`Fixed-stack branch leaves its function at 0x${pc.toString(16)}.`);
 			const other = inputs.get(pc);
 			if (other === undefined) {
 				inputs.set(pc, registers.slice());
+				if (branchInputs !== null) branchInputs.set(pc, new Map(branches!));
 				pending.push(pc);
 				return;
 			}
@@ -97,6 +106,19 @@ export function deriveBlua32FixedStack(
 				if (other[i] === 0 || other[i] === registers[i]) continue;
 				other[i] = 0;
 				changed = true;
+			}
+			if (branches !== null) {
+				const otherBranches = branchInputs!.get(pc)!;
+				for (const [register, earlier] of otherBranches) {
+					const later = branches.get(register);
+					if (later === undefined) {
+						otherBranches.delete(register);
+						changed = true;
+					} else if (earlier !== later && later.some(target => !earlier.includes(target))) {
+						otherBranches.set(register, [...new Set([...earlier, ...later])]);
+						changed = true;
+					}
+				}
 			}
 			if (changed) pending.push(pc);
 		}
@@ -107,6 +129,10 @@ export function deriveBlua32FixedStack(
 			const { op, a, b, c, bx, sbx, pc: body, rkBitsB, rkBitsC } = instructions.get(pc)!;
 			const next = body + INSTRUCTION_BYTES;
 			registers.set(inputs.get(pc)!);
+			if (branches !== null) {
+				branches.clear();
+				for (const [register, targets] of branchInputs!.get(pc)!) branches.set(register, targets);
+			}
 			const reject = (reason: string): never => {
 				throw new Error(`Fixed-stack ${OPCODE_NAMES[op]} at 0x${pc.toString(16)}: ${reason}.`);
 			};
@@ -128,6 +154,13 @@ export function deriveBlua32FixedStack(
 				case OpCode.LOADK:
 					if (a >= width) reject('destination exceeds the function record');
 					registers[a] = admitConstant(bx, reject, true);
+					if (branches !== null) {
+						const constant = constantTableOffset + bx * BLUA32_CONSTANT_RECORD_SIZE;
+						const tag = readLE32(image.bytes, constant + BLUA32_CONSTANT_TAG_OFFSET);
+						const target = readLE32(image.bytes, constant + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+						if (tag === Blua32ConstantTag.Integer && instructions.has(target)) branches.set(a, [target]);
+						else branches.delete(a);
+					}
 					break;
 				case OpCode.CLOSURE: {
 					const address = bx << 4;
@@ -138,6 +171,7 @@ export function deriveBlua32FixedStack(
 					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
 						reject('callee must be static, fixed-arity and capture-free');
 					registers[a] = address;
+					branches?.delete(a);
 					boundary?.codeTargets.add(target);
 					break;
 				}
@@ -146,6 +180,7 @@ export function deriveBlua32FixedStack(
 					if (a + b > width || a + c - 1 > width) reject('call window exceeds the function record');
 					// The shared callee window and result overwrite this suffix.
 					registers.fill(0, a);
+					if (branches !== null) for (const register of branches.keys()) if (register >= a) branches.delete(register);
 					break;
 				case OpCode.RET:
 					if (boundary?.exceptionVectors.has(index))
@@ -163,11 +198,13 @@ export function deriveBlua32FixedStack(
 				case OpCode.ARGC:
 					if (a >= width) reject('not an ordinary CPU argument count read');
 					registers[a] = 0;
+					branches?.delete(a);
 					break;
 				case OpCode.MFC0:
 					if (!cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control read');
 					registers[a] = 0;
+					branches?.delete(a);
 					break;
 				case OpCode.MTC0:
 					if (!cop0FieldImplemented(b) || a >= width)
@@ -188,14 +225,33 @@ export function deriveBlua32FixedStack(
 					break;
 				case OpCode.MOV:
 					if (a >= width) reject('destination exceeds the function record');
-					if (c === ValueMoveKind.Copy) registers[a] = registers[b];
-					else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits) registers[a] = 0;
-					else reject('invalid register move format');
+					if (c === ValueMoveKind.Copy) {
+						registers[a] = registers[b];
+						if (branches !== null) {
+							const source = branches.get(b);
+							if (source === undefined) branches.delete(a);
+							else branches.set(a, source);
+						}
+					} else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits) {
+						registers[a] = 0;
+						branches?.delete(a);
+					} else reject('invalid register move format');
 					break;
 				case OpCode.LOADNIL:
 					if (a + b > width) reject('nil window exceeds the function record');
 					registers.fill(0, a, a + b);
+					if (branches !== null) for (let register = a; register < a + b; ++register) branches.delete(register);
 					break;
+				case OpCode.JREG: {
+					if (c > 1 || (c === 1 && b >= width)) reject('requires a legal register jump within the function record');
+					const targets = branches!.get(a) ?? reject('no finite local target set');
+					if (c === 1) {
+						registers[b] = 0;
+						branches!.set(b, [next]);
+					}
+					for (const target of targets) merge(target, registers);
+					continue;
+				}
 				case OpCode.JMP:
 				case OpCode.JMPIF:
 				case OpCode.JMPIFNOT:
@@ -233,6 +289,7 @@ export function deriveBlua32FixedStack(
 					if (OPCODE_WRITES_REGISTER_A[op] !== 0) {
 						if (a >= width) reject('destination exceeds the function record');
 						registers[a] = 0;
+						branches?.delete(a);
 					}
 					break;
 				default:
