@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { GcDiagnostics } from '../helpers/native_heap/gc_diagnostics';
 import { IMAGE_STRING_RAM_ORDINAL } from '../../machine/ts/machine/cpu/execution_image';
 import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';

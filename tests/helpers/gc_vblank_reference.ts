@@ -2,7 +2,7 @@ import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GC_STEP_WORDS } from './native_heap/lua_heap';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 
 const GC_PHYSICAL_OCCUPIED_AT_TICK = GC_LAST_EPOCH_WORK + 4;

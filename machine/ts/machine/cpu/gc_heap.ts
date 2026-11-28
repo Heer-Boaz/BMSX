@@ -13,7 +13,6 @@ export const enum GcDiagnosticField {
 	StringIndexTag = 28, StringIndexWord = 32,
 }
 
-export const GC_WORK_WORD_CYCLES = 3;
 export const GC_TRACE_HEAD = 4;
 export const GC_CHANGED_HEAD = 8;
 // Head, tail and extent; the first two words start on a pair boundary.
@@ -41,7 +40,7 @@ const GC_OBJECT_HEAD = GC_PHYSICAL_ASSIST + 4;
 const GC_PACE_BASIS = GC_OBJECT_HEAD + 12;
 const GC_PACE_ESTIMATE = GC_PACE_BASIS + 4;
 const GC_PACE_RUNWAY = GC_PACE_ESTIMATE + 4;
-export const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
+const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
 const GC_PACE_PAY_AT = GC_PACE_PAID + 4;
 const GC_FULL_EPOCHS = GC_PACE_PAY_AT + 4;
 export const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }

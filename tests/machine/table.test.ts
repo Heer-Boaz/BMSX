@@ -3,7 +3,7 @@ import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
+import { LuaAllocationMode } from '../helpers/native_heap/lua_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {

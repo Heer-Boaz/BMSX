@@ -1,5 +1,3 @@
-import { LuaAllocationMode, LuaAllocationRecovery } from '../../../machine/ts/machine/cpu/lua_heap';
-export { LuaAllocationMode, LuaAllocationRecovery };
 import { LuaHeap as PhysicalLuaHeap } from '../../../machine/ts/machine/cpu/lua_heap';
 import type { HeapAllocator } from './heap_allocator';
 import { assistAllocation, chargeCollectionWork } from './cpu_roots';
@@ -16,6 +14,8 @@ const COLLECTION_RESERVE_SHIFT = 3;
 const GC_ASSIST_MIN_WORDS = 512;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
+export const enum LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted }
+export const enum LuaAllocationMode { Direct, Scheduled, Retry }
 
 export class LuaHeap extends PhysicalLuaHeap {
 	private readonly gcControlAddress: number;

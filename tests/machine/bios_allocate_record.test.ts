@@ -9,7 +9,7 @@ import { CLOSURE_PROTOTYPE_ADDRESS, closureRecordBytes } from '../../machine/ts/
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
+import { LuaAllocationMode } from '../helpers/native_heap/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

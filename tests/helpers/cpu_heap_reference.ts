@@ -1,6 +1,6 @@
 import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
+import { LuaAllocationMode } from './native_heap/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 

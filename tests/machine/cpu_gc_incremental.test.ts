@@ -18,7 +18,7 @@ import { THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '..
 import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';

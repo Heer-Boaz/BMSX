@@ -7,7 +7,7 @@ import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes, hashText } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../../machine/ts/machine/cpu/errors';
-import { GC_WORK_WORD_CYCLES, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GC_WORK_WORD_CYCLES, GcPhase } from '../../helpers/native_heap/gc_heap';
 import { HEAP_STRING_METADATA_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';

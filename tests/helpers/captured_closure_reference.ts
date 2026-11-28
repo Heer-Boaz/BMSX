@@ -1,5 +1,5 @@
 import { nativeHeapReference } from './native_heap/reference';
-import { gcPacedPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { gcPacedPhase } from './native_heap/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';

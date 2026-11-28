@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase, GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GC_STEP_WORDS } from '../helpers/native_heap/lua_heap';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
