@@ -10,7 +10,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { captureAddress } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { ThreadField, ThreadStatus, THREAD_STACK_SLOT_BYTES } from '../../../machine/ts/machine/cpu/thread_record';
+import { ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, load, UPVALUE_HEAP_BYTES } from '../../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -21,7 +21,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_F
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_IRQ_MASK, IRQ_DMA0_DONE } from '../../../machine/ts/spec/bmsx/io';
-import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_INTERRUPT_STATE_ADDRESS, RAM_RECORD_WORD_MASK, THREAD_STACK_SLOT_BYTES } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';

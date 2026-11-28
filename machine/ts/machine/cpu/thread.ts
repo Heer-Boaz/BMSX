@@ -1,5 +1,5 @@
 import { ThreadField, ThreadStatus, THREAD_CONTROL_COUNT_MASK } from './thread_record';
-export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
+export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
 import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK } from './call_state';
 import type { Memory } from '../memory/memory';
 import { valueFromTag, valuePayload, valueTag, type Value } from './value';

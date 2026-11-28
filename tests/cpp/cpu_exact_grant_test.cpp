@@ -543,14 +543,18 @@ void compileRegisterJumpReceiver() {
 #endif
 }
 
-void exactBorrowedWindowGrant(bool registerFrontier) {
+void exactBorrowedWindowGrant(bool registerFrontier, bool extended) {
 	constexpr auto open = static_cast<u8>(RegisterJumpMode::EnterWindow);
 	const auto close = static_cast<u8>(registerFrontier ? RegisterJumpMode::LeaveWindowFromRegister : RegisterJumpMode::LeaveWindow);
-	const int width = registerFrontier ? 3 : 2;
+	constexpr int parentWidth = 11;
+	constexpr int childOffset = 2;
+	constexpr int extendedRegister = parentWidth - childOffset;
+	const int sum = extended ? extendedRegister : 1;
+	const int width = extended ? extendedRegister + 1 : registerFrontier ? 3 : 2;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	image.text.resize(9u * INSTRUCTION_BYTES);
-	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 11}};
+	image.text.resize(10u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 10, .maxStack = parentWidth}};
 	// Install leaf and continuation entries independently of the window
 	// transition, which samples its target from a raw register.
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 10, 0, 5);
@@ -559,14 +563,18 @@ void exactBorrowedWindowGrant(bool registerFrontier) {
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::KSMI), 4, 0, 31);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 1, 0, 1);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::KTRUE), 0, 0, 0);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::JREG), 63, 2, close);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), sum, 0, 1);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::MOV), 1, sum, 0);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::KTRUE), 0, 0, 0);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::JREG), 63, 2, close);
 	Machine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto& context = *lane.activeThread();
 		test::reserveReferenceThreadFrame(test::GcHeap(lane), context, context.stackCapacity);
+		require(context.currentFrame->stackCapacity() == parentWidth
+			&& context.stackCapacity >= static_cast<size_t>(childOffset + width),
+			"the admitted backing includes the selected child window without widening the parent");
 	}
 	auto& cpu = native.cpu;
 	const auto start = native.rom.textAddress;
@@ -582,14 +590,15 @@ void exactBorrowedWindowGrant(bool registerFrontier) {
 			registers.set(3, valueInteger(25));
 			registers.set(4, valueFromTag(ValueTag::Float, 2)); // Child R2 is a raw frontier, not a Lua number.
 			registers.set(6, valueFromTag(ValueTag::Float, child)); // Raw PC transport does not inspect its tag.
-			registers.set(7, valueInteger(2));
+			registers.set(7, valueInteger(childOffset));
 			registers.set(8, valueInteger(width));
 			registers.set(9, valueInteger(2));
 			lane.activeThread()->currentFrame->setTop(10);
 		}
 	};
 	const int jump = BASE_CYCLES[static_cast<u8>(OpCode::JREG)];
-	const int body = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::KTRUE)];
+	const int body = BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::KTRUE)];
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	cpu.prepareSystemNativeCode();
 	const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
@@ -616,6 +625,7 @@ void exactBorrowedWindowGrant(bool registerFrontier) {
 	require(test::runCpuParity(cpu, scalar.cpu, body + 1) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 1 - jump && cpu.readFramePc(0) == successor
 		&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 4
+		&& cpu.activeThread()->stack.get(childOffset + sum) == valueInteger(42)
 		&& test::sameLanguageRam(cpu, scalar.cpu), "a short leave publishes the same parent frontier as scalar");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto afterShort = cpu.nativeGateProfile();
@@ -629,7 +639,7 @@ void exactBorrowedWindowGrant(bool registerFrontier) {
 	bindInputs();
 	const int grant = 2 * jump + body + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	const auto direct = cpu.nativeGateProfile().directWindowTransferResumes;
+	const auto beforeFull = cpu.nativeGateProfile();
 #endif
 	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
 		&& cpu.instructionBudgetRemaining == 0 && cpu.getFrameDepth() == 1
@@ -639,7 +649,10 @@ void exactBorrowedWindowGrant(bool registerFrontier) {
 		&& cpu.readFrameRegister(0, 4) == valueInteger(31)
 		&& test::sameLanguageRam(cpu, scalar.cpu), "both windows and their continuation retire in the same grant");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-	require(cpu.nativeGateProfile().directWindowTransferResumes - direct == 2u,
+	const auto afterFull = cpu.nativeGateProfile();
+	const auto windowExit = static_cast<size_t>(NativeBlockExit::RegisterWindowTransfer);
+	require(afterFull.directWindowTransferResumes - beforeFull.directWindowTransferResumes == 2u
+		&& afterFull.exits[windowExit].entries - beforeFull.exits[windowExit].entries == 2u,
 		"both resident transfers rebind in generated code without semantic dispatch");
 #endif
 }
@@ -1394,7 +1407,10 @@ int main(int argc, char** argv) {
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
 		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); }
-		else if (scenario == "borrowed-window") { exactBorrowedWindowGrant(false); exactBorrowedWindowGrant(true); }
+		else if (scenario == "borrowed-window") {
+			for (const bool extended : {false, true})
+				for (const bool registerFrontier : {false, true}) exactBorrowedWindowGrant(registerFrontier, extended);
+		}
 		else if (scenario == "physical-window-moves") exactPhysicalWindowMoves();
 		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }

@@ -2,6 +2,7 @@ import {
 	COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR,
 	COP0_TABLE_LOOKUP_KEY, COP0_STRING_INDEX_TABLE, cop0FieldImplemented,
 } from '../../../machine/ts/spec/blua32/cop0';
+import { MAX_THREAD_VALUE_SLOTS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_FUNCTION_CODE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, RegisterJumpMode, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -74,7 +75,7 @@ export function deriveBlua32FixedStack(
 		if (!fn.staticClosure || fn.upvalues.length !== 0 || (!borrowed && fn.isVararg))
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static${borrowed ? '' : ', fixed-arity'} and capture-free.`);
 		ancestors.add(index);
-		const width = Math.max(1, fn.numParams, fn.maxStack);
+		const width = Math.max(borrowed ? 0 : 1, fn.numParams, fn.maxStack);
 		let valueSlots = width, frames = 1;
 		const last = fn.codeAddress + fn.codeByteCount;
 		const instructions = new Map<number, DecodedInstruction>();
@@ -272,11 +273,16 @@ export function deriveBlua32FixedStack(
 						if (targets?.length !== 1 || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
 							reject('no single static window and target');
 						const base = bases![0], capacity = capacities![0], top = tops![0];
-						if (base >= width || capacity === 0 || capacity > width - base || top > capacity)
-							reject('window is not contained in the admitted register extent');
+						if (base > width || top > Math.min(capacity, width - base))
+							reject('initialized prefix exceeds the owning register window');
 						const target = functionByEntry.get(targets![0]) ?? reject('window target is not an entry instruction');
+						const child = image.functions[target];
+						if (Math.max(child.numParams, child.maxStack) > capacity)
+							reject('target footprint exceeds the lent register window');
 						const below = measure(target, true);
-						if (below.valueSlots > capacity) reject('target footprint exceeds the lent register window');
+						const end = base + Math.max(capacity, below.valueSlots);
+						if (end > MAX_THREAD_VALUE_SLOTS) reject('window exceeds the physical register extent');
+						valueSlots = Math.max(valueSlots, end);
 						frames = Math.max(frames, 1 + below.frames);
 						registers.fill(0, base);
 						for (const register of branches!.keys()) if (register >= base) branches!.delete(register);

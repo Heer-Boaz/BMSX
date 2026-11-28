@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/spec/bmsx/memory_map';
 
 import { asStringId, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';

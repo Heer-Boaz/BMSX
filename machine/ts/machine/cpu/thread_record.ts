@@ -1,6 +1,6 @@
 import type { Memory } from '../memory/memory';
 import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../spec/blua32/cop0';
@@ -20,8 +20,6 @@ export const enum ThreadField {
 
 export const enum ThreadStatus { New, Running, Normal, Suspended, Dead, Failed }
 export const THREAD_HEAP_BYTES = 80;
-export const THREAD_STACK_SLOT_BYTES = 5;
-export const MAX_THREAD_VALUE_SLOTS = (MAIN_RAM_SIZE / THREAD_STACK_SLOT_BYTES) | 0;
 export const THREAD_INITIAL_VALUES = 8;
 export const THREAD_INITIAL_FRAMES = 2;
 export const THREAD_RECORD_KIND = 4;

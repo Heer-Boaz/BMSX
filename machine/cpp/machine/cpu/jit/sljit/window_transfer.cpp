@@ -91,12 +91,15 @@ sljit_label* emitWindowEnter(sljit_compiler* c, sljit_label* bindWindow, sljit_l
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), 0);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(state), capacity), cold);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchOffset, SLJIT_R2, 0);
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R3, 0, SLJIT_MEM1(state), capacity, SLJIT_R2, 0);
+	// Only the initial live prefix is shared. The rest is bounded by the
+	// backing of the thread. Reject an oversized raw word before the add.
+	sljit_emit_op2(c, SLJIT_SUB32, receiving, 0, SLJIT_MEM1(state), capacity, SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), sizeof(u32));
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0), cold);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, MAX_THREAD_VALUE_SLOTS), cold);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchWidth, SLJIT_R2, 0);
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), 2 * sizeof(u32));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R3, 0, SLJIT_R2, 0), cold);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R3, 0, receiving, 0), cold);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchTop, SLJIT_R3, 0);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_MEM1(state), base, SLJIT_MEM1(SLJIT_SP), scratchOffset);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchBase, SLJIT_R3, 0);

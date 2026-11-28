@@ -2,8 +2,8 @@ import { nativeHeapReference } from './native_heap/reference';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
-import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
-import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { THREAD_HEAP_BYTES, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
+import { RAM_RECORD_WORD_MASK, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/spec/bmsx/memory_map';
 import { runCompletionClosure } from './cpu_test_harness';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET } from './firmware_heap_layout';
 

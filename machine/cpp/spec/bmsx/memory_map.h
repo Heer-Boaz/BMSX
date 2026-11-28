@@ -44,6 +44,10 @@ constexpr uint32_t RUNTIME_MANAGEMENT_SIZE = 0x00004000u; // 16 KB
 constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE;
 constexpr uint32_t DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 
+// Register backing has one payload word and one tag byte per slot.
+constexpr uint32_t THREAD_STACK_SLOT_BYTES = 5u;
+constexpr uint32_t MAX_THREAD_VALUE_SLOTS = MAIN_RAM_SIZE / THREAD_STACK_SLOT_BYTES;
+
 // Fixed CPU stack backing is not driven by the ordinary data or fetch bus.
 constexpr uint32_t CPU_FIXED_FRAME_OFFSET = 0x880u;
 constexpr uint32_t CPU_FIXED_VALUE_OFFSET = 0x1000u;
@@ -52,7 +56,7 @@ constexpr uint32_t CPU_FIXED_VALUE_COUNT = 384u;
 constexpr uint32_t CPU_FIXED_STACK_BASE = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
 constexpr uint32_t CPU_FIXED_FRAME_ADDRESS = CPU_FIXED_STACK_BASE + CPU_FIXED_FRAME_OFFSET;
 constexpr uint32_t CPU_FIXED_VALUE_ADDRESS = CPU_FIXED_STACK_BASE + CPU_FIXED_VALUE_OFFSET;
-constexpr uint32_t CPU_FIXED_VALUE_END = CPU_FIXED_VALUE_ADDRESS + CPU_FIXED_VALUE_COUNT * 5u;
+constexpr uint32_t CPU_FIXED_VALUE_END = CPU_FIXED_VALUE_ADDRESS + CPU_FIXED_VALUE_COUNT * THREAD_STACK_SLOT_BYTES;
 constexpr uint32_t CPU_RESET_BANK_ADDRESS = 0x083fd880u;
 constexpr uint32_t CPU_RESET_BANK_END = CPU_RESET_BANK_ADDRESS + 0x50u;
 constexpr uint32_t CPU_INTERRUPTED_CONTEXT_ADDRESS = CPU_RESET_BANK_END;

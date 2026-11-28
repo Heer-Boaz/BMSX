@@ -1343,12 +1343,16 @@ bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode
 		const u32 width = registers.payload(b + 1);
 		const u32 top = registers.payload(b + 2);
 		const auto capacity = registers.size();
-		if (offset > capacity || width > capacity - offset || top > width) {
+		if (offset > capacity || top > capacity - offset || top > width) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
 		}
 		const u32 base = frame.stackBase() + offset;
 		const u32 end = base + width;
+		if (end < base || end > MAX_THREAD_VALUE_SLOTS) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
 		if (!thread.frameSpaceFits(end)) {
 			if (resetBankSelected()) enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			else enterRegisterWindowException(frame, end, static_cast<u32>(thread.frameDepth()) + 2u, OpCode::JREG, a);

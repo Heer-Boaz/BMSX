@@ -26,15 +26,16 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const word = INSTRUCTION_BYTES;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const outputs = [valueInteger(42), valueBool(true)];
+const childWidth = 12;
 
 function assemble() {
 	const instructions: [OpCode, number, number, number][] = [
 		[OpCode.LOADK, 6, 0, 0],
-		[OpCode.KSMI, 7, 0, 2], [OpCode.KSMI, 8, 0, 4], [OpCode.KSMI, 9, 0, 2],
+		[OpCode.KSMI, 7, 0, 2], [OpCode.KSMI, 8, 0, childWidth], [OpCode.KSMI, 9, 0, 2],
 		[OpCode.KSMI, 2, 0, 19], [OpCode.KSMI, 3, 0, 23],
 		[OpCode.JREG, 6, 7, RegisterJumpMode.EnterWindow],
 		[OpCode.RET, 2, 3, 0],
-		[OpCode.ADD, 0, 0, 1], [OpCode.KTRUE, 1, 0, 0],
+		[OpCode.ADD, childWidth - 1, 0, 1], [OpCode.MOV, 0, childWidth - 1, 0], [OpCode.KTRUE, 1, 0, 0],
 		[OpCode.JREG, 63, 2, RegisterJumpMode.LeaveWindow],
 		[OpCode.RFE, 0, 0, 0],
 	];
@@ -43,8 +44,8 @@ function assemble() {
 	const { romBytes, image } = linkRawTestSystemBlua32({ text, constants: [integerConstant(0)],
 		verifiedControlFlow: true, irqFunctionIndex: 2, exceptionFunctionIndex: 2, functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 10 },
-			{ firstWord: 8, wordCount: 3, maxStack: 4 },
-			{ firstWord: 11, wordCount: 1, maxStack: 0 },
+			{ firstWord: 8, wordCount: 4, maxStack: childWidth },
+			{ firstWord: 12, wordCount: 1, maxStack: 0 },
 		] });
 	const [parent, child, irq] = image.functions;
 	const targetConstant = image.header.constantTableAddress + BLUA32_CONSTANT_PAYLOAD_OFFSET;
@@ -58,7 +59,7 @@ function boot(rom: Uint8Array) {
 	return runtime;
 }
 
-test('bare ROM borrows a value window and restores its physical continuation across IRQ and cross-core save', t => {
+test('bare ROM shares the live prefix of a wider window across IRQ, rewind and cross-core save', t => {
 	const { parent, child, irq, romBytes } = assemble();
 	const runtime = boot(romBytes);
 	const { cpu, memory, scheduler } = runtime.machine;
@@ -97,7 +98,8 @@ test('bare ROM borrows a value window and restores its physical continuation acr
 	const childFrame = thread.currentFrame!;
 	assert.equal(cpu.readFrameFunctionAddress(1), 0);
 	assert.equal(childFrame.stackBase, parentFrame.stackBase + 2);
-	assert.equal(childFrame.stackCapacity, 4);
+	assert.equal(childFrame.stackCapacity, childWidth);
+	assert.ok(childFrame.stackBase + childFrame.stackCapacity > parentFrame.stackBase + parentFrame.stackCapacity);
 	assert.equal(childFrame.top, 2);
 	assert.equal(cpu.readFramePc(0), parent.codeAddress + 7 * word);
 	assert.deepEqual(memory.ramData().subarray(payload, payload + 5 * slots), valuesBefore);
@@ -118,6 +120,7 @@ test('bare ROM borrows a value window and restores its physical continuation acr
 		step(OpCode.RFE);
 		pc(2, child.codeAddress);
 		step(OpCode.ADD);
+		step(OpCode.MOV);
 		step(OpCode.KTRUE);
 		step(OpCode.JREG);
 		pc(1, parent.codeAddress + 7 * word);
@@ -151,10 +154,11 @@ test('bare ROM borrows a value window and restores its physical continuation acr
 
 test('window transfer takes a precise architectural exception before changing the window', () => {
 	const { parent, child, irq, romBytes, targetConstant } = assemble();
-	for (const fault of ['target', 'extent', 'underflow'] as const) {
+	for (const fault of ['target', 'prefix', 'width', 'underflow'] as const) {
 		const rom = romBytes.slice(), issue = parent.codeAddress + 6 * word;
 		if (fault === 'target') writeLE32(rom, targetConstant, child.codeAddress + 2);
-		if (fault === 'target' || fault === 'extent') writeInstruction(rom, parent.codeAddress / word + 2, OpCode.KSMI, 8, 0, 17);
+		if (fault === 'prefix') writeInstruction(rom, parent.codeAddress / word + 3, OpCode.KSMI, 9, 0, 9);
+		if (fault === 'width') writeInstruction(rom, parent.codeAddress / word + 2, OpCode.BNOT, 8, 7, 0);
 		if (fault === 'underflow') writeInstruction(rom, issue / word, OpCode.JREG, 63, 0, RegisterJumpMode.LeaveWindow);
 		const { cpu, scheduler } = boot(rom).machine;
 		scheduler.runCpuSlice(0, 12, undefined, CpuRunKind.Scheduled);

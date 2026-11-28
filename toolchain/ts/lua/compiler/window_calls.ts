@@ -172,7 +172,9 @@ function fixedTopRegister(wanted: number, callee: WindowLayout): number {
 function callWindowEnd(base: number, wanted: number, call: WindowCall): number {
 	const { callee } = call;
 	const adaptedEnd = Math.max(fixedTopRegister(wanted, callee) + 1, wanted);
-	return Math.max(base + Math.max(callee.width, adaptedEnd), controlPacketBase(base, call) + RAW_WINDOW_CONTROL_WORDS);
+	// The child owns its local capacity after entry. The caller includes
+	// only the outgoing initialized prefix, controls and returned values.
+	return Math.max(base + Math.max(callee.max, adaptedEnd), controlPacketBase(base, call) + RAW_WINDOW_CONTROL_WORDS);
 }
 
 function windowFitsAt(base: number, wanted: number, call: WindowCall): boolean {
@@ -481,9 +483,8 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		return bounds;
 	}
 
-	// A local frame footprint does not include its descendants. Certify the
-	// graph bottom-up so each lent view includes all its nested packets and
-	// windows, measured from its rebased register A.
+	// Certify the acyclic call graph bottom-up, but size each physical view
+	// from its own instructions and outgoing transfer registers only.
 	const windows = new Map<number, WindowLayout>();
 	components: for (const component of stronglyConnectedComponents(candidates.values())) {
 		const candidate = component[0], { complete, protoIndex, returns, dependencies } = candidate;
@@ -535,7 +536,7 @@ export function lowerWindowCalls(bodies: readonly Body[], staticProtos: Readonly
 		windows.set(protoIndex, window);
 	}
 	// A producer can have a finite result shape but still fail to acquire a
-	// raw body (e.g. a wider nested extent). Open input needs its physical
+	// raw body (e.g. outgoing controls do not encode). Open input needs its physical
 	// initialized suffix; drop that consumer and every dependent raw body.
 	const dependents = new Map<number, number[]>(), unavailable: number[] = [];
 	function requireWindow(owner: number, target: number): void {

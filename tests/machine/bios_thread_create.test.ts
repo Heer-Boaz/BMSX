@@ -12,8 +12,8 @@ import { CpuRunKind, RunResult, type CPU } from '../../machine/ts/machine/cpu/cp
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
-import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';

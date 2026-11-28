@@ -9,9 +9,8 @@ import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_i
 import { planRegionRegisters } from './compiled_register_plan';
 import { CompiledExitWriteBacks } from './compiled_block_registers';
 import { luaPow } from '../../spec/blua32/pow';
-import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE, THREAD_STACK_SLOT_BYTES } from '../../spec/bmsx/memory_map';
 import { VALUE_MEMORY_TAG_OFFSET } from '../../spec/blua32/memory_access_kind';
-import { THREAD_STACK_SLOT_BYTES } from './thread_record';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
 

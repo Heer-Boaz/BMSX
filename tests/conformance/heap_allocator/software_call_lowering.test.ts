@@ -10,6 +10,7 @@ import { valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../..
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, RegisterJumpMode, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
@@ -378,4 +379,51 @@ return c0, p0, q0, r0, s0, c3, p3, q3, r3, s3, n0, a0, b0, d0, e0, n1, a1, b1, d
 	writeFileSync(trace, commands.join('\n'));
 	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	assert.deepEqual(execFileSync(native, [rom, trace, trace], { encoding: 'utf8' }).trim().split('\n'), observations);
+});
+
+test('a software call grows the thread backing without widening the caller', () => {
+	const path = 'window/footprint';
+	const locals = Array.from({ length: 180 }, (_, i) => `term${i}`);
+	const linked = linkManagedTestSystem(`
+local window<const> = require('${path}')
+local x = window.wide(31)
+return x + 1
+`, 3, [{ path, source: `module<const>
+local wide<const> = function(seed)
+	${locals.map((name, i) => `local ${name} = seed + ${i}`).join('\n')}
+	return ${locals.join(' + ')}
+end
+return { wide = wide }
+` }]);
+	const { layout, symbols } = linked;
+	const caller = layout.functions[symbols.metadata.functionIds.indexOf('module:main/entry')];
+	const callee = layout.functions[symbols.metadata.functionIds.findIndex(id => id.endsWith('__wide'))];
+	assert.ok(callee.maxStack > caller.maxStack, 'the caller reserves only its local lanes and outgoing live values');
+	let issue = caller.codeAddress;
+	while (issue < caller.codeAddress + caller.codeByteCount) {
+		const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, issue);
+		if (row.op === OpCode.JREG && row.c === RegisterJumpMode.EnterWindow) break;
+		issue = row.pc + INSTRUCTION_BYTES;
+	}
+	assert.ok(issue < caller.codeAddress + caller.codeByteCount);
+	const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(linked), cartridgeSlots: cartridgeSlots(),
+		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: CpuExecutionBackend.JavaScript },
+	{ sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
+	runtime.boot();
+	const { cpu, scheduler } = runtime.machine;
+	const thread = cpu.rootThread;
+	let fault = false, completed = false;
+	for (let grant = 0; grant < 100_000; ++grant) {
+		const outcome = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		if (cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW && cpu.readEpcWord() === issue) {
+			if (!fault) assert.ok(thread.stackRegisters.capacity() < callee.maxStack);
+			assert.equal(thread.currentFrame!.stackCapacity, caller.maxStack);
+			fault = true;
+		}
+		if (outcome === RunResult.Halted) { completed = true; break; }
+	}
+	assert.ok(fault, 'the ordinary firmware exception grew the physical backing and retried the same register jump');
+	assert.ok(completed);
+	assert.ok(thread.stackRegisters.capacity() >= callee.maxStack);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(180 * 31 + ((179 * 180) >> 1) + 1)]);
 });

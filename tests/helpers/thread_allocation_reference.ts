@@ -6,9 +6,9 @@ import { gcPacedPhase } from './native_heap/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../toolchain/ts/firmware/stock_object_layout';
 import { LuaAllocationRecovery } from './native_heap/lua_heap';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_RECORD_KIND, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { valueClosure, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
-import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/spec/bmsx/memory_map';
 
 export function resizeThreadStackReference(cpu: CPU, thread: Thread, capacity: number): void {
 	const previous = thread.stackRegisters.capacity();
