@@ -37,7 +37,7 @@ public:
 	void beginScope();
 	NativeRowValues advance(const NativeInstruction& instruction, u16 row);
 	NativeValueId slot(NativeSlot slot);
-	NativeValueId current(NativeSlot slot) const;
+	NativeValueId current(int slot) const;
 	NativeValueOrigin origin(NativeValueId value) const { return m_origins[static_cast<u16>(value) - 1u]; }
 
 private:

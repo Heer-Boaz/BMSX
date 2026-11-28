@@ -28,18 +28,19 @@ void NativeTypePropagation::specializeRegion(std::span<NativeIrBlock> blocks,
 		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
 			const size_t target = block.successors[edge];
 			if (target <= index || target >= blocks.size() || (edge != 0 && target == block.successors[0])) continue;
+			const int delta = edge == 0 ? block.basisDelta : 0;
 			auto& range = ranges[target];
 			const size_t start = m_assumptions.size();
 			if (range.received) {
 				for (size_t previous = range.first; previous < range.first + range.count; ++previous) {
 					const auto candidate = m_assumptions[previous].type;
-					const auto fact = type(values.current(candidate.slot));
+					const auto fact = type(values.current(candidate.slot + delta));
 					if (fact && fact->tag == candidate.tag)
 						m_assumptions.push_back({candidate, fact->assumption, static_cast<u32>(previous + 1u)});
 				}
 			} else {
 				uses.forEachEntryRead(target, [&](int slot) {
-					const auto fact = type(values.current(static_cast<NativeSlot>(slot)));
+					const auto fact = type(values.current(slot + delta));
 					if (fact)
 						m_assumptions.push_back({{static_cast<u16>(slot), fact->tag}, fact->assumption});
 				});

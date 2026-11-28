@@ -59,9 +59,10 @@ NativeValueId NativeSlotValues::slot(NativeSlot slot) {
 	return read(*std::ranges::lower_bound(m_slots, slot, {}, &Binding::slot));
 }
 
-NativeValueId NativeSlotValues::current(NativeSlot slot) const {
-	const auto& binding = *std::ranges::lower_bound(m_slots, slot, {}, &Binding::slot);
-	return binding.generation == m_generation ? binding.value : NativeValueId::None;
+NativeValueId NativeSlotValues::current(int slot) const {
+	const auto binding = std::ranges::lower_bound(m_slots, slot, {}, &Binding::slot);
+	return binding != m_slots.end() && binding->slot == slot && binding->generation == m_generation
+		? binding->value : NativeValueId::None;
 }
 
 NativeRowValues NativeSlotValues::advance(const NativeInstruction& instruction, u16 row) {

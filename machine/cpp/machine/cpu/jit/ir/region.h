@@ -64,6 +64,10 @@ struct NativeIrBlock {
 	NativeIrSideExit taken{};
 	// Primary and alternate successors within this region; size() is external.
 	std::array<size_t, 2> successors{};
+	// The primary edge of ADD_BASE sees the same physical slots with a new
+	// logical origin. Other edges keep the source coordinate system.
+	i16 basisDelta = 0;
+	u32 rebasedAdmissionSlots = 0;
 	// Admission at an installed entry has no completed predecessor. A
 	// linked admission keeps the predecessor that already paid its charge.
 	NativeIrReplayId entryReplay{};
@@ -76,7 +80,7 @@ struct NativeIrBlock {
 	std::array<bool, 2> provesSuccessorTypes{};
 	NativeIrExit terminal{};
 	u32 firstPc = 0, sourcePc = 0;
-	// The fixed window this entry and all its same-frame successors use.
+	// The fixed window this entry and its same-basis successors use.
 	u32 requiredSlots = 0;
 	int admissionCycles = 0;
 	u16 sourceWords = 0;

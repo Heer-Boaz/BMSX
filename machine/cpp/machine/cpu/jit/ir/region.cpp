@@ -21,9 +21,8 @@ struct OperationFlow {
 	Flow operator()(const NativeComparison&) const { return Flow::Terminal; }
 	Flow operator()(const NativeReplay&) const { return Flow::LeavesNative; }
 	Flow operator()(const NativeWindowMove& move) const {
-		// A new basis starts a new register analysis. The published native
-		// entry can still be directly linked after the address change.
-		return move.kind == ValueMoveKind::AddBase || move.kind == ValueMoveKind::SetBase ? Flow::LeavesNative : Flow::Linear;
+		if (move.kind == ValueMoveKind::AddBase) return Flow::Checkpoint;
+		return move.kind == ValueMoveKind::SetBase ? Flow::LeavesNative : Flow::Linear;
 	}
 
 	Flow operator()(const NativeTableAccess& op) const { return op.readPlan == NativeTableReadPlan::OwnSlot ? Flow::Linear : Flow::Checkpoint; }
@@ -190,16 +189,18 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 		if (block.completedCall)
 			block.requiredSlots = std::max(block.requiredSlots, block.instructions.back().slots.fixedExtent());
 	}
-	// Only local edges inherit a window. Unrelated functions can share an
-	// executable allocation, and semantic continuations bind a fresh window.
+	// Inherit the window only while its logical origin stays fixed. A rebased
+	// edge admits the new range itself, even around a basis-changing cycle.
 	m_flow.solve([&](size_t index) {
 		auto& block = m_blocks[index];
 		const auto slots = block.requiredSlots;
 		const auto captures = block.requiredCaptures;
-		for (const auto target : block.successors) {
+		for (size_t edge = 0; edge < block.successors.size(); ++edge) {
+			const auto target = block.successors[edge];
 			if (target == m_blocks.size()) continue;
 			const auto& successor = m_blocks[target];
-			block.requiredSlots = std::max(block.requiredSlots, successor.requiredSlots);
+			if (edge != 0 || block.basisDelta == 0)
+				block.requiredSlots = std::max(block.requiredSlots, successor.requiredSlots);
 			block.requiredCaptures = std::max(block.requiredCaptures, successor.requiredCaptures);
 		}
 		return slots != block.requiredSlots || captures != block.requiredCaptures;

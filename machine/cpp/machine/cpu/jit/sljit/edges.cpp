@@ -31,7 +31,7 @@ void NativeLowering::emitPublicEntry(size_t index) {
 	m_cache.setState({});
 	entry.guarded = sljit_emit_label(m_compiler);
 	// Public entries admit their reachable slot window and their own types
-	// before moving registers. Local edges inherit slot admission.
+	// before moving registers. Same-basis local edges inherit slot admission.
 	auto& replay = m_admissionReplays[ir.entryReplay];
 	if (ir.requiredSlots != 0) {
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
@@ -142,6 +142,12 @@ void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, EdgePositi
 			if (completed && successor.admissionCycles != 0)
 				fault(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 					NativeBlockAbi::budget, 0, SLJIT_IMM, successor.admissionCycles), replay, source);
+			if (edge == 0 && block.rebasedAdmissionSlots != 0) {
+				sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state),
+					offsetof(NativeBlockRunState, registerBase), SLJIT_IMM, block.rebasedAdmissionSlots);
+				fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_MEM1(NativeBlockAbi::state),
+					offsetof(NativeBlockRunState, windowWidth), SLJIT_R2, 0), replay, source, Charge::Paid);
+			}
 			if (!block.provesEntryTo(target))
 				for (const auto type : successor.entryTypes)
 					fault(m_cache.guard(type.slot, type.tag, SLJIT_R2), replay, source);

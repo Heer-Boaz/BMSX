@@ -176,6 +176,8 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto& last = operations.back();
 	const auto& final = last.operation;
 	const bool reachesEnd = nativeOperationFlow(final) != NativeOperationFlow::LeavesNative;
+	if (const auto* move = std::get_if<NativeWindowMove>(&final); move && move->kind == ValueMoveKind::AddBase)
+		block.basisDelta = static_cast<i16>(move->b);
 	const auto* call = std::get_if<NativeCallSite>(&final);
 	block.inlineBuiltin = reachesEnd && cpuOwned && call
 		&& static_cast<unsigned>(call->supplied) <= 2u && call->requested <= 1;
@@ -328,7 +330,13 @@ void NativeIrRegion::planAdmissionReplays() {
 			const auto target = block.successors[edge];
 			if (target == m_blocks.size()) continue;
 			const auto& successor = m_blocks[target];
-			if (successor.admissionCycles == 0 && (successor.entryTypes.empty() || block.provesEntryTo(target)))
+			// The source admission already covers a translated successor
+			// range contained within the old high-water bound.
+			if (edge == 0 && block.basisDelta != 0 && successor.requiredSlots != 0
+				&& static_cast<int>(successor.requiredSlots) + block.basisDelta > static_cast<int>(block.requiredSlots))
+				block.rebasedAdmissionSlots = successor.requiredSlots;
+			if ((edge != 0 || block.rebasedAdmissionSlots == 0)
+				&& successor.admissionCycles == 0 && (successor.entryTypes.empty() || block.provesEntryTo(target)))
 				continue;
 			const auto& completed = edge == 0 ? primary : exits[*block.taken];
 			if (edge == 1 && target == block.successors[0]

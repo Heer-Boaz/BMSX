@@ -766,6 +766,92 @@ void exactRebasedLeafGrant() {
 #endif
 }
 
+void exactResidentRebasedEdges() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	constexpr u8 ksmi = static_cast<u8>(OpCode::KSMI), sum = static_cast<u8>(OpCode::ADD);
+	constexpr u8 mov = static_cast<u8>(OpCode::MOV), addBase = static_cast<u8>(ValueMoveKind::AddBase);
+	constexpr u8 jmp = static_cast<u8>(OpCode::JMP);
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(14u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 8},
+		{.firstWord = 8, .wordCount = 4, .maxStack = 8}, {.firstWord = 12, .wordCount = 2}};
+	image.exceptionFunctionIndex = 2;
+	writeInstruction(image.text, 0, ksmi, 1, 0, 19); // This lane goes below the shifted basis.
+	writeInstruction(image.text, 1, ksmi, 4, 0, 17);
+	writeInstruction(image.text, 2, ksmi, 5, 0, 25);
+	writeInstruction(image.text, 3, mov, 0, 2, addBase);
+	writeInstruction(image.text, 4, sum, 0, 2, 3);
+	writeInstruction(image.text, 5, mov, 0, 62, addBase, 56); // Signed -2.
+	writeInstruction(image.text, 6, sum, 0, 1, 2);
+	writeInstruction(image.text, 7, jmp, 0, 63, 63, 255);
+	writeInstruction(image.text, 8, ksmi, 0, 0, 31);
+	writeInstruction(image.text, 9, mov, 0, 6, addBase);
+	writeInstruction(image.text, 10, sum, 0, 1, 2); // The new two-slot window cannot admit R2.
+	writeInstruction(image.text, 11, jmp, 0, 63, 63, 255);
+	writeInstruction(image.text, 12, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 13, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	Machine generated(image, false), scalar(image, true);
+	auto& cpu = generated.cpu;
+	auto& frame = *cpu.rootThread()->frameAtDepth(0);
+	const auto start = generated.rom.textAddress;
+	const auto at = [&](u32 word) { return start + word * INSTRUCTION_BYTES; };
+	cpu.prepareSystemNativeCode();
+	const auto& lookup = *frame.executionImage->nativeCodeLookup;
+	const auto nativeAt = [&](u32 word) -> const NativeBlock& {
+		const auto* page = lookup.find(at(word), 0);
+		require(page && page->nativeBlocks, "the exact-grant fixture has a published native page");
+		const auto& entry = page->nativeBlocks->entries[(at(word) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		require(entry != nullptr, "an AddBase successor remains independently enterable");
+		return *entry;
+	};
+	const auto& initial = nativeAt(0);
+	const auto& shifted = nativeAt(4);
+	require(initial.region == shifted.region && initial.terminal.link.patchAddress == 0
+		&& shifted.terminal.link.patchAddress == 0
+		&& std::ranges::none_of(shifted.sideExits, [](const auto& exit) {
+			return exit.exit == NativeBlockExit::InvalidOperand;
+		}), "both rebases use local edges and relocated integer facts remove the shifted ADD's type exit");
+	const int grant = 3 * BASE_CYCLES[ksmi] + 2 * BASE_CYCLES[mov] + 2 * BASE_CYCLES[sum] + BASE_CYCLES[jmp];
+	require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readFramePc(0) == at(7)
+		&& frame.registerBase() == 0 && frame.readWindow(FrameField::Top) == 6
+		&& frame.registers.get(0) == valueInteger(61) && frame.registers.get(1) == valueInteger(19)
+		&& frame.registers.get(2) == valueInteger(42) && test::sameLanguageRam(cpu, scalar.cpu),
+		"overlapping dirty lanes and the hidden caller lane reconstruct the exact physical planes");
+
+	for (auto* machine : {&generated, &scalar}) {
+		auto& peer = machine->cpu;
+		peer.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], at(3));
+	}
+	require(test::runCpuParity(cpu, scalar.cpu, BASE_CYCLES[mov]) == RunResult::Yielded
+		&& cpu.readFramePc(0) == at(4) && frame.registerBase() == 2,
+		"the public successor can also start at the next exact grant");
+	for (auto* machine : {&generated, &scalar}) {
+		auto& peer = machine->cpu;
+		auto& slots = peer.rootThread()->frameAtDepth(0)->registers;
+		slots.set(2, valueFloat(2.5f));
+		slots.set(3, valueFloat(1.25f));
+	}
+	require(test::runCpuParity(cpu, scalar.cpu, BASE_CYCLES[sum] + BASE_CYCLES[mov]) == RunResult::Yielded
+		&& cpu.readFramePc(0) == at(6) && frame.registerBase() == 0
+		&& frame.registers.get(2) == valueFloat(3.75f) && test::sameLanguageRam(cpu, scalar.cpu),
+		"independent entry does not inherit the rebased predecessor's tag proofs");
+
+	require(nativeAt(8).terminal.link.patchAddress == 0 && nativeAt(8).region == nativeAt(10).region,
+		"the narrowing example tests the local range gate, not an external link");
+	for (auto* machine : {&generated, &scalar}) {
+		auto& peer = machine->cpu;
+		peer.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[1], at(8));
+	}
+	require(test::runCpuParity(cpu, scalar.cpu, BASE_CYCLES[ksmi] + BASE_CYCLES[mov] + BASE_CYCLES[sum]) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readEpcWord() == at(10)
+		&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+		&& frame.registerBase() == 6 && test::sameLanguageRam(cpu, scalar.cpu),
+		"only the successor faults when a retired rebase leaves it insufficient physical slots");
+#endif
+}
+
 void exactPhysicalWindowMoves() {
 	constexpr auto mov = static_cast<u8>(OpCode::MOV);
 	const auto movCycles = BASE_CYCLES[mov];
@@ -1690,7 +1776,7 @@ int main(int argc, char** argv) {
 		const std::string_view scenario(argv[1]);
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
-		else if (scenario == "register-jump") { exactRegisterJumpGrant(); reservedRegisterJumpModes(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); }
+		else if (scenario == "register-jump") { exactRegisterJumpGrant(); reservedRegisterJumpModes(); compileRegisterJumpReceiver(); exactFramelessLeafGrant(); exactRebasedLeafGrant(); exactResidentRebasedEdges(); }
 		else if (scenario == "physical-window-moves") exactPhysicalWindowMoves();
 		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }

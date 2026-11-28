@@ -38,9 +38,13 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks, NativeBa
 	m_entryLive.assign(blocks.size() * m_liveWordCount, 0);
 	if (m_liveWordCount == 0)
 		return;
-	m_localLive.assign(m_entryLive.size() * 2u, 0);
+	const auto hasRebase = std::ranges::any_of(blocks, [&](const NativeIrBlock& block) {
+		return block.basisDelta != 0 && block.successors[0] != blocks.size();
+	});
+	m_localLive.assign(m_entryLive.size() * 2u + (hasRebase ? m_liveWordCount : 0), 0);
 	const auto uses = std::span(m_localLive).first(m_entryLive.size());
-	const auto definitions = std::span(m_localLive).last(m_entryLive.size());
+	const auto definitions = std::span(m_localLive).subspan(m_entryLive.size(), m_entryLive.size());
+	const auto translated = std::span(m_localLive).subspan(m_entryLive.size() * 2u);
 	for (size_t i = 0; i < blocks.size(); ++i) {
 		const size_t base = i * m_liveWordCount;
 		for (const auto& inst : blocks[i].instructions) {
@@ -71,10 +75,27 @@ void NativeRegisterUses::analyze(std::span<const NativeIrBlock> blocks, NativeBa
 
 	flow.solve([&](size_t i) {
 		const auto [left, right] = blocks[i].successors;
+		const int delta = blocks[i].basisDelta;
+		std::span<const u64> primary;
+		if (left != blocks.size()) {
+			primary = std::span(m_entryLive).subspan(left * m_liveWordCount, m_liveWordCount);
+			if (delta != 0) {
+				// The live destination slot j is lane (j + delta) at
+				// the source. Only already tracked lanes can be resident.
+				std::ranges::fill(translated, 0);
+				auto reg = m_entryRegisters.begin();
+				forEachEntryRead(left, [&](int guest) {
+					reg = std::lower_bound(reg, m_entryRegisters.end(), guest + delta);
+					if (reg == m_entryRegisters.end() || *reg != guest + delta) return;
+					const size_t index = reg - m_entryRegisters.begin();
+					translated[index / 64u] |= u64{1} << (index % 64u);
+				});
+				primary = translated;
+			}
+		}
 		bool changed = false;
 		for (size_t word = 0; word < m_liveWordCount; ++word) {
-			u64 liveOut = 0;
-			if (left != blocks.size()) liveOut = m_entryLive[left * m_liveWordCount + word];
+			u64 liveOut = left == blocks.size() ? 0 : primary[word];
 			if (right != blocks.size() && right != left) liveOut |= m_entryLive[right * m_liveWordCount + word];
 			const size_t slot = i * m_liveWordCount + word;
 			const u64 live = uses[slot] | (liveOut & ~definitions[slot]);
