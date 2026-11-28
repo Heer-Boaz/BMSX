@@ -187,7 +187,8 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
 	auto* registerJumpEntry = emitRegisterJumpGate(compiler, returned, SLJIT_FUNC_ADDR(&CPU::retireNativeRegisterJump));
 	auto* enterWindowEntry = emitWindowEnter(compiler, bindWindow, cold);
-	auto* leaveWindowEntry = emitWindowLeave(compiler, bindWindow, cold);
+	auto* leaveWindowEntry = emitWindowLeave(compiler, bindWindow, cold, false);
+	auto* leaveWindowFromRegisterEntry = emitWindowLeave(compiler, bindWindow, cold, true);
 	auto* stringProbe = emitStringReadProbe(compiler);
 	auto* ownSlot = emitOwnStringSlotProbe(compiler);
 	auto* indexProbe = emitIndexReadProbe(compiler);
@@ -207,6 +208,7 @@ NativeBlockGate::NativeBlockGate() {
 	registerJump = reinterpret_cast<void*>(sljit_get_label_addr(registerJumpEntry));
 	enterWindow = reinterpret_cast<void*>(sljit_get_label_addr(enterWindowEntry));
 	leaveWindow = reinterpret_cast<void*>(sljit_get_label_addr(leaveWindowEntry));
+	leaveWindowFromRegister = reinterpret_cast<void*>(sljit_get_label_addr(leaveWindowFromRegisterEntry));
 	stringReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(stringProbe));
 	ownStringSlotProbe = reinterpret_cast<void*>(sljit_get_label_addr(ownSlot));
 	indexReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(indexProbe));
@@ -223,6 +225,7 @@ NativeBlockGate::NativeBlockGate() {
 		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(nativeReturn), sljit_get_label_abs_addr(fixedResidentCall),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave), sljit_get_label_abs_addr(registerJumpEntry),
 		sljit_get_label_abs_addr(enterWindowEntry), sljit_get_label_abs_addr(leaveWindowEntry),
+		sljit_get_label_abs_addr(leaveWindowFromRegisterEntry),
 		sljit_get_label_abs_addr(stringProbe), sljit_get_label_abs_addr(ownSlot),
 		sljit_get_label_abs_addr(indexProbe), sljit_get_label_abs_addr(lengthProbe), sljit_get_label_abs_addr(iteratorScan),
 		start + sljit_get_generated_code_size(compiler)
@@ -232,7 +235,8 @@ NativeBlockGate::NativeBlockGate() {
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
 		"bmsx_native_gate_ret", "bmsx_native_gate_native_return", "bmsx_native_gate_fixed_resident_call",
 		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_gate_register_jump",
-		"bmsx_native_gate_enter_window", "bmsx_native_gate_leave_window", "bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
+		"bmsx_native_gate_enter_window", "bmsx_native_gate_leave_window", "bmsx_native_gate_leave_window_from_register",
+		"bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
 		"bmsx_native_index_read_probe", "bmsx_native_table_length_probe", "bmsx_native_table_iterator_scan"
 	};
 	static_assert(boundaries.size() == names.size() + 1);

@@ -1,6 +1,6 @@
 import { decodeBlua32InstructionAtPc, type DecodedInstruction } from './blua32_instruction_decode';
 import { extractSourceRangeText } from './source_text';
-import { INSTRUCTION_BYTES, RegisterJumpMode, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, ReturnSource, ValueMoveKind, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatInteger } from '../../../machine/ts/common/number_format';
@@ -208,7 +208,13 @@ const buildInstructionOperands = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b), plainOperand('c', 'move kind', formatInteger(c))];
+			switch (c) {
+				case ValueMoveKind.ReadTop: return [registerOperand('a', 'dst', a)];
+				case ValueMoveKind.ReadIndexed: return [registerOperand('a', 'dst', a), registerOperand('b', 'index', b)];
+				case ValueMoveKind.WriteIndexed: return [registerOperand('a', 'index', a), registerOperand('b', 'src', b)];
+				case ValueMoveKind.SetTop: return [registerOperand('b', 'frontier', b)];
+				default: return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b), plainOperand('c', 'move kind', formatInteger(c))];
+			}
 		case OpCode.KNIL:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.KFALSE:
@@ -296,6 +302,7 @@ const buildInstructionOperands = (
 				case RegisterJumpMode.Link: return [registerOperand('a', 'target', a), registerOperand('b', 'link', b)];
 				case RegisterJumpMode.EnterWindow: return [registerOperand('a', 'target', a), plainOperand('b', 'window', `r${b}..r${b + 2}`)];
 				case RegisterJumpMode.LeaveWindow: return [plainOperand('b', 'frontier', b.toString())];
+				case RegisterJumpMode.LeaveWindowFromRegister: return [registerOperand('b', 'frontier', b)];
 				default: return [plainOperand('c', 'reserved mode', c.toString())];
 			}
 		case OpCode.JAL:
@@ -415,7 +422,13 @@ const formatInstruction = (
 	const { op, a, b, c, bx, sbx, pc } = decoded;
 	switch (op) {
 		case OpCode.MOV:
-			return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
+			switch (c) {
+				case ValueMoveKind.ReadTop: return `MOV r${a}, top`;
+				case ValueMoveKind.ReadIndexed: return `MOV r${a}, r[r${b}]`;
+				case ValueMoveKind.WriteIndexed: return `MOV r[r${a}], r${b}`;
+				case ValueMoveKind.SetTop: return `MOV top, r${b}`;
+				default: return `MOV r${a}, r${b}${c === 0 ? "" : `, ${c}`}`;
+			}
 		case OpCode.KNIL:
 			return `KNIL r${a}`;
 		case OpCode.KFALSE:
@@ -509,6 +522,7 @@ const formatInstruction = (
 				case RegisterJumpMode.Link: return `JREG r${a}, r${b}`;
 				case RegisterJumpMode.EnterWindow: return `JREG enter r${a}, r${b}..r${b + 2}`;
 				case RegisterJumpMode.LeaveWindow: return `JREG leave ${b}`;
+				case RegisterJumpMode.LeaveWindowFromRegister: return `JREG leave r${b}`;
 				default: return `JREG (reserved mode ${c})`;
 			}
 		case OpCode.JAL:

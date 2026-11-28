@@ -76,20 +76,21 @@ export function deriveBlua32FixedStack(
 		let valueSlots = width, frames = 1;
 		const last = fn.codeAddress + fn.codeByteCount;
 		const instructions = new Map<number, DecodedInstruction>();
-		let hasRegisterJump = false;
+		let tracksRawWords = false;
 		for (let pc = fn.codeAddress; pc < last;) {
 			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
 			instructions.set(pc, instruction);
-			hasRegisterJump ||= instruction.op === OpCode.JREG;
+			tracksRawWords ||= instruction.op === OpCode.JREG || (instruction.op === OpCode.MOV
+				&& (instruction.c === ValueMoveKind.ReadIndexed || instruction.c === ValueMoveKind.WriteIndexed));
 			pc = instruction.pc + INSTRUCTION_BYTES;
 		}
 
 		// Track a singleton static function record per register. Zero means
 		// no single target proved. Joining divergent edges removes a target.
 		const inputs = new Map<number, Uint32Array>();
-		// An indirect branch can have multiple possible local PCs. A missing
+		// Raw target/index lanes can have several possible words. A missing
 		// fact means some incoming path can supply an unproved word.
-		const branches: RegisterTargets | null = hasRegisterJump ? new Map() : null;
+		const branches: RegisterTargets | null = tracksRawWords ? new Map() : null;
 		const branchInputs = branches === null ? null : new Map<number, RegisterTargets>();
 		const pending: number[] = [];
 		function merge(pc: number, registers: Uint32Array): void {
@@ -136,10 +137,17 @@ export function deriveBlua32FixedStack(
 			const reject = (reason: string): never => {
 				throw new Error(`Fixed-stack ${OPCODE_NAMES[op]} at 0x${pc.toString(16)}: ${reason}.`);
 			};
-			const reads = OPCODE_SCALAR_REGISTER_READS[op], rk = OPCODE_RK_OPERANDS[op];
+			let reads = OPCODE_SCALAR_REGISTER_READS[op];
+			if (op === OpCode.MOV && c === ValueMoveKind.ReadTop || op === OpCode.JREG && c === RegisterJumpMode.LeaveWindow)
+				reads = 0;
+			else if (op === OpCode.MOV && c === ValueMoveKind.WriteIndexed)
+				reads = REGISTER_OPERAND_A | REGISTER_OPERAND_B;
+			else if (op === OpCode.JREG && c === RegisterJumpMode.LeaveWindowFromRegister)
+				reads = REGISTER_OPERAND_B;
+			const rk = OPCODE_RK_OPERANDS[op];
 			const rb = (rk & RK_OPERAND_B) !== 0 ? signExtend(b, rkBitsB) : b;
 			const rc = (rk & RK_OPERAND_C) !== 0 ? signExtend(c, rkBitsC) : c;
-			if (((reads & REGISTER_OPERAND_A) !== 0 && a >= width && (op !== OpCode.JREG || c !== RegisterJumpMode.LeaveWindow))
+			if (((reads & REGISTER_OPERAND_A) !== 0 && a >= width)
 				|| ((reads & REGISTER_OPERAND_B) !== 0 && rb >= width)
 				|| ((reads & REGISTER_OPERAND_C) !== 0 && rc >= width))
 				reject('operand exceeds the function record');
@@ -211,28 +219,48 @@ export function deriveBlua32FixedStack(
 						reject('not a bounded direct-vector control write');
 					}
 					break;
-				case OpCode.MOV:
+				case OpCode.MOV: {
+					if (c === ValueMoveKind.SetTop) break;
+					if (c === ValueMoveKind.WriteIndexed) {
+						const targets = branches!.get(a);
+						if (targets === undefined) {
+							registers.fill(0);
+							branches!.clear();
+						} else for (const slot of targets) {
+							if (slot >= width) continue;
+							const source = targets.length === 1 ? branches!.get(b) : undefined;
+							registers[slot] = targets.length === 1 ? registers[b] : 0;
+							if (source === undefined) branches!.delete(slot);
+							else branches!.set(slot, source);
+						}
+						break;
+					}
 					if (a >= width) reject('destination exceeds the function record');
-					if (c === ValueMoveKind.Copy) {
-						registers[a] = registers[b];
+					const indexed = c === ValueMoveKind.ReadIndexed ? branches!.get(b) : undefined;
+					const sourceRegister = c === ValueMoveKind.Copy ? b : indexed?.length === 1 && indexed[0] < width ? indexed[0] : -1;
+					if (sourceRegister >= 0) {
+						registers[a] = registers[sourceRegister];
 						if (branches !== null) {
-							const source = branches.get(b);
+							const source = branches.get(sourceRegister);
 							if (source === undefined) branches.delete(a);
 							else branches.set(a, source);
 						}
-					} else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits) {
+					} else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits
+						|| c === ValueMoveKind.ReadTop || c === ValueMoveKind.ReadIndexed) {
 						registers[a] = 0;
 						branches?.delete(a);
 					} else reject('invalid register move format');
 					break;
+				}
 				case OpCode.LOADNIL:
 					if (a + b > width) reject('nil window exceeds the function record');
 					registers.fill(0, a, a + b);
 					if (branches !== null) for (let register = a; register < a + b; ++register) branches.delete(register);
 					break;
 				case OpCode.JREG: {
-					if (c === RegisterJumpMode.LeaveWindow) {
-						if (!borrowed || b > width) reject('requires an active borrowed window and a contained frontier');
+					if (c === RegisterJumpMode.LeaveWindow || c === RegisterJumpMode.LeaveWindowFromRegister) {
+						if (!borrowed || (c === RegisterJumpMode.LeaveWindow && b > width))
+							reject('requires an active borrowed window and a contained frontier');
 						continue;
 					}
 					if (c === RegisterJumpMode.EnterWindow) {

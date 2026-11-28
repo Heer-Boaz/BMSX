@@ -41,6 +41,7 @@ enum class NativeBlockExit : u8 {
 	SupervisorCall,
 	RegisterJump,
 	RegisterWindowTransfer,
+	ReservedInstruction,
 	Count,
 };
 

@@ -4,7 +4,7 @@ import { writeLE32 } from '../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import {
 	BASE_OPERAND_BC_BITS, INSTRUCTION_BYTES,
-	MAX_LOW_OPERAND, MAX_OPERAND_BITS, ValueMoveKind, writeInstruction,
+	MAX_LOW_OPERAND, MAX_OPERAND_BITS, RegisterJumpMode, ValueMoveKind, writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -121,9 +121,48 @@ test('fixed stack uses ordinary bus formats and permits the issuing context only
 });
 
 test('fixed stack admits the ordinary scalar moves', () => {
-	for (const kind of [ValueMoveKind.Copy, ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits, ValueMoveKind.Tag])
+	for (const kind of [ValueMoveKind.Copy, ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits, ValueMoveKind.Tag,
+		ValueMoveKind.ReadIndexed, ValueMoveKind.WriteIndexed, ValueMoveKind.SetTop])
 		assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, kind), [0]), { valueSlots: 2, frames: 1 });
-	assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, 4), [0]), /invalid register move format/);
+	assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 63, ValueMoveKind.ReadTop), [0]), { valueSlots: 2, frames: 1 });
+	assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, ValueMoveKind.SetTop + 1), [0]), /invalid register move format/);
+});
+
+test('indexed transfers preserve proved targets only when their physical lanes are known', () => {
+	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 2);
+	writeInstruction(text, 2, OpCode.MOV, 1, 0, ValueMoveKind.WriteIndexed);
+	writeInstruction(text, 3, OpCode.MOV, 3, 1, ValueMoveKind.ReadIndexed);
+	writeInstruction(text, 4, OpCode.MOV, 63, 1, ValueMoveKind.SetTop);
+	writeInstruction(text, 5, OpCode.JREG, 3, 0, RegisterJumpMode.Jump);
+	writeInstruction(text, 6, OpCode.RET, 0, 1, 0);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: [integerConstant(0)],
+		functions: [{ firstWord: 0, wordCount: 7, maxStack: 4 }] });
+	writeLE32(image.bytes, image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET,
+		image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES);
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 4, frames: 1 });
+	writeInstruction(image.textBytes, 1, OpCode.MOV, 1, 63, ValueMoveKind.ReadTop);
+	writeInstruction(image.textBytes, 5, OpCode.JREG, 0, 0, RegisterJumpMode.Jump);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no finite local target/);
+});
+
+test('fixed stack permits a register-supplied frontier only when leaving a borrowed window', () => {
+	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 1);
+	writeInstruction(text, 2, OpCode.KSMI, 2, 0, 4);
+	writeInstruction(text, 3, OpCode.KSMI, 3, 0, 2);
+	writeInstruction(text, 4, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 6, OpCode.JREG, 63, 1, RegisterJumpMode.LeaveWindowFromRegister);
+	const { image } = linkRawTestSystemBlua32({ text, verifiedControlFlow: true, constants: [integerConstant(0)],
+		functions: [{ firstWord: 0, wordCount: 6, maxStack: 5 }, { firstWord: 6, wordCount: 1, maxStack: 4 }] });
+	writeLE32(image.bytes, image.header.constantTableAddress - image.address + BLUA32_CONSTANT_PAYLOAD_OFFSET, image.functions[1].codeAddress);
+	assert.deepEqual(deriveBlua32FixedStack(image, [0]), { valueSlots: 5, frames: 2 });
+	assert.throws(() => deriveBlua32FixedStack(image, [1]), /active borrowed window/);
+	writeInstruction(image.textBytes, 6, OpCode.JREG, 63, 4, RegisterJumpMode.LeaveWindowFromRegister);
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /operand exceeds the function record/);
 });
 
 test('an ordinary vector inspecting a tag does not retain a callable proof', () => {

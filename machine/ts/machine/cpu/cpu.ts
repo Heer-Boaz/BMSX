@@ -1918,12 +1918,18 @@ export class CPU implements MappedPageInvalidator {
 			thread.enterFrame(child);
 			return true;
 		}
-		const parent = frame.previous;
-		if (parent === null || frame.isExceptionFrame || b > capacity) {
+		const indirect = mode === RegisterJumpMode.LeaveWindowFromRegister;
+		if (indirect && b >= capacity) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
 		}
-		const top = (frame.stackBase + b - parent.stackBase) >>> 0;
+		const frontier = indirect ? registers.getPayload(b) : b;
+		const parent = frame.previous;
+		if (parent === null || frame.isExceptionFrame || frontier > capacity) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		const top = (frame.stackBase + frontier - parent.stackBase) >>> 0;
 		if (top > parent.registers.capacity()) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return false;
@@ -3101,6 +3107,9 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.InstructionAddressFault:
 					this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, run.effectiveAddress);
 					redispatch = true; break;
+				case CompiledBlockExit.ReservedInstruction:
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					redispatch = true; break;
 				case CompiledBlockExit.Halt: this.haltUntilIrq(); redispatch = true; break;
 				case CompiledBlockExit.ControlFault:
 					if (exit.page.ops[exit.exitWord] === OpCode.MFC0 && exit.exitB === COP0_EVENT_CYCLES)
@@ -3238,6 +3247,10 @@ export class CPU implements MappedPageInvalidator {
 			switch (op) {
 				// Mode and selector faults precede these register operands.
 				case OpCode.MFC0: case OpCode.MTC0: break;
+				case OpCode.MOV:
+					if (page.c[pageOffset] <= ValueMoveKind.Tag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					return;
 				// F64LE bills its format before it reads a register.
 				case OpCode.LOAD_MEM: case OpCode.STORE_MEM: case OpCode.LOAD_MEM_D: case OpCode.STORE_MEM_D:
 					if (page.c[pageOffset] === MemoryAccessKind.F64LE) this.instructionBudgetRemaining -= 2;
@@ -3280,6 +3293,15 @@ export class CPU implements MappedPageInvalidator {
 						const sourceTag = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
 						if (registers.getTag(b) !== sourceTag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 						this.setRegisterValueFast(frame, registers, a, valueFromTag(kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float, registers.getPayload(b)));
+					} else if (kind === ValueMoveKind.ReadTop) this.setRegisterIntegerFast(frame, registers, a, frame.top);
+					else if (kind === ValueMoveKind.ReadIndexed || kind === ValueMoveKind.WriteIndexed) {
+						const reading = kind === ValueMoveKind.ReadIndexed, index = registers.getPayload(reading ? b : a);
+						if (index >= registers.capacity()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						else this.copyRegisterFast(frame, registers, reading ? a : index, reading ? index : b);
+					} else if (kind === ValueMoveKind.SetTop) {
+						const top = registers.getPayload(b);
+						if (top > registers.capacity()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						else frame.top = top;
 					} else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
 				}
@@ -3377,7 +3399,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.JREG: {
 					const mode = page.c[pageOffset];
 					if (mode > RegisterJumpMode.Link) {
-						if (mode <= RegisterJumpMode.LeaveWindow) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
+						if (mode <= RegisterJumpMode.LeaveWindowFromRegister) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
 						else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 						return;
 					}

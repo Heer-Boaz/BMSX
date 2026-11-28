@@ -19,6 +19,34 @@ DISPATCH_LABEL(MOV) {
 		if (valueTag(value) != source) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		SET_REGISTER_FAST(a, valueFromTag(kind == ValueMoveKind::FloatBits ? ValueTag::Integer : ValueTag::Float, valuePayload(value)));
 	} else {
+		const auto& registers = FRAME.registers;
+		if (kind == ValueMoveKind::ReadTop && registers.containsRange(a, 1)) {
+			const int before = Instrumented ? FRAME.readWindow(FrameField::Top) : registerTop;
+			SET_REGISTER_FAST(a, valueInteger(before));
+			DISPATCH_NEXT();
+		}
+		if (kind == ValueMoveKind::ReadIndexed && registers.containsRange(a, 1) && registers.containsRange(b, 1)) {
+			const u32 source = registers.payload(b);
+			if (source < registers.size()) {
+				SET_REGISTER_FAST(a, registers.get(source));
+				DISPATCH_NEXT();
+			}
+		}
+		if (kind == ValueMoveKind::WriteIndexed && registers.containsRange(a, 1) && registers.containsRange(b, 1)) {
+			const u32 destination = registers.payload(a);
+			if (destination < registers.size()) {
+				SET_REGISTER_FAST(destination, registers.get(b));
+				DISPATCH_NEXT();
+			}
+		}
+		if (kind == ValueMoveKind::SetTop && registers.containsRange(b, 1)) {
+			const u32 top = registers.payload(b);
+			if (top <= registers.size()) {
+				if constexpr (Instrumented) FRAME.setTop(static_cast<int>(top));
+				else registerTop = static_cast<int>(top);
+				DISPATCH_NEXT();
+			}
+		}
 		PUBLISH_SCALAR_FRONTIER();
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		DISPATCH_CONTINUE();
@@ -459,7 +487,7 @@ DISPATCH_LABEL(JMP) {
 DISPATCH_LABEL(JREG) {
 	if (decoded->c > static_cast<int>(RegisterJumpMode::Link)) {
 		PUBLISH_SCALAR_FRONTIER();
-		if (decoded->c > static_cast<int>(RegisterJumpMode::LeaveWindow))
+		if (decoded->c > static_cast<int>(RegisterJumpMode::LeaveWindowFromRegister))
 			enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		else if (executeWindowTransfer(FRAME, decoded->a, decoded->b, static_cast<RegisterJumpMode>(decoded->c)))
 			DISPATCH_REBIND_FRAME();

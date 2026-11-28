@@ -9,7 +9,7 @@ import { emitMemoryAccess, emitValueMemoryAccess, emitWordStores } from './compi
 import { JavaScriptRegisterCache, type CompiledExitWriteBacks } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
-import { compiledContextSupports, emitContext } from './compiled_block_context';
+import { compiledContextSupports, emitContext, emitWindowMove } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
 import { COP0_STATUS, COP0_RAM_END, COP0_EVENT_CYCLES, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
@@ -57,6 +57,7 @@ export const enum CompiledBlockExit {
 	IndirectJump,
 	InstructionAddressFault,
 	RegisterWindowJump,
+	ReservedInstruction,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -162,8 +163,8 @@ emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.Tag || op === OpCode.JMP && a !== 0
-		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.LeaveWindow) return false;
+	if (op === OpCode.MOV && c > ValueMoveKind.SetTop || op === OpCode.JMP && a !== 0
+		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.LeaveWindowFromRegister) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -273,8 +274,18 @@ export function emitJavaScriptBlock(
 		const control = compiledControlSupports(op);
 		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
 		const windowJump = op === OpCode.JREG && page.c[word] > RegisterJumpMode.Link;
-		const sideExit = windowJump || (control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]))
-			? undefined : sideExitKinds[op];
+		const moveKind = page.c[word];
+		const windowMove = op === OpCode.MOV && moveKind > ValueMoveKind.Tag;
+		if (windowMove) {
+			// These moves observe or set the exact frontier before the instruction.
+			if (resetsRegisterTop) source.push(`T=Math.max(F.top,${registerTop});`);
+			else if (registerTop !== 0) source.push(`if(T<${registerTop})T=${registerTop};`);
+			registerTop = 0;
+			resetsRegisterTop = false;
+		}
+		const sideExit = windowMove && moveKind !== ValueMoveKind.ReadTop ? CompiledBlockExit.ReservedInstruction
+			: windowJump || (control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]))
+				? undefined : sideExitKinds[op];
 		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
@@ -296,7 +307,9 @@ export function emitJavaScriptBlock(
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 			numericFault = registers.exit(faultIndex);
 		}
-		if (bitMove) {
+		if (windowMove) {
+			source.push(emitWindowMove(moveKind, page.a[word], page.b[word], registers, exitIndex));
+		} else if (bitMove) {
 			const b = page.b[word], kind = page.c[word];
 			const from = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
 			const to = kind === ValueMoveKind.FloatBits ? ValueTag.Integer : ValueTag.Float;
@@ -342,7 +355,9 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.LOADNIL) cycles += page.b[word];
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
-		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
+		if (windowMove) {
+			if (moveKind === ValueMoveKind.ReadTop || moveKind === ValueMoveKind.ReadIndexed) registerTop = page.a[word] + 1;
+		} else if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.JAL) registerTop = Math.max(registerTop, page.a[word] + 1);
 		else if (op === OpCode.JREG && page.c[word] === RegisterJumpMode.Link) registerTop = Math.max(registerTop, page.b[word] + 1);
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {

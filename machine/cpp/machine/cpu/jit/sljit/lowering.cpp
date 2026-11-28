@@ -183,6 +183,45 @@ void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeI
 	sljit_emit_fcopy(m_compiler, required == ValueTag::Float ? SLJIT_COPY32_FROM_F32 : SLJIT_COPY32_TO_F32,
 		required == ValueTag::Float ? source.reg : target.reg, required == ValueTag::Float ? target.reg : source.reg);
 }
+
+void NativeLowering::lowerOperation(const NativeWindowMove& move, const NativeInstruction& row) {
+	auto* c = m_compiler;
+	constexpr auto state = NativeBlockAbi::state, words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
+	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+	constexpr auto capacity = offsetof(NativeBlockRunState, registerCapacity);
+	if (move.kind == ValueMoveKind::ReadTop) {
+		emitTop(move.prefixTop);
+		const auto result = m_cache.write(move.a, ValueTag::Integer);
+		sljit_emit_op1(c, SLJIT_MOV32, result.reg, 0, SLJIT_MEM1(state), top);
+		return;
+	}
+	const bool indexedWrite = move.kind == ValueMoveKind::WriteIndexed;
+	const bool setsTop = move.kind == ValueMoveKind::SetTop;
+	// A dynamic source may alias any cached lane. Writes also invalidate
+	// the physical identity of any cached destination after sampling both inputs.
+	if (!setsTop) m_cache.publish();
+	emitPayload(indexedWrite ? move.a : move.b, SLJIT_R2);
+	fault(sljit_emit_cmp(c, (setsTop ? SLJIT_GREATER : SLJIT_GREATER_EQUAL) | SLJIT_32,
+		SLJIT_R2, 0, SLJIT_MEM1(state), capacity), *sideExit(row.slow), m_cache.state());
+	if (setsTop) {
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R2, 0);
+	} else if (indexedWrite) {
+		emitRawLoad(move.b, SLJIT_R0, SLJIT_R1);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM2(words, SLJIT_R2), 2, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM2(tags, SLJIT_R2), 0, SLJIT_R1, 0);
+		m_cache.discardRange(0, std::numeric_limits<int>::max());
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+		auto* retained = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32,
+			SLJIT_MEM1(state), top, SLJIT_R2, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), top, SLJIT_R2, 0);
+		sljit_set_label(retained, sljit_emit_label(c));
+	} else {
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM2(words, SLJIT_R2), 2);
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(tags, SLJIT_R2), 0);
+		emitRawStore(move.a, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, move.a));
+	}
+}
+
 void NativeLowering::lowerOperation(const NativeNot& instruction, const NativeInstruction&) {
 	if (instruction.sourceTruthy)
 		emitConstant(instruction.result, valueBool(!*instruction.sourceTruthy));

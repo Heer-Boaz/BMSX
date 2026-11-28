@@ -14,6 +14,8 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 		switch (static_cast<ValueMoveKind>(c)) {
 		case ValueMoveKind::Copy: case ValueMoveKind::FloatBits: case ValueMoveKind::FloatFromBits: case ValueMoveKind::Tag:
 			return NativeMove{a, b, static_cast<ValueMoveKind>(c)};
+		case ValueMoveKind::ReadTop: case ValueMoveKind::ReadIndexed: case ValueMoveKind::WriteIndexed: case ValueMoveKind::SetTop:
+			return NativeWindowMove{a, static_cast<u16>(b), static_cast<ValueMoveKind>(c)};
 		}
 		return NativeReplay{};
 

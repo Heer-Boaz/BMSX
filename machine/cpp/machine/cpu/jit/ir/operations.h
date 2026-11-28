@@ -79,8 +79,11 @@ struct NativeRegisterJump : NativeExitOperands::RegisterJump {
 struct NativeRegisterWindowTransfer : NativeExitOperands::RegisterWindowTransfer {
 	static constexpr auto terminalExit = NativeBlockExit::RegisterWindowTransfer;
 	constexpr NativeSlotAccess slots() const {
-		return mode == RegisterJumpMode::EnterWindow ? NativeSlotAccess{.reads = {static_cast<i16>(a), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND},
-			.readsRange = {b, 3}} : NativeSlotAccess{};
+		if (mode == RegisterJumpMode::EnterWindow)
+			return {.reads = {static_cast<i16>(a), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, .readsRange = {b, 3}};
+		if (mode == RegisterJumpMode::LeaveWindowFromRegister)
+			return {.reads = {static_cast<i16>(b), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
+		return {};
 	}
 };
 struct NativeHalt {
@@ -124,6 +127,22 @@ struct NativeMove {
 	std::optional<ValueTag> sourceTag{};
 	NativeTagCheck conversionCheck = NativeTagCheck::Dynamic;
 	constexpr NativeSlotAccess slots() const { return {{source, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
+};
+struct NativeWindowMove {
+	NativeSlot a, b;
+	ValueMoveKind kind;
+	int prefixTop = 0;
+	constexpr NativeSlotAccess slots() const {
+		constexpr auto none = NATIVE_NO_OPERAND;
+		const auto left = static_cast<NativeValueRef>(a), right = static_cast<NativeValueRef>(b);
+		switch (kind) {
+		case ValueMoveKind::ReadTop: return {.writes = {a, 1}};
+		case ValueMoveKind::ReadIndexed: return {{right, none, none}, {a, 1}, {.open = true}};
+		case ValueMoveKind::WriteIndexed: return {{left, right, none}, {.open = true}};
+		case ValueMoveKind::SetTop: return {{right, none, none}};
+		default: BMSX_UNREACHABLE();
+		}
+	}
 };
 struct NativeNot {
 	NativeSlot result;
@@ -308,7 +327,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 
 using NativeOperation = std::variant<
 	NativeReplay, NativeJump, NativeRegisterJump, NativeRegisterWindowTransfer, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
-	NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
+	NativeLiteral, NativeConstantLoad, NativeMove, NativeWindowMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;
 

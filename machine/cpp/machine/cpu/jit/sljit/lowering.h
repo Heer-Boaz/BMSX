@@ -46,6 +46,7 @@ private:
 	void lowerOperation(const NativeLiteral&, const NativeInstruction&);
 	void lowerOperation(const NativeConstantLoad&, const NativeInstruction&);
 	void lowerOperation(const NativeMove&, const NativeInstruction&);
+	void lowerOperation(const NativeWindowMove&, const NativeInstruction&);
 	void lowerOperation(const NativeNot&, const NativeInstruction&);
 	void lowerOperation(const NativeClearSlots&, const NativeInstruction&);
 	void lowerOperation(const NativeArithmetic&, const NativeInstruction&);

@@ -1856,7 +1856,7 @@ void reservedMoveKindIgnoresUnusedRegisterOperands() {
 	for (const bool instrumented : {false, true}) {
 		auto image = returnImage();
 		image.text.resize(INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 15, 14, 4);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 15, 14, 8);
 		image.functions[0].wordCount = 1;
 		image.functions[0].maxStack = 1;
 		CpuMachine machine(image);

@@ -23,6 +23,9 @@ struct NativeCheckedExit {
 			&& move.conversionCheck == NativeTagCheck::Dynamic
 			? NativeExitPlan{NativeBlockExit::InvalidOperand} : NativeExitPlan{};
 	}
+	NativeExitPlan operator()(const NativeWindowMove& move) const {
+		return move.kind == ValueMoveKind::ReadTop ? NativeExitPlan{} : NativeExitPlan{NativeBlockExit::ReservedInstruction};
+	}
 
 	NativeExitPlan operator()(const NativeArithmetic& op) const {
 		switch (std::get<NativeNumericPlan>(op.strategy).action) {
@@ -217,6 +220,9 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 		state.nextPc = pc + u32{instruction.width} * INSTRUCTION_BYTES;
 		state.lastPc = state.nextPc - INSTRUCTION_BYTES;
 		const auto* memory = std::get_if<NativeMemoryAccess>(&instruction.operation);
+		auto* windowMove = std::get_if<NativeWindowMove>(&instruction.operation);
+		if (windowMove != nullptr && windowMove->kind == ValueMoveKind::ReadTop)
+			windowMove->prefixTop = state.registerTop;
 		if (memory && memory->format == MemoryAccessKind::F64LE)
 			state.cycles += F64_ACCESS_EXTRA_CYCLES;
 		const auto* table = std::get_if<NativeTableAccess>(&instruction.operation);
@@ -258,6 +264,7 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 			else
 				state.cycles += vararg->requested;
 		}
+		if (windowMove != nullptr && windowMove->kind == ValueMoveKind::SetTop) state.registerTop = 0;
 		const auto& writes = instruction.slots.writes;
 		// A terminal semantic operation owns its result placement.
 		const bool placesResults = &instruction != &block.instructions.back() || block.terminal.exit == NativeBlockExit::Continue;

@@ -4,8 +4,25 @@ import { ThreadField } from './thread_record';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueTag } from './value';
 import { OpCode } from '../../spec/blua32/opcode';
+import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import type { DecodedInstructionPage } from './execution_image';
 import type { JavaScriptRegisterCache } from './compiled_block_registers';
+
+/** Physical accesses see the register bank, including values held in the region. */
+export function emitWindowMove(kind: ValueMoveKind, a: number, b: number, registers: JavaScriptRegisterCache, exit: number): string {
+	if (kind === ValueMoveKind.ReadTop) return registers.writeInteger(a, 'T');
+	const failure = registers.exit(exit);
+	if (kind === ValueMoveKind.SetTop) {
+		return `{const i=${registers.wordOperand(b)};if(i>F.stackCapacity) ${failure} T=i;}`;
+	}
+	const index = registers.wordOperand(kind === ValueMoveKind.ReadIndexed ? b : a);
+	const published = registers.publishRange(0, Infinity);
+	const check = `const i=${index};if(i>=F.stackCapacity) ${failure}${published}`;
+	if (kind === ValueMoveKind.ReadIndexed) return `{${check}${registers.copyFrom(a, 'r', 'i')}}`;
+	const write = `r.s(i,${registers.tagOperand(b)},${registers.wordOperand(b)});`;
+	registers.discardRange(0, Infinity);
+	return `{${check}${write}${registers.reloadRange(0, Infinity)}if(T<=i)T=i+1;}`;
+}
 
 type ContextOpCode = OpCode.GETGL | OpCode.SETGL | OpCode.GETSYS | OpCode.SETSYS | OpCode.GETUP | OpCode.SETUP
 	| OpCode.VARARG | OpCode.LOADNIL | OpCode.LOADKR;

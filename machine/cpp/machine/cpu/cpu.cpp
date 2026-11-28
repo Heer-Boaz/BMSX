@@ -1362,12 +1362,14 @@ bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode
 		return true;
 	}
 	CallFrame* const parent = frame.previous;
-	if (parent == nullptr || frame.hasControlFlag(FRAME_EXCEPTION) || b > frame.registers.size()) {
+	if (parent == nullptr || frame.hasControlFlag(FRAME_EXCEPTION)
+		|| (mode == RegisterJumpMode::LeaveWindowFromRegister && b >= frame.registers.size())) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		return false;
 	}
-	const u32 top = static_cast<u32>(frame.stackBase()) + b - static_cast<u32>(parent->stackBase());
-	if (top > parent->registers.size()) {
+	const u32 frontier = mode == RegisterJumpMode::LeaveWindowFromRegister ? frame.registers.payload(b) : b;
+	const u32 top = static_cast<u32>(frame.stackBase()) + frontier - static_cast<u32>(parent->stackBase());
+	if (frontier > frame.registers.size() || top > parent->registers.size()) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		return false;
 	}

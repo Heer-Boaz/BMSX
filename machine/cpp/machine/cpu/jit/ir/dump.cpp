@@ -32,6 +32,15 @@ struct OperationName {
 	const char* operator()(const NativeLiteral&) const { return "literal"; }
 	const char* operator()(const NativeConstantLoad&) const { return "load-constant"; }
 	const char* operator()(const NativeMove&) const { return "move"; }
+	const char* operator()(const NativeWindowMove& op) const {
+		switch (op.kind) {
+		case ValueMoveKind::ReadTop: return "read-top";
+		case ValueMoveKind::ReadIndexed: return "read-indexed-slot";
+		case ValueMoveKind::WriteIndexed: return "write-indexed-slot";
+		case ValueMoveKind::SetTop: return "set-top";
+		default: BMSX_UNREACHABLE();
+		}
+	}
 	const char* operator()(const NativeNot&) const { return "not"; }
 	const char* operator()(const NativeClearSlots&) const { return "clear-slots"; }
 	const char* operator()(const NativePoolRead&) const { return "read-pool"; }

@@ -156,7 +156,7 @@ sljit_label* emitWindowEnter(sljit_compiler* c, sljit_label* bindWindow, sljit_l
 	return entry;
 }
 
-sljit_label* emitWindowLeave(sljit_compiler* c, sljit_label* bindWindow, sljit_label* cold) {
+sljit_label* emitWindowLeave(sljit_compiler* c, sljit_label* bindWindow, sljit_label* cold, bool fromRegister) {
 	auto* entry = sljit_emit_label(c);
 	admitPhysicalTransfer(c, cold);
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_MEM1(state), depth, SLJIT_IMM, 1);
@@ -182,6 +182,10 @@ sljit_label* emitWindowLeave(sljit_compiler* c, sljit_label* bindWindow, sljit_l
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32,
 		SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeCpuRunState, frameBank)), cold);
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), inputB);
+	if (fromRegister) {
+		sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(state), capacity), cold);
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM2(words, SLJIT_R1), 2);
+	}
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_MEM1(state), capacity), cold);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), static_cast<int>(FrameField::StackBase), SLJIT_IMM, FRAME_WINDOW_MASK);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchBase, SLJIT_R2, 0);

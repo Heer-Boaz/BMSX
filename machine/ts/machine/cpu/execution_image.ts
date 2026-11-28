@@ -153,7 +153,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			if (op === OpCode.JREG) {
 				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
 					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
-				if (mode > RegisterJumpMode.LeaveWindow) throw new Error('BLua32 register jump has an invalid mode.');
+				if (mode > RegisterJumpMode.LeaveWindowFromRegister) throw new Error('BLua32 register jump has an invalid mode.');
 			}
 			if (op !== OpCode.JMP && op !== OpCode.JAL && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
@@ -334,7 +334,9 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 			// Source values are consumed only after the bus admits the write.
 			return Math.max(0, b + 1);
 		case OpCode.MOV:
-			if (c > ValueMoveKind.Tag) return 0;
+			if (c === ValueMoveKind.ReadTop) return a + 1;
+			if (c === ValueMoveKind.SetTop) return b + 1;
+			if (c > ValueMoveKind.SetTop) return 0;
 			break;
 		case OpCode.MFC0:
 			return cop0FieldImplemented(b) ? a + 1 : 0;

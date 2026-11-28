@@ -142,7 +142,7 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 			if (op == OpCode::JREG) {
 				const u32 mode = (body & MAX_LOW_OPERAND) | (((body >> 24u) & ((1u << EXT_C_BITS) - 1u)) << MAX_OPERAND_BITS)
 					| (wide ? (source & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0u);
-				if (mode > static_cast<u32>(RegisterJumpMode::LeaveWindow))
+				if (mode > static_cast<u32>(RegisterJumpMode::LeaveWindowFromRegister))
 					throw BMSX_RUNTIME_ERROR("BLua32 register jump has an invalid mode.");
 			}
 			if (op != OpCode::JMP && op != OpCode::JAL && op != OpCode::JREG && op != OpCode::RET && op != OpCode::RFE && op <= OpCode::HALT) {

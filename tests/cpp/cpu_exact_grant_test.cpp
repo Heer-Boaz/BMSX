@@ -543,9 +543,10 @@ void compileRegisterJumpReceiver() {
 #endif
 }
 
-void exactBorrowedWindowGrant() {
+void exactBorrowedWindowGrant(bool registerFrontier) {
 	constexpr auto open = static_cast<u8>(RegisterJumpMode::EnterWindow);
-	constexpr auto close = static_cast<u8>(RegisterJumpMode::LeaveWindow);
+	const auto close = static_cast<u8>(registerFrontier ? RegisterJumpMode::LeaveWindowFromRegister : RegisterJumpMode::LeaveWindow);
+	const int width = registerFrontier ? 3 : 2;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(9u * INSTRUCTION_BYTES);
@@ -579,9 +580,10 @@ void exactBorrowedWindowGrant() {
 			auto& registers = lane.activeThread()->currentFrame->registers;
 			registers.set(2, valueInteger(17));
 			registers.set(3, valueInteger(25));
+			registers.set(4, valueFromTag(ValueTag::Float, 2)); // Child R2 is a raw frontier, not a Lua number.
 			registers.set(6, valueFromTag(ValueTag::Float, child)); // Raw PC transport does not inspect its tag.
 			registers.set(7, valueInteger(2));
-			registers.set(8, valueInteger(2));
+			registers.set(8, valueInteger(width));
 			registers.set(9, valueInteger(2));
 			lane.activeThread()->currentFrame->setTop(10);
 		}
@@ -607,6 +609,7 @@ void exactBorrowedWindowGrant() {
 	require(test::runCpuParity(cpu, scalar.cpu, 1) == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - jump
 		&& cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == successor && cpu.readFramePc(1) == child
 		&& cpu.readFrameFunctionAddress(1) == 0 && cpu.getFrameRegisterCount(1) == 2
+		&& cpu.activeThread()->currentFrame->stackCapacity() == width
 		&& cpu.readFrameRegister(1, 0) == valueInteger(17) && cpu.readFrameRegister(1, 1) == valueInteger(25)
 		&& test::sameLanguageRam(cpu, scalar.cpu),
 		"the exact short grant parks the successor and shares both input value lanes");
@@ -638,6 +641,83 @@ void exactBorrowedWindowGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 	require(cpu.nativeGateProfile().directWindowTransferResumes - direct == 2u,
 		"both resident transfers rebind in generated code without semantic dispatch");
+#endif
+}
+
+void exactPhysicalWindowMoves() {
+	constexpr auto mov = static_cast<u8>(OpCode::MOV);
+	const auto movCycles = BASE_CYCLES[mov];
+	const auto loadCycles = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
+	const auto jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	test::Blua32TestImage image;
+	image.mappedCode = false;
+	image.text.resize(13u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 11, .maxStack = 10}, {.firstWord = 11, .wordCount = 2}};
+	image.exceptionFunctionIndex = 1;
+	const auto move = [&](u32 word, u8 a, u8 b, ValueMoveKind kind) {
+		writeInstruction(image.text, word, mov, a, b, static_cast<u8>(kind));
+	};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 2, 0, 9);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 9, 0, 8);
+	move(2, 3, 63, ValueMoveKind::ReadTop);
+	move(3, 2, 1, ValueMoveKind::WriteIndexed);
+	move(4, 4, 2, ValueMoveKind::ReadIndexed);
+	move(5, 63, 6, ValueMoveKind::SetTop);
+	move(6, 0, 63, ValueMoveKind::ReadTop);
+	move(7, 2, 2, ValueMoveKind::ReadIndexed);
+	move(8, 5, 63, ValueMoveKind::ReadTop);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 11, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 12, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	Machine native(image, false), scalar(image, true);
+	const auto floatBits = valueFromTag(ValueTag::Float, 0xff812345u);
+	for (auto* machine : {&native, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->currentFrame;
+		frame.registers.set(1, floatBits);
+		frame.registers.set(6, valueFromTag(ValueTag::Float, 1u));
+		frame.setTop(2);
+	}
+	auto& cpu = native.cpu;
+	const auto pc = native.rom.textAddress;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	cpu.prepareSystemNativeCode();
+	const auto& lookup = *cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+	const auto* page = lookup.find(pc, 0);
+	const auto& entry = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(entry && entry->sourceWords == 10
+		&& std::ranges::count(entry->sideExits, NativeBlockExit::ReservedInstruction, &NativeBlockExitSite::exit) == 4,
+		"both frontier and indexed operations have actual generated code with precise bounds-fault side exits");
+#endif
+	require(test::runCpuParity(cpu, scalar.cpu, 2 * loadCycles + 7 * movCycles + jumpCycles) == RunResult::Yielded
+		&& cpu.readFramePc(0) == pc + 10u * INSTRUCTION_BYTES && cpu.instructionBudgetRemaining == 0
+		&& cpu.readFrameRegister(0, 3) == valueInteger(10)
+		&& cpu.readFrameRegister(0, 0) == valueInteger(1)
+		&& cpu.readFrameRegister(0, 5) == valueInteger(3)
+		&& cpu.readFrameRegister(0, 9) == floatBits
+		&& cpu.readFrameRegister(0, 4) == floatBits
+		&& cpu.readFrameRegister(0, 2) == floatBits
+		&& test::sameLanguageRam(cpu, scalar.cpu),
+		"indexed lanes, aliases and decreases to the live frontier are exact inside an ordinary generated grant");
+	for (auto* machine : {&native, &scalar}) {
+		auto& lane = machine->cpu;
+		lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+		auto& frame = *lane.activeThread()->currentFrame;
+		frame.registers.set(6, valueFromTag(ValueTag::Float, 0xffffffffu));
+		frame.setTop(2);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto reserved = static_cast<size_t>(NativeBlockExit::ReservedInstruction);
+	const auto beforeFault = cpu.nativeGateProfile().exits[reserved].entries;
+#endif
+	test::runCpuParity(cpu, scalar.cpu, 2 * loadCycles + 7 * movCycles + jumpCycles);
+	const auto fault = cpu.captureRuntimeState();
+	require(fault.epcWord == pc + 5u * INSTRUCTION_BYTES && fault.causeWord == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
+		&& cpu.rootThread()->frameAtDepth(0)->readWindow(FrameField::Top) == 10
+		&& test::sameLanguageRam(cpu, scalar.cpu), "the invalid frontier faults without changing Top or losing prior writes");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+	require(cpu.nativeGateProfile().exits[reserved].entries == beforeFault + 1u,
+		"the generated bounds guard delivers the precise instruction exception");
 #endif
 }
 
@@ -1314,7 +1394,8 @@ int main(int argc, char** argv) {
 		if (scenario == "jal") exactJumpAndLinkGrant();
 		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
 		else if (scenario == "register-jump") { exactRegisterJumpGrant(); compileRegisterJumpReceiver(); }
-		else if (scenario == "borrowed-window") exactBorrowedWindowGrant();
+		else if (scenario == "borrowed-window") { exactBorrowedWindowGrant(false); exactBorrowedWindowGrant(true); }
+		else if (scenario == "physical-window-moves") exactPhysicalWindowMoves();
 		else if (scenario == "store") exactStoreGrant();
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);

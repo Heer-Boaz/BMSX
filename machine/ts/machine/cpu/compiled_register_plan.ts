@@ -1,4 +1,4 @@
-import { INSTRUCTION_BYTES, RegisterJumpMode } from '../../spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { COP0_STATUS, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C } from '../../spec/blua32/opcode';
@@ -16,17 +16,20 @@ function generatedRegisterReads(op: OpCode, b: number, c: number): number {
 	switch (op) {
 		case OpCode.CALL: case OpCode.ITERN: case OpCode.SVC: return 0;
 		case OpCode.JREG: return c > RegisterJumpMode.Link ? 0 : REGISTER_OPERAND_A;
+		case OpCode.MOV:
+			return c === ValueMoveKind.ReadTop ? 0 : c === ValueMoveKind.WriteIndexed ? REGISTER_OPERAND_A | REGISTER_OPERAND_B : REGISTER_OPERAND_B;
 		case OpCode.MTC0: return (b !== COP0_STATUS && cop0WriteRetiresControl(b)) ? 0 : REGISTER_OPERAND_A;
 		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}
 }
 
-function fixedRegisterWrites(op: OpCode, b: number): number {
+function fixedRegisterWrites(op: OpCode, b: number, c: number): number {
 	switch (op) {
 		case OpCode.LOADNIL: return b;
 		case OpCode.VARARG: return b === 0 ? 0 : b - 1;
 		case OpCode.SELF: return 2;
 		case OpCode.JAL: return 1;
+		case OpCode.MOV: return c === ValueMoveKind.SetTop || c === ValueMoveKind.WriteIndexed ? 0 : 1;
 		case OpCode.MFC0: return cop0FieldImplemented(b) ? 1 : 0;
 		default: return OPCODE_WRITES_REGISTER_A[op] === 0 || compiledBlockEndsBlock(op, b) ? 0 : 1;
 	}
@@ -73,7 +76,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 			if (op === OpCode.JREG && c === RegisterJumpMode.Link) define(b);
 			if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
 				for (const register of candidates) if (register >= a && register < a + c) read(register);
-			const writes = fixedRegisterWrites(op, b);
+			const writes = fixedRegisterWrites(op, b, c);
 			if (writes === 1) define(a);
 			else if (writes !== 0) for (const register of candidates)
 				if (register >= a && register < a + writes) define(register);

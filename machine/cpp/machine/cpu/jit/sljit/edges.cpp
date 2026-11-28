@@ -121,7 +121,8 @@ void NativeLowering::lowerOperation(const NativeRegisterWindowTransfer& transfer
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
 	const auto& gate = nativeBlockGate();
-	void* target = transfer.mode == RegisterJumpMode::EnterWindow ? gate.enterWindow : gate.leaveWindow;
+	void* target = transfer.mode == RegisterJumpMode::EnterWindow ? gate.enterWindow
+		: transfer.mode == RegisterJumpMode::LeaveWindowFromRegister ? gate.leaveWindowFromRegister : gate.leaveWindow;
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(target));
 	m_terminal = true;
 }

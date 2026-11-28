@@ -236,8 +236,14 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Blua32ImageLayout& i
 std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
-				+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
+			switch (static_cast<ValueMoveKind>(decoded.c)) {
+				case ValueMoveKind::ReadTop: return "MOV r" + std::to_string(decoded.a) + ", top";
+				case ValueMoveKind::ReadIndexed: return "MOV r" + std::to_string(decoded.a) + ", r[r" + std::to_string(decoded.b) + "]";
+				case ValueMoveKind::WriteIndexed: return "MOV r[r" + std::to_string(decoded.a) + "], r" + std::to_string(decoded.b);
+				case ValueMoveKind::SetTop: return "MOV top, r" + std::to_string(decoded.b);
+				default: return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b)
+					+ (decoded.c == 0 ? "" : ", " + std::to_string(decoded.c));
+			}
 		case OpCode::KNIL:
 			return "KNIL r" + std::to_string(decoded.a);
 		case OpCode::KFALSE:
@@ -314,6 +320,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 				case RegisterJumpMode::EnterWindow:
 					return "JREG enter r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 				case RegisterJumpMode::LeaveWindow: return "JREG leave " + std::to_string(decoded.b);
+				case RegisterJumpMode::LeaveWindowFromRegister: return "JREG leave r" + std::to_string(decoded.b);
 			}
 			return "JREG reserved mode " + std::to_string(decoded.c);
 		case OpCode::JMPIF:
@@ -367,7 +374,13 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
-			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
+			switch (static_cast<ValueMoveKind>(decoded.c)) {
+				case ValueMoveKind::ReadTop: return {registerOperand("dst", decoded.a)};
+				case ValueMoveKind::ReadIndexed: return {registerOperand("dst", decoded.a), registerOperand("index", decoded.b)};
+				case ValueMoveKind::WriteIndexed: return {registerOperand("index", decoded.a), registerOperand("src", decoded.b)};
+				case ValueMoveKind::SetTop: return {registerOperand("frontier", decoded.b)};
+				default: return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b), plainOperand("move kind", formatInteger(decoded.c))};
+			}
 		case OpCode::KNIL:
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::KFALSE:
@@ -452,6 +465,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 				case RegisterJumpMode::EnterWindow:
 					return {registerOperand("target", decoded.a), registerOperand("window descriptor", decoded.b)};
 				case RegisterJumpMode::LeaveWindow: return {plainOperand("live extent", std::to_string(decoded.b))};
+				case RegisterJumpMode::LeaveWindowFromRegister: return {registerOperand("frontier", decoded.b)};
 			}
 			return {plainOperand("reserved mode", std::to_string(decoded.c))};
 		case OpCode::JAL:

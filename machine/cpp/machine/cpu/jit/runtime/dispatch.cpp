@@ -248,6 +248,10 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
 		}
+		case NativeBlockExit::ReservedInstruction:
+			cpu.enterSynchronousException(*frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			transition = NativeBlockTransition::Redispatch;
+			break;
 		case NativeBlockExit::Halt:
 			cpu.haltUntilIrq();
 			transition = NativeBlockTransition::Redispatch;
