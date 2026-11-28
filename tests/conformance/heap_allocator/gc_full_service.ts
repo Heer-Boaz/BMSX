@@ -16,7 +16,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
-import { GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_TRACE_CONTEXT_OFFSET, GC_WORKSPACE_END, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -45,7 +45,7 @@ const deadText = 'full collection must reclaim an unrooted Text value'.repeat(25
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-full-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const opt of [0, 3] as const) {
 		const out = join(directory, `O${opt}`);
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
@@ -107,9 +107,14 @@ try {
 				expected.push(String(output));
 			}
 			function grant(cycles: number) {
+				const phase = gc.phase(), epochs = gc.fullEpochs();
 				const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				observe(`L ${cycles}`, `${result} ${used} ${gc.fullEpochs()} ${gc.phase()} ${luaHeap.usedBytes()}`);
+				observe(`E ${cycles}`, `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+				if (gc.phase() !== phase || gc.fullEpochs() !== epochs) {
+					const end = management + GC_WORKSPACE_END;
+					observe(`H ${control} ${end}`, hashBytes(memory.ramData(), control, end - control));
+				}
 				if (cycles > 0) assert.ok(used > 0, `an admitted quantum pays ordinary instruction cycles (result=${result}, phase=${gc.phase()}, depth=${cpu.getFrameDepth()}, cause=${cpu.readCauseWord()}, reason=${cpu.readLuaFaultReasonWord()}, pc=${cpu.lastPc})`);
 				return result;
 			}
@@ -136,6 +141,8 @@ try {
 			assert.equal(gc.fullEpochs(), epochs);
 			assert.equal(cpu.fixedInterruptActive(), true);
 			held();
+			const start = weak - RAM_BASE, end = management + GC_WORKSPACE_END;
+			observe(`H ${start} ${end}`, hashBytes(memory.ramData(), start, end - start));
 			cpu.requestNonMaskableInterrupt();
 			assert.equal(cpu.enterPendingInterrupt(), false, 'NMI cannot take over the collector activation');
 			cpu.cancelNonMaskableInterrupt();

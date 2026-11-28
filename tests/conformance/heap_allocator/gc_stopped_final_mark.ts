@@ -26,7 +26,7 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GcPhase } from '../../helpers/native_heap/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
+import { GC_WORKSPACE_END, HEAP_GC_CONTROL_OFFSET } from '../../helpers/firmware_heap_layout';
 
 const source = `bss report: word[3]
 function irq()
@@ -54,7 +54,7 @@ const directory = mkdtempSync(join(tmpdir(), 'bmsx-final-mark-'));
 const slots = 2 * GC_STEP_WORDS;
 
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const opt of [0, 3] as const) {
 		const out = join(directory, `O${opt}`);
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
@@ -72,6 +72,8 @@ try {
 			runtime.boot();
 			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine;
 			const { gc, heapAllocator: arena, luaHeap } = nativeHeapReference(cpu);
+			const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
+			const workspaceEnd = management + GC_WORKSPACE_END;
 			const report = linked.layout.header.bssAddress, offset = report - RAM_BASE;
 			const word = (slot: number) => memory.readRamRecordWord(report + 4 * slot);
 			for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
@@ -126,8 +128,11 @@ try {
 				observe('h');
 			}
 			const grant = (cycles: number) => {
+				const phase = gc.phase(), work = gc.epochWork();
 				const result = slice(cycles), used = cycles - cpu.instructionBudgetRemaining;
-				observe(`L ${cycles}`, [result, used, gc.fullEpochs(), gc.phase(), luaHeap.usedBytes()].join(' '));
+				observe(`E ${cycles}`, `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+				if (gc.phase() !== phase || gc.epochWork() !== work)
+					observe(`H ${control} ${workspaceEnd}`, String(hashBytes(memory.ramData(), control, workspaceEnd - control)));
 				assert.ok(used > 0, `${opt}/${name}: result=${result} phase=${gc.phase()} depth=${cpu.getFrameDepth()} cause=${cpu.readCauseWord()} reason=${cpu.readLuaFaultReasonWord()} pc=${cpu.lastPc}`);
 				return result;
 			};
@@ -140,6 +145,8 @@ try {
 			assert.equal(word(2), 0, 'the mutator cannot pass the collection boundary');
 			assert.equal(gc.tables.getInteger(weak, 1), valueNil());
 			assert.notEqual(gc.tables.getInteger(weak, slots), valueNil());
+			const weakOffset = weak - RAM_BASE;
+			observe(`H ${weakOffset} ${workspaceEnd}`, String(hashBytes(memory.ramData(), weakOffset, workspaceEnd - weakOffset)));
 			const atomicWork = gc.epochWork(), suspended = save('partial');
 			cpu.requestNonMaskableInterrupt();
 			assert.equal(cpu.enterPendingInterrupt(), false);
@@ -172,7 +179,6 @@ try {
 					const start = record - RAM_BASE;
 					observe(`H ${start} ${start + 8}`, String(hashBytes(memory.ramData(), start, 8)));
 				}
-				const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 				for (const [first, length] of [[offset, 12], [control, 0xac]])
 					observe(`H ${first} ${first + length}`, String(hashBytes(memory.ramData(), first, length)));
 			};
@@ -181,7 +187,10 @@ try {
 			const replay = (checkpoint: string, script: string[], expected: string[]) => {
 				const trace = join(out, `${name}.trace`);
 				writeFileSync(trace, script.join('\n'));
-				assert.deepEqual(execFileSync(native, [rom, trace, checkpoint, cartFile], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
+				const actual = execFileSync(native, [rom, trace, checkpoint, cartFile], { encoding: 'utf8' }).trimEnd().split('\n');
+				assert.equal(actual.length, expected.length);
+				const mismatch = actual.findIndex((row, index) => row !== expected[index]);
+				assert.equal(mismatch, -1, `observation ${mismatch}: C++=${actual[mismatch]} TS=${expected[mismatch]}`);
 			};
 			replay(seed, commands, rows);
 			replay(suspended, ['X', 'l', 's', `x ${partial}`, ...tail, 'u', ...tail], [...tailRows, ...tailRows]);
