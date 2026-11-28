@@ -457,9 +457,12 @@ DISPATCH_LABEL(JMP) {
 }
 
 DISPATCH_LABEL(JREG) {
-	if (decoded->c > 1) {
+	if (decoded->c > static_cast<int>(RegisterJumpMode::Link)) {
 		PUBLISH_SCALAR_FRONTIER();
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		if (decoded->c > static_cast<int>(RegisterJumpMode::LeaveWindow))
+			enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		else if (executeWindowTransfer(FRAME, decoded->a, decoded->b, static_cast<RegisterJumpMode>(decoded->c)))
+			DISPATCH_REBIND_FRAME();
 		DISPATCH_CONTINUE();
 	}
 	const u32 target = FRAME.registers.payload(decoded->a);

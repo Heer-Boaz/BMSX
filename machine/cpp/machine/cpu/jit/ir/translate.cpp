@@ -86,7 +86,10 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 		return NativeArithmetic{a, b, c, op, NativeArithmeticHint{}};
 	case OpCode::JMP: return NativeJump{instruction.bx()};
 	case OpCode::JAL: return NativeJump{instruction.bx(), static_cast<NativeValueRef>(a)};
-	case OpCode::JREG: return NativeRegisterJump{{a, c == 0 ? NATIVE_NO_OPERAND : b}};
+	case OpCode::JREG:
+		if (c >= static_cast<int>(RegisterJumpMode::EnterWindow))
+			return NativeRegisterWindowTransfer{{a, static_cast<u16>(b), static_cast<RegisterJumpMode>(c)}};
+		return NativeRegisterJump{{a, c == 0 ? NATIVE_NO_OPERAND : b}};
 	case OpCode::JMPIF: case OpCode::JMPIFNOT:
 		return NativeTruthBranch{instruction.bx(), static_cast<i16>(a), op == OpCode::JMPIF};
 	case OpCode::EQ: case OpCode::LT: case OpCode::LE:

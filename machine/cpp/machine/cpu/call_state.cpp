@@ -2,6 +2,29 @@
 #include "machine/cpu/thread.h"
 
 namespace bmsx {
+namespace {
+
+template<typename Write>
+void writeFrameControl(CallFrame& frame, Write&& write) {
+	const auto offset = frame.controlOffset;
+	auto& memory = *frame.controlMemory;
+	if (offset <= MAIN_RAM_SIZE - FRAME_CONTROL_BYTES) {
+		write([&frame](FrameField field, u32 word) {
+			writeLE32(frame.nativeControl + static_cast<u32>(field), word);
+		});
+		memory.invalidateRamWrite(offset, FRAME_CONTROL_BYTES);
+	} else {
+		auto* ram = memory.ramData();
+		write([&](FrameField field, u32 word) {
+			writeLE32(ram + ((offset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK), word);
+		});
+		const u32 first = MAIN_RAM_SIZE - offset;
+		memory.invalidateRamWrite(offset, first);
+		memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	}
+}
+
+} // namespace
 
 void CallFrame::bindControl(Memory& memory, u32 offset) {
 	controlMemory = &memory;
@@ -19,20 +42,26 @@ void CallFrame::addControlFlags(u32 flags) {
 
 void CallFrame::initializeControl(const FrameEntryControl& entry) {
 	registers = thread->stack.subspan(entry.stackBase, entry.capacity);
-	if (controlOffset <= MAIN_RAM_SIZE - FRAME_CONTROL_BYTES) {
-		entry.writeWords([this](FrameField field, u32 word) {
-			writeLE32(nativeControl + static_cast<u32>(field), word);
-		});
-		controlMemory->invalidateRamWrite(controlOffset, FRAME_CONTROL_BYTES);
-	} else {
-		auto* ram = controlMemory->ramData();
-		entry.writeWords([&](FrameField field, u32 word) {
-			writeLE32(ram + ((controlOffset + static_cast<u32>(field)) & RAM_RECORD_WORD_MASK), word);
-		});
-		const u32 first = MAIN_RAM_SIZE - controlOffset;
-		controlMemory->invalidateRamWrite(controlOffset, first);
-		controlMemory->invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
-	}
+	writeFrameControl(*this, [&](auto&& write) { entry.writeWords(write); });
+}
+
+void CallFrame::initializeWindow(u32 pc, u32 issuePc, ExecutionDomainId domain, u32 base, u32 width, u32 top) {
+	registers = thread->stack.subspan(base, width);
+	writeFrameControl(*this, [&](auto&& write) {
+		write(FrameField::Function, 0u);
+		write(FrameField::CallSite, issuePc);
+		write(FrameField::OpenHead, 0u);
+		write(FrameField::Flags, frameBankWord(domain));
+		write(FrameField::Pc, pc);
+		write(FrameField::VarargBase, base);
+		write(FrameField::ArgumentCount, 0u);
+		write(FrameField::ReturnBase, 0u);
+		write(FrameField::ReturnCount, 0u);
+		write(FrameField::Top, top);
+		write(FrameField::Closure, 0u);
+		write(FrameField::StackBase, base);
+		write(FrameField::StackCapacity, width);
+	});
 }
 
 void CallFrame::growRegisterWindow(i32 capacity) {

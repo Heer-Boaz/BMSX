@@ -4,7 +4,7 @@ import {
 } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_FUNCTION_CODE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
-import { INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import {
 	OpCode, OPCODE_RK_OPERANDS, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
@@ -42,6 +42,7 @@ export function deriveBlua32FixedStack(
 	const visited = new Map<number, Blua32FixedStack>();
 	const ancestors = new Set<number>();
 	const constantTableOffset = image.header.constantTableAddress - image.address;
+	const functionByEntry = new Map(image.functions.map((fn, index) => [fn.codeAddress, index]));
 
 	function admitConstant(index: number, reject: (reason: string) => never, load = false): number {
 		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
@@ -62,8 +63,9 @@ export function deriveBlua32FixedStack(
 		return 0;
 	}
 
-	function measure(index: number): Blua32FixedStack {
-		const known = visited.get(index);
+	function measure(index: number, borrowed = false): Blua32FixedStack {
+		const key = borrowed ? ~index : index;
+		const known = visited.get(key);
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
@@ -137,7 +139,7 @@ export function deriveBlua32FixedStack(
 			const reads = OPCODE_SCALAR_REGISTER_READS[op], rk = OPCODE_RK_OPERANDS[op];
 			const rb = (rk & RK_OPERAND_B) !== 0 ? signExtend(b, rkBitsB) : b;
 			const rc = (rk & RK_OPERAND_C) !== 0 ? signExtend(c, rkBitsC) : c;
-			if (((reads & REGISTER_OPERAND_A) !== 0 && a >= width)
+			if (((reads & REGISTER_OPERAND_A) !== 0 && a >= width && (op !== OpCode.JREG || c !== RegisterJumpMode.LeaveWindow))
 				|| ((reads & REGISTER_OPERAND_B) !== 0 && rb >= width)
 				|| ((reads & REGISTER_OPERAND_C) !== 0 && rc >= width))
 				reject('operand exceeds the function record');
@@ -156,7 +158,7 @@ export function deriveBlua32FixedStack(
 						const constant = constantTableOffset + bx * BLUA32_CONSTANT_RECORD_SIZE;
 						const tag = readLE32(image.bytes, constant + BLUA32_CONSTANT_TAG_OFFSET);
 						const target = readLE32(image.bytes, constant + BLUA32_CONSTANT_PAYLOAD_OFFSET);
-						if (tag === Blua32ConstantTag.Integer && instructions.has(target)) branches.set(a, [target]);
+						if (tag === Blua32ConstantTag.Integer) branches.set(a, [target]);
 						else branches.delete(a);
 					}
 					break;
@@ -168,6 +170,7 @@ export function deriveBlua32FixedStack(
 					if (branches !== null) for (const register of branches.keys()) if (register >= a) branches.delete(register);
 					break;
 				case OpCode.RET:
+					if (borrowed) reject('a borrowed window may not return through CALL');
 					if (boundary?.exceptionVectors.has(index))
 						reject('exception vector ends with RFE or an exception transfer');
 					if (c !== 0) reject('return from a variadic window requires an ordinary activation');
@@ -228,7 +231,28 @@ export function deriveBlua32FixedStack(
 					if (branches !== null) for (let register = a; register < a + b; ++register) branches.delete(register);
 					break;
 				case OpCode.JREG: {
-					if (c > 1 || (c === 1 && b >= width)) reject('requires a legal register jump within the function record');
+					if (c === RegisterJumpMode.LeaveWindow) {
+						if (!borrowed || b > width) reject('requires an active borrowed window and a contained frontier');
+						continue;
+					}
+					if (c === RegisterJumpMode.EnterWindow) {
+						if (b + 2 >= width) reject('window controls exceed the owning register window');
+						const targets = branches!.get(a), bases = branches!.get(b), capacities = branches!.get(b + 1), tops = branches!.get(b + 2);
+						if (targets?.length !== 1 || bases?.length !== 1 || capacities?.length !== 1 || tops?.length !== 1)
+							reject('no single static window and target');
+						const base = bases![0], capacity = capacities![0], top = tops![0];
+						if (base >= width || capacity === 0 || capacity > width - base || top > capacity)
+							reject('window is not contained in the admitted register extent');
+						const target = functionByEntry.get(targets![0]) ?? reject('window target is not an entry instruction');
+						const below = measure(target, true);
+						if (below.valueSlots > capacity) reject('target footprint exceeds the lent register window');
+						frames = Math.max(frames, 1 + below.frames);
+						registers.fill(0, base);
+						for (const register of branches!.keys()) if (register >= base) branches!.delete(register);
+						break;
+					}
+					if (c > RegisterJumpMode.Link || (c === RegisterJumpMode.Link && b >= width))
+						reject('requires a legal register jump within the function record');
 					const targets = branches!.get(a) ?? reject('no finite local target set');
 					if (c === 1) {
 						registers[b] = 0;
@@ -255,12 +279,16 @@ export function deriveBlua32FixedStack(
 					if (!instructions.has(next)) reject('no following instruction to skip');
 					merge(instructions.get(next)!.pc + INSTRUCTION_BYTES, registers);
 					break;
+				case OpCode.KSMI:
+					if (a >= width) reject('destination exceeds the function record');
+					registers[a] = 0;
+					branches?.set(a, [sbx >>> 0]);
+					break;
 				case OpCode.KNIL:
 				case OpCode.KFALSE:
 				case OpCode.KTRUE:
 				case OpCode.K0:
 				case OpCode.K1:
-				case OpCode.KSMI:
 				case OpCode.LOAD_MEM_D:
 				case OpCode.LOAD_MEM:
 				case OpCode.STORE_MEM_D:
@@ -300,7 +328,7 @@ export function deriveBlua32FixedStack(
 		}
 		ancestors.delete(index);
 		const result = { valueSlots, frames };
-		visited.set(index, result);
+		visited.set(key, result);
 		return result;
 	}
 

@@ -14,21 +14,13 @@ namespace bmsx {
 namespace {
 // Valid only when NativeBlockAbi::pinnedRam; on ARMv7 S4 is a cached word register.
 constexpr sljit_s32 PINNED_RAM = SLJIT_S4;
+} // namespace
 
-sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, sljit_uw retire) {
-	constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
-	constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
+std::array<sljit_jump*, 5> emitResidentCodeAtPc(sljit_compiler* c) {
+	constexpr auto state = NativeBlockAbi::state;
 	constexpr auto ptrShift = std::countr_zero(sizeof(void*));
 	constexpr auto instructionShift = std::countr_zero(static_cast<u32>(INSTRUCTION_BYTES));
-	constexpr auto wordShift = std::countr_zero(sizeof(u32));
-	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
-	constexpr auto link = offsetof(NativeBlockExitSite, operands) + offsetof(NativeExitOperands::RegisterJump, link);
 	static_assert(offsetof(NativeCodeLookup::Group, pages) == 0 && offsetof(NativeCodeLookup::DispatchPage, code) == 0);
-
-	// R0 is the exit descriptor and R2 the sampled raw target until the
-	// installed receiving cell admits transfer within the same native grant.
-	auto* entry = sljit_emit_label(c);
-	auto* expired = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(c, SLJIT_AND32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, INSTRUCTION_BYTES - 1u);
 	auto* unaligned = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
 	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R2, 0,
@@ -45,6 +37,21 @@ sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, slji
 	sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, instructionShift);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), ptrShift);
 	auto* noCode = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
+	return {unaligned, outside, noGroup, noPage, noCode};
+}
+
+namespace {
+sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, sljit_uw retire) {
+	constexpr auto state = NativeBlockAbi::state, budget = NativeBlockAbi::budget;
+	constexpr auto words = NativeBlockAbi::words, tags = NativeBlockAbi::tags;
+	constexpr auto wordShift = std::countr_zero(sizeof(u32));
+	constexpr auto top = offsetof(NativeBlockRunState, registerTop);
+	constexpr auto link = offsetof(NativeBlockExitSite, operands) + offsetof(NativeExitOperands::RegisterJump, link);
+
+	// R0 is the exit descriptor and R2 the sampled raw PC.
+	auto* entry = sljit_emit_label(c);
+	auto* expired = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, budget, 0, SLJIT_IMM, 0);
+	const auto misses = emitResidentCodeAtPc(c);
 
 	sljit_emit_op1(c, SLJIT_MOV_S16, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), link);
 	auto* jumpOnly = sljit_emit_cmp(c, SLJIT_SIG_LESS, SLJIT_R1, 0, SLJIT_IMM, 0);
@@ -67,7 +74,8 @@ sljit_label* emitRegisterJumpGate(sljit_compiler* c, sljit_label* returned, slji
 	sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_R3, 0);
 
 	auto* cold = sljit_emit_label(c);
-	for (auto* miss : {expired, unaligned, outside, noGroup, noPage, noCode}) sljit_set_label(miss, cold);
+	sljit_set_label(expired, cold);
+	for (auto* miss : misses) sljit_set_label(miss, cold);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(state), offsetof(NativeBlockRunState, remainingCycles), budget, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, state, 0);
@@ -178,6 +186,8 @@ NativeBlockGate::NativeBlockGate() {
 		offsetof(NativeBlockRunState, remainingCycles), NativeBlockAbi::budget, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, exitCode));
 	auto* registerJumpEntry = emitRegisterJumpGate(compiler, returned, SLJIT_FUNC_ADDR(&CPU::retireNativeRegisterJump));
+	auto* enterWindowEntry = emitWindowEnter(compiler, bindWindow, cold);
+	auto* leaveWindowEntry = emitWindowLeave(compiler, bindWindow, cold);
 	auto* stringProbe = emitStringReadProbe(compiler);
 	auto* ownSlot = emitOwnStringSlotProbe(compiler);
 	auto* indexProbe = emitIndexReadProbe(compiler);
@@ -195,6 +205,8 @@ NativeBlockGate::NativeBlockGate() {
 	publishSegment = reinterpret_cast<void*>(sljit_get_label_addr(publish));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leave));
 	registerJump = reinterpret_cast<void*>(sljit_get_label_addr(registerJumpEntry));
+	enterWindow = reinterpret_cast<void*>(sljit_get_label_addr(enterWindowEntry));
+	leaveWindow = reinterpret_cast<void*>(sljit_get_label_addr(leaveWindowEntry));
 	stringReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(stringProbe));
 	ownStringSlotProbe = reinterpret_cast<void*>(sljit_get_label_addr(ownSlot));
 	indexReadProbe = reinterpret_cast<void*>(sljit_get_label_addr(indexProbe));
@@ -210,6 +222,7 @@ NativeBlockGate::NativeBlockGate() {
 		sljit_get_label_abs_addr(cold), sljit_get_label_abs_addr(declined), sljit_get_label_abs_addr(callEntry),
 		sljit_get_label_abs_addr(retEntry), sljit_get_label_abs_addr(nativeReturn), sljit_get_label_abs_addr(fixedResidentCall),
 		sljit_get_label_abs_addr(publish), sljit_get_label_abs_addr(leave), sljit_get_label_abs_addr(registerJumpEntry),
+		sljit_get_label_abs_addr(enterWindowEntry), sljit_get_label_abs_addr(leaveWindowEntry),
 		sljit_get_label_abs_addr(stringProbe), sljit_get_label_abs_addr(ownSlot),
 		sljit_get_label_abs_addr(indexProbe), sljit_get_label_abs_addr(lengthProbe), sljit_get_label_abs_addr(iteratorScan),
 		start + sljit_get_generated_code_size(compiler)
@@ -218,7 +231,8 @@ NativeBlockGate::NativeBlockGate() {
 		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp", "bmsx_native_gate_dispatch",
 		"bmsx_native_gate_cold_dispatch", "bmsx_native_gate_declined", "bmsx_native_gate_call",
 		"bmsx_native_gate_ret", "bmsx_native_gate_native_return", "bmsx_native_gate_fixed_resident_call",
-		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_gate_register_jump", "bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
+		"bmsx_native_gate_publish", "bmsx_native_gate_leave", "bmsx_native_gate_register_jump",
+		"bmsx_native_gate_enter_window", "bmsx_native_gate_leave_window", "bmsx_native_string_read_probe", "bmsx_native_own_string_slot_probe",
 		"bmsx_native_index_read_probe", "bmsx_native_table_length_probe", "bmsx_native_table_iterator_scan"
 	};
 	static_assert(boundaries.size() == names.size() + 1);

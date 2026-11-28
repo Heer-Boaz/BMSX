@@ -1,7 +1,7 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { valuePayload, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { buildModuleExportSlotName, toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import { blua32FunctionIndexAtAddress, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
+import { blua32FunctionIndexAtAddress, blua32FunctionIndexAtPc, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc, blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { resolveInlineLocalContextRange } from '../../toolchain/ts/lua/compiler/inline_debug';
@@ -296,12 +296,13 @@ export function readRuntimeLuaValue(
 		if (frameDomain !== domain) continue;
 		const image = captured === undefined ? blua32ToolingImageForDomain(sources.currentBlua32Media, frameDomain) : captured.toolingImage;
 		if (image === null || image.symbols === null) continue;
-		const functionIndex = captured === undefined
-			? blua32FunctionIndexAtAddress(image.layout, cpu.readFrameFunctionAddress(frameIndex)) : captured.functionIndex;
-		if (functionIndex < 0) continue;
 		const pc = captured !== undefined ? captured.tracePc
 			: frameIndex + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
 				? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
+		const address = captured === undefined ? cpu.readFrameFunctionAddress(frameIndex) : captured.functionAddress;
+		const functionIndex = captured !== undefined ? captured.functionIndex : address === 0
+			? blua32FunctionIndexAtPc(image.layout, pc) : blua32FunctionIndexAtAddress(image.layout, address);
+		if (functionIndex < 0) continue;
 		const symbols = image.symbols;
 		const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, pc);
 		const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, pc);

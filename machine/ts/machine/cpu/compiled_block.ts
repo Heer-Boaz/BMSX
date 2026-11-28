@@ -1,4 +1,4 @@
-import { ReturnSource, ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
+import { RegisterJumpMode, ReturnSource, ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
@@ -56,6 +56,7 @@ export const enum CompiledBlockExit {
 	StringOrder,
 	IndirectJump,
 	InstructionAddressFault,
+	RegisterWindowJump,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -162,7 +163,7 @@ emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
 	if (op === OpCode.MOV && c > ValueMoveKind.Tag || op === OpCode.JMP && a !== 0
-		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > 1) return false;
+		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > RegisterJumpMode.LeaveWindow) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -271,7 +272,9 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
 		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
-		const sideExit = control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
+		const windowJump = op === OpCode.JREG && page.c[word] > RegisterJumpMode.Link;
+		const sideExit = windowJump || (control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]))
+			? undefined : sideExitKinds[op];
 		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
@@ -308,8 +311,10 @@ export function emitJavaScriptBlock(
 		} else if (op === OpCode.JAL) {
 			source.push(registers.writeInteger(page.a[word], `${pc}`));
 		} else if (op === OpCode.JREG) {
-			source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
-			if (page.c[word] === 1) source.push(registers.writeInteger(page.b[word], `${pc}`));
+			if (!windowJump) {
+				source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
+				if (page.c[word] === RegisterJumpMode.Link) source.push(registers.writeInteger(page.b[word], `${pc}`));
+			}
 		} else if (load || store || words) {
 			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
@@ -339,7 +344,7 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.JAL) registerTop = Math.max(registerTop, page.a[word] + 1);
-		else if (op === OpCode.JREG && page.c[word] === 1) registerTop = Math.max(registerTop, page.b[word] + 1);
+		else if (op === OpCode.JREG && page.c[word] === RegisterJumpMode.Link) registerTop = Math.max(registerTop, page.b[word] + 1);
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);
 			if (count > 0) registerTop = Math.max(registerTop, page.a[word] + count);
@@ -351,7 +356,9 @@ export function emitJavaScriptBlock(
 	let terminalExit = CompiledBlockExit.Continue;
 	switch (finalOp) {
 		case OpCode.HALT: terminalExit = CompiledBlockExit.Halt; break;
-		case OpCode.JREG: terminalExit = CompiledBlockExit.IndirectJump; break;
+		case OpCode.JREG:
+			terminalExit = page.c[finalWord] > RegisterJumpMode.Link ? CompiledBlockExit.RegisterWindowJump : CompiledBlockExit.IndirectJump;
+			break;
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
 		case OpCode.ITERN: terminalExit = CompiledBlockExit.IterateTable; sourceWords += skippedInstructionWidth; break;

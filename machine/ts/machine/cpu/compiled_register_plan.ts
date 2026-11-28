@@ -1,4 +1,4 @@
-import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode } from '../../spec/blua32/instruction_format';
 import { COP0_STATUS, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C } from '../../spec/blua32/opcode';
@@ -12,9 +12,10 @@ export type JavaScriptRegisterPlan = {
 };
 
 // Semantic-only exits consume their own operands after generated code leaves.
-function generatedRegisterReads(op: OpCode, b: number): number {
+function generatedRegisterReads(op: OpCode, b: number, c: number): number {
 	switch (op) {
 		case OpCode.CALL: case OpCode.ITERN: case OpCode.SVC: return 0;
+		case OpCode.JREG: return c > RegisterJumpMode.Link ? 0 : REGISTER_OPERAND_A;
 		case OpCode.MTC0: return (b !== COP0_STATUS && cop0WriteRetiresControl(b)) ? 0 : REGISTER_OPERAND_A;
 		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}
@@ -38,7 +39,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 	let requiredCaptures = 0;
 	for (const { page, firstWord, endWord } of plans) for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
-		const flags = generatedRegisterReads(op, b);
+		const flags = generatedRegisterReads(op, b, c);
 		if (flags & REGISTER_OPERAND_A) candidates.add(a);
 		if ((flags & REGISTER_OPERAND_B) && b >= 0) candidates.add(b);
 		if ((flags & REGISTER_OPERAND_C) && c >= 0) candidates.add(c);
@@ -65,11 +66,11 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 		for (let word = plan.firstWord; word < plan.endWord; word += page.widths[word]) {
 			finalWord = word;
 			const op = page.ops[word], a = page.a[word], b = page.b[word], c = page.c[word];
-			const flags = generatedRegisterReads(op, b);
+			const flags = generatedRegisterReads(op, b, c);
 			if (flags & REGISTER_OPERAND_A) read(a);
 			if (flags & REGISTER_OPERAND_B) read(b);
 			if (flags & REGISTER_OPERAND_C) read(c);
-			if (op === OpCode.JREG && c === 1) define(b);
+			if (op === OpCode.JREG && c === RegisterJumpMode.Link) define(b);
 			if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
 				for (const register of candidates) if (register >= a && register < a + c) read(register);
 			const writes = fixedRegisterWrites(op, b);

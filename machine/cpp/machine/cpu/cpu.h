@@ -445,6 +445,7 @@ private:
 #endif
 	void clearHaltAfterAcceptedInterrupt();
 	void executeSupervisorCall(CallFrame& frame, int source, int width);
+	bool executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode mode);
 	void enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a,
 		std::optional<u32> continuation = {});
 	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);

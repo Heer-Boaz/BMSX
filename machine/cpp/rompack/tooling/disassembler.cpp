@@ -308,8 +308,14 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "JMP " + (decoded.a == 0 ? std::string{} : "close r" + std::to_string(decoded.a - 1) + ", ")
 				+ formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JREG:
-			if (decoded.c > 1) return "JREG reserved mode " + std::to_string(decoded.c);
-			return "JREG r" + std::to_string(decoded.a) + (decoded.c == 0 ? "" : ", r" + std::to_string(decoded.b));
+			switch (static_cast<RegisterJumpMode>(decoded.c)) {
+				case RegisterJumpMode::Jump: return "JREG r" + std::to_string(decoded.a);
+				case RegisterJumpMode::Link: return "JREG r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+				case RegisterJumpMode::EnterWindow:
+					return "JREG enter r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+				case RegisterJumpMode::LeaveWindow: return "JREG leave " + std::to_string(decoded.b);
+			}
+			return "JREG reserved mode " + std::to_string(decoded.c);
 		case OpCode::JMPIF:
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
@@ -440,8 +446,13 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::JMPIFNOT:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::JREG:
-			if (decoded.c == 0) return {registerOperand("target", decoded.a)};
-			if (decoded.c == 1) return {registerOperand("target", decoded.a), registerOperand("link", decoded.b)};
+			switch (static_cast<RegisterJumpMode>(decoded.c)) {
+				case RegisterJumpMode::Jump: return {registerOperand("target", decoded.a)};
+				case RegisterJumpMode::Link: return {registerOperand("target", decoded.a), registerOperand("link", decoded.b)};
+				case RegisterJumpMode::EnterWindow:
+					return {registerOperand("target", decoded.a), registerOperand("window descriptor", decoded.b)};
+				case RegisterJumpMode::LeaveWindow: return {plainOperand("live extent", std::to_string(decoded.b))};
+			}
 			return {plainOperand("reserved mode", std::to_string(decoded.c))};
 		case OpCode::JAL:
 			return {registerOperand("link", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};

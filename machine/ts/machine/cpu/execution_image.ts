@@ -17,7 +17,7 @@ import {
 } from '../../spec/blua32/opcode';
 import { cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { BASE_OPERAND_BC_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_LOW_OPERAND, MAX_OPERAND_BITS,
-	instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind,
+	instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, RegisterJumpMode, ReturnSource, ValueMoveKind,
 } from '../../spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import type { Memory, MemoryByteView } from '../memory/memory';
@@ -153,7 +153,7 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 			if (op === OpCode.JREG) {
 				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
 					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
-				if (mode > 1) throw new Error('BLua32 register jump has an invalid mode.');
+				if (mode > RegisterJumpMode.LeaveWindow) throw new Error('BLua32 register jump has an invalid mode.');
 			}
 			if (op !== OpCode.JMP && op !== OpCode.JAL && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
@@ -317,7 +317,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		case OpCode.CALL:
 			return 0;
 		case OpCode.JREG:
-			return c === 0 ? a + 1 : c === 1 ? Math.max(a, b) + 1 : 0;
+			// Window transfers admit their operands in architectural fault order.
+			return c === RegisterJumpMode.Jump ? a + 1 : c === RegisterJumpMode.Link ? Math.max(a, b) + 1 : 0;
 		case OpCode.RET:
 			// Register returns admit only the range consumed by the receiver.
 			// A suffix always reads its starting index from one register.

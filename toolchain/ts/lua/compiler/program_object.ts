@@ -110,6 +110,7 @@ export type ProgramLinkValueExpression =
 
 export type ProgramConstValueReloc =
 	| { constIndex: number; kind: 'function_addr'; protoIndex: number }
+	| { constIndex: number; kind: 'text_addr'; protoIndex: number }
 	| { constIndex: number; kind: 'code_function'; target: ProgramCodeFunctionTarget }
 	| {
 		constIndex: number;

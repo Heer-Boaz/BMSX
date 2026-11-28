@@ -9,7 +9,7 @@ import {
 	type StackTraceFrame,
 	type CapturedLuaStack,
 } from './stack_trace';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { blua32FunctionIndexAtAddress, blua32FunctionIndexAtPc } from '../../toolchain/ts/rompack/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { SuspendedGuestSession } from './suspended_guest';
@@ -148,13 +148,19 @@ function captureRuntimeCpuFaultFrames(
 			throw new Error('Active BLua32 frame has no tooling image.');
 		}
 		const functionAddress = cpu.readFrameFunctionAddress(frameIndex);
-		const functionIndex = blua32FunctionIndexAtAddress(image.layout, functionAddress);
-		const codeAddress = memory.readMappedU32LE(
-			(functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0,
-		);
-		const codeByteCount = memory.readMappedU32LE(
-			(functionAddress + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0,
-		);
+		const parked = frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1);
+		const pc = parked ? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
+		const functionIndex = functionAddress === 0 ? blua32FunctionIndexAtPc(image.layout, pc)
+			: blua32FunctionIndexAtAddress(image.layout, functionAddress);
+		let codeAddress = 0, codeByteCount = 0;
+		if (functionAddress !== 0) {
+			codeAddress = memory.readMappedU32LE((functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET) >>> 0);
+			codeByteCount = memory.readMappedU32LE((functionAddress + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET) >>> 0);
+		} else if (functionIndex >= 0) {
+			const fn = image.layout.functions[functionIndex];
+			codeAddress = fn.codeAddress;
+			codeByteCount = fn.codeByteCount;
+		}
 		const registerCount = cpu.getFrameRegisterCount(frameIndex);
 		const registers = new Array<ValueSnapshot>(registerCount);
 		for (let registerIndex = 0; registerIndex < registerCount; registerIndex += 1) {
@@ -174,13 +180,8 @@ function captureRuntimeCpuFaultFrames(
 			functionIndex,
 			codeAddress,
 			codeByteCount,
-			tracePc: frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
-				? cpu.readFrameCallSitePc(frameIndex + 1)
-				: lastExecutionDomainId === executionDomainId
-					&& lastPc >= codeAddress
-					&& lastPc < codeAddress + codeByteCount
-					? lastPc
-					: cpu.readFramePc(frameIndex),
+			tracePc: !parked && lastExecutionDomainId === executionDomainId
+				&& lastPc >= codeAddress && lastPc < codeAddress + codeByteCount ? lastPc : pc,
 			registers,
 			tables: snapshot.tables,
 			upvalues,

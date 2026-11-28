@@ -21,6 +21,10 @@ NativeCpuRunState::~NativeCpuRunState() {
 	jumps.entries += directRegisterJumpResumes;
 	jumps.resumes += directRegisterJumpResumes;
 	profile.directRegisterJumpResumes += directRegisterJumpResumes;
+	auto& windows = profile.exits[static_cast<size_t>(NativeBlockExit::RegisterWindowTransfer)];
+	windows.entries += directWindowTransferResumes;
+	windows.resumes += directWindowTransferResumes;
+	profile.directWindowTransferResumes += directWindowTransferResumes;
 }
 #endif
 

@@ -76,6 +76,13 @@ struct NativeRegisterJump : NativeExitOperands::RegisterJump {
 			.writes = link < 0 ? NativeSlotRange{} : NativeSlotRange{static_cast<u16>(link), 1}};
 	}
 };
+struct NativeRegisterWindowTransfer : NativeExitOperands::RegisterWindowTransfer {
+	static constexpr auto terminalExit = NativeBlockExit::RegisterWindowTransfer;
+	constexpr NativeSlotAccess slots() const {
+		return mode == RegisterJumpMode::EnterWindow ? NativeSlotAccess{.reads = {static_cast<i16>(a), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND},
+			.readsRange = {b, 3}} : NativeSlotAccess{};
+	}
+};
 struct NativeHalt {
 	static constexpr auto terminalExit = NativeBlockExit::Halt;
 	constexpr NativeSlotAccess slots() const { return {}; }
@@ -300,7 +307,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeRegisterJump, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
+	NativeReplay, NativeJump, NativeRegisterJump, NativeRegisterWindowTransfer, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
 	NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

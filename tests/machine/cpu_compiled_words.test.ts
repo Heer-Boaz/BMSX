@@ -10,9 +10,9 @@ import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { createTestSystemCpu, linkRawTestSystemBlua32, RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
@@ -40,7 +40,9 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 	assert.equal(compiledBlockSupports(OpCode.WIDE, 0, 0), false);
 	assert.equal(compiledBlockSupports(OpCode.JMP, 1, 0), false);
 	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0, 0), true, `opcode ${op}`);
-	assert.equal(compiledBlockSupports(OpCode.JREG, 0, 2), false);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.EnterWindow), true);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindow), true);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, RegisterJumpMode.LeaveWindow + 1), false);
 });
 
 test('generated JREG samples an aliased target and faults before writing its link', () => {
@@ -109,6 +111,68 @@ test('generated code follows JREG across immutable ROM extents without activatin
 	const page = frame.executionImage.compiledCodeLookup?.find(worker.codeAddress, 0);
 	const entry = page?.compiledBlocks?.entries[(worker.codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
 	assert.ok(entry, 'the worker can be published independently of the caller activation');
+});
+
+test('generated JREG window transfers share the physical lanes and leave the parked successor', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
+	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 2, OpCode.K1, 1, 0, 0);
+	writeInstruction(text, 3, OpCode.JREG, 63, 2, RegisterJumpMode.LeaveWindow);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const rom = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+		functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }, { firstWord: 2, wordCount: 2, maxStack: 4 },
+			{ firstWord: 4, wordCount: 2 }], exceptionFunctionIndex: 2 });
+	const [caller, child] = rom.image.functions;
+	const js = createTestSystemCpu(rom, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestSystemCpu(rom, CpuExecutionBackend.Interpreter).cpu;
+	const successor = caller.codeAddress + INSTRUCTION_BYTES;
+	const sentinel = valueFloatBits(0x7fc00001);
+	for (let visit = 0; visit < 14; ++visit) {
+		for (const cpu of [js, scalar]) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, caller.address, caller.codeAddress);
+			const frame = cpu.rootThread.frameAtDepth(0);
+			frame.top = 8;
+			frame.registers.setInteger(0, child.codeAddress);
+			frame.registers.setInteger(1, 4);
+			frame.registers.setInteger(2, 4);
+			frame.registers.setInteger(3, visit === 13 ? 5 : 2);
+			frame.registers.set(4, sentinel);
+		}
+		runCpuParity(js, scalar, 1); assertParity(js, scalar);
+		assert.equal(js.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.JREG]);
+		const parent = js.rootThread.frameAtDepth(0);
+		assert.equal(parent.registers.get(4), sentinel);
+		if (visit === 13) {
+			assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			assert.equal(parent.pc, caller.codeAddress);
+			assert.equal(parent.top, 8);
+			break;
+		}
+		assert.equal(parent.pc, successor);
+		assert.equal(js.getFrameDepth(), 2);
+		const window = js.rootThread.frameAtDepth(1);
+		assert.equal(window.functionAddress, 0);
+		assert.equal(window.pc, child.codeAddress);
+		assert.equal(window.stackBase, parent.stackBase + 4);
+		assert.equal(window.registers.get(0), sentinel);
+		assert.equal(window.top, 2);
+		const grant = BASE_CYCLES[OpCode.K1] + 1;
+		runCpuParity(js, scalar, grant); assertParity(js, scalar);
+		assert.equal(js.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.JREG]);
+		assert.equal(js.getFrameDepth(), 1);
+		assert.equal(parent.pc, successor);
+		assert.equal(parent.top, 6);
+		assert.equal(parent.registers.get(4), sentinel);
+		assert.equal(parent.registers.get(5), valueInteger(1));
+	}
+	const image = js.rootThread.frameAtDepth(0).executionImage;
+	for (const pc of [caller.codeAddress, child.codeAddress]) {
+		const page = image.compiledCodeLookup?.find(pc, 0);
+		const entry = page?.compiledBlocks?.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES];
+		assert.equal(entry?.terminal.exit, CompiledBlockExit.RegisterWindowJump, 'the warmed route uses the generated transfer boundary');
+	}
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

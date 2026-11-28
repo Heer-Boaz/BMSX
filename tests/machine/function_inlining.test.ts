@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode } from '../../machine/ts/spec/blua32/instruction_format';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../machine/ts/spec/blua32/cop0';
+import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type { CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
@@ -148,6 +151,71 @@ return x, y, init_order
 		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
 		runGuestToHalt(cpu, 4_194_304);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(352), valueInteger(6), valueInteger(12)]);
+	}
+});
+
+test('fixed-word division shares one linked register-window body and returns both words', () => {
+	const source = `
+local words<const> = require('kernel/word_arithmetic')
+local first_high, first_low = words.divide_words_by_word(3, 0xfeedcafe, 5)
+local second_high, second_low = words.divide_words_by_word(0, 0x80000009, 7)
+return first_high, first_low, second_high, second_low
+`;
+	for (const level of [0, 3] as const) {
+		const linked = linkManagedTestSystem(source, level), { object, layout, symbols, functionProtoIndices } = linked;
+		const matching = layout.functions.filter((_fn, index) => symbols.metadata.functionIds[index].endsWith('__divide_words_by_word'));
+		assert.equal(matching.length, 1, 'there is no separately emitted body for ordinary CALL');
+		const callee = matching[0], calleeIndex = layout.functions.indexOf(callee);
+		const callerIndex = symbols.metadata.functionIds.indexOf('module:main/entry');
+		assert.notEqual(callerIndex, -1);
+		const caller = layout.functions[callerIndex];
+		const relocations = object.link.constValueRelocs.filter(reloc => reloc.kind === 'text_addr' && reloc.protoIndex === functionProtoIndices[calleeIndex]);
+		assert.equal(relocations.length, level === 0 ? 0 : 1, 'every raw use shares one link-time TEXT reference');
+		for (const reloc of relocations) assert.deepEqual(layout.constants[reloc.constIndex], integerConstant(callee.codeAddress));
+		let enters = 0, returns = 0, legacyReturns = 0;
+		let enterPc = 0;
+		for (let pc = caller.codeAddress; pc < caller.codeAddress + caller.codeByteCount;) {
+			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+			if (row.op === OpCode.JREG && row.c === RegisterJumpMode.EnterWindow && enters++ === 0) enterPc = pc;
+			pc = row.pc + INSTRUCTION_BYTES;
+		}
+		for (let pc = callee.codeAddress; pc < callee.codeAddress + callee.codeByteCount;) {
+			const row = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+			if (row.op === OpCode.JREG && row.c === RegisterJumpMode.LeaveWindow) {
+				assert.equal(row.b, 2);
+				++returns;
+			}
+			if (row.op === OpCode.RET) ++legacyReturns;
+			pc = row.pc + INSTRUCTION_BYTES;
+		}
+		assert.equal(enters, level === 0 ? 0 : 2);
+		assert.ok(level === 0 ? returns === 0 && legacyReturns !== 0 : returns !== 0 && legacyReturns === 0);
+		const expected = ((3n << 32n) | 0xfeedcafen) / 5n;
+		const small = 0x80000009n / 7n;
+		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
+		if (level === 3) {
+			// Retain the exception spare but omit storage for another window.
+			// The ordinary CPU extent fault must retry the issuing raw jump.
+			cpu.setExecutionHook((_domain, pc) => pc === enterPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+			for (let grant = 0; grant < 32 && cpu.activeThread.currentFrame?.pc !== enterPc; ++grant)
+				cpu.runUntilDepth(0, 32768);
+			cpu.setExecutionHook(null, 0, 0);
+			const thread = cpu.activeThread, frame = thread.currentFrame!;
+			assert.equal(frame.pc, enterPc);
+			const depth = thread.frameDepth, capacity = thread.address + ThreadField.FrameCapacity;
+			const oldWord = cpu.memory.readRamRecordWord(capacity);
+			cpu.memory.writeRamRecordWord(capacity, (oldWord & ~THREAD_CONTROL_COUNT_MASK) | (depth + 1));
+			thread.bindStack(true);
+			cpu.runUntilDepth(0, 1);
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
+			assert.equal(cpu.readEpcWord(), enterPc);
+			assert.equal(frame.pc, enterPc);
+			assert.equal(thread.frameDepth, depth);
+		}
+		runGuestToHalt(cpu, 4_194_304);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [
+			valueInteger(Number(expected >> 32n)), valueInteger(Number(expected & 0xffffffffn)), valueInteger(0), valueInteger(Number(small)),
+		]);
 	}
 });
 

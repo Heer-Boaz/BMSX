@@ -142,6 +142,7 @@ struct CallFrame {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
 	void initializeControl(const FrameEntryControl& entry);
+	void initializeWindow(u32 pc, u32 issuePc, ExecutionDomainId domain, u32 base, u32 width, u32 top);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Only used inside a grant that already admitted the linear frame/stack
 	// backing and recorded those ranges for history.

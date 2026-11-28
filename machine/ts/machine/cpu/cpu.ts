@@ -1,4 +1,4 @@
-import { ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { RegisterJumpMode, ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -1882,6 +1882,58 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private executeWindowTransfer(frame: CallFrame, a: number, b: number, mode: RegisterJumpMode): boolean {
+		const thread = frame.thread, registers = frame.registers, capacity = registers.capacity();
+		if (mode === RegisterJumpMode.EnterWindow) {
+			if (a >= capacity) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return false;
+			}
+			const target = registers.getPayload(a);
+			if ((target & (INSTRUCTION_BYTES - 1)) !== 0) {
+				this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
+				return false;
+			}
+			if (b + 3 > capacity) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return false;
+			}
+			const offset = registers.getPayload(b), width = registers.getPayload(b + 1), top = registers.getPayload(b + 2);
+			const base = frame.stackBase + offset, end = base + width;
+			if (offset > capacity || width > capacity - offset || top > width) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return false;
+			}
+			if (!thread.frameSpaceFits(end)) {
+				if (this.resetBankSelected()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				else this.enterRegisterWindowException(frame, end, thread.frameDepth + 2, OpCode.JREG, a);
+				return false;
+			}
+			const child = thread.acquireFrame();
+			child.executionImage = frame.executionImage;
+			child.decodedPage = null;
+			child.initializeControl(0, target, this.currentInstructionPc, false, this.activeExecutionDomainId,
+				base, 0, 0, 0, top, 0, base, width);
+			thread.stackTop = end;
+			thread.enterFrame(child);
+			return true;
+		}
+		const parent = frame.previous;
+		if (parent === null || frame.isExceptionFrame || b > capacity) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		const top = (frame.stackBase + b - parent.stackBase) >>> 0;
+		if (top > parent.registers.capacity()) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		thread.leaveFrame();
+		parent.top = top;
+		this.resumeFrameBank();
+		return true;
+	}
+
 	private enterRegisterWindowException(
 		issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number,
 		resumePc = this.currentInstructionPc,
@@ -3043,6 +3095,9 @@ export class CPU implements MappedPageInvalidator {
 			switch (exit.exit) {
 				case CompiledBlockExit.Continue: break;
 				case CompiledBlockExit.IndirectJump: frame.pc = run.effectiveAddress; break;
+				case CompiledBlockExit.RegisterWindowJump:
+					redispatch = !this.executeWindowTransfer(frame, exit.exitA, exit.exitB, exit.exitC);
+					break;
 				case CompiledBlockExit.InstructionAddressFault:
 					this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, run.effectiveAddress);
 					redispatch = true; break;
@@ -3321,8 +3376,9 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.JREG: {
 					const mode = page.c[pageOffset];
-					if (mode > 1) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					if (mode > RegisterJumpMode.Link) {
+						if (mode <= RegisterJumpMode.LeaveWindow) this.executeWindowTransfer(frame, a, page.b[pageOffset], mode);
+						else this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 						return;
 					}
 					const target = registers.getPayload(a);
@@ -3330,7 +3386,7 @@ export class CPU implements MappedPageInvalidator {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
 						return;
 					}
-					if (mode !== 0) this.setRegisterIntegerFast(frame, registers, page.b[pageOffset], frame.pc);
+					if (mode === RegisterJumpMode.Link) this.setRegisterIntegerFast(frame, registers, page.b[pageOffset], frame.pc);
 					frame.pc = target;
 					return;
 				}

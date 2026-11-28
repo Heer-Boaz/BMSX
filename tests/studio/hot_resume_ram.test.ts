@@ -14,22 +14,86 @@ import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { EXECUTION_IMAGE_BINDING_SIZE, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
+import { createLuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { visitRuntimeExecutionRecords } from '../../ide/runtime/execution_records';
 import { verifyHotResumeBinding } from '../../ide/runtime/hot_resume_binding';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_execution';
-import { createTestRuntime } from '../helpers/runtime_sources';
+import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { createTestSystemCpu, linkRawTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
+
+test('Hot Resume relocates linked borrowed code and its WIDE caller without creating a Function activation', () => {
+	const raw = (first: number, wide: boolean, value: number) => {
+		const issue = first + Number(wide), resume = issue + 1, leaf = resume + 1;
+		const text = new Uint8Array((leaf + 2) * INSTRUCTION_BYTES);
+		if (wide) writeInstruction(text, first, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, issue, OpCode.JREG, 0, 1, RegisterJumpMode.EnterWindow);
+		writeInstruction(text, resume, OpCode.RET, 4, 2, 0);
+		writeInstruction(text, leaf, OpCode.KSMI, 0, 0, value);
+		writeInstruction(text, leaf + 1, OpCode.JREG, 0, 1, RegisterJumpMode.LeaveWindow);
+		return linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
+			functions: [{ firstWord: first, wordCount: resume - first + 1, maxStack: 8 },
+				{ firstWord: leaf, wordCount: 2, maxStack: 4 }] });
+	};
+	const initial = raw(0, true, 7), fresh = raw(4, false, 23);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(initial);
+	const parent = cpu.rootThread.frameAtDepth(0);
+	const [oldParent, oldLeaf] = initial.image.functions, [nextParent, nextLeaf] = fresh.image.functions;
+	parent.registers.setInteger(0, oldLeaf.codeAddress);
+	parent.registers.setInteger(1, 4);
+	parent.registers.setInteger(2, 4);
+	parent.registers.setInteger(3, 1);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JREG]), RunResult.Yielded);
+	assert.equal(cpu.getFrameDepth(), 2);
+	const child = cpu.rootThread.frameAtDepth(1);
+	assert.equal(child.functionAddress, 0);
+	assert.equal(child.callSitePc, oldParent.codeAddress);
+	const sources = createTestSystemImageRuntimeSourceState(initial.romBytes, createLuaSourceRegistry('fixture', 'main.lua'));
+	const dbg = readRuntimeStackFrames(cpu, sources);
+	assert.equal(dbg[1].functionIndex, 1, 'debugger resolves the lexical extent despite the raw Function word');
+	assert.equal(dbg[1].tracePc, oldLeaf.codeAddress);
+	sources.catalog.dispose();
+	const revision = identityHotResumeRevision(initial.image);
+	revision.revision.functionAddresses.set([nextParent.address, nextLeaf.address]);
+	const pc = revision.revision.pcAddresses;
+	pc.fill(-1);
+	const oldText = initial.image.header.textAddress;
+	pc[(parent.pc - oldText) / INSTRUCTION_BYTES] = nextParent.codeAddress + INSTRUCTION_BYTES;
+	pc[(child.pc - oldText) / INSTRUCTION_BYTES] = nextLeaf.codeAddress;
+	const candidate = { ...revision, nextImage: fresh.image };
+	const geometry = () => [cpu.rootThread.stackTop, parent.stackBase, parent.stackCapacity, parent.top,
+		child.stackBase, child.stackCapacity, child.top, child.closureAddress];
+	const before = geometry();
+	const oversize = fresh.image.bytes.slice();
+	writeLE32(oversize, nextLeaf.address - fresh.image.address + BLUA32_FUNCTION_MAX_STACK_OFFSET, 5);
+	assert.throws(() => buildHotResumeRelocation(cpu, [
+		{ ...candidate, nextImage: decodeBlua32Image(oversize, fresh.image.address) }, null, null,
+	], 2), /borrowed register window/);
+	const relocation = buildHotResumeRelocation(cpu, [candidate, null, null], 2);
+	memory.installSystemRom(fresh.romBytes);
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.deepEqual(geometry(), before);
+	assert.equal(child.functionAddress, 0);
+	assert.equal(child.pc, nextLeaf.codeAddress);
+	assert.equal(child.callSitePc, nextParent.codeAddress);
+	assert.equal(parent.pc, nextParent.codeAddress + INSTRUCTION_BYTES);
+	runGuestToHalt(cpu, 40);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueInteger(23)]);
+});
 
 test('Hot Resume admits numeric edits but rejects equal-sized retargeting of installed operand slots', () => {
 	const text = new Uint8Array(4);

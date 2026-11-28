@@ -177,6 +177,11 @@ export function blua32FunctionIndexAtAddress(image: Blua32ImageLayout, functionA
 	return tableOffset / BLUA32_FUNCTION_RECORD_SIZE;
 }
 
+/** Lexical ROM extent, regardless of the record that opened the current window. */
+export function blua32FunctionIndexAtPc(image: Blua32ImageLayout, pc: number): number {
+	return image.functions.findIndex(fn => pc >= fn.codeAddress && pc < fn.codeAddress + fn.codeByteCount);
+}
+
 
 export function alignBlua32ImageOffset(offset: number, baseAddress: number, alignment: number): number {
 	return ((baseAddress + offset + alignment - 1) & ~(alignment - 1)) - baseAddress;

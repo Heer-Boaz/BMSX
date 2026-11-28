@@ -8,7 +8,7 @@ import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import type { ResourceIdentity } from '../common/resource';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { blua32FunctionIndexAtAddress, blua32FunctionIndexAtPc } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 
@@ -51,10 +51,12 @@ export function readRuntimeStackFrames(cpu: CPU, sources: RuntimeSourceState): R
 		const executionDomainId = cpu.readFrameExecutionDomain(index);
 		const toolingImage = (executionDomainId === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[executionDomainId])!;
 		const functionAddress = cpu.readFrameFunctionAddress(index);
+		const tracePc = index + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(index + 1)
+			? cpu.readFrameCallSitePc(index + 1) : cpu.readFramePc(index);
 		frames[index] = { executionDomainId, toolingImage, functionAddress,
-			functionIndex: blua32FunctionIndexAtAddress(toolingImage.layout, functionAddress),
-			tracePc: index + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(index + 1)
-				? cpu.readFrameCallSitePc(index + 1) : cpu.readFramePc(index) };
+			functionIndex: functionAddress === 0 ? blua32FunctionIndexAtPc(toolingImage.layout, tracePc)
+				: blua32FunctionIndexAtAddress(toolingImage.layout, functionAddress),
+			tracePc };
 	}
 	return frames;
 }

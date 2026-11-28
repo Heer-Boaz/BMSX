@@ -1322,6 +1322,61 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
 	}
 }
 
+bool CPU::executeWindowTransfer(CallFrame& frame, u16 a, u16 b, RegisterJumpMode mode) {
+	auto& thread = *frame.thread;
+	if (mode == RegisterJumpMode::EnterWindow) {
+		const auto& registers = frame.registers;
+		if (!registers.containsRange(a, 1)) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		const u32 target = registers.payload(a);
+		if ((target & (INSTRUCTION_BYTES - 1u)) != 0u) {
+			enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
+			return false;
+		}
+		if (!registers.containsRange(b, 3)) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		const u32 offset = registers.payload(b);
+		const u32 width = registers.payload(b + 1);
+		const u32 top = registers.payload(b + 2);
+		const auto capacity = registers.size();
+		if (offset > capacity || width > capacity - offset || top > width) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return false;
+		}
+		const u32 base = frame.stackBase() + offset;
+		const u32 end = base + width;
+		if (!thread.frameSpaceFits(end)) {
+			if (resetBankSelected()) enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			else enterRegisterWindowException(frame, end, static_cast<u32>(thread.frameDepth()) + 2u, OpCode::JREG, a);
+			return false;
+		}
+		auto* child = thread.acquireFrame();
+		child->executionImage = frame.executionImage;
+		child->initializeWindow(target, m_currentInstructionPc, m_activeExecutionDomainId, base, width, top);
+		thread.setStackTop(static_cast<i32>(end));
+		thread.enterFrame(child);
+		return true;
+	}
+	CallFrame* const parent = frame.previous;
+	if (parent == nullptr || frame.hasControlFlag(FRAME_EXCEPTION) || b > frame.registers.size()) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		return false;
+	}
+	const u32 top = static_cast<u32>(frame.stackBase()) + b - static_cast<u32>(parent->stackBase());
+	if (top > parent->registers.size()) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		return false;
+	}
+	thread.leaveFrame();
+	parent->setTop(static_cast<i32>(top));
+	resumeFrameBank();
+	return true;
+}
+
 void CPU::enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress) {
 	m_cop0Words[COP0_BAD_ADDRESS] = payloadAddress;
 	const std::array arguments{value, valueInteger(static_cast<i32>(tagAddress))};

@@ -1,6 +1,6 @@
 import { decodeBlua32InstructionAtPc, type DecodedInstruction } from './blua32_instruction_decode';
 import { extractSourceRangeText } from './source_text';
-import { INSTRUCTION_BYTES, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, RegisterJumpMode, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatInteger } from '../../../machine/ts/common/number_format';
@@ -291,9 +291,13 @@ const buildInstructionOperands = (
 		case OpCode.JMPIFNOT:
 			return [registerOperand('a', 'cond', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.JREG:
-			return c === 0 ? [registerOperand('a', 'target', a)]
-				: c === 1 ? [registerOperand('a', 'target', a), registerOperand('b', 'link', b)]
-					: [plainOperand('c', 'reserved mode', c.toString())];
+			switch (c) {
+				case RegisterJumpMode.Jump: return [registerOperand('a', 'target', a)];
+				case RegisterJumpMode.Link: return [registerOperand('a', 'target', a), registerOperand('b', 'link', b)];
+				case RegisterJumpMode.EnterWindow: return [registerOperand('a', 'target', a), plainOperand('b', 'window', `r${b}..r${b + 2}`)];
+				case RegisterJumpMode.LeaveWindow: return [plainOperand('b', 'frontier', b.toString())];
+				default: return [plainOperand('c', 'reserved mode', c.toString())];
+			}
 		case OpCode.JAL:
 			return [registerOperand('a', 'link', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.GETUP:
@@ -500,7 +504,13 @@ const formatInstruction = (
 		case OpCode.JMPIFNOT:
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JREG:
-			return c === 0 ? `JREG r${a}` : c === 1 ? `JREG r${a}, r${b}` : `JREG (reserved mode ${c})`;
+			switch (c) {
+				case RegisterJumpMode.Jump: return `JREG r${a}`;
+				case RegisterJumpMode.Link: return `JREG r${a}, r${b}`;
+				case RegisterJumpMode.EnterWindow: return `JREG enter r${a}, r${b}..r${b + 2}`;
+				case RegisterJumpMode.LeaveWindow: return `JREG leave ${b}`;
+				default: return `JREG (reserved mode ${c})`;
+			}
 		case OpCode.JAL:
 			return `JAL r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.GETUP:

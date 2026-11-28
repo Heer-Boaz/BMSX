@@ -97,6 +97,14 @@ inline auto blua32FunctionIndexAtAddress(
 	return (functionAddress - image.header.functionTableAddress) / BLUA32_FUNCTION_RECORD_SIZE;
 }
 
+inline auto blua32FunctionIndexAtPc(const Blua32ImageLayout& image, u32 pc) -> std::optional<size_t> {
+	for (size_t index = 0; index < image.functions.size(); ++index) {
+		const auto& function = image.functions[index];
+		if (pc - function.codeAddress < function.codeByteCount) return index;
+	}
+	return std::nullopt;
+}
+
 auto decodeBlua32BootHeader(std::span<const u8> bytes) -> Blua32BootHeader;
 auto decodeBlua32RomImage(std::span<const u8> bytes, u32 romBaseAddress) -> std::optional<Blua32ImageLayout>;
 auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32ImageLayout;

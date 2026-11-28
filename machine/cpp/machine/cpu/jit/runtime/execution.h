@@ -59,6 +59,7 @@ struct NativeCpuRunState {
 	std::optional<u32> hotSidePc{};
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	u32 directRegisterJumpResumes = 0;
+	u32 directWindowTransferResumes = 0;
 #endif
 };
 

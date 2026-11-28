@@ -304,6 +304,12 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		irqModule: options.irqModule,
 		exceptionModule: options.exceptionModule,
 		managedEntries,
+		linkedStaticExports: [
+			...options.biosExports,
+			...(options.preparedEntry === undefined ? [] : [options.preparedEntry]),
+			...(options.userIrqEntry === undefined ? [] : [options.userIrqEntry]),
+			...(options.exceptionBridge === undefined ? [] : [options.exceptionBridge]),
+		],
 		traceStatements: options.traceStatements,
 		preloadModules: options.preloadModules,
 		captureLayout: options.previous?.captureSources === undefined

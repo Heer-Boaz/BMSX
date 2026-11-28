@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "machine/cpu/value_slots.h"
 #include "sljitLir.h"
 
@@ -24,6 +26,8 @@ public:
 	void* publishSegment;
 	void* leaveSegment;
 	void* registerJump;
+	void* enterWindow;
+	void* leaveWindow;
 	void* stringReadProbe;
 	void* ownStringSlotProbe;
 	void* indexReadProbe;
@@ -32,6 +36,10 @@ public:
 };
 sljit_label* emitNativeReturn(sljit_compiler*, sljit_label* bindWindow, sljit_label* semanticReturn);
 sljit_label* emitFixedResidentCall(sljit_compiler*, sljit_label* bindWindow, sljit_label* semanticCall);
+sljit_label* emitWindowEnter(sljit_compiler*, sljit_label* bindWindow, sljit_label* cold);
+sljit_label* emitWindowLeave(sljit_compiler*, sljit_label* bindWindow, sljit_label* cold);
+// R2 is the aligned-PC candidate; R3 receives its resident code entry.
+std::array<sljit_jump*, 5> emitResidentCodeAtPc(sljit_compiler*);
 const NativeBlockGate& nativeBlockGate();
 
 } // namespace bmsx

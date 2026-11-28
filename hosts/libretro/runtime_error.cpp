@@ -95,10 +95,13 @@ void reportLibretroRuntimeError(
 			continue;
 		}
 		const u32 functionAddress = cpu.readFrameFunctionAddress(frameIndex);
-		const u32 functionIndex = blua32FunctionIndexAtAddress(image, functionAddress);
-		const Blua32FunctionRecord& function = image.functions[functionIndex];
-		if (cpu.lastPc >= function.codeAddress
-			&& cpu.lastPc < function.codeAddress + function.codeByteCount) {
+		const bool parked = frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1);
+		const u32 pc = parked ? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
+		const auto index = functionAddress == 0u ? blua32FunctionIndexAtPc(image, pc)
+			: std::optional<size_t>{blua32FunctionIndexAtAddress(image, functionAddress)};
+		if (!index) continue;
+		const auto& function = image.functions[*index];
+		if (cpu.lastPc - function.codeAddress < function.codeByteCount) {
 			instructionFrameIndex = frameIndex;
 			break;
 		}
@@ -157,20 +160,18 @@ void reportLibretroRuntimeError(
 			*blua32ToolingImageForDomain(toolingMedia, frameDomainId);
 		const Blua32ImageLayout& frameImage = frameToolingImage.layout;
 		const u32 functionAddress = cpu.readFrameFunctionAddress(frameIndex);
-		const u32 functionIndex =
-			blua32FunctionIndexAtAddress(frameImage, functionAddress);
-		const Blua32FunctionRecord& function = frameImage.functions[functionIndex];
-		const u32 pc = frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
-			? cpu.readFrameCallSitePc(frameIndex + 1)
-			: executionDomainId == frameDomainId
-				&& cpu.lastPc >= function.codeAddress
-				&& cpu.lastPc < function.codeAddress + function.codeByteCount
-				? cpu.lastPc
-				: cpu.readFramePc(frameIndex);
+		const bool parked = frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1);
+		u32 pc = parked ? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
+		const auto index = functionAddress == 0u ? blua32FunctionIndexAtPc(frameImage, pc)
+			: std::optional<size_t>{blua32FunctionIndexAtAddress(frameImage, functionAddress)};
+		if (!parked && index && executionDomainId == frameDomainId) {
+			const auto& function = frameImage.functions[*index];
+			if (cpu.lastPc - function.codeAddress < function.codeByteCount) pc = cpu.lastPc;
+		}
 		std::ostringstream frame;
-		if (frameToolingImage.symbols) {
+		if (frameToolingImage.symbols && index) {
 			const Blua32SymbolsImage& frameSymbols = *frameToolingImage.symbols;
-			frame << "  at " << frameSymbols.metadata.functionIds[functionIndex];
+			frame << "  at " << frameSymbols.metadata.functionIds[*index];
 			const Blua32SourceRange& range = blua32SourceRangeAtPc(
 				frameSymbols,
 				frameImage.header.textAddress,
@@ -183,8 +184,10 @@ void reportLibretroRuntimeError(
 				logging.log(RETRO_LOG_ERROR, "%s", frameText.c_str());
 				continue;
 			}
-		} else {
+		} else if (functionAddress != 0u) {
 			frame << "  at function@0x" << std::hex << functionAddress << std::dec;
+		} else {
+			frame << "  at <register window>";
 		}
 		frame << " (pc=0x" << std::hex << pc << ')';
 		const std::string frameText = frame.str();

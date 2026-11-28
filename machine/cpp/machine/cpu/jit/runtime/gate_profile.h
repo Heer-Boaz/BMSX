@@ -18,6 +18,7 @@ struct NativeGateExitProfile {
 struct NativeGateProfile {
 	std::array<NativeGateExitProfile, static_cast<size_t>(NativeBlockExit::Count)> exits{};
 	u64 directRegisterJumpResumes = 0;
+	u64 directWindowTransferResumes = 0;
 	u64 builtinAttempts = 0;
 	u64 builtinDeclines = 0;
 	u64 builtinResumes = 0;
@@ -31,7 +32,7 @@ inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"ReadInteger", "WriteInteger", "Length", "ControlFault",
 	"ExceptionReturn",
 	"WriteWords", "WriteControl", "WriteGlobal", "WriteSystemGlobal", "ReadUpvalue", "IterateTable",
-	"SupervisorCall", "RegisterJump",
+	"SupervisorCall", "RegisterJump", "RegisterWindowTransfer",
 });
 static_assert(NATIVE_GATE_EXIT_NAMES.size() == static_cast<size_t>(NativeBlockExit::Count));
 

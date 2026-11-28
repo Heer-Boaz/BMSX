@@ -110,6 +110,22 @@ void NativeLowering::lowerOperation(const NativeRegisterJump& jump, const Native
 	m_terminal = true;
 }
 
+void NativeLowering::lowerOperation(const NativeRegisterWindowTransfer& transfer, const NativeInstruction&) {
+	auto& exit = m_blocks[m_current]->terminal;
+	if (!m_bindings.cpu) {
+		emitLeave(exit, Charge::Pending);
+		return;
+	}
+	m_cache.publish();
+	emitTop(exit.registerTop);
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, NativeBlockAbi::budget, 0, NativeBlockAbi::budget, 0, SLJIT_IMM, exit.cycles);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
+	const auto& gate = nativeBlockGate();
+	void* target = transfer.mode == RegisterJumpMode::EnterWindow ? gate.enterWindow : gate.leaveWindow;
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(target));
+	m_terminal = true;
+}
+
 void NativeLowering::emitExit(NativeBlockExitSite& exit, size_t edge, EdgePosition position, sljit_label** sharedExternal) {
 	const auto& block = m_ir[m_current];
 	const auto target = block.successors[edge];

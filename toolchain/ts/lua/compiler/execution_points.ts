@@ -87,6 +87,7 @@ export function buildProgramDebugPoints(
 	resolveClosureUpvalues: ClosureUpvalueResolver,
 	outerBindings: ReadonlyArray<OuterBindingDebug>,
 	allocation?: FrameSlotAllocation,
+	physicalRegisterBase = 0,
 ): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; outerBindings: LocatedOuterBindingDebug[] } {
 	// Liveness before slot assignment supplies the intervals. When a slot has several
 	// lexical owners, intersect it with each owner's source/inline scope.
@@ -194,14 +195,21 @@ export function buildProgramDebugPoints(
 			for (let index = 0; index < liveRegisters.length; index += 1) liveRegisters[index] = allocation.slots[liveRegisters[index]];
 			liveRegisters.sort((a, b) => a - b);
 		}
+		const uses = collectInstructionUses(physical, physicalMaxRegister, resolveClosureUpvalues);
+		const defs = collectInstructionDefs(physical, physicalMaxRegister);
+		if (physicalRegisterBase !== 0) {
+			for (let i = 0; i < liveRegisters.length; ++i) liveRegisters[i] += physicalRegisterBase;
+			for (let i = 0; i < uses.length; ++i) uses[i] += physicalRegisterBase;
+			for (let i = 0; i < defs.length; ++i) defs[i] += physicalRegisterBase;
+		}
 		points.push({
 			resumeId: instruction.resumeId,
 			wordOffset: instructionWordOffsets[instructionIndex],
 			range,
 			op: instruction.op,
 			liveRegisters,
-			uses: collectInstructionUses(physical, physicalMaxRegister, resolveClosureUpvalues),
-			defs: collectInstructionDefs(physical, physicalMaxRegister),
+			uses,
+			defs,
 			inlineCallSites,
 		});
 	}
@@ -213,16 +221,17 @@ export function buildProgramDebugPoints(
 		resumePoints: points,
 		localSlots: localSlots.map(slot => ({
 			...slot,
-			registerIndex: allocation !== undefined && slot.registerIndex < maxStack
-				? allocation.slots[slot.registerIndex] : slot.registerIndex,
+			registerIndex: (allocation !== undefined && slot.registerIndex < maxStack
+				? allocation.slots[slot.registerIndex] : slot.registerIndex) + physicalRegisterBase,
 			liveWordRanges: reusedRanges.get(slot) ?? rangesByRegister.get(slot.registerIndex)!,
 		})),
 		outerBindings: outerBindings.map(slot => {
 			const location = slot.location;
 			return {
 				...slot,
-				location: allocation !== undefined && location !== null && location.inStack && location.index < maxStack
-					? { inStack: true, index: allocation.slots[location.index] } : location,
+				location: location !== null && location.inStack
+					? { inStack: true, index: (allocation !== undefined && location.index < maxStack
+						? allocation.slots[location.index] : location.index) + physicalRegisterBase } : location,
 				liveWordRanges: location === null ? noLocation
 					: location.inStack ? rangesByRegister.get(location.index)! : functionRange,
 			};

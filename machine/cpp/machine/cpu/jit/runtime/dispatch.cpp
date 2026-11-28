@@ -233,6 +233,12 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 			break;
 		}
+		case NativeBlockExit::RegisterWindowTransfer: {
+			const auto [a, b, mode] = exit->operands.registerWindowTransfer;
+			transition = cpu.executeWindowTransfer(*frame, a, b, mode)
+				? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
+			break;
+		}
 		case NativeBlockExit::Halt:
 			cpu.haltUntilIrq();
 			transition = NativeBlockTransition::Redispatch;

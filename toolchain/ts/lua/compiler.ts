@@ -78,7 +78,8 @@ import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import { computeMaxRegister } from './compiler/optimizer/instructions';
-import { allocateFrameSlots } from './compiler/optimizer/frame_slots';
+import { allocateFrameSlots, type FrameSlotAllocation } from './compiler/optimizer/frame_slots';
+import { lowerWindowCalls, type WindowBodyLowering } from './compiler/window_calls';
 import { isSkipInstruction } from './compiler/control_flow';
 import { encodeWideIntegerLoad, MAX_ABX_REGISTER_A } from './compiler/wide_integer';
 import { staticLuaTableFieldName } from './syntax/table_fields';
@@ -293,6 +294,8 @@ export type SystemCompileOptions = CompileOptionsBase & {
 	exceptionModule?: string;
 	/** Capture-free function bodies entered by software, never module initializers. */
 	managedEntries?: readonly ManagedEntry[];
+	/** Complete set of static symbols that must accept the language calling convention. */
+	linkedStaticExports?: readonly ProgramFunctionSymbol[];
 	biosFunctions?: never;
 };
 
@@ -490,6 +493,8 @@ class ProgramBuilder {
 	private readonly globalSlotByName: Map<string, number> = new Map();
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
+	private readonly physicalCodeOwners: Array<FunctionBuilder | undefined> = [];
+	private readonly indirectCodeConstantSlots = new Set<number>();
 	public readonly functionDefinitions: Array<SourceRange | null> = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>[] = [];
@@ -548,6 +553,7 @@ class ProgramBuilder {
 		public readonly captureLayout?: LuaCaptureLayout,
 		installedConstants?: readonly LinkedProgramConstant[],
 		public readonly installedBss?: CompileOptionsBase['installedBss'],
+		private readonly linkedStaticExports?: readonly ProgramFunctionSymbol[],
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
@@ -669,6 +675,12 @@ class ProgramBuilder {
 		this.codeFunctionRelocSlots.set(key, index);
 		this.constValueRelocs.push({ constIndex: index, kind: 'code_function', target });
 		return index;
+	}
+
+	public indirectCodeConstantIndex(target: ProgramCodeFunctionTarget): number {
+		const slot = this.codeFunctionRelocIndex(target);
+		this.indirectCodeConstantSlots.add(slot);
+		return slot;
 	}
 
 	public relocatedConstIndexSet(): ReadonlySet<number> {
@@ -884,6 +896,7 @@ class ProgramBuilder {
 		instructionSet: InstructionSet,
 		semantics: LuaSemanticFrontendFile,
 		definition: SourceRange | null = null,
+		physicalCodeOwner?: FunctionBuilder,
 	): number {
 		if (this.protoIndexById.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
@@ -893,6 +906,7 @@ class ProgramBuilder {
 		this.protoSemantics.set(protoId, semantics);
 		this.protos.push(proto);
 		this.protoCode.push(code);
+		if (this.linkedStaticExports !== undefined && this.optLevel === 3) this.physicalCodeOwners[index] = physicalCodeOwner;
 		this.protoRanges.push(ranges);
 		this.functionDefinitions.push(definition);
 		this.protoInlineCallSites.push(inlineCallSites);
@@ -1071,7 +1085,66 @@ class ProgramBuilder {
 		return this.biosFunctionImportIndexBySymbol.get(programModuleExportKey(path, exportPathKey));
 	}
 
+	private resolveLocalCodeSymbol(target: ProgramCodeFunctionTarget): number | undefined {
+		if (target.kind === 'proto') return target.protoIndex;
+		if (target.kind === 'export_proto') return this.exportProtoIndex(target.path, target.exportPathKey);
+		return undefined;
+	}
+
+	private lowerPhysicalWindowCalls(): void {
+		const escaped = new Set<number>(), staticProtos = new Set<number>();
+		for (const id of Object.values(this.exportProtoIdBySlot)) staticProtos.add(this.protoIndexById.get(id)!);
+		for (const { path, exportPathKey } of this.linkedStaticExports!) {
+			const index = this.exportProtoIndex(path, exportPathKey);
+			if (index !== undefined) escaped.add(index);
+		}
+		for (const { path } of this.managedEntries.values()) escaped.add(this.protoIndexById.get(buildModuleProtoId(path))!);
+		for (const reloc of this.constValueRelocs) {
+			if (reloc.kind === 'function_addr') escaped.add(reloc.protoIndex);
+			if (reloc.kind === 'code_function' && this.indirectCodeConstantSlots.has(reloc.constIndex)) {
+				const target = this.resolveLocalCodeSymbol(reloc.target);
+				if (target !== undefined) escaped.add(target);
+			}
+		}
+		// Generated entries without an authored body owner cannot be rewritten.
+		for (let proto = 0; proto < this.protos.length; ++proto) {
+			if (this.physicalCodeOwners[proto] !== undefined) continue;
+			for (const instruction of this.protoInstructionSets[proto].instructions) {
+				if (instruction.symbolicReloc === undefined) continue;
+				const target = this.resolveLocalCodeSymbol(instruction.symbolicReloc);
+				if (target !== undefined) escaped.add(target);
+			}
+		}
+		const bodies = this.protos.map((proto, index) => ({ proto,
+			instructions: this.physicalCodeOwners[index]?.physicalInstructions() ?? this.protoInstructionSets[index].instructions,
+		}));
+		const lowered = lowerWindowCalls(bodies, staticProtos, escaped,
+			target => this.resolveLocalCodeSymbol(target), proto => this.protos[proto].upvalueDescs);
+		for (const [index, transformed] of lowered.bodies) {
+			const owner = this.physicalCodeOwners[index]!;
+			owner.encodeWindowBody(transformed);
+			this.protos[index].maxStack = owner.getMaxStack();
+			this.protoCode[index] = owner.getCode();
+			this.protos[index].codeLen = this.protoCode[index].length;
+			this.protoRanges[index] = owner.getRanges();
+			this.protoInlineCallSites[index] = owner.getInlineCallSites();
+			this.protoConstRelocs[index] = owner.getConstRelocs();
+			this.protoStatementPoints[index] = owner.getStatementPoints();
+			this.protoResumePoints[index] = owner.getResumePoints();
+			this.protoLocalSlots[index] = owner.getLocalDebugSlots();
+			this.protoOuterBindings[index] = owner.getOuterBindingDebug();
+		}
+		for (let i = 0; i < this.constValueRelocs.length; ++i) {
+			const reloc = this.constValueRelocs[i];
+			if (reloc.kind !== 'code_function') continue;
+			const protoIndex = this.resolveLocalCodeSymbol(reloc.target);
+			if (protoIndex !== undefined && lowered.leaves.has(protoIndex))
+				this.constValueRelocs[i] = { kind: 'text_addr', constIndex: reloc.constIndex, protoIndex };
+		}
+	}
+
 	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>, frontend: LuaSemanticFrontend): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+		if (this.linkedStaticExports !== undefined && this.optLevel === 3) this.lowerPhysicalWindowCalls();
 		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			totalBytes += this.protos[i].codeLen;
@@ -1311,6 +1384,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
+	private allocatedFrame: FrameSlotAllocation | undefined;
+	private virtualMaxStack = 0;
+	private debugOuterBindings: readonly OuterBindingDebug[] = [];
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedInlineCallSites: Array<ReadonlyArray<InlineCallSite>> | null = null;
 	private finalizedConstRelocs: ProgramImageConstReloc[] | null = null;
@@ -1818,6 +1894,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		};
 	}
 
+	public physicalInstructions(): readonly Instruction[] {
+		return this.allocatedFrame?.instructions ?? this.code;
+	}
+
+	public encodeWindowBody(lowered: WindowBodyLowering): void {
+		this.maxStack = lowered.maxStack;
+		const ranges = lowered.origins.map(index => this.ranges[index]);
+		this.encodePhysicalCode(lowered.instructions, ranges, lowered);
+	}
+
 	private finalizeCode(): void {
 		if (this.finalizedCode) {
 			return;
@@ -1909,8 +1995,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			// its caller's frame later can make a different sharing decision.
 			this.inlineFrame = { maxStack: virtualMaxStack, localSlots: this.localDebugSlots, outerBindings };
 		}
-		const instructions = allocation === undefined ? this.code : allocation.instructions;
-		const ranges = this.ranges;
+		this.allocatedFrame = allocation;
+		this.virtualMaxStack = virtualMaxStack;
+		this.debugOuterBindings = outerBindings;
+		this.encodePhysicalCode(allocation === undefined ? this.code : allocation.instructions, this.ranges);
+	}
+
+	private encodePhysicalCode(instructions: Instruction[], ranges: ReadonlyArray<SourceRange | null>, lowered?: WindowBodyLowering): void {
 		const wordWidths = new Uint8Array(instructions.length);
 		let wideIntegers: Map<number, Uint8Array> | undefined;
 		const sbxValues: number[] = new Array(instructions.length).fill(0);
@@ -2139,14 +2230,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		);
 		const debugPoints = buildProgramDebugPoints(
 			this.code,
-			ranges,
-			instrStartIndex,
+			this.ranges,
+			lowered === undefined ? instrStartIndex : this.code.map((_instruction, index) => instrStartIndex[lowered.starts[index]]),
 			code.length / INSTRUCTION_BYTES,
 			this.localDebugSlots,
-			virtualMaxStack,
-			resolveClosure,
-			outerBindings,
-			allocation,
+			this.virtualMaxStack,
+			protoIndex => this.program.protos[protoIndex].upvalueDescs,
+			this.debugOuterBindings,
+			this.allocatedFrame,
+			lowered?.registerBias,
 		);
 		this.finalizedResumePoints = debugPoints.resumePoints;
 		this.finalizedLocalSlots = debugPoints.localSlots;
@@ -3170,7 +3262,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (target <= MAX_ABX_REGISTER_A) {
 			this.emitABx(OpCode.LOADK, target, 0, binding);
 		} else {
-			this.emitRelocatedPoolLoad(target, this.program.codeFunctionRelocIndex(binding));
+			this.emitRelocatedPoolLoad(target, this.program.indirectCodeConstantIndex(binding));
 		}
 	}
 
@@ -6356,7 +6448,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics, semantics.locations.range(expression.span));
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics, semantics.locations.range(expression.span), builder);
 	return protoIndex;
 }
 
@@ -6603,6 +6695,7 @@ export function compileLuaChunkToProgram(
 		options.captureLayout,
 		options.installedConstants,
 		options.installedBss,
+		options.programDomain === 'system' ? options.linkedStaticExports : undefined,
 	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;
@@ -6739,7 +6832,7 @@ export function compileLuaChunkToProgram(
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
 			staticClosure: false,
-		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getOuterBindingDebug(), entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet, frontend.getFile(chunk.locations.path));
+		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getOuterBindingDebug(), entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet, frontend.getFile(chunk.locations.path), null, entryBuilder);
 	} catch (error) {
 		compileErrors.push(toCompileError(error, chunk.locations.path, 'entry', sourceMaps));
 	}

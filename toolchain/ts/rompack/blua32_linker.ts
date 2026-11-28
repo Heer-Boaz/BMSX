@@ -1,6 +1,6 @@
 import { textToByteString } from '../../../machine/ts/common/byte_string';
 import { integerConstant, type NumberConstant } from '../lua/number';
-import type { LinkedProgramConstant } from '../lua/compiler/program';
+import type { LinkedProgramConstant, Proto } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
@@ -343,6 +343,8 @@ function buildStaticLayoutToken(
 function resolveConstValueRelocation(
 	reloc: Exclude<ProgramConstValueReloc, { kind: 'code_function' }>,
 	functionAddresses: ReadonlyArray<number>,
+	textAddress: number,
+	protos: ReadonlyArray<Proto>,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
 	dataAddress: number,
 	dataLoadAddress: number,
@@ -354,6 +356,8 @@ function resolveConstValueRelocation(
 	switch (reloc.kind) {
 		case 'function_addr':
 			return integerConstant(functionAddresses[reloc.protoIndex]);
+		case 'text_addr':
+			return integerConstant(textAddress + protos[reloc.protoIndex].entryPC);
 		case 'data_addr':
 			return integerConstant(dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend);
 		case 'data_lma_addr':
@@ -695,7 +699,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const moduleSlots = new Map(rodata.moduleProtos.map(module => [module.path, functionSlotByProtoIndex[module.protoIndex]]));
 	for (const reloc of object.link.constValueRelocs) {
 		if (reloc.kind !== 'code_function') {
-			constants[reloc.constIndex] = resolveConstValueRelocation(reloc, functionAddressByProtoIndex,
+			constants[reloc.constIndex] = resolveConstValueRelocation(reloc, functionAddressByProtoIndex, input.loadAddress + textOffset, text.protos,
 				data.symbols, input.dataAddress, dataLoadAddress, bss.symbols,
 				input.bssAddress, rodata.symbols, rodataAddress);
 			continue;
