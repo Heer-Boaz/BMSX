@@ -16,7 +16,7 @@ import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_CART_SELECT, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -111,11 +111,11 @@ const newCellsOffset = 4 * captureLimit;
 const missingOffset = 2 * newCellsOffset;
 const workspaceBytes = missingOffset + (captureLimit >>> 5) * 4;
 
-for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] as const) {
-	test(`compiled capture binding survives both save cuts and rewind on ${domain} at O${optLevel}`, t => {
-		const system = linkManagedTestSystem(domain === 'system' ? source : MANAGED_CART_LAUNCH, optLevel);
+for (const optLevel of [0, 3] as const) for (const socket of [-1, 0, 1] as const) {
+	test(`compiled capture binding survives both save cuts and rewind on ${socket < 0 ? 'system' : `cart socket ${socket}`} at O${optLevel}`, t => {
+		const system = linkManagedTestSystem(socket < 0 ? source : `mem[${IO_CART_SELECT}] = ${socket}\n` + MANAGED_CART_LAUNCH, optLevel);
 		const systemRomBytes = writeTestBlua32Rom(system);
-		const cart = domain === 'cart' ? (() => {
+		const cart = socket >= 0 ? (() => {
 			const program = compileLuaChunkToProgram(parseLuaChunk(source, 'wide-capture.lua'), [], { entrySource: source, optLevel });
 			return linkCartBlua32Image(system.biosImports, encodeCompiledProgramObject(program), program.metadata,
 				CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
@@ -124,12 +124,18 @@ for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] 
 		const { layout } = cart ?? system, { textAddress } = layout.header;
 		const target = layout.functions.find(fn => fn.upvalues.length === names.length)!;
 		assert.ok(target);
-		const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
+		const alternate = socket === 1 ? cartRomBytes!.slice() : null;
+		if (alternate !== null) {
+			// Identical bus address, different descriptor span in the other socket.
+			writeLE32(alternate, target.address - CART_ROM_BASE + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 1);
+		}
+		const slots = socket === 1 ? cartridgeSlots(alternate, cartRomBytes) : cartridgeSlots(cartRomBytes);
+		const runtime = new Runtime({ systemRomBytes, cartridgeSlots: slots, machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 4_194_304);
 		assert.equal(cpu.isHaltedUntilIrq(), true);
-		assert.equal(cpu.activeCartridgeSlot(), domain === 'system' ? -1 : 0);
+		assert.equal(cpu.activeCartridgeSlot(), socket);
 		cpu.clearHaltUntilIrq();
 		const frame = cpu.activeThread.currentFrame!;
 		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -152,8 +158,13 @@ for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] 
 		const stagedSeed = join(dir, 'staged'), stagedCpp = join(dir, 'staged-cpp');
 		const issuedSeed = join(dir, 'issued'), issuedCpp = join(dir, 'issued-cpp');
 		writeFileSync(rom, systemRomBytes);
-		const cartMedia = cartRomBytes === null ? [] : [join(dir, 'cart.rom')];
-		if (cartRomBytes !== null) writeFileSync(cartMedia[0], cartRomBytes);
+		const cartMedia: string[] = [];
+		for (const [index, media] of slots.entries()) {
+			if (media === null) continue;
+			const path = join(dir, `slot${index}.rom`);
+			writeFileSync(path, media.rom);
+			cartMedia.push(path);
+		}
 		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		const commands: string[] = [], rows: string[] = [];
 		function grant(cycles: number) {
