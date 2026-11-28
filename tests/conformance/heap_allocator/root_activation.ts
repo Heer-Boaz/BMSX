@@ -78,7 +78,7 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 
 const dir = mkdtempSync(join(tmpdir(), 'authored-root-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
 		const { linked, object } = buildBlua32Image({
 			domain: 'system', luaModules: [...startupModules, ...library],
@@ -121,7 +121,7 @@ try {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
-			observe(`g ${cycles} 0`, `${result} ${paid} 0 ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
+			observe(`E ${cycles}`, `${result} ${paid} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return result;
 		};
 
