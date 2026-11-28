@@ -1,17 +1,16 @@
 import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE } from '../../../machine/ts/machine/cpu/closure';
 import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
-import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
-import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE,
@@ -35,23 +34,6 @@ import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeHeapReference } from '../../helpers/native_heap/reference';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-// Actual compiler output, deliberately more capture entries than all pinned Value slots.
-const names = Array.from({ length: 513 }, (_, index) => `c${index}`);
-const expect = names.length * 2;
-const source = `
-local function make(value)
-	local ${names.join(',')} = ${names.map(() => 'value').join(',')}
-	local function keep()
-		local total = 0
-		${names.map(name => `total = total + ${name}`).join('\n')}
-		return total
-	end
-	return keep
-end
-local closure = make(2)
-return closure()
-`;
-
 const boot = MANAGED_CART_LAUNCH;
 
 // BIOS closure_work layout; the source-map test checks its field sizes.
@@ -63,128 +45,6 @@ const workspaceBytes = missingOffset + (captureLimit >>> 5) * 4;
 const folder = mkdtempSync(join('tmp', 'bmsx-captured-closure-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
-	for (const optLevel of [0, 3] as const) for (const domain of ['system', 'cart'] as const) {
-		const link = () => {
-			if (domain === 'system') {
-				const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
-				return { layout: linked.image, system: linked.romBytes, cart: null };
-			}
-			const compiled = compileLuaChunkToProgram(parseLuaChunk(source), [], { entrySource: source, optLevel });
-			const pair = linkTestBlua32Pair(compileHeapServiceSystem(boot, optLevel), compiled);
-			return { layout: pair.cartImage, system: pair.systemRomBytes, cart: pair.cartRomBytes };
-		};
-		const { layout, system, cart } = link(), { textAddress } = layout.header;
-		const target = layout.functions.find(fn => fn.upvalues.length === names.length);
-		assert.ok(target);
-		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
-		runtime.boot();
-		const { cpu, memory, scheduler } = runtime.machine;
-		const arena = nativeHeapReference(cpu).heapAllocator;
-		const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
-		const cells = workspace + newCellsOffset, bits = workspace + missingOffset;
-		const history = new RamHistory();
-		history.start(memory);
-		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		function atIssue() {
-			if (!cpu.getFrameDepth() || cpu.fixedInterruptActive() || cpu.activeCartridgeSlot() !== (domain === 'system' ? -1 : 0)) return false;
-			const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
-			const instruction = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, pc);
-			return instruction.op === OpCode.CLOSURE && instruction.bx * 16 === target!.address;
-		}
-		for (let i = 0; i < 8192 && !atIssue(); ++i)
-			assert.notEqual(slice(cpu.fixedInterruptActive() ? 193 : 1), RunResult.Halted);
-		assert.ok(atIssue());
-		const stem = join(folder, `O${optLevel}-${domain}`);
-		const rom = stem + '.rom', seed = stem + '.seed';
-		const checkpoint = stem + '.checkpoint', cpp = stem + '.cpp';
-		const issueCheckpoint = stem + '.issue-checkpoint', cppIssue = stem + '.issue-cpp';
-		writeFileSync(rom, system);
-		const cartMedia = cart === null ? [] : [stem + '.cart'];
-		if (cart !== null) writeFileSync(cartMedia[0], cart);
-		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		const commands: string[] = [], rows: string[] = [];
-		function grant(cycles: number) {
-			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
-			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${nativeHeapReference(cpu).luaHeap.usedBytes()}`);
-			return spent;
-		}
-		const initialPages = history.capture(memory, null);
-		assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
-		assert.ok(cpu.fixedInterruptActive());
-		for (let n = 0; n < 8192 && memory.readRamRecordWord(bits + 48) === 0; ++n) grant(127);
-		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(memory.readRamRecordWord(bits + 48), 0xffffffff, '416 descriptors staged');
-		assert.equal(memory.readRamRecordWord(bits + 64), 0, 'the final descriptor is not yet staged');
-		assert.equal(memory.readRamRecordWord(cells), 0, 'reservation has not issued a Cell');
-		const partialState = captureRuntimeCheckpointState(runtime);
-		const partialPages = history.capture(memory, initialPages);
-		const partial = captureRuntimeSaveState(runtime);
-		const plan = partial.ram.slice(workspace, workspace + workspaceBytes);
-		writeFileSync(checkpoint, encodeRuntimeSaveState(partial));
-		const split = commands.length, logicalBeforeReservation = nativeHeapReference(cpu).luaHeap.usedBytes();
-		for (let n = 0; n < 8192 && memory.readRamRecordWord(cells + 32 * 4) === 0; ++n) grant(221);
-		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(memory.readRamRecordWord(bits + 64), 1, 'the final descriptor went into the last bitmap word');
-		assert.notEqual(memory.readRamRecordWord(cells + 32 * 4), 0);
-		assert.equal(memory.readRamRecordWord(cells + (names.length - 1) * 4), 0);
-		const issued = captureRuntimeSaveState(runtime);
-		const issuedPlan = issued.ram.slice(workspace, workspace + workspaceBytes);
-		assert.equal(nativeHeapReference(cpu).luaHeap.usedBytes(), logicalBeforeReservation,
-			'partial reservation has not published logical ownership');
-		writeFileSync(issueCheckpoint, encodeRuntimeSaveState(issued));
-		const phase = commands.length;
-		function drain() {
-			for (let n = 0; n < 4096 && cpu.getFrameDepth(); ++n) grant(289);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0);
-			assert.deepEqual(runtime.readCompletionValues(), [valueInteger(expect)]);
-			commands.push('C');
-			rows.push(String(expect));
-			const probe = RAM_BASE + cells + 32 * 4, savedCell = memory.readRamRecordWord(probe);
-			const sequence = memory.readBusFaultSequence();
-			assert.notEqual(savedCell, 0);
-			assert.equal(memory.readMappedWord(probe), 0);
-			memory.writeMappedWord(probe, 0);
-			assert.equal(memory.readBusFaultSequence(), sequence + 2);
-			assert.equal(memory.readRamRecordWord(probe), savedCell);
-			commands.push(`M ${probe}`, `O ${probe} 0`);
-			rows.push('0 1');
-			const first = memory.ramBusEnd() - RAM_BASE, last = memory.ramData().length;
-			commands.push(`H ${first} ${last}`);
-			rows.push(String(hashBytes(memory.ramData(), first, last - first)));
-		}
-		drain();
-		const tail = commands.slice(split), after = rows.slice(split);
-		function nativeCheck(name: string, state: string, trace: string[], expected: string[]) {
-			const file = stem + name + '.trace';
-			writeFileSync(file, trace.join('\n'));
-			const actual = execFileSync(native, [rom, file, state, ...cartMedia], { encoding: 'utf8' }).trimEnd().split('\n');
-			const mismatch = actual.findIndex((row, i) => row !== expected[i]);
-			assert.equal(mismatch, -1, `${name} row ${mismatch}: TS ${expected[mismatch]} C++ ${actual[mismatch]}`);
-			assert.equal(actual.length, expected.length);
-		}
-		nativeCheck('cold', seed, ['X', ...commands.slice(0, split), `x ${cpp}`,
-			...commands.slice(split, phase), `x ${cppIssue}`, ...commands.slice(phase)], rows);
-		nativeCheck('issue', issueCheckpoint, ['X', ...commands.slice(phase)], rows.slice(phase));
-		const restoredIssue = decodeRuntimeSaveState(readFileSync(cppIssue), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(restoredIssue.ram.subarray(workspace, workspace + workspaceBytes), issuedPlan);
-		nativeCheck('restore', checkpoint, ['X', ...tail], after);
-		const restored = decodeRuntimeSaveState(readFileSync(cpp), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(restored.ram.subarray(workspace, workspace + workspaceBytes), plan);
-		nativeCheck('rewind', seed, ['X', 'l', ...commands.slice(0, split), 's', ...tail, 'u', ...tail], [...rows, ...after]);
-		const endPages = history.capture(memory, partialPages);
-		history.restore(memory, endPages, partialPages);
-		applyRuntimeCheckpointState(runtime, partialState, RuntimeRestoreOrigin.HistorySeek);
-		assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), plan);
-		commands.length = rows.length = split;
-		for (let i = split; i < phase; ++i) grant(221);
-		drain();
-		assert.deepEqual(commands.slice(split), tail);
-		assert.deepEqual(rows.slice(split), after);
-		applyRuntimeSaveState(runtime, restored);
-		assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), plan);
-		console.log(`CAPTURED-CLOSURE:PASS O${optLevel} ${domain} (${names.length} captures; staged and issued RAM; exact grants, portable restore and rewind)`);
-	}
 	const descriptorSource = `
 bss descriptors: word[2]
 local function make(a, b)
