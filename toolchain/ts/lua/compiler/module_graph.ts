@@ -1,3 +1,4 @@
+import { stronglyConnectedComponents, type StronglyConnectedNode } from '../../collections/strongly_connected_components';
 import {
 	LuaSyntaxKind,
 	type LuaCallExpression,
@@ -57,6 +58,30 @@ export function collectLuaModuleDependencyClosure(
 		enqueueDependencies(loadModuleChunk(queuedModules[index]));
 	}
 	return queuedModules;
+}
+
+/** Visit bodies after their dependencies, preserving input order within a cycle. */
+export function orderLuaModuleBodies<T extends { path: string }>(
+	modules: readonly T[], dependenciesByPath: ReadonlyMap<string, readonly string[]>,
+): T[] {
+	type Node = StronglyConnectedNode<Node> & { module: T; order: number; dependencies: Node[] };
+	const nodes = new Map<string, Node>();
+	for (let order = 0; order < modules.length; ++order) {
+		const module = modules[order];
+		nodes.set(module.path, { module, order, dependencies: [], index: -1, lowlink: 0, component: -1, active: false });
+	}
+	for (const [path, node] of nodes) {
+		for (const dependency of dependenciesByPath.get(path)!) {
+			const target = nodes.get(dependency);
+			if (target !== undefined) node.dependencies.push(target);
+		}
+	}
+	const ordered: T[] = [];
+	for (const component of stronglyConnectedComponents(nodes.values())) {
+		if (component.length > 1) component.sort((left, right) => left.order - right.order);
+		for (const node of component) ordered.push(node.module);
+	}
+	return ordered;
 }
 
 /** A workspace can contain several programs; only the selected roots form this executable. */

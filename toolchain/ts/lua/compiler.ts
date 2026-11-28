@@ -1,4 +1,5 @@
 import { ReturnSource, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { orderLuaModuleBodies } from './compiler/module_graph';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import type { FileSemanticData } from './semantic/model';
@@ -1304,6 +1305,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly moduleCompileContext?: ModuleCompileContext;
 	private readonly moduleCompileInfo?: ModuleCompileInfo;
 	private readonly staticCallTargetScope: boolean;
+	private readonly staticInitializerRequests?: Map<string, Set<string>>;
 	private readonly exceptionEntry: boolean;
 	private readonly rawSystemCode: boolean;
 	private readonly code: Instruction[] = [];
@@ -1373,6 +1375,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			moduleCompileContext?: ModuleCompileContext;
 			moduleCompileInfo?: ModuleCompileInfo;
 			staticCallTargetScope?: boolean;
+			staticInitializerRequests?: Map<string, Set<string>>;
 			exceptionEntry?: boolean;
 			rawSystemCode?: boolean;
 		},
@@ -1387,6 +1390,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.functionDisplayName = params.functionDisplayName;
 		this.moduleCompileContext = params.moduleCompileContext;
 		this.staticCallTargetScope = !!params.staticCallTargetScope;
+		this.staticInitializerRequests = params.staticInitializerRequests ?? parent?.staticInitializerRequests;
 		this.exceptionEntry = params.exceptionEntry === true;
 		// Nested functions inherit the module's export info so that references to the
 		// module's own exported namespace (e.g. `room.fn` inside another `room.*`
@@ -2508,17 +2512,25 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return this.resolveCompileTimeConstClosureBinding(symbolHandle);
 	}
 
-	public markStaticModulePath(path: string, visiting: Set<string> = new Set()): void {
+	public markStaticModulePath(path: string, visiting?: Set<string>): void {
 		if (this.program.hasStaticModulePath(path)) {
 			return;
-		}
-		if (visiting.has(path)) {
-			throw new Error(`Compile-time require cycle includes module '${path}'.`);
 		}
 		const context = this.moduleCompileContext as ModuleCompileContext;
 		const moduleInfo = context.modulesByPath.get(path);
 		if (moduleInfo && moduleInfo.constModule) {
 			return;
+		}
+		const pending = this.staticInitializerRequests;
+		if (pending !== undefined) {
+			let roots = pending.get(this.moduleId);
+			if (roots === undefined) pending.set(this.moduleId, roots = new Set());
+			roots.add(path);
+			return;
+		}
+		visiting ??= new Set();
+		if (visiting.has(path)) {
+			throw new Error(`Compile-time require cycle includes module '${path}'.`);
 		}
 		visiting.add(path);
 		const dependencies = context.moduleDependenciesByPath.get(path);
@@ -6628,13 +6640,18 @@ export function compileLuaChunkToProgram(
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
 	}
-	for (let index = 0; index < canonicalModules.length; index += 1) {
-		const module = canonicalModules[index];
-		if (managedEntryByPath.has(module.path)) continue;
+	const staticFunctionModules = canonicalModules.filter(module => {
 		const info = moduleCompileContext.modulesByPath.get(module.path);
-		if (info === undefined || info.staticFunctionExportByPathKey.size === 0) {
-			continue;
-		}
+		return !managedEntryByPath.has(module.path) && info !== undefined && info.staticFunctionExportByPathKey.size > 0;
+	});
+	// Inlining needs the compiled body; names alone are already declared by
+	// recordModuleExportContracts. Runtime init roots are published separately.
+	const staticInitializerRequests = optLevel === 3 ? new Map<string, Set<string>>() : undefined;
+	const staticBodyOrder = optLevel === 3
+		? orderLuaModuleBodies(staticFunctionModules, moduleCompileContext.moduleDependenciesByPath)
+		: staticFunctionModules;
+	for (const module of staticBodyOrder) {
+		const info = moduleCompileContext.modulesByPath.get(module.path)!;
 		try {
 			const semantics = frontend.getFile(module.path);
 			const moduleProtoId = buildModuleProtoId(module.path);
@@ -6647,6 +6664,7 @@ export function compileLuaChunkToProgram(
 				moduleCompileContext,
 				moduleCompileInfo: info,
 				staticCallTargetScope: true,
+				staticInitializerRequests,
 			});
 			staticScope.compileStaticModuleScope(module.chunk);
 			const exports = collectStaticFunctionExports(module.chunk, semantics, info.staticFunctionExportByPathKey);
@@ -6691,6 +6709,18 @@ export function compileLuaChunkToProgram(
 		frontend,
 		moduleCompileContext,
 	});
+	if (staticInitializerRequests !== undefined) {
+		for (const module of staticFunctionModules) {
+			const roots = staticInitializerRequests.get(module.path);
+			if (roots === undefined) continue;
+			try {
+				for (const path of roots) entryBuilder.markStaticModulePath(path);
+			} catch (error) {
+				compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
+			}
+		}
+		if (compileErrors.length > 0) throw new Error(buildCompileFailureMessage(compileErrors));
+	}
 	try {
 		for (const path of programBuilder.preloadModules) {
 			entryBuilder.markStaticModulePath(path);

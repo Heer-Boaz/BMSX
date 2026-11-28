@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type { CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import {
@@ -12,10 +14,13 @@ import {
 	type OptimizationContext,
 } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
+	createTestSystemCpu,
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,
+	writeTestBlua32Rom,
 } from '../helpers/blua32';
-import { compileLuaSource, runCompiledLua } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 
 const INLINE_TEST_PATH = 'function_inlining.lua';
 const INLINE_TEST_RANGE: SourceRange = {
@@ -93,6 +98,57 @@ return run(3)
 
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), expected);
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), expected);
+});
+
+test('O3 inlines both fixed results of a later-named static dependency without reordering initializers', () => {
+	const modules = [
+		{ path: 'inline/alpha', source: `module<const>
+local dependency<const> = require('inline/zeta')
+local run<const> = function(a, b)
+	require('inline/alpha-init')
+	local x, y = dependency.pair(a, b)
+	return x * y, x - y
+end
+return { run = run }
+` },
+		{ path: 'inline/zeta', source: `module<const>
+local pair<const> = function(a, b)
+	require('inline/zeta-init')
+	return (a ~ b) + 9, (a << 1) - b
+end
+return { pair = pair }
+` },
+		{ path: 'inline/alpha-init', source: 'init_order = (init_order or 0) * 10 + 1' },
+		{ path: 'inline/zeta-init', source: 'init_order = (init_order or 0) * 10 + 2' },
+	];
+	const source = `
+local caller<const> = require('inline/alpha')
+local x, y = caller.run(11, 6)
+return x, y, init_order
+`;
+	for (const level of [0, 3] as const) {
+		const linked = linkManagedTestSystem(source, level, modules), { layout, symbols } = linked;
+		const findExport = (path: string) => symbols.metadata.functionIds.findIndex(id => id.startsWith(`module:${path}/module/static:`));
+		const caller = findExport('inline/alpha'), callee = findExport('inline/zeta');
+		assert.notEqual(caller, -1);
+		assert.notEqual(callee, -1);
+		const fn = layout.functions[caller];
+		let calls = 0;
+		for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
+			const instruction = decodeBlua32InstructionAtPc(layout.textBytes, layout.header.textAddress, pc);
+			if (instruction.op === OpCode.CALL) ++calls;
+			pc = instruction.pc + INSTRUCTION_BYTES;
+		}
+		assert.equal(calls, level === 0 ? 1 : 0);
+		if (level === 3) {
+			assert.ok(symbols.metadata.statementPointsByFunction[caller].some(point => point.inlineCallSites.some(
+				site => site.calleeFunctionId === symbols.metadata.functionIds[callee],
+			)), 'the removed activation retains its authored source chain');
+		}
+		const { cpu } = createTestSystemCpu({ romBytes: writeTestBlua32Rom(linked) });
+		runGuestToHalt(cpu, 4_194_304);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(352), valueInteger(6), valueInteger(12)]);
+	}
 });
 
 test('O3 fixes known single-result tail calls before recursive inlining', () => {
