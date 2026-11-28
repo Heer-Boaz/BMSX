@@ -55,6 +55,8 @@ export const enum CompiledBlockExit {
 	WriteSystemGlobal,
 	IterateTable,
 	StringOrder,
+	IndirectJump,
+	InstructionAddressFault,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -72,6 +74,7 @@ for (const [op, exit] of [
 	[OpCode.GETUP, CompiledBlockExit.ReadUpvalue],
 	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
 	[OpCode.SETGL, CompiledBlockExit.WriteGlobal], [OpCode.SETSYS, CompiledBlockExit.WriteSystemGlobal],
+	[OpCode.JREG, CompiledBlockExit.InstructionAddressFault],
 ] as const) sideExitKinds[op] = exit;
 
 function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
@@ -144,6 +147,7 @@ emitters[OpCode.K1] = (p, w, r) => r.writeInteger(p.a[w], '1');
 emitters[OpCode.KSMI] = (p, w, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
 emitters[OpCode.ARGC] = (p, w, r) => r.writeInteger(p.a[w], 'F.argumentCount');
 emitters[OpCode.JMP] = () => '';
+emitters[OpCode.JREG] = emitters[OpCode.JMP];
 emitters[OpCode.ITERN] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
@@ -159,7 +163,7 @@ emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
 	if (op === OpCode.MOV && c > ValueMoveKind.Tag || op === OpCode.JMP && a !== 0
-		|| op === OpCode.RET && c !== ReturnSource.Registers) return false;
+		|| op === OpCode.RET && c !== ReturnSource.Registers || op === OpCode.JREG && c > 1) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
@@ -169,7 +173,7 @@ export function compiledBlockSupports(op: number, a: number, c: number): boolean
 }
 
 const blockBoundaryOps = new Uint8Array(256);
-for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
+for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.JREG, OpCode.HALT,
 	OpCode.CALL, OpCode.RET, OpCode.CLOSURE, OpCode.SVC,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.ITERN]) {
 	blockBoundaryOps[op] = 1;
@@ -302,13 +306,16 @@ export function emitJavaScriptBlock(
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, tableCache, registers, exitIndex));
+		} else if (op === OpCode.JREG) {
+			source.push(`S.effectiveAddress=${registers.wordOperand(page.a[word])};if(S.effectiveAddress&${INSTRUCTION_BYTES - 1}) ${registers.exit(exitIndex)}`);
+			if (page.c[word] === 1) source.push(registers.writeInteger(page.b[word], `${pc}`));
 		} else if (load || store || words) {
 			if (!words && page.c[word] === MemoryAccessKind.F64LE) source.push('B-=2;');
 			const selector = page.b[word], tag = registers.tagOperand(selector), payload = registers.wordOperand(selector);
 			const base = `ma${word}`;
 			source.push(`const ${base}=${tag}===${ValueTag.Integer}?${payload}:(${tag}===${ValueTag.Float}?fw(${payload}):null);if(${base}===null) ${numericFault}`);
 			const address = displaced ? `(${base}+${page.operandByte[word] * 4})>>>0` : base;
-			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
+			const memoryExit = `{S.effectiveAddress=a;${registers.exit(exitIndex)}}`;
 			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
 			else if (page.c[word] === MemoryAccessKind.ContextWord) source.push(`{const a=${address};${memoryExit}}`);
 			else if (page.c[word] === MemoryAccessKind.Value) {
@@ -330,6 +337,7 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
+		else if (op === OpCode.JREG && page.c[word] === 1) registerTop = Math.max(registerTop, page.b[word] + 1);
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);
 			if (count > 0) registerTop = Math.max(registerTop, page.a[word] + count);
@@ -341,6 +349,7 @@ export function emitJavaScriptBlock(
 	let terminalExit = CompiledBlockExit.Continue;
 	switch (finalOp) {
 		case OpCode.HALT: terminalExit = CompiledBlockExit.Halt; break;
+		case OpCode.JREG: terminalExit = CompiledBlockExit.IndirectJump; break;
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
 		case OpCode.ITERN: terminalExit = CompiledBlockExit.IterateTable; sourceWords += skippedInstructionWidth; break;

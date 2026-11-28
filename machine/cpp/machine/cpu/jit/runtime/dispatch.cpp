@@ -106,6 +106,54 @@ void* CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExit
 	return nativeBlockGate().exit;
 }
 
+void* CPU::dispatchNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExitSite* exit, u32 target) noexcept {
+	auto& cpu = *run->cpu;
+	auto& state = run->state;
+	auto& frame = *state.frame;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	auto& profile = cpu.m_nativeGateProfile.exits[static_cast<size_t>(NativeBlockExit::RegisterJump)];
+	++profile.entries;
+#endif
+	frame.compilationEntry = true;
+	cpu.m_currentInstructionPc = exit->currentPc;
+	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
+	cpu.lastPc = exit->lastPc;
+	if ((target & (INSTRUCTION_BYTES - 1u)) != 0u) {
+		cpu.instructionBudgetRemaining = state.remainingCycles;
+		run->publishActivation(exit->nextPc);
+		try {
+			cpu.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
+		} catch (...) {
+			run->error = std::current_exception();
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++profile.returns;
+		++profile.exceptions;
+#endif
+		return nullptr;
+	}
+	const int link = exit->operands.registerJump.link;
+	if (link >= 0) {
+		frame.registers.setAdmitted(link, valueInteger(toSignedWord(exit->nextPc)));
+		state.registerTop = std::max(state.registerTop, link + 1);
+	}
+	if (state.remainingCycles > 0 && (!cpu.resetBankSelected() || target - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE)) {
+		void* const* cell = NativeCodeLookup::findEntryCellInRoot(run->codeRoot, target);
+		if (void* entry = cell ? *cell : nullptr) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++profile.resumes;
+#endif
+			return entry;
+		}
+	}
+	cpu.instructionBudgetRemaining = state.remainingCycles;
+	run->publishActivation(target);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	++profile.returns;
+#endif
+	return nullptr;
+}
+
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
@@ -411,6 +459,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::Continue:
 		case NativeBlockExit::ScalarBoundary:
+		case NativeBlockExit::RegisterJump:
 		case NativeBlockExit::Count:
 			BMSX_UNREACHABLE();
 		}

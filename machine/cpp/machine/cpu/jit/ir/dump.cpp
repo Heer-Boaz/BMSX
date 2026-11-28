@@ -20,6 +20,7 @@ namespace {
 struct OperationName {
 	const char* operator()(const NativeReplay&) const { return "replay"; }
 	const char* operator()(const NativeJump&) const { return "jump"; }
+	const char* operator()(const NativeRegisterJump&) const { return "register-jump"; }
 	const char* operator()(const NativeHalt&) const { return "halt"; }
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeSupervisorCall&) const { return "supervisor-call"; }

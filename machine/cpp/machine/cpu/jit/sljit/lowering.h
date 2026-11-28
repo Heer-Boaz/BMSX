@@ -36,6 +36,7 @@ private:
 	}
 	void lowerOperation(const NativeReplay&, const NativeInstruction&);
 	void lowerOperation(const NativeJump&, const NativeInstruction&);
+	void lowerOperation(const NativeRegisterJump&, const NativeInstruction&);
 	void lowerOperation(const auto& op, const NativeInstruction&)
 		requires requires { op.terminalExit; }
 	{

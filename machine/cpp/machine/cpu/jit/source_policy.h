@@ -57,6 +57,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SHR:
 		case OpCode::BNOT:
 		case OpCode::JMP:
+		case OpCode::JREG:
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
 		case OpCode::EQ:
@@ -105,7 +106,7 @@ inline constexpr bool nativeBlockCanSkip(u8 op) {
 inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	// Decoded dispatch opcodes are bytes, including the internal pseudo-ops.
 	std::array<bool, 256> boundaries{};
-	for (const auto op : {OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
+	for (const auto op : {OpCode::JMP, OpCode::JREG, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
 		OpCode::CALL, OpCode::RET, OpCode::CLOSURE, OpCode::SVC,
 		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE, OpCode::ITERN}) {
 		boundaries[static_cast<u8>(op)] = true;
@@ -136,6 +137,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
 		case OpCode::MFC0: return instruction.b != COP0_EVENT_CYCLES;
 		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);
 		case OpCode::JMP: return instruction.a == 0;
+		case OpCode::JREG: return instruction.c <= 1;
 		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Tag);
 		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 		default: return nativeBlockSupports(instruction.op);

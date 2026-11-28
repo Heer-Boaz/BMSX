@@ -16,7 +16,9 @@ import {
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, OpCode,
 } from '../../spec/blua32/opcode';
 import { cop0FieldImplemented } from '../../spec/blua32/cop0';
-import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { BASE_OPERAND_BC_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_LOW_OPERAND, MAX_OPERAND_BITS,
+	instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind,
+} from '../../spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
@@ -145,7 +147,12 @@ function verifyRomControlFlow(directory: Blua32RomFunctionDirectory, code: Uint8
 				if (target < first || target >= end || !isRomInstructionHead(directory, target))
 					throw new Error('BLua32 branch target is not an instruction in its function.');
 			}
-			if (op !== OpCode.JMP && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
+			if (op === OpCode.JREG) {
+				const mode = (body & MAX_LOW_OPERAND) | (((body >>> 24) & ((1 << EXT_C_BITS) - 1)) << MAX_OPERAND_BITS)
+					| (wide ? (head & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0);
+				if (mode > 1) throw new Error('BLua32 register jump has an invalid mode.');
+			}
+			if (op !== OpCode.JMP && op !== OpCode.JREG && op !== OpCode.RET && op !== OpCode.RFE && op <= OpCode.HALT) {
 				if (next >= end) throw new Error('BLua32 function falls through the end of its TEXT extent.');
 				if (op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE || op === OpCode.ITERN) {
 					const skippedWide = instructionOpcode(readLE32(code, codeOffset + next - textAddress)) === OpCode.WIDE;
@@ -307,6 +314,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		// uses a Bx selector wider than the ordinary register fields.
 		case OpCode.CALL: case OpCode.CLOSURE:
 			return 0;
+		case OpCode.JREG:
+			return c === 0 ? a + 1 : c === 1 ? Math.max(a, b) + 1 : 0;
 		case OpCode.RET:
 			// Register returns admit only the range consumed by the receiver.
 			// A suffix always reads its starting index from one register.

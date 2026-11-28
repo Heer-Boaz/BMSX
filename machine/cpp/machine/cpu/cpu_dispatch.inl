@@ -269,12 +269,6 @@ DISPATCH_LABEL(SVC) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(RESERVED_10) {
-	PUBLISH_SCALAR_FRONTIER();
-	enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-	DISPATCH_CONTINUE();
-}
-
 DISPATCH_LABEL(ADD) {
 	const Value left = readRK(IMAGE, FRAME.registers, decoded->b);
 	const Value right = readRK(IMAGE, FRAME.registers, decoded->c);
@@ -459,6 +453,23 @@ DISPATCH_LABEL(JMP) {
 		DISPATCH_CONTINUE();
 	}
 	SET_NEXT_PC(bx);
+	DISPATCH_NEXT();
+}
+
+DISPATCH_LABEL(JREG) {
+	if (decoded->c > 1) {
+		PUBLISH_SCALAR_FRONTIER();
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		DISPATCH_CONTINUE();
+	}
+	const u32 target = FRAME.registers.payload(decoded->a);
+	if ((target & (INSTRUCTION_BYTES - 1u)) != 0u) {
+		PUBLISH_SCALAR_FRONTIER();
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
+		DISPATCH_CONTINUE();
+	}
+	if (decoded->c != 0) SET_REGISTER_FAST(decoded->b, valueInteger(toSignedWord(nextPc)));
+	SET_NEXT_PC(target);
 	DISPATCH_NEXT();
 }
 

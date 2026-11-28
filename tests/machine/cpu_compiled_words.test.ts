@@ -12,7 +12,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
@@ -39,7 +39,46 @@ function wordLoop(count: number, displaced = false, bssBytes = RAM_CODE_FIXTURE_
 test('generated execution admits every executable BLua32 opcode; WIDE remains a decode prefix', () => {
 	assert.equal(compiledBlockSupports(OpCode.WIDE, 0, 0), false);
 	assert.equal(compiledBlockSupports(OpCode.JMP, 1, 0), false);
-	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0, 0), op !== OpCode.RESERVED_10, `opcode ${op}`);
+	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op, 0, 0), true, `opcode ${op}`);
+	assert.equal(compiledBlockSupports(OpCode.JREG, 0, 2), false);
+});
+
+test('generated JREG samples an aliased target and faults before writing its link', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
+		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript);
+	const scalar = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
+	const pc = DYNAMIC_RAM_BASE, link = pc + 2 * INSTRUCTION_BYTES, target = link + INSTRUCTION_BYTES;
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.JREG, 0, 0, 1);
+	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.JREG, 0, 63, 0);
+	for (const { memory } of [js, scalar]) memory.writeBytes(pc, code);
+	for (let visit = 0; visit < 13; ++visit) {
+		const address = visit === 12 ? target + 2 : target;
+		for (const { cpu } of [js, scalar]) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, address);
+		}
+		runCpuParity(js.cpu, scalar.cpu, 1); assertParity(js.cpu, scalar.cpu);
+		if (address === target) {
+			assert.equal(js.cpu.readFramePc(0), target);
+			assert.equal(js.cpu.readFrameRegister(0, 0), valueInteger(link));
+			runCpuParity(js.cpu, scalar.cpu, 1); assertParity(js.cpu, scalar.cpu);
+			assert.equal(js.cpu.readFramePc(0), link);
+		} else {
+			assert.equal(js.cpu.readCauseWord(), CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD);
+			assert.equal(js.cpu.readBadAddressWord(), address);
+			assert.equal(js.cpu.rootThread.frameAtDepth(0).registers.get(0), valueInteger(address));
+		}
+	}
+	const entries = [...js.cpu.rootThread.frameAtDepth(0).executionImage.decodedPages.values()]
+		.flatMap(page => page.compiledBlocks?.entries ?? []);
+	assert.ok(entries.some(entry => entry?.terminal.currentPc === pc && entry.terminal.exit === CompiledBlockExit.IndirectJump));
+	assert.ok(entries.some(entry => entry?.terminal.currentPc === target && entry.terminal.exit === CompiledBlockExit.IndirectJump));
 });
 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {

@@ -14,7 +14,6 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_BX_BITS, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -99,7 +98,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-	test(`verified dynamic entries reject WIDE bodies and require fresh ROM publication (${backend})`, () => {
+	test(`published entry editing rejects WIDE bodies; RFE uses the instruction bus (${backend})`, () => {
 		const { image, prefix, textAddress } = validImage();
 		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image, backend);
 		const body = textAddress + (prefix + 1) * INSTRUCTION_BYTES;
@@ -126,8 +125,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		nmi.cpu.writeEpcWord(body);
 		const faults = nmi.memory.readBusFaultSequence();
 		assert.equal(nmi.cpu.runUntilDepth(0, BASE_CYCLES[OpCode.RFE] + 1), RunResult.Yielded);
-		assert.equal(nmi.cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
-		assert.equal(nmi.cpu.readEpcWord(), body);
+		assert.equal(nmi.cpu.readFramePc(0), body + INSTRUCTION_BYTES);
+		assert.equal(nmi.cpu.readFrameRegister(0, 0), valueInteger(17), 'the fetch starts at the written word without a WIDE prefix');
 		assert.equal(nmi.memory.readBusFaultSequence(), faults);
 	});
 }

@@ -68,6 +68,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 			if (flags & REGISTER_OPERAND_A) read(a);
 			if (flags & REGISTER_OPERAND_B) read(b);
 			if (flags & REGISTER_OPERAND_C) read(c);
+			if (op === OpCode.JREG && c === 1) define(b);
 			if ((op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D) && c !== 0)
 				for (const register of candidates) if (register >= a && register < a + c) read(register);
 			const writes = fixedRegisterWrites(op, b);
@@ -84,7 +85,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 		if (plan.fallthrough) successors[index].add(index + 1);
 		else switch (page.ops[finalWord]) {
 			case OpCode.HALT: case OpCode.CALL: case OpCode.RET:
-			case OpCode.CLOSURE: case OpCode.SVC: case OpCode.RFE: case OpCode.ITERN: break;
+			case OpCode.CLOSURE: case OpCode.SVC: case OpCode.RFE: case OpCode.ITERN: case OpCode.JREG: break;
 			case OpCode.MTC0:
 				if (!cop0WriteRetiresControl(page.b[finalWord])) addSuccessor(nextPc);
 				break;

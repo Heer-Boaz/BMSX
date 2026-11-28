@@ -23,6 +23,7 @@ public:
 	void* dispatch;
 	void* publishSegment;
 	void* leaveSegment;
+	void* registerJump;
 	void* stringReadProbe;
 	void* ownStringSlotProbe;
 	void* indexReadProbe;

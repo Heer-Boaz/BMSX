@@ -325,6 +325,9 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::JMP:
 			return "JMP " + (decoded.a == 0 ? std::string{} : "close r" + std::to_string(decoded.a - 1) + ", ")
 				+ formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
+		case OpCode::JREG:
+			if (decoded.c > 1) return "JREG reserved mode " + std::to_string(decoded.c);
+			return "JREG r" + std::to_string(decoded.a) + (decoded.c == 0 ? "" : ", r" + std::to_string(decoded.b));
 		case OpCode::JMPIF:
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
@@ -372,8 +375,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
 		case OpCode::HALT:
 			return "HALT";
-		case OpCode::RESERVED_10:
-			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]);
 		case OpCode::WIDE:
 			break;
 	}
@@ -461,6 +462,10 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
+		case OpCode::JREG:
+			if (decoded.c == 0) return {registerOperand("target", decoded.a)};
+			if (decoded.c == 1) return {registerOperand("target", decoded.a), registerOperand("link", decoded.b)};
+			return {plainOperand("reserved mode", std::to_string(decoded.c))};
 		case OpCode::CLOSURE:
 			if ((decoded.c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0) {
 				return {
@@ -511,8 +516,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::RFE:
 			return {};
 		case OpCode::HALT:
-			return {};
-		case OpCode::RESERVED_10:
 			return {};
 		case OpCode::WIDE:
 			break;

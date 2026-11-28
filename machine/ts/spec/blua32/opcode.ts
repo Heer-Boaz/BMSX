@@ -17,7 +17,7 @@ export const enum OpCode {
 	STORE_MEM_WORDS_D,
 	GETT,
 	SETT,
-	RESERVED_10,
+	JREG,
 	ADD,
 	SUB,
 	MUL,
@@ -134,7 +134,7 @@ export const REGISTER_OPERAND_C = 4;
 export const OPCODE_SCALAR_REGISTER_READS = new Uint8Array([
 	0, 2, 0, 0, 2, 0, 0, 0,
 	0, 0, 1, 0, 3, 2, 6, 7,
-	0, 6, 6, 6, 6, 6, 6, 6,
+	1, 6, 6, 6, 6, 6, 6, 6,
 	6, 6, 6, 6, 6, 0, 1, 2,
 	2, 2, 2, 6, 6, 6, 0, 1,
 	0, 1, 1, 0, 0, 1, 0, 1,

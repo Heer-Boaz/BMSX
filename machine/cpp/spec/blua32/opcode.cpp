@@ -20,7 +20,7 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	3u, // STORE_MEM_WORDS_D
 	16u, // GETT
 	16u, // SETT
-	2u, // reserved 10H
+	2u, // JREG
 	2u, // ADD
 	2u, // SUB
 	2u, // MUL
@@ -87,7 +87,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // STORE_MEM_WORDS_D
 	0u, // GETT
 	0u, // SETT
-	0u, // reserved 10H
+	0u, // JREG
 	0u, // ADD
 	0u, // SUB
 	0u, // MUL
@@ -154,7 +154,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP{
 	1u, // STORE_MEM_WORDS_D
 	0u, // GETT
 	0u, // SETT
-	0u, // reserved 10H
+	0u, // JREG
 	0u, // ADD
 	0u, // SUB
 	0u, // MUL
@@ -221,7 +221,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS{
 	0u, // STORE_MEM_WORDS_D
 	2u, // GETT
 	3u, // SETT
-	0u, // reserved 10H
+	0u, // JREG
 	3u, // ADD
 	3u, // SUB
 	3u, // MUL
@@ -288,7 +288,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_SCALAR_REGISTER_READS{
 	2u, // STORE_MEM_WORDS_D
 	6u, // GETT
 	7u, // SETT
-	0u, // reserved 10H
+	1u, // JREG
 	6u, // ADD
 	6u, // SUB
 	6u, // MUL
@@ -355,7 +355,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_WRITES_REGISTER_A{
 	0u, // STORE_MEM_WORDS_D
 	1u, // GETT
 	0u, // SETT
-	0u, // reserved 10H
+	0u, // JREG
 	1u, // ADD
 	1u, // SUB
 	1u, // MUL

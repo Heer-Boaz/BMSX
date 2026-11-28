@@ -66,6 +66,13 @@ struct NativeJump {
 	u32 target;
 	constexpr NativeSlotAccess slots() const { return {}; }
 };
+struct NativeRegisterJump : NativeExitOperands::RegisterJump {
+	static constexpr auto terminalExit = NativeBlockExit::RegisterJump;
+	constexpr NativeSlotAccess slots() const {
+		return {.reads = {static_cast<i16>(target), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND},
+			.writes = link < 0 ? NativeSlotRange{} : NativeSlotRange{static_cast<u16>(link), 1}};
+	}
+};
 struct NativeHalt {
 	static constexpr auto terminalExit = NativeBlockExit::Halt;
 	constexpr NativeSlotAccess slots() const { return {}; }
@@ -297,7 +304,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
+	NativeReplay, NativeJump, NativeRegisterJump, NativeHalt, NativeInvalidOperand, NativeSupervisorCall, NativeExceptionReturn, NativeReturnSite,
 	NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

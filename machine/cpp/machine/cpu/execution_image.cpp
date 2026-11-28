@@ -131,7 +131,12 @@ Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory
 				if (!version.contains(target) || !result.instructionHead(target))
 					throw BMSX_RUNTIME_ERROR("BLua32 branch target is not an instruction in its function.");
 			}
-			if (op != OpCode::JMP && op != OpCode::RET && op != OpCode::RFE && op <= OpCode::HALT) {
+			if (op == OpCode::JREG) {
+				const u32 mode = (body & MAX_LOW_OPERAND) | (((body >> 24u) & ((1u << EXT_C_BITS) - 1u)) << MAX_OPERAND_BITS)
+					| (wide ? (source & MAX_LOW_OPERAND) << BASE_OPERAND_BC_BITS : 0u);
+				if (mode > 1u) throw BMSX_RUNTIME_ERROR("BLua32 register jump has an invalid mode.");
+			}
+			if (op != OpCode::JMP && op != OpCode::JREG && op != OpCode::RET && op != OpCode::RFE && op <= OpCode::HALT) {
 				if (!version.contains(next))
 					throw BMSX_RUNTIME_ERROR("BLua32 function falls through the end of its TEXT extent.");
 				if (op == OpCode::EQ || op == OpCode::LT || op == OpCode::LE || op == OpCode::ITERN) {

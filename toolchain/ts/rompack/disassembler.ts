@@ -305,6 +305,10 @@ const buildInstructionOperands = (
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
 			return [registerOperand('a', 'cond', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
+		case OpCode.JREG:
+			return c === 0 ? [registerOperand('a', 'target', a)]
+				: c === 1 ? [registerOperand('a', 'target', a), registerOperand('b', 'link', b)]
+					: [plainOperand('c', 'reserved mode', c.toString())];
 		case OpCode.CLOSURE:
 			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
 				? [registerOperand('a', 'dst', a), registerOperand('b', 'function_address', bx)]
@@ -512,6 +516,8 @@ const formatInstruction = (
 			return `JMPIF r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIFNOT:
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
+		case OpCode.JREG:
+			return c === 0 ? `JREG r${a}` : c === 1 ? `JREG r${a}, r${b}` : `JREG (reserved mode ${c})`;
 		case OpCode.CLOSURE:
 			return (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
 				? `CLOSURE.R r${a}, r${bx}`

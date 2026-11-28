@@ -85,6 +85,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::UNM: case OpCode::BNOT:
 		return NativeArithmetic{a, b, c, op, NativeArithmeticHint{}};
 	case OpCode::JMP: return NativeJump{instruction.bx()};
+	case OpCode::JREG: return NativeRegisterJump{{a, c == 0 ? NATIVE_NO_OPERAND : b}};
 	case OpCode::JMPIF: case OpCode::JMPIFNOT:
 		return NativeTruthBranch{instruction.bx(), static_cast<i16>(a), op == OpCode::JMPIF};
 	case OpCode::EQ: case OpCode::LT: case OpCode::LE:

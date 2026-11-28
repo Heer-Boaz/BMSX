@@ -1307,13 +1307,6 @@ void CPU::returnFromException(CallFrame& frame) {
 		m_cop0Words[COP0_LUA_FAULT_REASON] = m_nmiReturnLuaFaultReasonWord;
 		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
 	}
-	if (auto* caller = m_activeThread->currentFrame; caller && caller->executionImage
-		&& !caller->executionImage->admitsFunctionPc(caller->readControl(FrameField::Function), returnPc)) {
-		m_cop0Words[COP0_BAD_ADDRESS] = returnPc;
-		const auto cause = (returnPc & (INSTRUCTION_BYTES - 1u)) != 0u
-			? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR;
-		enterInstructionFetchException(*caller, cause, returnPc);
-	}
 }
 
 void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {

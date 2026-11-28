@@ -1081,7 +1081,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 }
 
 void reservedEncodingTrapsBeforeEffects() {
-	constexpr auto op = OpCode::RESERVED_10;
+	constexpr auto op = OpCode::JREG;
 	auto image = returnImage();
 	image.text.resize(3 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
@@ -1100,7 +1100,7 @@ void reservedEncodingTrapsBeforeEffects() {
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
 			&& cpu.readEpcWord() == machine.rom.textAddress + INSTRUCTION_BYTES,
 			"reserved encodings trap generically at their own PC without interpreting the operand bits");
-		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RESERVED_10)]
+		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(op)]
 			&& cpu.readFrameRegister(0, 0) == valueInteger(1), "the trap preserves the retired prefix");
 	}
 }

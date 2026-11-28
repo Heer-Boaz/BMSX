@@ -296,7 +296,7 @@ export class CPU implements MappedPageInvalidator {
 	private compiledSourceGraph: CompiledSourceGraph | null = null;
 	private readonly compiledCodeCache = new CompiledCodeCache();
 	private readonly compiledRunState: CompiledRegionRunState = {
-		remainingCycles: 0, registerTop: 0, memoryAddress: 0,
+		remainingCycles: 0, registerTop: 0, effectiveAddress: 0,
 	};
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
@@ -1976,12 +1976,6 @@ export class CPU implements MappedPageInvalidator {
 			this.cop0Words[COP0_LUA_FAULT_REASON] = this.nmiReturnLuaFaultReasonWord;
 			this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
 		}
-		if (caller && caller.executionImage && !admitsFunctionPc(caller.executionImage.romFunctions, caller.functionAddress, returnPc)) {
-			this.cop0Words[COP0_BAD_ADDRESS] = returnPc;
-			const cause = (returnPc & (INSTRUCTION_BYTES - 1)) !== 0
-				? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR;
-			this.enterInstructionFetchException(caller, cause, returnPc);
-		}
 	}
 
 	private enterException(
@@ -3102,6 +3096,10 @@ export class CPU implements MappedPageInvalidator {
 			let redispatch = false;
 			switch (exit.exit) {
 				case CompiledBlockExit.Continue: break;
+				case CompiledBlockExit.IndirectJump: frame.pc = run.effectiveAddress; break;
+				case CompiledBlockExit.InstructionAddressFault:
+					this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, run.effectiveAddress);
+					redispatch = true; break;
 				case CompiledBlockExit.Halt: this.haltUntilIrq(); redispatch = true; break;
 				case CompiledBlockExit.ControlFault:
 					if (exit.page.ops[exit.exitWord] === OpCode.MFC0 && exit.exitB === COP0_EVENT_CYCLES)
@@ -3156,7 +3154,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory:
 				case CompiledBlockExit.WriteWords: {
-					const address = this.compiledRunState.memoryAddress;
+					const address = run.effectiveAddress;
 					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
 					else if (exit.exit === CompiledBlockExit.WriteWords) this.executeWordStores(frame, address, exit.exitA, exit.exitC);
 					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);
@@ -3377,9 +3375,21 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.SVC:
 					this.executeSupervisorCall(frame, a, page.b[pageOffset]);
 					return;
-				case OpCode.RESERVED_10:
-					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				case OpCode.JREG: {
+					const mode = page.c[pageOffset];
+					if (mode > 1) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+						return;
+					}
+					const target = registers.getPayload(a);
+					if ((target & (INSTRUCTION_BYTES - 1)) !== 0) {
+						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, target);
+						return;
+					}
+					if (mode !== 0) this.setRegisterIntegerFast(frame, registers, page.b[pageOffset], frame.pc);
+					frame.pc = target;
 					return;
+				}
 				case OpCode.ADD:
 					this.setRegisterValueFast(frame, registers, a, valueAdd(this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))); return;
 				case OpCode.SUB:

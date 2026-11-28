@@ -15,7 +15,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'STORE_MEM_WORDS_D',
 	'GETT',
 	'SETT',
-	'RESERVED_10',
+	'JREG',
 	'ADD',
 	'SUB',
 	'MUL',
@@ -68,7 +68,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 export const OPCODE_CATEGORY: ReadonlyArray<string> = [
 	'wide prefix', 'load/move', 'load/move', 'load/move', 'memory I/O', 'load/move', 'load/move', 'load/move',
 	'load/move', 'load/move', 'load/move', 'load/move', 'memory I/O', 'memory I/O', 'table get/set', 'table get/set',
-	'table creation', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic',
+	'branch/jump', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic',
 	'bitwise', 'bitwise', 'bitwise', 'bitwise', 'bitwise', 'string concat', 'string concat', 'arithmetic',
 	'logical', 'length', 'bitwise', 'comparison', 'comparison', 'comparison', 'system control', 'system control',
 	'branch/jump', 'branch/jump', 'branch/jump', 'closure creation', 'upvalue', 'upvalue', 'vararg', 'call/return',

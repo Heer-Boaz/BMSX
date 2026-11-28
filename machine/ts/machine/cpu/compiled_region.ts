@@ -15,7 +15,7 @@ import { THREAD_STACK_SLOT_BYTES } from './thread_record';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
 
-export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number };
+export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; effectiveAddress: number };
 type RegionBody = (registers: ValueSlots, constants: Uint32Array, page: DecodedInstructionPage,
 	frame: CallFrame, entry: number, state: CompiledRegionRunState) => number;
 

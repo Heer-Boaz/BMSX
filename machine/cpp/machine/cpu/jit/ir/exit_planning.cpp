@@ -93,6 +93,7 @@ struct NativeCheckedExit {
 
 struct NativeTerminalExit {
 	NativeExitPlan operator()(const auto&) const { return {}; }
+	NativeExitPlan operator()(const NativeRegisterJump& jump) const { return {jump.terminalExit, {.registerJump = jump}}; }
 	NativeExitPlan operator()(const NativeHalt&) const { return {NativeHalt::terminalExit}; }
 	NativeExitPlan operator()(const NativeSupervisorCall& call) const {
 		return {call.terminalExit, {.supervisorCall = call}};

@@ -620,8 +620,8 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(!nativeBlockSupports(static_cast<u8>(OpCode::WIDE)), "WIDE is a decode prefix");
 		for (size_t op = 1; op < OPCODE_COUNT; ++op) {
-			const bool executable = op != static_cast<u8>(OpCode::RESERVED_10);
-			require(nativeBlockSupports(op) == executable, "native codegen admits exactly the executable BLua32 opcodes");
+			const bool supported = op != static_cast<u8>(OpCode::ARGC);
+			require(nativeBlockSupports(op) == supported, "native codegen admits JREG; ARGC remains scalar");
 		}
 		nativeRegisterSpillIsDirty();
 		typedSuccessorRechecksLoopEntry();
