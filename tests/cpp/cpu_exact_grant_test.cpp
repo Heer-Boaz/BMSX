@@ -601,6 +601,9 @@ void exactBorrowedWindowGrant() {
 	}
 #endif
 	bindInputs();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto before = cpu.nativeGateProfile();
+#endif
 	require(test::runCpuParity(cpu, scalar.cpu, 1) == RunResult::Yielded && cpu.instructionBudgetRemaining == 1 - jump
 		&& cpu.getFrameDepth() == 2 && cpu.readFramePc(0) == successor && cpu.readFramePc(1) == child
 		&& cpu.readFrameFunctionAddress(1) == 0 && cpu.getFrameRegisterCount(1) == 2
@@ -611,6 +614,15 @@ void exactBorrowedWindowGrant() {
 		&& cpu.instructionBudgetRemaining == 1 - jump && cpu.readFramePc(0) == successor
 		&& cpu.activeThread()->currentFrame->readWindow(FrameField::Top) == 4
 		&& test::sameLanguageRam(cpu, scalar.cpu), "a short leave publishes the same parent frontier as scalar");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto afterShort = cpu.nativeGateProfile();
+	const auto oneBudgetFallback = [](const auto& after, const auto& before) {
+		return after.budget == before.budget + 1u && after.pendingCall == before.pendingCall && after.other == before.other;
+	};
+	require(oneBudgetFallback(afterShort.windowEnterFallbacks, before.windowEnterFallbacks)
+		&& oneBudgetFallback(afterShort.windowLeaveFallbacks, before.windowLeaveFallbacks),
+		"each short transfer is attributed once to its own exhausted grant");
+#endif
 	bindInputs();
 	const int grant = 2 * jump + body + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)];
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)

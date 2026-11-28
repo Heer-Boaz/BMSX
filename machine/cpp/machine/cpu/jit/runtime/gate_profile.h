@@ -15,8 +15,15 @@ struct NativeGateExitProfile {
 	u64 exceptions = 0;
 };
 
+struct NativeWindowTransferFallbackProfile {
+	u64 budget = 0;
+	u64 pendingCall = 0;
+	u64 other = 0;
+};
+
 struct NativeGateProfile {
 	std::array<NativeGateExitProfile, static_cast<size_t>(NativeBlockExit::Count)> exits{};
+	NativeWindowTransferFallbackProfile windowEnterFallbacks, windowLeaveFallbacks;
 	u64 directRegisterJumpResumes = 0;
 	u64 directWindowTransferResumes = 0;
 	u64 builtinAttempts = 0;

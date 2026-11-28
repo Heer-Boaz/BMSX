@@ -143,11 +143,20 @@ void CPU::retireNativeRegisterJump(NativeCpuRunState* run, const NativeBlockExit
 
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
+	auto& state = run->state;
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	auto& gateProfile = cpu.m_nativeGateProfile.exits[static_cast<size_t>(exit->exit)];
 	++gateProfile.entries;
+	if (exit->exit == NativeBlockExit::RegisterWindowTransfer) {
+		// Both generated gates check these in order, before the physical
+		// transfer. Sample the pending frontier before publication clears it.
+		auto& fallback = exit->operands.registerWindowTransfer.mode == RegisterJumpMode::EnterWindow
+			? cpu.m_nativeGateProfile.windowEnterFallbacks : cpu.m_nativeGateProfile.windowLeaveFallbacks;
+		if (state.remainingCycles <= 0) ++fallback.budget;
+		else if (run->firstPendingFrame) ++fallback.pendingCall;
+		else ++fallback.other;
+	}
 #endif
-	auto& state = run->state;
 	CallFrame* frame = state.frame;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
 		if (exit->operands.replay.hasCompletedInstruction) {
