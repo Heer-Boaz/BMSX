@@ -95,7 +95,7 @@ enum class NativeCallStrategy : u8 { Generic, Observe, Fixed };
 struct NativeFixedCallPlan {
 	u32 prototype, entryPc, capacity;
 	int copied, padded;
-	bool acceptsCodeFunction;
+	u32 codeFunction;
 };
 
 struct NativeFixedCallBinding {

@@ -138,6 +138,9 @@ import {
 	DECODED_REFRESH_DECODE,
 	DECODED_REFRESH_FUSION,
 	createDecodedInstructionPage,
+	codeFunctionAddress,
+	codeFunctionDomain,
+	codeFunctionWord,
 	decodedDispatchCanFuse,
 	decodedDispatchOp,
 	decodedInstructionBaseCycles,
@@ -663,6 +666,7 @@ export class CPU implements MappedPageInvalidator {
 		stringBinding: number,
 		constantStringSlots: Uint32Array,
 		romFunctions: Blua32RomFunctionDirectory,
+		systemFunctions: Blua32RomFunctionDirectory | undefined,
 	): void {
 		let stringIndex = 0;
 		for (let index = 0; index < constTags.length; index += 1) {
@@ -689,14 +693,16 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
 				case Blua32ConstantTag.CodeFunction: {
 					const address = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET);
-					const lane = romFunctionVersionLane(romFunctions, address);
+					const domain = address < CART_ROM_BASE ? SYSTEM_EXECUTION_DOMAIN_ID : executionDomainId;
+					const directory = domain === executionDomainId ? romFunctions : systemFunctions!;
+					const lane = romFunctionVersionLane(directory, address);
 					const flags = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
-					if (executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || romFunctions.mappedCode || lane < 0
-						|| (romFunctions.versions[lane + RomFunctionLane.Flags] & flags) !== flags
-						|| romFunctions.versions[lane + RomFunctionLane.UpvalueCount] !== 0)
-						throw new Error('BLua32 code constant must name an immutable System function.');
+					if (address === 0 || directory.mappedCode || lane < 0
+						|| (directory.versions[lane + RomFunctionLane.Flags] & flags) !== flags
+						|| directory.versions[lane + RomFunctionLane.UpvalueCount] !== 0)
+						throw new Error('BLua32 code constant must name an immutable ROM function.');
 					constTags[index] = ValueTag.CodeFunction;
-					constWords[index] = address;
+					constWords[index] = codeFunctionWord(address, domain);
 					break;
 				}
 				case Blua32ConstantTag.Builtin: {
@@ -774,6 +780,7 @@ export class CPU implements MappedPageInvalidator {
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
 		stringBinding: number,
+		systemFunctions = this.executionImagesByDomain[0]?.romFunctions,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
 		const { constantBytes, constantOffset, constantCount, stringCount, reused, globalNameCount, systemGlobalNameCount } = header;
@@ -784,7 +791,7 @@ export class CPU implements MappedPageInvalidator {
 			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 			constantStringSlots = new Uint32Array(stringCount);
 			this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
-				stringBinding, constantStringSlots, header.romFunctions);
+				stringBinding, constantStringSlots, header.romFunctions, systemFunctions);
 		} else {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.
@@ -871,12 +878,14 @@ export class CPU implements MappedPageInvalidator {
 	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[]): void {
 		if (executionBoots.length === 0) return;
 		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
+		const systemBoot = executionBoots.find(boot => boot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID);
+		const systemHeader = systemBoot === undefined ? undefined : this.readExecutionImageHeader(systemBoot);
 		const images = executionBoots.map(boot => {
-			const header = this.readExecutionImageHeader(boot);
+			const header = boot === systemBoot ? systemHeader! : this.readExecutionImageHeader(boot);
 			const strings = readInstalledImageStrings(this.memory, boot.executionDomainId,
 				header.globalNameCount, header.systemGlobalNameCount, header.stringCount);
 			if (strings === null) throw new Error('Replacement image requires an installed operand binding.');
-			return this.materializeExecutionImage(boot, header, strings);
+			return this.materializeExecutionImage(boot, header, strings, systemHeader?.romFunctions);
 		});
 		// The new images are only host views. The existing operands and the
 		// firmware's binding descriptor do not change when code is republished.
@@ -3586,9 +3595,9 @@ export class CPU implements MappedPageInvalidator {
 		argBase: number, count: number, codeFunction = 0,
 	): CallFrame | null {
 		const flags = closure !== 0 ? this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS) : 0;
-		const domain = closure !== 0 ? Closure.executionDomain(flags) : SYSTEM_EXECUTION_DOMAIN_ID;
+		const domain = closure !== 0 ? Closure.executionDomain(flags) : codeFunctionDomain(codeFunction);
 		const image = this.executionImageForDomain(domain)!;
-		const prototype = closure !== 0 ? this.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) : codeFunction;
+		const prototype = closure !== 0 ? this.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) : codeFunctionAddress(codeFunction);
 		let entry: Readonly<Closure.FunctionEntry>;
 		if ((flags & Closure.CLOSURE_LATCHED_PROTOTYPE) !== 0) {
 			Closure.readLatchedEntry(this.memory, closure, this.latchedCallEntry);

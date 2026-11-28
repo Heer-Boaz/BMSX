@@ -226,11 +226,13 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 				break;
 			case Blua32ConstantTag::CodeFunction: {
 				const u32 address = readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
-				const auto* function = image.romFunctions.find(address);
-				if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || image.romFunctions.mappedCode
+				const auto domain = address < CART_ROM_BASE ? SYSTEM_EXECUTION_DOMAIN_ID : executionDomainId;
+				const auto& directory = domain == executionDomainId ? image.romFunctions : m_executionImagesByDomain[0]->romFunctions;
+				const auto* function = directory.find(address);
+				if (address == 0u || directory.mappedCode
 					|| !function || !isStaticCodeFunction(function->entry.flags, function->upvalueCount))
-					throw BMSX_RUNTIME_ERROR("BLua32 code constant must name an immutable System function.");
-				constPool.set(index, valueFromTag(ValueTag::CodeFunction, address));
+					throw BMSX_RUNTIME_ERROR("BLua32 code constant must name an immutable ROM function.");
+				constPool.set(index, valueFromTag(ValueTag::CodeFunction, codeFunctionWord(address, domain)));
 				break;
 			}
 			case Blua32ConstantTag::Builtin: {
@@ -2383,8 +2385,12 @@ int CPU::closeFixedWindow(CallFrame& frame, u32 address) {
 }
 
 CPU::FunctionActivation CPU::resolveFunctionActivation(u32 closure, u32 codeFunction) {
-	if (closure == 0u)
-		return {m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
+	if (closure == 0u) {
+		const auto domain = codeFunctionDomain(codeFunction);
+		auto* image = domain == SYSTEM_EXECUTION_DOMAIN_ID ? m_systemImage : executionImageForDomain(domain);
+		const auto address = codeFunctionAddress(codeFunction);
+		return {image, {address, image->bindRomFunction(m_memory, address)->entry}};
+	}
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	return resolveClosureActivation(*executionImageForDomain(binding.domain()), closure, binding);
 }

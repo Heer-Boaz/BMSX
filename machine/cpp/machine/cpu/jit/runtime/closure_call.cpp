@@ -94,8 +94,8 @@ std::optional<NativeFixedCallPlan> CPU::captureNativeFixedCall(Blua32ExecutionIm
 	if (!layout) return std::nullopt;
 	return NativeFixedCallPlan{prototype, function->codeAddress, static_cast<u32>(layout->capacity),
 		layout->formals.copied, layout->formals.padded,
-		image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID && !image.romFunctions.mappedCode
-			&& isStaticCodeFunction(version->entry.flags, version->upvalueCount)};
+		!image.romFunctions.mappedCode && isStaticCodeFunction(version->entry.flags, version->upvalueCount)
+			? codeFunctionWord(prototype, image.executionDomainId) : 0u};
 }
 
 void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page, u32 pc) {
@@ -108,8 +108,8 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	const auto tag = valueTag(value);
 	switch (tag) {
 		case ValueTag::CodeFunction:
-			if (&image != m_systemImage) return;
-			prototype = valuePayload(value);
+			if (codeFunctionDomain(valuePayload(value)) != image.executionDomainId) return;
+			prototype = codeFunctionAddress(valuePayload(value));
 			break;
 		case ValueTag::Closure: {
 			const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(value));
@@ -122,7 +122,7 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 		default: return;
 	}
 	const auto plan = captureNativeFixedCall(image, prototype, decodeValueCount(decoded.b, -1));
-	if (!plan || (tag == ValueTag::CodeFunction && !plan->acceptsCodeFunction)) return;
+	if (!plan || (tag == ValueTag::CodeFunction && plan->codeFunction == 0u)) return;
 	decoded.setNativeCallTarget(prototype);
 }
 
@@ -159,13 +159,15 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 			const u32 builtin = caller.registers.admittedPayload(base);
 			return nativeBuiltinLeafId(builtin) ? tryRunNativeBuiltinLeaf(run, exit, builtin) : nullptr;
 		}
-		case ValueTag::CodeFunction:
-			if (&image != cpu.m_systemImage) return nullptr;
-			functionAddress = caller.registers.admittedPayload(base);
+		case ValueTag::CodeFunction: {
+			const auto code = caller.registers.admittedPayload(base);
+			if (codeFunctionDomain(code) != image.executionDomainId) return nullptr;
+			functionAddress = codeFunctionAddress(code);
 			romBinding = image.bindRomFunction(cpu.m_memory, functionAddress);
 			if (!romBinding) return nullptr;
 			function = &romBinding->entry;
 			break;
+		}
 		case ValueTag::Closure: {
 			closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
 			if (!closure) return nullptr;
@@ -195,7 +197,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 			decoded.setNativeCallTarget(DecodedInstruction::CALL_TARGET_DISABLED);
 			exit->callStrategy = NativeCallStrategy::Generic;
 		} else if (const auto plan = cpu.captureNativeFixedCall(image, functionAddress, call.supplied);
-			plan && (closure != 0 || plan->acceptsCodeFunction)) {
+			plan && (closure != 0 || plan->codeFunction != 0u)) {
 			decoded.setNativeCallTarget(functionAddress);
 			std::construct_at(&exit->fixedCall, NativeFixedCallBinding{*plan, romBinding->entryCells});
 			exit->callStrategy = NativeCallStrategy::Fixed;
@@ -266,8 +268,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 		const ClosureRecord::BindingFlags flags{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 		if (flags.latched() || flags.domain() != caller.executionImage->executionDomainId
 			|| cpu.m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) != plan.prototype) return miss();
-	} else if (tag != ValueTag::CodeFunction || !plan.acceptsCodeFunction
-		|| caller.registers.admittedPayload(base) != plan.prototype) {
+	} else if (tag != ValueTag::CodeFunction || caller.registers.admittedPayload(base) != plan.codeFunction) {
 		return miss();
 	}
 

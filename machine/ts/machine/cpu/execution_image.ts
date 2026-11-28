@@ -23,6 +23,17 @@ import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
 
+// Callable ROM values name a physical record, including its cartridge socket.
+// Instruction addresses and Frame.Function retain the unqualified bus address.
+export function codeFunctionWord(address: number, domain: ExecutionDomainId): number {
+	return (address | (domain === 1 ? 0x80000000 : 0)) >>> 0;
+}
+
+export function codeFunctionAddress(word: number): number { return word & 0x7fffffff; }
+export function codeFunctionDomain(word: number): ExecutionDomainId {
+	return codeFunctionAddress(word) < CART_ROM_BASE ? SYSTEM_EXECUTION_DOMAIN_ID : (word >>> 31) as 0 | 1;
+}
+
 // A nonempty ROM operand plane has to be published before an image can attach.
 export function readInstalledImageStrings(memory: Memory, domain: ExecutionDomainId,
 	ordinaryCount: number, systemCount: number, stringCount: number): number | null {

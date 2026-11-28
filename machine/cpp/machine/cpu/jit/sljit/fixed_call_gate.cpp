@@ -49,9 +49,8 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 		SLJIT_IMM, static_cast<sljit_sw>(ValueTag::Closure));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
 		SLJIT_IMM, static_cast<sljit_sw>(ValueTag::CodeFunction)), semanticCall);
-	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0),
-		plan + offsetof(NativeFixedCallPlan, acceptsCodeFunction));
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0), semanticCall);
+	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0),
+		plan + offsetof(NativeFixedCallPlan, codeFunction)), semanticCall);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), callClosure, SLJIT_IMM, 0);
 	auto* immutableCode = sljit_emit_jump(c, SLJIT_JUMP);
 
@@ -72,9 +71,9 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), 0);
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
-	sljit_set_label(immutableCode, sljit_emit_label(c));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0),
 		plan + offsetof(NativeFixedCallPlan, prototype)), semanticCall);
+	sljit_set_label(immutableCode, sljit_emit_label(c));
 
 	// Only already-resident code and already admitted frame/stack storage.
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(state), offsetof(NativeCpuRunState, cartridgeSlot));

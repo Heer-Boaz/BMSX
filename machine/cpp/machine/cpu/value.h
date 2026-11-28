@@ -20,7 +20,7 @@ using Value = uint64_t;
 enum class ValueTag : uint8_t {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
 	DeadKey, // Table retirement metadata; never a language-level value.
-	CodeFunction = 12, // Immutable System Function with no environment.
+	CodeFunction = 12, // Immutable ROM Function with no environment.
 	UnboundStringLiteral = 0xff, // Only in a decoded operand bank, never a guest Value.
 };
 inline constexpr unsigned VALUE_HEADER_SHIFT = 32;

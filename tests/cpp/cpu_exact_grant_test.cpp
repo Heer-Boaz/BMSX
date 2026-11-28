@@ -552,7 +552,8 @@ void exactImmutableCodeConstantGrant() {
 			const auto* block = callPage->nativeBlocks->entries[(successor & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 			if (warm) {
 				require(block && block->terminal.callStrategy == NativeCallStrategy::Fixed
-					&& block->terminal.fixedCall.plan.acceptsCodeFunction, "a warm ordinary CALL has a fixed CodeFunction plan");
+					&& block->terminal.fixedCall.plan.codeFunction == rom.functionAddresses[prototype],
+					"a warm ordinary CALL has a fixed CodeFunction plan");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 				require(exits[static_cast<size_t>(NativeBlockExit::Call)].entries == callEntries,
 					"the resident call does not go through the semantic CALL dispatcher");

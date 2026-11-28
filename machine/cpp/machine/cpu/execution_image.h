@@ -33,6 +33,16 @@ namespace bmsx {
 struct Blua32ExecutionImage;
 class Memory;
 
+// Callable ROM values name a physical record, including its cartridge socket.
+// Instruction addresses and Frame.Function retain the unqualified bus address.
+constexpr u32 codeFunctionWord(u32 address, ExecutionDomainId domain) {
+	return address | (static_cast<u32>(domain == 1) << 31u);
+}
+constexpr u32 codeFunctionAddress(u32 word) { return word & 0x7fffffffu; }
+constexpr ExecutionDomainId codeFunctionDomain(u32 word) {
+	return codeFunctionAddress(word) < CART_ROM_BASE ? SYSTEM_EXECUTION_DOMAIN_ID : static_cast<ExecutionDomainId>(word >> 31u);
+}
+
 constexpr bool isStaticCodeFunction(u32 flags, u32 upvalueCount) {
 	constexpr u32 required = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
 	return upvalueCount == 0u && (flags & required) == required;
