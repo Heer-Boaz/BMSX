@@ -89,15 +89,18 @@ sljit_jump* NativeRegisterCache::guard(int guest, ValueTag tag, sljit_s32 scratc
 	return sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM, static_cast<u8>(tag));
 }
 
-void NativeRegisterCache::emitWord(int guest, sljit_s32 destination) const {
+std::pair<sljit_s32, sljit_sw> NativeRegisterCache::wordOperand(int guest, sljit_s32 floatBitsScratch) const {
 	const int slot = find(guest);
-	if (slot < 0) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, destination, 0, SLJIT_MEM1(m_words), guest * sizeof(u32));
-	} else if (floating(slot)) {
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY32_FROM_F32, host(slot).reg, destination);
-	} else if (host(slot).reg != destination) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, destination, 0, host(slot).reg, 0);
-	}
+	if (slot < 0) return {SLJIT_MEM1(m_words), guest * sizeof(u32)};
+	if (!floating(slot)) return {host(slot).reg, 0};
+	sljit_emit_fcopy(m_compiler, SLJIT_COPY32_FROM_F32, host(slot).reg, floatBitsScratch);
+	return {floatBitsScratch, 0};
+}
+
+void NativeRegisterCache::emitWord(int guest, sljit_s32 destination) const {
+	const auto [source, offset] = wordOperand(guest, destination);
+	if (source != destination)
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, destination, 0, source, offset);
 }
 
 void NativeRegisterCache::emitTag(int guest, sljit_s32 destination) const {

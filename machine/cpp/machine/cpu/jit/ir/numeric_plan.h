@@ -8,7 +8,7 @@
 
 namespace bmsx {
 
-enum class NativeNumericAction : u8 { Fault, Kernel, Word, Float, DynamicNumber };
+enum class NativeNumericAction : u8 { Fault, Kernel, Word, Float, DynamicNumber, DynamicWord };
 enum class NativeNumericFeedbackMode : u8 { None, Sampling, Polymorphic };
 
 struct NativeNumericPlan {

@@ -7,6 +7,9 @@
 namespace bmsx {
 
 namespace {
+constexpr sljit_sw numericArgs = NativeBlockAbi::helperResultOffset;
+constexpr sljit_sw numericResult = numericArgs + 2 * sizeof(Value);
+
 constexpr sljit_s32 binaryFloatOpcode(OpCode op) {
 	switch (op) {
 		case OpCode::ADD: return SLJIT_ADD_F32;
@@ -55,39 +58,86 @@ void NativeLowering::emitWordOperand(int selector, NativeWordSource source, Nati
 	if (integer) sljit_set_label(integer, sljit_emit_label(m_compiler));
 }
 
-void NativeLowering::emitNumericKernel(
-	const NativeArithmetic& arithmetic, const NativeInstruction& instruction, const NativeNumericPlan& plan) {
-	constexpr sljit_sw args = NativeBlockAbi::helperResultOffset, result = args + 2 * sizeof(Value);
+void NativeLowering::callNumericKernel(
+	const NativeArithmetic& arithmetic, NativeBlockExitSite& invalid, DecodedInstruction* sampleSource) {
 	const auto op = arithmetic.operation;
 	emitRawLoad(arithmetic.left, SLJIT_R0, SLJIT_R1);
-	emitValueTransportStore(m_compiler, SLJIT_SP, args, SLJIT_R0, SLJIT_R1);
+	emitValueTransportStore(m_compiler, SLJIT_SP, numericArgs, SLJIT_R0, SLJIT_R1);
 	if (!arithmetic.unary()) {
 		emitRawLoad(arithmetic.right, SLJIT_R0, SLJIT_R1);
-		emitValueTransportStore(m_compiler, SLJIT_SP, args + sizeof(Value), SLJIT_R0, SLJIT_R1);
+		emitValueTransportStore(m_compiler, SLJIT_SP, numericArgs + sizeof(Value), SLJIT_R0, SLJIT_R1);
 	}
 	const auto prefix = m_cache.state();
 	m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
-	sljit_get_local_base(m_compiler, SLJIT_R0, 0, args);
-	sljit_get_local_base(m_compiler, SLJIT_R1, 0, result);
-	if (plan.sampleOperands) {
-		const u32 word = (instruction.pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	sljit_get_local_base(m_compiler, SLJIT_R0, 0, numericArgs);
+	sljit_get_local_base(m_compiler, SLJIT_R1, 0, numericResult);
+	if (sampleSource) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM,
-			reinterpret_cast<sljit_sw>(&m_decodedPage[word]));
+			reinterpret_cast<sljit_sw>(sampleSource));
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeSamplingKernel(op)));
 	} else
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(nativeNumericKernel(op)));
 	m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
-		static_cast<u32>(NativeNumericCompletion::InvalidOperand)), *sideExit(instruction.slow), prefix);
+		static_cast<u32>(NativeNumericCompletion::InvalidOperand)), invalid, prefix);
+}
+
+void NativeLowering::emitNumericKernel(
+	const NativeArithmetic& arithmetic, const NativeInstruction& instruction, const NativeNumericPlan& plan) {
+	const u32 word = (instruction.pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	callNumericKernel(arithmetic, *sideExit(instruction.slow), plan.sampleOperands ? &m_decodedPage[word] : nullptr);
 	if (!plan.result) {
-		emitValueTransportLoad(m_compiler, SLJIT_SP, result, SLJIT_R0, SLJIT_R1);
+		emitValueTransportLoad(m_compiler, SLJIT_SP, numericResult, SLJIT_R0, SLJIT_R1);
 		emitRawStore(arithmetic.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, arithmetic.result));
 	} else {
 		const auto target = m_cache.write(arithmetic.result, *plan.result);
 		if (target.tag == ValueTag::Float)
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), result + VALUE_LOW_WORD_BYTE_OFFSET);
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), numericResult + VALUE_LOW_WORD_BYTE_OFFSET);
 		else
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), result + VALUE_LOW_WORD_BYTE_OFFSET);
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_MEM1(SLJIT_SP), numericResult + VALUE_LOW_WORD_BYTE_OFFSET);
+	}
+}
+
+void NativeLowering::emitDynamicWord(const NativeArithmetic& arithmetic,
+	const NativeInstruction& instruction, const NativeNumericPlan& plan) {
+	constexpr auto integer = ValueTag::Integer;
+	const bool same = arithmetic.left == arithmetic.right;
+	auto* leftMiss = plan.left ? nullptr : guardTag(arithmetic.left, integer, SLJIT_R0);
+	auto* rightMiss = same || plan.right ? nullptr : guardTag(arithmetic.right, integer, SLJIT_R0);
+	const auto operand = [&](int selector, sljit_s32 scratch) -> std::pair<sljit_s32, sljit_sw> {
+		if (selector >= 0) return m_cache.wordOperand(selector, scratch);
+		if (const auto constant = nativeImageConstant(m_constants, -selector - 1))
+			return {SLJIT_IMM, toSignedWord(valuePayload(*constant))};
+		emitPoolWord(-selector - 1, scratch);
+		return {scratch, 0};
+	};
+	if (same) {
+		if (arithmetic.operation == OpCode::BXOR)
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
+		else emitPayload(arithmetic.left, SLJIT_R0);
+	} else {
+		const auto [a, aArg] = operand(arithmetic.left, SLJIT_R0);
+		const auto [b, bArg] = operand(arithmetic.right, SLJIT_R1);
+		sljit_emit_op2(m_compiler, binaryWordOpcode(arithmetic.operation), SLJIT_R0, 0, a, aArg, b, bArg);
+	}
+	// Only the result is Integer on both paths. The cold conversion may have
+	// read a Float, so don't specialize or replace either live input binding.
+	if (leftMiss || rightMiss)
+		m_workspace.numericWordMisses.push_back({&arithmetic, sideExit(instruction.slow),
+			{leftMiss, rightMiss}, sljit_emit_label(m_compiler), m_cache.state()});
+	const auto target = m_cache.write(arithmetic.result, integer);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
+}
+
+void NativeLowering::emitNumericWordMisses() {
+	for (const auto& miss : m_workspace.numericWordMisses) {
+		auto* entry = sljit_emit_label(m_compiler);
+		for (auto* branch : miss.branches)
+			if (branch) sljit_set_label(branch, entry);
+		m_cache.setState(miss.registers);
+		callNumericKernel(*miss.arithmetic, *miss.invalid, nullptr);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), numericResult + VALUE_LOW_WORD_BYTE_OFFSET);
+		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), miss.result);
 	}
 }
 void NativeLowering::emitFloatInput(int selector, ValueTag tag, sljit_s32 destination) {
@@ -183,6 +233,9 @@ void NativeLowering::lowerOperation(const NativeArithmetic& arithmetic, const Na
 		return;
 	case NativeNumericAction::DynamicNumber:
 		emitDynamicNumeric(arithmetic, instruction, plan);
+		return;
+	case NativeNumericAction::DynamicWord:
+		emitDynamicWord(arithmetic, instruction, plan);
 		return;
 	case NativeNumericAction::Word:
 		break;

@@ -40,6 +40,7 @@ void NativeLowering::Workspace::clear() {
 	external.clear();
 	coldExits.clear();
 	coldBranches.clear();
+	numericWordMisses.clear();
 	ramMisses.clear();
 	localIoWrites.clear();
 	singleStringReads.clear();
@@ -369,6 +370,7 @@ void* NativeLowering::finish(size_t& codeBytes) {
 		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.proven);
 	}
 	emitRamMisses();
+	emitNumericWordMisses();
 	emitLocalIoWrites();
 	emitSingleStringReads();
 	emitStringStoreMisses();

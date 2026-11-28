@@ -192,18 +192,26 @@ void adaptiveArithmeticReplay() {
 	const auto feedback = page.words[entry + 1u].nativeNumericTypes();
 #endif
 	input(valueBool(false));
+	const u32 suspended = native.cpu.activeThread()->address;
+	const auto nativeRegisters = native.cpu.activeThread()->frameAtDepth(0)->registers;
+	const auto scalarRegisters = scalar.cpu.activeThread()->frameAtDepth(0)->registers;
 	test::runCpuParity(native.cpu, scalar.cpu, prefixCycles + 1);
 	for (auto* machine : {&native, &scalar}) {
 		auto& cpu = machine->cpu;
 		require(cpu.readEpcWord() == wide && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
-			&& cpu.readFrameRegister(0, 4) == valueInteger(73), "a failed arithmetic replay faults before committing its result");
+			&& cpu.memory().readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) == suspended,
+			"a failed arithmetic replay reports the fault in its suspended context");
 	}
+	require(nativeRegisters.get(4) == valueInteger(73) && scalarRegisters.get(4) == valueInteger(73)
+		&& test::sameLanguageRam(native.cpu, scalar.cpu), "a failed arithmetic replay does not commit its result");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(installed() && page.words[entry + 1u].nativeNumericTypes() == feedback, "a faulting arithmetic execution cannot train or retire its specialization");
 #endif
 	for (auto* machine : {&native, &scalar}) {
-		require(machine->cpu.runUntilDepth(1, BASE_CYCLES[static_cast<u8>(OpCode::RFE)]) == RunResult::Halted,
-			"the real exception return restores the root activation");
+		auto& cpu = machine->cpu;
+		require(cpu.runUntilDepth(1, BASE_CYCLES[static_cast<u8>(OpCode::RFE)]) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.activeThread()->address == suspended
+			&& cpu.readFramePc(0) == wide, "an exact RFE grant restores the suspended instruction and its root activation");
 	}
 
 	subtract(valueFloat(0.5f), valueFloat(11.5f), prefixCycles + 1);
@@ -351,15 +359,104 @@ void widenedArithmeticPairs() {
 		check(valueFloatBits(0xffa12345u), f(2.f), valueFloatBits(BLUA32_FLOAT_NAN), grant);
 		const Value prior = operands == Operands::Registers ? i(12) : valueBool(false);
 		input(prior, valueBool(false));
+		const u32 suspended = cpu.activeThread()->address;
+		const auto suspendedRegisters = cpu.activeThread()->frameAtDepth(0)->registers;
 		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
 			&& cpu.instructionBudgetRemaining == 0 && cpu.readEpcWord() == wide
 			&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
-			&& cpu.readFrameRegister(0, 0) == prior && cpu.readFrameRegister(0, 5) == i(73)
+			&& cpu.memory().readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) == suspended
+			&& suspendedRegisters.get(0) == prior && suspendedRegisters.get(5) == i(73)
 			&& test::sameLanguageRam(cpu, scalar.cpu) && installed() == body,
 			"an invalid operand faults without changing its aliased destination or retiring the body");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		require(exits[invalid].entries == beforeInvalid + 1 && exits[boundary].entries == beforeBoundary,
 			"the real generated instruction uses its checked semantic exit exactly once");
+#endif
+	}
+#endif
+}
+
+void dynamicWordPairs() {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	struct Case { OpCode op; int target; int right; i32 integerSource, floatSource; Value expected; bool rk; };
+	constexpr int mask = 0x00ff00ff;
+	for (const auto [op, target, right, integerSource, floatSource, expected, rk] : std::array{
+		Case{OpCode::BAND, 0, -1, 0x11a5007f, -1, valueInteger(0x00a5007f), true},
+		Case{OpCode::BXOR, 0, 0, INT32_MIN, 6, valueInteger(0), false},
+		Case{OpCode::BOR, 1, 1, 6, 6, valueInteger(7), false},
+	}) {
+		test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		image.constants = {i32{mask}};
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 3, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, rk ? 63 : 0);
+		writeInstruction(image.text, 3, static_cast<u8>(op), target, 0, rk ? 63 : right, rk ? 7 : 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 5, 0, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 16, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 7}, {.firstWord = 16, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		Machine native(image, false), scalar(image, true);
+		auto& cpu = native.cpu;
+		cpu.prepareSystemNativeCode();
+		const u32 pc = native.rom.textAddress + INSTRUCTION_BYTES;
+		const u32 wide = pc + INSTRUCTION_BYTES, suffix = wide + 2 * INSTRUCTION_BYTES;
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(op)];
+		const auto& page = *cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup->find(pc, 0);
+		const auto* body = page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+		require(body && body->sideExits.size() == 1 && body->sideExits.front().exit == NativeBlockExit::InvalidOperand
+			&& body->sideExits.front().currentPc == wide, "the real dynamic word body keeps its exact operation fault");
+
+		const auto input = [&](Value left) {
+			for (auto* machine : {&native, &scalar}) {
+				auto& lane = machine->cpu;
+				lane.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+				auto& frame = *lane.activeThread()->frameAtDepth(0);
+				frame.registers.set(0, left);
+				frame.registers.set(1, valueInteger(3));
+				frame.registers.set(5, valueInteger(73));
+				frame.setTop(2);
+			}
+		};
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& exits = cpu.nativeGateProfile().exits;
+		const auto boundary = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
+		const auto invalid = static_cast<size_t>(NativeBlockExit::InvalidOperand);
+		const auto beforeReplay = exits[boundary].entries, beforeInvalid = exits[invalid].entries;
+#endif
+		const auto check = [&](Value left, Value result, int runGrant) {
+			input(left);
+			require(test::runCpuParity(cpu, scalar.cpu, runGrant) == RunResult::Yielded
+				&& cpu.instructionBudgetRemaining == runGrant - grant && cpu.readCurrentInstructionPc() == wide
+				&& cpu.lastPc == wide + INSTRUCTION_BYTES && cpu.readFramePc(0) == suffix
+				&& cpu.getFrameRegisterCount(0) == 4 && cpu.readFrameRegister(0, target) == result
+				&& cpu.readFrameRegister(0, 1 - target) == (target == 0 ? valueInteger(3) : left)
+				&& cpu.readFrameRegister(0, 3) == valueInteger(1) && cpu.readFrameRegister(0, 5) == valueInteger(73)
+				&& test::sameLanguageRam(cpu, scalar.cpu), "both word routes preserve untouched lanes and the exact grant");
+		};
+		check(valueInteger(integerSource), expected, grant - 1);
+		check(valueFloat(static_cast<float>(floatSource)), rk ? valueInteger(mask) : expected, grant);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits[boundary].entries == beforeReplay && exits[invalid].entries == beforeInvalid,
+			"integer and exact Float inputs complete without scalar or fault dispatch");
+#endif
+		input(valueFloat(6.5f));
+		const u32 suspended = cpu.activeThread()->address;
+		const auto suspendedRegisters = cpu.activeThread()->frameAtDepth(0)->registers;
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded
+			&& cpu.instructionBudgetRemaining == 0 && cpu.readEpcWord() == wide
+			&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& cpu.memory().readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) == suspended
+			&& ThreadRecord::readFrameWord(cpu.memory(), suspended, 0, FrameField::Top) == 4
+			&& suspendedRegisters.get(0) == valueFloat(6.5f) && suspendedRegisters.get(1) == valueInteger(3)
+			&& suspendedRegisters.get(3) == valueInteger(1) && suspendedRegisters.get(5) == valueInteger(73)
+			&& test::sameLanguageRam(cpu, scalar.cpu),
+			"out-of-line conversion faults without overwriting its aliased operand or recharging the prefix");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		require(exits[boundary].entries == beforeReplay && exits[invalid].entries == beforeInvalid + 1,
+			"real generated word code reports exactly one checked semantic fault");
 #endif
 	}
 #endif
@@ -1791,6 +1888,7 @@ int main(int argc, char** argv) {
 		else if (scenario == "native-arithmetic-profile") {
 			generatedArithmeticKeepsItsEntry(false);
 			generatedArithmeticKeepsItsEntry(true);
+			dynamicWordPairs();
 		}
 		else throw std::runtime_error("unknown scenario");
 		return 0;

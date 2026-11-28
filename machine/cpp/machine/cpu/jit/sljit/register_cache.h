@@ -4,6 +4,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
@@ -48,6 +49,7 @@ public:
 	sljit_jump* guard(int guest, ValueTag tag, sljit_s32 scratch) const;
 	struct RawResult { sljit_s32 word, tag; sljit_sw wordOffset, tagOffset; };
 	RawResult writeRaw(int guest, NativeOperandDemand demand);
+	std::pair<sljit_s32, sljit_sw> wordOperand(int guest, sljit_s32 floatBitsScratch) const;
 	void emitWord(int guest, sljit_s32 destination) const;
 	void emitTag(int guest, sljit_s32 destination) const;
 	Operand read(int guest, ValueTag tag);

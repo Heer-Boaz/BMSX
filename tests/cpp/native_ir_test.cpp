@@ -59,6 +59,16 @@ void numericPlans() {
 	require(bitwise.action == NativeNumericAction::Kernel && bitwise.result == integer,
 		"bitwise conversion is a kernel on Float and only yields an Integer");
 
+	for (const auto op : {OpCode::BAND, OpCode::BXOR, OpCode::BOR}) {
+		const auto word = planNativeNumeric(op, integer, integer, std::nullopt, false);
+		const auto converted = planNativeNumeric(op, floating, integer, std::nullopt, false);
+		const auto dynamic = planNativeNumeric(op, std::nullopt, integer, std::nullopt, false);
+		require(word.action == NativeNumericAction::Word && converted.action == NativeNumericAction::Kernel
+			&& dynamic.action == NativeNumericAction::DynamicWord && !dynamic.left && dynamic.right == integer
+			&& dynamic.result == integer && !dynamic.resultDependsOnInputs,
+			"an unknown logical operand selects a local integer arm without losing result proof");
+	}
+
 	const auto unary = planNativeNumeric(OpCode::UNM, floating, std::nullopt, std::nullopt, false);
 	require(unary.action == NativeNumericAction::Float && unary.result == floating,
 		"unary negation needs only its one operand proof");

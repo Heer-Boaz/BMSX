@@ -37,6 +37,7 @@ inline unsigned fixedWordUses(const NativeGlobalAccess& op) {
 inline unsigned fixedWordUses(const NativeArithmetic& op) {
 	const auto& plan = std::get<NativeNumericPlan>(op.strategy);
 	if (plan.action == NativeNumericAction::Kernel) return plan.sampleOperands ? 0x7 : 0x3;
+	if (plan.action == NativeNumericAction::DynamicWord) return 0x3;
 	if (plan.action == NativeNumericAction::Float) return 1;
 	if (plan.action == NativeNumericAction::DynamicNumber) {
 		if (plan.result == ValueTag::Float) return 0x3;

@@ -87,7 +87,10 @@ private:
 	void fault(sljit_jump* jump, NativeBlockExitSite& site, const State& state, Charge charge = Charge::Pending, NativeBlockExitSite* exhausted = nullptr);
 	void emitLeave(NativeBlockExitSite& exit, Charge charge);
 	void emitPublishedLeave(NativeBlockExitSite& exit, Charge charge);
+	void callNumericKernel(const NativeArithmetic&, NativeBlockExitSite& invalid, DecodedInstruction* sampleSource);
 	void emitNumericKernel(const NativeArithmetic&, const NativeInstruction&, const NativeNumericPlan&);
+	void emitDynamicWord(const NativeArithmetic&, const NativeInstruction&, const NativeNumericPlan&);
+	void emitNumericWordMisses();
 	void emitDynamicNumeric(const NativeArithmetic&, const NativeInstruction&, const NativeNumericPlan&);
 	void emitFloatInput(int selector, ValueTag tag, sljit_s32 destination);
 	void emitFloatCanonicalization(sljit_s32 reg);
@@ -144,6 +147,13 @@ private:
 		sljit_label* coldEntry;
 		NativeBlockLink* link;
 	};
+	struct NumericWordMiss {
+		const NativeArithmetic* arithmetic;
+		NativeBlockExitSite* invalid;
+		std::array<sljit_jump*, 2> branches;
+		sljit_label* result;
+		State registers;
+	};
 	struct ColdExit {
 		SemanticExit target;
 		State state;
@@ -197,6 +207,7 @@ struct NativeLowering::Workspace {
 	std::vector<ExternalBranch> external;
 	std::vector<ColdExit> coldExits;
 	std::vector<Branch> coldBranches;
+	std::vector<NumericWordMiss> numericWordMisses;
 	std::vector<RamMiss> ramMisses;
 	std::vector<LocalIoWrite> localIoWrites;
 	std::vector<SingleStringRead> singleStringReads;

@@ -23,8 +23,8 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 		}
 	}
 
-	const bool bitwise = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR ||
-		op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
+	const bool logical = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR;
+	const bool bitwise = logical || op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
 	const bool bothIntegers = left == integer && right == integer;
 	const bool forcedFloat = op == OpCode::DIV || op == OpCode::POW;
 	const bool producesFloat = !bitwise && (forcedFloat || left == floating || right == floating);
@@ -38,6 +38,8 @@ NativeNumericPlan planNativeNumeric(OpCode op, std::optional<ValueTag> left,
 	if ((!left || !right) && mode == NativeNumericFeedbackMode::Polymorphic
 		&& (op == OpCode::ADD || op == OpCode::SUB || op == OpCode::MUL))
 		action = NativeNumericAction::DynamicNumber;
+	else if (logical && !bothIntegers && left != floating && right != floating)
+		action = NativeNumericAction::DynamicWord;
 	else if (!left || !right || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW || (bitwise && !bothIntegers))
 		action = NativeNumericAction::Kernel;
 	return {action, left, right, result, guardLeft, guardRight, result.has_value() && !bitwise && !forcedFloat};
