@@ -155,6 +155,7 @@ import {
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
+	type Blua32RomFunctionDirectory,
 	type DecodedInstructionPage,
 } from './execution_image';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, registerWindowBucket } from './call_state';
@@ -661,6 +662,7 @@ export class CPU implements MappedPageInvalidator {
 		constTags: Uint8Array, constWords: Uint32Array,
 		stringBinding: number,
 		constantStringSlots: Uint32Array,
+		romFunctions: Blua32RomFunctionDirectory,
 	): void {
 		let stringIndex = 0;
 		for (let index = 0; index < constTags.length; index += 1) {
@@ -685,6 +687,18 @@ export class CPU implements MappedPageInvalidator {
 				case Blua32ConstantTag.Float:
 					constTags[index] = ValueTag.Float;
 					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
+				case Blua32ConstantTag.CodeFunction: {
+					const address = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+					const lane = romFunctionVersionLane(romFunctions, address);
+					const flags = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
+					if (executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || romFunctions.mappedCode || lane < 0
+						|| (romFunctions.versions[lane + RomFunctionLane.Flags] & flags) !== flags
+						|| romFunctions.versions[lane + RomFunctionLane.UpvalueCount] !== 0)
+						throw new Error('BLua32 code constant must name an immutable System function.');
+					constTags[index] = ValueTag.CodeFunction;
+					constWords[index] = address;
+					break;
+				}
 				case Blua32ConstantTag.Builtin: {
 					const id = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET);
 					if (executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || id >= BUILTIN_FUNCTION_COUNT)
@@ -770,7 +784,7 @@ export class CPU implements MappedPageInvalidator {
 			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 			constantStringSlots = new Uint32Array(stringCount);
 			this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
-				stringBinding, constantStringSlots);
+				stringBinding, constantStringSlots, header.romFunctions);
 		} else {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.

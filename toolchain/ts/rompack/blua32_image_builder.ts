@@ -1,4 +1,4 @@
-import { bindBlua32CodeFunctions, linkBlua32ResetCode } from './blua32_reset_code';
+import { bindBlua32CodeFunctions, linkBlua32ResetCode, planBlua32CodeFunctionLoads } from './blua32_reset_code';
 import { SYSTEM_STARTUP_MODULE_PATH } from './generated_modules';
 import {
 	utf8FatalDecoder,
@@ -311,19 +311,8 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		installedConstants: options.previous?.image.constants,
 	});
 	const object = encodeCompiledProgramObject(compiled);
-	const linked = linkSystemBlua32Image(
-			object,
-			compiled.metadata,
-			options.loadAddress,
-			options.ramByteCount,
-			options.biosExports,
-			options.previous,
-	);
-	linked.symbols.systemRecipe = {
-		resetModule: options.resetModule, irqModule: options.irqModule, exceptionModule: options.exceptionModule,
-		preparedEntry: options.preparedEntry, userIrqEntry: options.userIrqEntry, exceptionBridge: options.exceptionBridge,
-		managedEntries, biosExports: options.biosExports,
-	};
+	const linkArgs = [object, compiled.metadata, options.loadAddress, options.ramByteCount, options.biosExports, options.previous] as const;
+	let linked = linkSystemBlua32Image(...linkArgs);
 	const values = new Map(Array.from(compiled.managedEntryProtos, ([symbol, proto]) =>
 		[symbol, linked.layout.functions[linked.functionProtoIndices.indexOf(proto)].address]));
 	let userIrq: number | undefined, bridge: number | undefined;
@@ -360,11 +349,26 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
 	bindBlua32CodeFunctions(linked.layout, managedEntries.filter(entry => entry.callable)
 		.map(entry => linked.functionProtoIndices.indexOf(compiled.managedEntryProtos.get(entry.symbol)!)));
-	if (authoredReset) {
-		linkBlua32ResetCode(linked.layout, linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
-			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex),
-			[userIrq, bridge]);
+	const directRoots = authoredReset ? [
+		linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
+		linked.functionProtoIndices.indexOf(compiled.irqProtoIndex),
+		linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex), [userIrq, bridge],
+	] as const : undefined;
+	if (directRoots !== undefined) linkBlua32ResetCode(linked.layout, ...directRoots);
+	const codeFunctions = planBlua32CodeFunctionLoads(linked.layout);
+	if (codeFunctions.loads.size !== 0) {
+		// The proof determines the exact literal count before section sizing.
+		// Function records precede the pool; their addresses do not move.
+		linked = linkSystemBlua32Image(...linkArgs, codeFunctions);
+		if (startupSymbols.length !== 0)
+			applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
+		if (directRoots !== undefined) linkBlua32ResetCode(linked.layout, ...directRoots);
 	}
+	linked.symbols.systemRecipe = {
+		resetModule: options.resetModule, irqModule: options.irqModule, exceptionModule: options.exceptionModule,
+		preparedEntry: options.preparedEntry, userIrqEntry: options.userIrqEntry, exceptionBridge: options.exceptionBridge,
+		managedEntries, biosExports: options.biosExports,
+	};
 	return {
 		linked,
 		entryCodeAddress: linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.entryProtoIndex)].codeAddress,

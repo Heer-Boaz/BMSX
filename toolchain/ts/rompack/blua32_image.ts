@@ -1,6 +1,6 @@
 import { byteStringFromBytes, byteStringToText } from '../../../machine/ts/common/byte_string';
 import type { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
-import type { ProgramConstant } from '../lua/compiler/program';
+import type { LinkedProgramConstant } from '../lua/compiler/program';
 import { integerConstant } from '../lua/number';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import {
@@ -149,7 +149,7 @@ export type Blua32FunctionRecord = {
 	upvalues: Blua32UpvalueRecord[];
 };
 
-export type Blua32EncodedConstant = ProgramConstant;
+export type Blua32EncodedConstant = LinkedProgramConstant;
 
 export type Blua32ImageLayout = {
 	address: number;
@@ -324,6 +324,9 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 				break;
 			case Blua32ConstantTag.Builtin:
 				constants[index] = { kind: 'builtin', word: view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) as BuiltinFunctionId };
+				break;
+			case Blua32ConstantTag.CodeFunction:
+				constants[index] = { kind: 'code_function', word: view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) };
 				break;
 			case Blua32ConstantTag.String:
 				constants[index] = decodeString(view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true));

@@ -260,6 +260,9 @@ auto encodeImage(
 		} else if (const auto* builtin = std::get_if<Blua32BuiltinConstant>(&constant)) {
 			writeLE32(record + BLUA32_CONSTANT_TAG_OFFSET, static_cast<u32>(Blua32ConstantTag::Builtin));
 			writeLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET, builtin->id);
+		} else if (const auto* code = std::get_if<Blua32CodeFunctionConstant>(&constant)) {
+			writeLE32(record + BLUA32_CONSTANT_TAG_OFFSET, static_cast<u32>(Blua32ConstantTag::CodeFunction));
+			writeLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET, code->address);
 		} else {
 			const u32 stringOffset = stringOffsetByValue.at(std::get<std::string>(constant));
 			writeLE32(

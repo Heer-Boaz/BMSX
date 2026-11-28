@@ -69,8 +69,13 @@ struct Blua32BuiltinConstant {
 	u32 id;
 	bool operator==(const Blua32BuiltinConstant&) const = default;
 };
+struct Blua32CodeFunctionConstant {
+	u32 address;
+	bool operator==(const Blua32CodeFunctionConstant&) const = default;
+};
 
-using Blua32EncodedConstant = std::variant<std::monostate, bool, i32, Blua32FloatConstant, Blua32BuiltinConstant, std::string>;
+using Blua32EncodedConstant = std::variant<std::monostate, bool, i32, Blua32FloatConstant,
+	Blua32BuiltinConstant, Blua32CodeFunctionConstant, std::string>;
 
 struct Blua32ImageLayout {
 	u32 address = 0;

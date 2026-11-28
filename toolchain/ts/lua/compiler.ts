@@ -61,6 +61,7 @@ import type {
 	LocatedOuterBindingDebug,
 	Program,
 	ProgramConstant,
+	LinkedProgramConstant,
 	ProgramFunctionSymbol,
 	ProgramInitParticipant,
 	ProgramMetadata,
@@ -286,7 +287,7 @@ type CompileOptionsBase = {
 	preloadModules?: readonly string[];
 	captureLayout?: LuaCaptureLayout;
 	/** Keep the String slots of an installed image. Other constants can be rebuilt. */
-	installedConstants?: readonly ProgramConstant[];
+	installedConstants?: readonly LinkedProgramConstant[];
 	/** Preserve addresses of retained BSS declarations in a live build. */
 	installedBss?: { byteCount: number; offsets: ReadonlyMap<string, number> };
 };
@@ -553,7 +554,7 @@ class ProgramBuilder {
 		public readonly types: StructTypes,
 		public readonly tableShapes: TableShapes | undefined,
 		public readonly captureLayout?: LuaCaptureLayout,
-		installedConstants?: readonly ProgramConstant[],
+		installedConstants?: readonly LinkedProgramConstant[],
 		public readonly installedBss?: CompileOptionsBase['installedBss'],
 	) {
 		this.constPool = [];

@@ -1,6 +1,6 @@
 import { textToByteString } from '../../../machine/ts/common/byte_string';
 import { integerConstant, type NumberConstant } from '../lua/number';
-import type { ProgramConstant } from '../lua/compiler/program';
+import type { LinkedProgramConstant, ProgramConstant } from '../lua/compiler/program';
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
@@ -23,6 +23,7 @@ import {
 	BLUA32_CONSTANT_RECORD_SIZE,
 	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
+	BLUA32_FUNCTION_CODE,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
@@ -67,6 +68,7 @@ import {
 	decodeBlua32Image,
 	type Blua32ImageLayout,
 } from './blua32_image';
+import type { Blua32CodeFunctionPlan } from './blua32_reset_code';
 import {
 	type Blua32LexicalDeclarationDebug,
 	type Blua32DebugMetadata,
@@ -168,6 +170,7 @@ type ImageBuildInput = ImageBuildInputBase & (
 		domain: 'system';
 		object: ProgramSystemObjectImage;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
+		codeFunctions?: Blua32CodeFunctionPlan;
 	}
 	| {
 		domain: 'cart';
@@ -705,6 +708,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const functionLayout = layoutFunctionRecords(input.metadata.protoIds, pinnedFunctionIds, input.previous);
 	const functionCount = functionLayout.protoIndexBySlot.length;
 	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? RETIRED_FUNCTION_BYTES : 0);
+	const codeFunctions = input.domain === 'system' ? input.codeFunctions : undefined;
+	const codeConstantSlots = new Map<number, number>();
+	if (codeFunctions !== undefined) {
+		const used = new Set(codeFunctions.loads.values());
+		for (const slot of codeFunctions.targets) {
+			if (used.has(slot)) codeConstantSlots.set(slot, rodata.constPool.length + codeConstantSlots.size);
+		}
+	}
 
 	let offset = BLUA32_IMAGE_HEADER_SIZE;
 	let rodataOffset = 0;
@@ -749,7 +760,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			: text.protos[protoIndex].upvalueDescs.length;
 		upvalueByteCount += upvalueCount * BLUA32_UPVALUE_RECORD_SIZE;
 	}
-	const constantBytes = rodata.constPool.length * BLUA32_CONSTANT_RECORD_SIZE;
+	const constantBytes = (rodata.constPool.length + codeConstantSlots.size) * BLUA32_CONSTANT_RECORD_SIZE;
 	const globalNameBytes = globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const systemGlobalNameBytes = systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
 	const tableBytes = upvalueByteCount + constantBytes + globalNameBytes + systemGlobalNameBytes;
@@ -843,10 +854,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			input.biosImports,
 		);
 	}
+	if (codeFunctions !== undefined) {
+		for (const [wordIndex, target] of codeFunctions.loads)
+			rewriteResolvedABx(code, wordIndex, OpCode.LOADK, codeConstantSlots.get(target)!);
+	}
 
 	const rodataAddress = input.loadAddress + rodataOffset;
 	const dataLoadAddress = input.loadAddress + dataLoadOffset;
-	const constants = resolveConstValues(
+	const constants: LinkedProgramConstant[] = resolveConstValues(
 		rodata.constPool,
 		object.link.constValueRelocs,
 		data.symbols,
@@ -857,6 +872,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		rodata.symbols,
 		rodataAddress,
 	);
+	for (const target of codeConstantSlots.keys())
+		constants.push({ kind: 'code_function', word: functionAddresses[target] });
 	const rodataByteCount = rodata.bytes.byteLength;
 	const rodataBytes = rodata.bytes.slice();
 	for (let index = 0; index < object.link.rodataConstRelocs.length; index += 1) {
@@ -914,7 +931,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			bytes,
 			recordOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
 			(record.isVararg ? BLUA32_FUNCTION_VARARG : 0)
-				| (record.staticClosure ? BLUA32_FUNCTION_STATIC : 0),
+				| (record.staticClosure ? BLUA32_FUNCTION_STATIC : 0)
+				| (codeFunctions?.targets.has(slot) ? BLUA32_FUNCTION_CODE : 0),
 		);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, input.loadAddress + upvalueOffset);
 		writeLE32(bytes, recordOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, upvalues.length);
@@ -940,6 +958,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		} else {
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET,
 				value.kind === 'builtin' ? Blua32ConstantTag.Builtin
+					: value.kind === 'code_function' ? Blua32ConstantTag.CodeFunction
 					: value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, value.word);
 		}
@@ -1014,7 +1033,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		functionDisplayNames[slot] = input.metadata.protoDisplayNames[protoIndex];
 		functionDefinitions[slot] = input.metadata.functionDefinitionsByProto[protoIndex];
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
-		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
+		const resumePoints = input.metadata.resumePointsByProto[protoIndex];
+		const firstWord = text.protos[protoIndex].entryPC / INSTRUCTION_BYTES;
+		resumePointsByFunction[slot] = codeFunctions === undefined ? resumePoints : resumePoints.map(point =>
+			point.op === OpCode.CLOSURE && codeFunctions.loads.has(firstWord + point.wordOffset + 1)
+				? { ...point, op: OpCode.LOADK } : point);
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];
 		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
@@ -1116,6 +1139,7 @@ export function linkSystemBlua32Image(
 	ramByteCount: number,
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>,
 	previous?: Blua32LinkBaseline,
+	codeFunctions?: Blua32CodeFunctionPlan,
 ): LinkedSystemBlua32Image {
 	const dataAddress = DYNAMIC_RAM_BASE;
 	const bssAddress = dataAddress + object.sections.data.bytes.byteLength;
@@ -1135,6 +1159,7 @@ export function linkSystemBlua32Image(
 		systemGlobalNames: object.link.symbols.systemGlobalNames,
 		biosExports,
 		previous,
+		codeFunctions,
 	});
 }
 

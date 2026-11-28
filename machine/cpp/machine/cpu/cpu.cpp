@@ -224,6 +224,15 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 			case Blua32ConstantTag::Float:
 				constPool.set(index, valueFloatBits(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)));
 				break;
+			case Blua32ConstantTag::CodeFunction: {
+				const u32 address = readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+				const auto* function = image.romFunctions.find(address);
+				if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || image.romFunctions.mappedCode
+					|| !function || !isStaticCodeFunction(function->entry.flags, function->upvalueCount))
+					throw BMSX_RUNTIME_ERROR("BLua32 code constant must name an immutable System function.");
+				constPool.set(index, valueFromTag(ValueTag::CodeFunction, address));
+				break;
+			}
 			case Blua32ConstantTag::Builtin: {
 				const u32 id = readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
 				if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || id >= BUILTIN_FUNCTION_COUNT)

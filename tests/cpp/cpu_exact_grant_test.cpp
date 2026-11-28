@@ -434,25 +434,28 @@ void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32>
 }
 #endif
 
-void exactImmutableCodeClosureGrant() {
+void exactImmutableCodeConstantGrant() {
 	constexpr u8 destination = 5;
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	image.text.resize(10 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 1, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), destination, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), destination, 1, 2);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::KSMI), 0, 0, 37);
-	writeInstruction(image.text, 9, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
-		{.firstWord = 6, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true},
-		{.firstWord = 8, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true}};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.text.resize(11 * INSTRUCTION_BYTES);
+	// Give the CALL suffix its own architectural entry, no artificial
+	// CLOSURE block boundary before it.
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 6, 0, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), destination, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 7, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), destination, 1, 2);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::KSMI), 0, 0, 37);
+	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8},
+		{.firstWord = 7, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true},
+		{.firstWord = 9, .wordCount = 2, .numParams = 1, .maxStack = 2, .codeFunction = true}};
+	image.constants.emplace_back(Blua32CodeFunctionConstant{test::blua32TestFunctionAddress(RomImageDomain::System, 1)});
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	struct ResetMachine {
 		Memory memory;
@@ -469,42 +472,40 @@ void exactImmutableCodeClosureGrant() {
 	scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr,
 		SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	const u32 start = rom.textAddress;
-	const u32 wide = start + INSTRUCTION_BYTES, body = wide + INSTRUCTION_BYTES, successor = body + INSTRUCTION_BYTES;
-	const int prefixCycles = BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
-	const int closureCycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)];
+	const u32 prefix = start + INSTRUCTION_BYTES, wide = prefix + INSTRUCTION_BYTES;
+	const u32 body = wide + INSTRUCTION_BYTES, successor = body + INSTRUCTION_BYTES;
+	const int unitCycles = BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
+	const int prefixCycles = BASE_CYCLES[static_cast<size_t>(OpCode::JMPIF)] + unitCycles;
+	const int loadCycles = BASE_CYCLES[static_cast<size_t>(OpCode::LOADK)];
 	const auto expected = valueFromTag(ValueTag::CodeFunction, rom.functionAddresses[1]);
 	const auto check = [&](u32 pc, u32 last, int top, Value value) {
 		for (auto* cpu : {&native, &scalar.cpu}) {
 			const auto& frame = *cpu->activeThread()->currentFrame;
 			require(cpu->readFramePc(0) == pc && cpu->lastPc == last && frame.readWindow(FrameField::Top) == top
-				&& frame.registers.get(destination) == value, "the WIDE CLOSURE publishes exact PC, Top and tagged Value");
+				&& frame.registers.get(destination) == value, "the WIDE LOADK publishes exact PC, Top and tagged Value");
 		}
 	};
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	native.prepareSystemNativeCode();
 	const auto& installed = *native.activeThread()->currentFrame->executionImage;
-	const auto* page = installed.nativeCodeLookup->find(start, 0);
-	const auto* entry = page->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-	require(entry && entry->terminal.exit == NativeBlockExit::Continue && entry->terminal.currentPc == wide
-		&& entry->terminal.lastPc == body && entry->terminal.nextPc == successor
-		&& entry->terminal.cycles == prefixCycles + closureCycles,
-		"native System CLOSURE retires WIDE as a charged continuation, not a native binding exit");
+	const auto* page = installed.nativeCodeLookup->find(prefix, 0);
+	const auto* entry = page->nativeBlocks->entries[(prefix & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	require(entry && entry->terminal.exit != NativeBlockExit::CreateClosure && entry->terminal.nextPc >= successor,
+		"the native region includes the ordinary load without a binding exit");
 #endif
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& exits = native.nativeGateProfile().exits;
 	const auto& bindingExit = exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
-	const auto& continuation = exits[static_cast<size_t>(NativeBlockExit::Continue)];
 	const auto oldBindings = bindingExit.entries;
-	const auto oldContinuations = continuation.entries;
 #endif
 	require(test::runCpuParity(native, scalar.cpu, prefixCycles + 1) == RunResult::Yielded
-		&& native.instructionBudgetRemaining == 1 - closureCycles, "a positive short grant still charges one whole CLOSURE");
+		&& native.instructionBudgetRemaining == 1 - loadCycles, "a positive short grant still charges one whole LOADK");
 	check(successor, body, destination + 1, expected);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
-	require(continuation.entries > oldContinuations && bindingExit.entries == oldBindings,
+	require(bindingExit.entries == oldBindings,
 		"the generated short-grant stop does not enter the C++ binding gate");
 #endif
-	require(test::runCpuParity(native, scalar.cpu, prefixCycles) == RunResult::Yielded
+	require(test::runCpuParity(native, scalar.cpu, unitCycles) == RunResult::Yielded
 		&& native.instructionBudgetRemaining == 0, "the successor uses a separate grant");
 	check(successor + INSTRUCTION_BYTES, successor, 8, expected);
 	native.reset();
@@ -514,7 +515,7 @@ void exactImmutableCodeClosureGrant() {
 #endif
 	require(test::runCpuParity(native, scalar.cpu, prefixCycles) == RunResult::Yielded
 		&& native.instructionBudgetRemaining == 0, "an exact prefix grant stops before the WIDE head");
-	check(wide, start, 2, valueNil());
+	check(wide, prefix, 2, valueNil());
 
 	// Repeat the same fixed CALL after it has learned the ROM target and
 	// retained a receiver frame. Split the grant inside the callee.
@@ -522,7 +523,7 @@ void exactImmutableCodeClosureGrant() {
 	const int callCycles = BASE_CYCLES[static_cast<size_t>(OpCode::CALL)];
 	const int retCycles = BASE_CYCLES[static_cast<size_t>(OpCode::RET)];
 	for (const auto [prototype, warm] : {std::pair{1u, false}, std::pair{1u, true}, std::pair{2u, false}}) {
-		const u32 target = start + (4 + 2 * prototype) * INSTRUCTION_BYTES;
+		const u32 target = start + (5 + 2 * prototype) * INSTRUCTION_BYTES;
 		const auto callee = valueFromTag(ValueTag::CodeFunction, rom.functionAddresses[prototype]);
 		const auto result = valueInteger(prototype == 1 ? 1 : 37);
 		for (auto* cpu : {&native, &scalar.cpu}) {
@@ -532,8 +533,8 @@ void exactImmutableCodeClosureGrant() {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 		const auto callEntries = exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
 #endif
-		require(test::runCpuParity(native, scalar.cpu, prefixCycles + callCycles + 2) == RunResult::Yielded
-			&& native.instructionBudgetRemaining == 1 - prefixCycles,
+		require(test::runCpuParity(native, scalar.cpu, unitCycles + callCycles + 2) == RunResult::Yielded
+			&& native.instructionBudgetRemaining == 1 - unitCycles,
 			"CALL places one missing formal and enters the target with the same grant");
 		for (auto* cpu : {&native, &scalar.cpu}) {
 			const auto& frame = *cpu->activeThread()->currentFrame;
@@ -1087,7 +1088,7 @@ int main(int argc, char** argv) {
 		if (argc != 2) throw std::runtime_error("expected allocate or store");
 		const std::string_view scenario(argv[1]);
 		if (scenario == "closure") exactGrant(false);
-		else if (scenario == "immutable-code-closure") exactImmutableCodeClosureGrant();
+		else if (scenario == "immutable-code-constant") exactImmutableCodeConstantGrant();
 		else if (scenario == "store") exactGrant(true);
 		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);

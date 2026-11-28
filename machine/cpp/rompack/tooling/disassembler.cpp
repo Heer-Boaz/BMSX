@@ -76,6 +76,8 @@ std::string formatConstValue(const Blua32ImageLayout& image, int index) {
 		text << formatFloat(f32BitsToNumber(number->bits));
 	} else if (const auto* builtin = std::get_if<Blua32BuiltinConstant>(&value)) {
 		text << "builtin(" << builtin->id << ')';
+	} else if (const auto* code = std::get_if<Blua32CodeFunctionConstant>(&value)) {
+		text << "code(0x" << std::hex << code->address << ')';
 	} else {
 		text << std::quoted(std::get<std::string>(value));
 	}

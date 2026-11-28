@@ -72,4 +72,5 @@ export const enum Blua32ConstantTag {
 	String = 4,
 	Float = 5,
 	Builtin = 6,
+	CodeFunction = 7,
 }

@@ -9,6 +9,8 @@ import type { BuiltinFunctionId } from '../../../../machine/ts/spec/blua32/built
 import type { ProgramStaticScopes } from './static_debug';
 
 export type ProgramConstant = null | boolean | NumberConstant | string | { readonly kind: 'builtin'; readonly word: BuiltinFunctionId };
+/** An immutable physical Function reference is introduced by the executable linker. */
+export type LinkedProgramConstant = ProgramConstant | { readonly kind: 'code_function'; readonly word: number };
 
 // Software ABI used by language lowering, not interpreted by either CPU.
 export const enum StockFirmwareOperand {

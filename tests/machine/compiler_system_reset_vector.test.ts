@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
@@ -15,6 +19,7 @@ import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builde
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { nativeConformanceRunner } from '../helpers/native_conformance.mjs';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 
 const resetPath = 'kernel/test-reset', irqPath = 'kernel/test-irq', exceptionPath = 'kernel/test-exception';
@@ -43,7 +48,7 @@ const authored = [
 	{ path: exceptionPath, displayPath: exceptionPath + '.lua', source: exceptionSource, chunk: parseLuaChunk(exceptionSource, exceptionPath) },
 ];
 
-for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its authored reset vector before managed startup at O' + optLevel, () => {
+for (const optLevel of [0, 3] as const) test('System ROM calls its linked code constant before managed startup at O' + optLevel, t => {
 	const built = buildBlua32Image({
 		domain: 'system', luaModules: authored, generatedLuaModules: [], loadAddress: 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
@@ -78,16 +83,25 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	assert.equal(scheduler.nowCycles, 0);
 	assert.equal(memory.readMappedWord(IO_IRQ_MASK), 0);
 	const retired: OpCode[] = [];
+	const trace: string[] = [], rows: string[] = [];
+	let codeLoads = 0;
 	const step = () => {
 		const frame = cpu.activeThread.currentFrame!;
 		const instruction = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, frame.pc);
-		scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[instruction.op] + (instruction.op === OpCode.RET ? instruction.b - 1 : 0));
+		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		const used = 1 - cpu.instructionBudgetRemaining;
+		trace.push('E 1');
+		rows.push(`${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		assert.equal(used, BASE_CYCLES[instruction.op] + (instruction.op === OpCode.RET ? instruction.b - 1 : 0));
 		retired.push(instruction.op);
-		if (instruction.op === OpCode.CLOSURE) {
-			const fn = linked.layout.functions.find(body => body.address === instruction.bx * BLUA32_FUNCTION_ALIGNMENT)!;
-			assert.equal(readLE32(rom, fn.address + BLUA32_FUNCTION_FLAGS_OFFSET) & (BLUA32_FUNCTION_CODE), BLUA32_FUNCTION_CODE);
-			assert.equal(frame.registers.getTag(instruction.a), ValueTag.CodeFunction);
+		if (instruction.op === OpCode.LOADK) {
+			const constant = linked.layout.constants[instruction.bx];
+			if (constant !== null && typeof constant === 'object' && constant.kind === 'code_function') {
+				assert.equal(readLE32(rom, constant.word + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_CODE);
+				assert.equal(frame.registers.getTag(instruction.a), ValueTag.CodeFunction);
+				assert.equal(frame.registers.getPayload(instruction.a), constant.word);
+				codeLoads += 1;
+			}
 		}
 		assertRaw();
 	};
@@ -96,11 +110,15 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	assert.equal(cpu.getFrameDepth(), 2, 'HALT belongs to an ordinary callee on the raw bank');
 	assert.ok(retired.includes(OpCode.STORE_MEM) || retired.includes(OpCode.STORE_MEM_D));
 	assert.ok(retired.includes(OpCode.CALL));
+	assert.ok(!retired.includes(OpCode.CLOSURE));
+	assert.equal(codeLoads, 1);
 	assert.equal(memory.readMappedWord(IO_IRQ_MASK), IRQ_VBLANK | 8);
 
 	const continuation = cpu.readFramePc(1);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
+	trace.push(`i ${IRQ_VBLANK}`, 'I');
+	rows.push('1');
 	assert.equal(cpu.getFrameDepth(), 3);
 	assert.equal(cpu.readEpcWord(), continuation);
 	assert.equal(cpu.isExceptionFrame(2), true);
@@ -112,6 +130,15 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	assert.equal(cpu.getFrameDepth(), 0);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger((IRQ_VBLANK | 8) + 7)]);
 	assertRaw();
+	trace.push('C');
+	rows.push(String((IRQ_VBLANK | 8) + 7));
+	const directory = mkdtempSync(join(tmpdir(), 'bmsx-code-constant-reset-'));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const system = join(directory, 'system.rom'), commands = join(directory, 'trace');
+	writeFileSync(system, rom);
+	writeFileSync(commands, trace.join('\n'));
+	const native = nativeConformanceRunner('bmsx_machine_conformance_runner', { buildDirectory: join(directory, 'native') });
+	assert.deepEqual(execFileSync(native, [system, commands, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
 });
 
 test('a source selected as reset cannot also be initialized as an ordinary module', () => {

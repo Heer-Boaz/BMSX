@@ -3,7 +3,7 @@ import {
 	COP0_TABLE_LOOKUP_KEY, COP0_STRING_INDEX_TABLE, cop0FieldImplemented,
 } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
-import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, BLUA32_FUNCTION_CODE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import {
@@ -41,14 +41,25 @@ export function deriveBlua32FixedStack(
 ): Blua32FixedStack {
 	const visited = new Map<number, Blua32FixedStack>();
 	const ancestors = new Set<number>();
-	const constantTagOffset = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_TAG_OFFSET;
+	const constantTableOffset = image.header.constantTableAddress - image.address;
 
-	function admitConstant(index: number, reject: (reason: string) => never): void {
+	function admitConstant(index: number, reject: (reason: string) => never, load = false): number {
 		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
-		const tag = readLE32(image.bytes, constantTagOffset + index * BLUA32_CONSTANT_RECORD_SIZE);
+		const offset = constantTableOffset + index * BLUA32_CONSTANT_RECORD_SIZE;
+		const tag = readLE32(image.bytes, offset + BLUA32_CONSTANT_TAG_OFFSET);
+		if (load && tag === Blua32ConstantTag.CodeFunction) {
+			const address = readLE32(image.bytes, offset + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+			const target = blua32FunctionIndexAtAddress(image, address);
+			if (target < 0) reject('requires a local ROM function record');
+			const record = image.functions[target];
+			if ((record.flags & BLUA32_FUNCTION_CODE) === 0 || !record.staticClosure || record.isVararg || record.upvalues.length !== 0)
+				reject('CodeFunction must be static, fixed-arity and capture-free');
+			return address;
+		}
 		if (tag !== Blua32ConstantTag.Nil && tag !== Blua32ConstantTag.False
 			&& tag !== Blua32ConstantTag.True && tag !== Blua32ConstantTag.Integer)
 			reject('constant is not an Integer, nil or Boolean');
+		return 0;
 	}
 
 	function measure(index: number): Blua32FixedStack {
@@ -108,13 +119,16 @@ export function deriveBlua32FixedStack(
 				reject('operand exceeds the function record');
 			if (rb < 0) admitConstant(-1 - rb, reject);
 			if (rc < 0) admitConstant(-1 - rc, reject);
-			if (op === OpCode.LOADK) admitConstant(bx, reject);
 			// Only LOAD_MEM can read the issuing context. Other loads and
 			// stores take the ordinary bus formats.
 			if ((op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D)
 				&& c > MemoryAccessKind.Value && (op !== OpCode.LOAD_MEM || c !== MemoryAccessKind.ContextWord))
 				reject('not an ordinary CPU memory format');
 			switch (op) {
+				case OpCode.LOADK:
+					if (a >= width) reject('destination exceeds the function record');
+					registers[a] = admitConstant(bx, reject, true);
+					break;
 				case OpCode.CLOSURE: {
 					const address = bx << 4;
 					const target = blua32FunctionIndexAtAddress(image, address);
@@ -200,7 +214,6 @@ export function deriveBlua32FixedStack(
 				case OpCode.K0:
 				case OpCode.K1:
 				case OpCode.KSMI:
-				case OpCode.LOADK:
 				case OpCode.LOAD_MEM_D:
 				case OpCode.LOAD_MEM:
 				case OpCode.STORE_MEM_D:
