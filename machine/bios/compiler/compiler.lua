@@ -1,5 +1,7 @@
 local types<const> = require('kernel/value_type')
-local create_table<const> = require('kernel/heap_control_ids').create_table
+local system_calls<const> = require('kernel/heap_control_ids')
+local create_table<const> = system_calls.create_table
+local bind_ram_function<const> = system_calls.bind_ram_function
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -958,11 +960,20 @@ emit_value = function(
 		)
 	end
 	if kind == syntax.function_expression then
-		bytecode.emit_closure_address_register(
-			instruction_words,
-			target,
-			constant_register(state, expression.function_address_constant_index)
-		)
+		local temporary_base<const> = state.free_register
+		local result = target
+		if not target_is_temporary or target + 1 ~= temporary_base then
+			result = reserve_register(state)
+		end
+		local operand<const> = reserve_register(state)
+		bytecode.emit_integer(instruction_words, result, bind_ram_function)
+		bytecode.emit_abc(instruction_words, isa.op_mov, operand,
+			constant_register(state, expression.function_address_constant_index), 0)
+		bytecode.emit_abc(instruction_words, isa.op_svc, result, 2, 0)
+		if result ~= target then
+			bytecode.emit_abc(instruction_words, isa.op_mov, target, result, 0)
+		end
+		state.free_register = temporary_base
 		return target
 	end
 	if kind == syntax.table_constructor_expression then

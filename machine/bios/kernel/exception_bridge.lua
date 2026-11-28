@@ -145,9 +145,15 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 	local interrupted<const>: *addr = layout.interrupted_context_address
 	local transfer_fault
 	if cause == function_binding then
-		local pc<const>, reason<const> = binding.bind(*interrupted, values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10)
-		if pc then
-			cop0.epc = pc
+		local context<const>: *stopped_thread = *interrupted
+		local frame_depth<const> = context.frame_depth & control_count_mask
+		local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (frame_depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
+		local reason<const> = binding.bind(*interrupted, frame, values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10)
+		if reason == nil then
+			if (frame.top & frame_window_mask) <= values then
+				frame.top = (frame.top & ~frame_window_mask) | (values + 1)
+			end
+			cop0.epc = frame.pc
 			blua32.rfe()
 		end
 		transfer_fault = reason
@@ -177,6 +183,10 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			elseif values >= thread_ids.create and values <= thread_ids.set_frame_upvalue then
 				handled = true
 				fault = thread_calls.receive(*interrupted, values, depth, instruction)
+			elseif values == firmware_ids.bind_ram_function then
+				handled = true
+				r10 = cop0.event_cycles
+				fault = binding.receive_ram(*interrupted, depth, instruction, r10)
 			end
 		end
 		if handled then
@@ -233,7 +243,8 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			local fault_ids<const>: *u32 = diagnostics.fault_ids
 			payload, tag = fault_ids[reason], string_tag
 		end
-		local deadline<const> = denied_window and source_cycles or (denied_storage and r4 or (cause == function_binding and r10 or 0))
+		local deadline<const> = denied_window and source_cycles or (denied_storage and r4
+			or ((cause == function_binding or (cause == syscall and values == firmware_ids.bind_ram_function)) and r10 or 0))
 		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
 		if caught then
 			if resume_context then *interrupted = resume_context end

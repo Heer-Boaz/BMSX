@@ -335,7 +335,7 @@ test('a bare System ROM may decline a Closure without a stock allocator', t => {
 	writeFileSync(romPath, rom.romBytes);
 	writeFileSync(trace, `E 4096\nZ\nM ${report}\nC\nH ${state} ${state + inactive.length}\n`);
 	assert.deepEqual(execFileSync(native, [romPath, trace, join(dir, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), [
-		`${outcome} ${4096 - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`,
+		`${outcome} ${4096 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`,
 		`${CPU_CAUSE_CODE_FUNCTION_BINDING} 0 ${successor}`, `${rom.image.functions[1].address} 0`, '73',
 		String(hashBytes(inactive, 0, inactive.length)),
 	]);

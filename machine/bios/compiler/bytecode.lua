@@ -128,32 +128,6 @@ function bytecode.patch_branch(instruction_words, instruction_index, sbx)
 	)
 end
 
-function bytecode.emit_closure_address_register(
-	instruction_words,
-	target,
-	address_register
-)
-	local target_wide<const> = target >> isa.max_operand_bits
-	local address_wide<const> = address_register
-		>> base_bx_bits
-	instruction_words[#instruction_words + 1] = pack_word(
-		isa.op_wide,
-		target_wide,
-		address_wide,
-		isa.closure_address_register_wide_c,
-		0
-	)
-	local bx_low<const> = address_register & bx_mask
-	local bx_ext<const> = address_register >> isa.max_bx_bits
-	instruction_words[#instruction_words + 1] = pack_word(
-		isa.op_closure,
-		target,
-		bx_low >> isa.max_operand_bits,
-		bx_low,
-		bx_ext
-	)
-end
-
 function bytecode.write_instruction_words(instruction_words, address)
 	local target: *u32 = address
 	for index = 1, #instruction_words do

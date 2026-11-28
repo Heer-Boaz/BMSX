@@ -15,5 +15,6 @@ return {
 	string_concat = 1,
 	string_index = 0x1000a,
 	bind_live_image = 0x1000b,
+	bind_ram_function = 0x1000c,
 	create_table = 0,
 }
