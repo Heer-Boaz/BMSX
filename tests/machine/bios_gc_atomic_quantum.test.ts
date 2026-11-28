@@ -1,4 +1,4 @@
-import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
+import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../helpers/native_heap/gc_heap';
 import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
@@ -6,43 +6,36 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_GRAY_INDEX_BITS } from '../../toolchain/ts/firmware/stock_object_layout';
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
-import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_ROOT_BANKS_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/gc_step', entrySource = 'return 11, 17, 23';
-const modules = [
-	'dlmalloc', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch', 'gc_runtime_layout',
-	'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace',
-	'string_record', 'gc_trace', 'gc_root_banks', 'gc_remark', 'gc_weak_table', 'gc_weak_quantum', 'gc_atomic_quantum',
-].map(name => {
-	const path = `kernel/${name}`, source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
+const driverPath = 'test/atomic_quantum';
+const driver = `module<const>
+local roots<const> = require('kernel/gc_root_inputs')
+local gc<const> = require('kernel/gc_step')
+local invoke<const> = function(management, limit)
+	roots.publish(management)
+	local work<const> = gc.step(management, limit, 0, 0, 0)
+	roots.release_string_work(management)
+	return work
+end
+return { invoke = invoke }
+`;
 const clearWeak = 5 << GC_GRAY_INDEX_BITS;
 const cursorBits = GC_GRAY_INDEX_BITS + 1;
 const arraySlots = 16;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'step');
-	assert.ok(exported);
-	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-	assert.ok(fn >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
+	const linked = linkFirmwareProbe(optLevel, [{ path: driverPath, source: driver, chunk: parseLuaChunk(driver, driverPath) }],
+		[{ path: driverPath, member: 'invoke', arity: 2 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const context = management + GC_TRACE_CONTEXT_OFFSET;
 	const roots = management + GC_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;
 	const beforeWork = control + GC_LAST_EPOCH_WORK - 4;
 	const records: number[][] = [];
@@ -60,28 +53,27 @@ function fixture(optLevel: 0 | 3) {
 		setReferenceGlobal(target, stringPool.intern('atomic strong value'), valueTable(retained));
 		for (let i = 0; i < 64 && gc.phase() !== GcPhase.Atomic; ++i) gc.step();
 		assert.equal(gc.phase(), GcPhase.Atomic);
-		target.publishHeapRemarkHead();
-		target.publishHeapRootBanks();
 		records.push([weak, gc.tables.arrayAddress(weak), firstDead, secondDead, retained]);
 	}
 	assert.deepEqual(records[0], records[1]);
+	// Separately seed the root installed by stock reset. The physical SVC
+	// supplies the interrupted context for the firmware's other root inputs.
+	memory.writeRamRecordWord(roots, cpu.rootThread.address);
 	const [weak, array, firstDead, secondDead, retained] = records[0];
 	function begin(limit: number) {
-		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
-		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0, 0]));
+		issueFirmwareProbe(cpu, [management, limit]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const paid = cycles - cpu.instructionBudgetRemaining;
+		const paid = grantFirmwareProbe(cpu, cycles);
 		assert.ok(paid > 0);
 		return paid;
 	}
 	function finish() {
 		let cycles = 0;
-		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) cycles += grant(512);
+		for (let i = 0; i < 512 && !cpu.isHaltedUntilIrq(); ++i) cycles += grant(512);
+		assert.equal(cpu.fixedInterruptActive(), false, 'the System vector has returned');
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		nativeHeapReference(cpu).stringPool.resumeMarkWork(memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork));
-		return [cpu.heapServiceResult(), cycles];
+		return [firmwareProbeResult(cpu), cycles];
 	}
 	function compare() {
 		const actual = memory.ramData().subarray(first, roots), want = oracle.memory.ramData().subarray(first, roots);
@@ -89,7 +81,7 @@ function fixture(optLevel: 0 | 3) {
 		const diff = actual.findIndex((byte, index) => byte !== want[index]);
 		assert.equal(actual[diff], want[diff], `first GC heap mismatch: 0x${(first + diff).toString(16)}`);
 	}
-	return { cpu, oracle, memory, control, context, beforeWork, weak, array, firstDead, secondDead, retained, begin, grant, finish, compare };
+	return { cpu, oracle, memory, control, beforeWork, weak, array, firstDead, secondDead, retained, begin, grant, finish, compare };
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -101,7 +93,7 @@ for (const optLevel of [0, 3] as const) {
 		f.begin(limit);
 		const tags = f.array + 4 * arraySlots;
 		for (let i = 0; i < 65536 && f.memory.readRamRecordByte(tags) !== ValueTag.Nil; ++i) f.grant(1);
-		assert.ok(f.cpu.heapServiceActive());
+		assert.ok(f.cpu.fixedInterruptActive());
 		assert.equal(f.memory.readRamRecordByte(tags), ValueTag.Nil);
 		assert.equal(f.memory.readRamRecordByte(tags + 1), ValueTag.Table);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_STATE), clearWeak);
@@ -127,7 +119,16 @@ for (const optLevel of [0, 3] as const) {
 	test(`Stopped guest Atomic quanta keep the native frontier and policy work at allowance one at O${optLevel}`, () => {
 		const f = fixture(optLevel), white = nativeHeapReference(f.cpu).gc.white();
 		const stages = new Set<number>();
+		let carryPublished = false;
 		for (let i = 0; i < 256 && nativeHeapReference(f.cpu).gc.phase() === GcPhase.Atomic; ++i) {
+			const stage = f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_STATE) >>> GC_GRAY_INDEX_BITS;
+			// After the last weak visit, retained String credit fills the
+			// next allowance before the root-bank reader can run. Host
+			// completion results are not guest roots and supply no work.
+			if (!carryPublished && stage === 2 && f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_INDEX) === 0) {
+				for (const cpu of [f.cpu, f.oracle]) nativeHeapReference(cpu).stringPool.resumeMarkWork(1);
+				carryPublished = true;
+			}
 			const want = nativeHeapReference(f.oracle).gc.stepFinalMark(1);
 			f.begin(1);
 			assert.equal(f.finish()[0], want);
@@ -135,6 +136,7 @@ for (const optLevel of [0, 3] as const) {
 			stages.add(f.memory.readRamRecordWord(f.control + GC_REMARK_VISIT_STATE) >>> GC_GRAY_INDEX_BITS);
 			if (nativeHeapReference(f.cpu).gc.phase() === GcPhase.Atomic) assert.equal(nativeHeapReference(f.cpu).gc.white(), white);
 		}
+		assert.ok(carryPublished);
 		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.Sweep);
 		assert.ok(stages.has(3) && stages.has(4) && stages.has(5), `separate Atomic continuations: ${[...stages].join(',')}`);
 	});

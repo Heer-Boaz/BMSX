@@ -6,38 +6,33 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_GRAY_INDEX_MASK } from '../../toolchain/ts/firmware/stock_object_layout';
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../helpers/firmware_heap_layout';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/gc_mark_quantum';
-const entrySource = 'halt_until_irq';
-const modules = [
-	'dlmalloc', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch',
-	'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace',
-	'string_record', 'gc_trace', 'gc_root_banks', 'gc_remark', 'gc_mark_quantum',
-].map(name => {
-	const path = `kernel/${name}`, source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
+const driverPath = 'test/mark_quantum';
+const driver = `module<const>
+local layout<const> = require('kernel/gc_runtime_layout')
+local roots<const> = require('kernel/gc_root_inputs')
+local quantum<const> = require('kernel/gc_mark_quantum')
+local invoke<const> = function(control, arena, metadata, head, banks, context, mode, capacity)
+	local management<const> = control - layout.control_offset
+	roots.publish(management)
+	local work<const> = quantum.mark_quantum(control, arena, metadata, head, banks, context, mode, capacity, 0)
+	roots.release_string_work(management)
+	return work
+end
+return { invoke = invoke }
+`;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'mark_quantum');
-	assert.ok(exported);
-	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-	assert.ok(fn >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
+	const linked = linkFirmwareProbe(optLevel, [{ path: driverPath, source: driver, chunk: parseLuaChunk(driver, driverPath) }],
+		[{ path: driverPath, member: 'invoke', arity: 8 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = nativeHeapReference(cpu).heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, context = management + GC_TRACE_CONTEXT_OFFSET;
@@ -50,28 +45,28 @@ function fixture(optLevel: 0 | 3) {
 		setReferenceGlobal(target, nativeHeapReference(target).stringPool.intern('mark-quantum live root'), valueTable(live));
 		nativeHeapReference(target).gc.tables.set(live, valueInteger(1), valueTable(child));
 		nativeHeapReference(target).gc.tables.set(child, valueInteger(8), valueString(nativeHeapReference(target).stringPool.intern('mark-quantum nested String')));
-		target.publishHeapRemarkHead();
-		target.publishHeapRootBanks();
 	}
+	// The independently seeded fixture provides the same root slot as BIOS reset.
+	// SVC publishes the interrupted context for the real firmware root reader.
+	memory.writeRamRecordWord(roots, cpu.rootThread.address);
 
 	function begin(limit: number) {
 		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
-		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
-		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
-			[control, nativeHeapReference(cpu).heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
-				nativeHeapReference(cpu).gc.diagnosticWord(GcDiagnosticField.Mode), nativeHeapReference(cpu).heapAllocator.capacityBytes(), 0]));
+		const { heapAllocator, gc } = nativeHeapReference(cpu);
+		issueFirmwareProbe(cpu, [control, heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
+			gc.diagnosticWord(GcDiagnosticField.Mode), heapAllocator.capacityBytes()]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const paid = cycles - cpu.instructionBudgetRemaining;
+		const paid = grantFirmwareProbe(cpu, cycles);
 		assert.ok(paid > 0);
 		return paid;
 	}
 	function finish() {
 		let cycles = 0;
-		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) cycles += grant(512);
+		for (let i = 0; i < 512 && !cpu.isHaltedUntilIrq(); ++i) cycles += grant(512);
+		assert.equal(cpu.fixedInterruptActive(), false, 'the System vector has returned');
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		return [cpu.heapServiceResult(), cycles];
+		return [firmwareProbeResult(cpu), cycles];
 	}
 	function compare() {
 		const actual = memory.ramData().subarray(first, roots), want = oracle.memory.ramData().subarray(first, roots);
@@ -87,7 +82,7 @@ function fixture(optLevel: 0 | 3) {
 }
 
 for (const optLevel of [0, 3] as const) {
-	test(`One resident quantum executes the original major mark through Atomic admission at O${optLevel}`, () => {
+	test(`One guest quantum executes the original major mark through Atomic admission at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		const limit = 4096, want = f.reference(limit);
 		assert.equal(nativeHeapReference(f.oracle).gc.phase(), GcPhase.Atomic);
@@ -95,7 +90,7 @@ for (const optLevel of [0, 3] as const) {
 		f.begin(limit);
 		for (let i = 0; i < 65536 && nativeHeapReference(f.cpu).gc.phase() !== GcPhase.MarkAgain; ++i) f.grant(1);
 		assert.equal(nativeHeapReference(f.cpu).gc.phase(), GcPhase.MarkAgain);
-		assert.ok(f.cpu.heapServiceActive(), 'remark and MarkAgain run in the same resident activation');
+		assert.ok(f.cpu.fixedInterruptActive(), 'remark and MarkAgain run in the same System exception');
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_ROOT_CURSOR), 0);
 		assert.equal(f.memory.readRamRecordWord(f.epochWork), 0, 'accounting does not precede completion of the source quantum');
 		const middle = captureCpuCheckpoint(f.cpu);
